@@ -15,6 +15,7 @@ import {
 import { generateInboundOrderNumber, generateShippingOrderNumber } from '@/services/documentNumber.service';
 import { logLinesideMovement } from '@/services/linesideMovement.service';
 import { withTransaction } from '@/shared/db/withTransaction';
+import { syncLineStatus } from '@/services/salesOrderSync.service';
 
 // ==================== Internal Helpers (not exported) ====================
 
@@ -493,6 +494,8 @@ export const shippingOutbound = async (
             'UPDATE sales_order_detail SET shipping_status = :status WHERE id = :id',
             { replacements: { status: newStatus, id: item.sales_detail_id }, transaction }
           );
+          // 同步行状态 + 订单头状态
+          await syncLineStatus(item.sales_detail_id, transaction);
         }
       }
     }

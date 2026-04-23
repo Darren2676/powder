@@ -8,6 +8,7 @@ import { BusinessError } from '@/shared/errors/BusinessError';
 import { generateOrderNumber, generateTaskNumber, generatePrepNumber, generateOutsourcingReqNumber } from '@/services/documentNumber.service';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { withTransaction } from '@/shared/db/withTransaction';
+import { syncProductionStatus } from '@/services/salesOrderSync.service';
 
 // ==================== 排产冲突检查（只读，无需事务） ====================
 export const checkSchedulingConflicts = async (items: Array<{
@@ -714,6 +715,9 @@ export const dispatchOrdersCore = async (params: {
           }
         );
         successCount++;
+
+        // 回写销售订单明细 production_status
+        await syncProductionStatus(orderNum, '计划中', transaction);
       } catch (e: any) {
         errors.push(`${item.productionOrderNumber}: ${e.message}`);
         failedCount++;
@@ -724,7 +728,7 @@ export const dispatchOrdersCore = async (params: {
   });
 };
 
-// ==================== 一键派发并自动生成工序任务+备料单 ====================
+// ==================== 一键派发并自动生成工序任务+备料单 ======================================
 export const dispatchAndGenerateCore = async (params: {
   items: Array<{
     productionOrderNumber: string; equipmentNumber?: string;
@@ -828,6 +832,9 @@ export const dispatchAndGenerateCore = async (params: {
         }
       );
       dispatchResults.push({ orderNo, status: 'dispatched' });
+
+      // 回写销售订单明细 production_status
+      await syncProductionStatus(orderNo, '计划中', transaction);
 
       // ============ 第二步：自动生成工序任务 ============
       const taskResult = await generateProcessTasks({

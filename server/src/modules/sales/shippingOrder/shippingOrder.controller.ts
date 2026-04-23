@@ -3,6 +3,7 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
 import { generateShippingOrderNumber } from '../../../services/documentNumber.service';
+import { syncLineStatus } from '@/services/salesOrderSync.service';
 
 // ==================== 创建发货单（基于发货申请，支持分批） ====================
 export const createShippingOrder = async (req: Request, res: Response, next: NextFunction) => {
@@ -606,6 +607,8 @@ export const cancelShippingOrder = async (req: Request, res: Response, next: Nex
           `UPDATE sales_order_detail SET shipping_status = :status WHERE id = :id`,
           { replacements: { status: newStatus, id: detailId }, transaction }
         );
+        // 同步行状态 + 订单头状态
+        await syncLineStatus(detailId as number, transaction);
       }
 
       // 7. 回写发货申请状态：重新判断申请是否全部发完

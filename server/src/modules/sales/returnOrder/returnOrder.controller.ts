@@ -4,6 +4,7 @@ import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { returnInbound as returnInboundService } from '@/services/warehouse.service';
+import { syncReturnStatus, syncLineStatus } from '@/services/salesOrderSync.service';
 
 // ==================== 编号生成 ====================
 const generateReturnOrderNumber = async (transaction?: any): Promise<string> => {
@@ -493,7 +494,7 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
         { replacements: { rn }, transaction }
       );
 
-      // 4. 回写 sales_order_detail.refunded_quantity：累加退货数量
+      // 4. 回写 sales_order_detail.refunded_quantity：累加退货数量 + 同步 return_status
       for (const d of rtDetails) {
         if (d.sales_detail_id && d.sales_detail_id > 0) {
           const qty = Number(d.return_quantity) || 0;
@@ -501,6 +502,8 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
             `UPDATE sales_order_detail SET refunded_quantity = ISNULL(refunded_quantity, 0) + :qty WHERE id = :id`,
             { replacements: { qty, id: d.sales_detail_id }, transaction }
           );
+          // 回写 return_status
+          await syncReturnStatus(d.sales_detail_id, transaction);
         }
       }
 
@@ -551,6 +554,8 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
           `UPDATE sales_order_detail SET shipping_status = :status WHERE id = :id`,
           { replacements: { status: newStatus, id: detailId }, transaction }
         );
+        // 同步行状态 + 订单头状态
+        await syncLineStatus(detailId as number, transaction);
       }
 
       await transaction.commit();

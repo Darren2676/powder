@@ -4,6 +4,7 @@ import { success } from '../../../utils/response.util';
 import dayjs from 'dayjs';
 import { generateMaterialTxnNumber, syncMaterialInventorySummary } from '@/services/inventory.service';
 import { logLinesideMovement } from '@/services/linesideMovement.service';
+import { syncProductionStatus } from '@/services/salesOrderSync.service';
 
 // 自动生成领料单编号: MI-YYYYMMDD-NNN
 const generateIssueNumber = async (): Promise<string> => {
@@ -376,6 +377,8 @@ export const createMaterialIssue = async (req: Request, res: Response, next: Nex
               `UPDATE production_order SET plan_status = N'已备料' WHERE production_order_number = :orderNo AND plan_status = N'已派发'`,
               { replacements: { orderNo: orderNoForStatus }, transaction }
             );
+            // 回写销售订单明细 production_status
+            await syncProductionStatus(orderNoForStatus, '待生产', transaction);
           }
         }
       }

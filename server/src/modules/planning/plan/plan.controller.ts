@@ -312,7 +312,7 @@ export const importFromSalesOrder = async (req: Request, res: Response, next: Ne
         // 更新销售订单明细的 production_status
         if (item.detail_id) {
           await sequelize.query(
-            `UPDATE sales_order_detail SET production_status = N'已加入计划', status = N'进行中' WHERE id = :id AND (production_status IS NULL OR production_status = N'未加入计划')`,
+            `UPDATE sales_order_detail SET production_status = N'待排产', status = N'进行中' WHERE id = :id AND (production_status IS NULL OR production_status = N'未加入计划')`,
             { replacements: { id: item.detail_id }, transaction }
           );
         }

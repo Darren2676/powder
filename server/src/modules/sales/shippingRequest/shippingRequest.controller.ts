@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
+import { syncLineStatus } from '@/services/salesOrderSync.service';
 
 // ==================== 编号生成 ====================
 const generateShippingRequestNumber = async (): Promise<string> => {
@@ -148,6 +149,8 @@ export const createShippingRequest = async (req: Request, res: Response, next: N
             `UPDATE sales_order_detail SET shipping_status = :status WHERE id = :id`,
             { replacements: { status: newShippingStatus, id: detailId }, transaction }
           );
+          // 同步行状态 + 订单头状态
+          await syncLineStatus(detailId, transaction);
         }
       }
 
@@ -380,6 +383,8 @@ export const updateShippingRequest = async (req: Request, res: Response, next: N
                 `UPDATE sales_order_detail SET shipping_status = :status WHERE id = :id`,
                 { replacements: { status: newShippingStatus, id: d.sales_detail_id }, transaction }
               );
+              // 同步行状态 + 订单头状态
+              await syncLineStatus(d.sales_detail_id, transaction);
             }
           }
         }
@@ -459,6 +464,8 @@ const recomputeShippingStatus = async (salesDetailIds: number[], transaction: an
       `UPDATE sales_order_detail SET shipping_status = :status WHERE id = :detailId`,
       { replacements: { status: newStatus, detailId }, transaction }
     );
+    // 同步行状态 + 订单头状态
+    await syncLineStatus(detailId, transaction);
   }
 };
 

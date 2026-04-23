@@ -10,6 +10,7 @@ import { logWorkReportLinesideMovement, logWorkReportReverseLinesideMovement } f
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { withTransaction } from '@/shared/db/withTransaction';
 import { createInspectionFromWorkReport } from '@/modules/quality/productionInspection/productionInspection.controller';
+import { syncProductionStatus } from '@/services/salesOrderSync.service';
 
 // ==================== 报工后自动创建检验记录 ====================
 const autoCreateInspections = async (taskNo: string, wrNumber: string, totalQty: number, username: string, transaction: any) => {
@@ -119,6 +120,8 @@ export const syncTaskCompletion = async (taskNo: string, qtyDelta: number, trans
           `UPDATE production_order SET plan_status = N'生产中' WHERE production_order_number = :orderNo AND plan_status = N'已备料'`,
           { replacements: { orderNo }, ...txOpt }
         );
+        // 回写销售订单明细 production_status
+        await syncProductionStatus(orderNo, '生产中', txOpt.transaction);
       }
       // 所有工序都已完成 -> 生产单标记已完成
       const [pendingTasks]: any = await sequelize.query(
@@ -130,6 +133,8 @@ export const syncTaskCompletion = async (taskNo: string, qtyDelta: number, trans
           `UPDATE production_order SET plan_status = N'已完成' WHERE production_order_number = :orderNo AND plan_status NOT IN (N'已完成')`,
           { replacements: { orderNo }, ...txOpt }
         );
+        // 回写销售订单明细 production_status
+        await syncProductionStatus(orderNo, '生产完成', txOpt.transaction);
       }
     }
   } catch (e) { console.log('[syncTaskCompletion] plan_status流转跳过:', e); }
@@ -807,11 +812,13 @@ export const completeOrderReport = async (params: {
       { replacements: { orderNo }, transaction }
     );
 
-    // 将生产单状态标记为"已完成"
+    // 将生产单状态标记为“已完成”
     await sequelize.query(
       `UPDATE production_order SET plan_status = N'已完成' WHERE production_order_number = :orderNo AND plan_status NOT IN (N'已完成')`,
       { replacements: { orderNo }, transaction }
     );
+    // 回写销售订单明细 production_status
+    await syncProductionStatus(orderNo, '生产完成', transaction);
 
     return {
       workReportNumber: wrNumber || null,
