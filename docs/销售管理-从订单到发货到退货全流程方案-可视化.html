@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>销售管理 — 从订单到发货到退货全流程方案</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    @media print {
+      body { padding: 0 !important; }
+      .section { break-inside: avoid; box-shadow: none !important; border: 1px solid #e8e8e8 !important; }
+      .no-print { display: none !important; }
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; background: #f0f2f5; color: #333; padding: 24px; }
+    h1 { text-align: center; font-size: 28px; margin-bottom: 6px; color: #1a1a2e; }
+    .subtitle { text-align: center; color: #666; font-size: 13px; margin-bottom: 28px; }
+    .section { background: #fff; border-radius: 12px; padding: 24px 28px; margin-bottom: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+    .section h2 { font-size: 19px; color: #1a1a2e; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; display: flex; align-items: center; gap: 8px; }
+    .section h2 .icon { font-size: 20px; }
+    .section h3 { font-size: 15px; color: #444; margin: 14px 0 8px; }
+    .mermaid { display: flex; justify-content: center; margin: 14px 0; overflow-x: auto; }
+    .formula-box { background: #f6f8fa; border-left: 4px solid #1890ff; padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 10px 0; font-family: 'Consolas', monospace; font-size: 14px; line-height: 2; }
+    .info-box { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 8px; padding: 12px 16px; margin: 10px 0; font-size: 13px; line-height: 1.8; }
+    .warn-box { background: #fff7e6; border: 1px solid #ffd591; border-radius: 8px; padding: 12px 16px; margin: 10px 0; font-size: 13px; line-height: 1.8; }
+    table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+    th { background: #fafafa; font-weight: 600; text-align: left; padding: 8px 12px; border: 1px solid #e8e8e8; }
+    td { padding: 8px 12px; border: 1px solid #e8e8e8; }
+    tr:hover td { background: #f5f5f5; }
+    code { background: #f6f8fa; border: 1px solid #d9d9d9; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+    .tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+    .tag-blue { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
+    .tag-green { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+    .tag-orange { background: #fff7e6; color: #fa8c16; border: 1px solid #ffd591; }
+    .tag-red { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; }
+    .tag-purple { background: #f9f0ff; color: #722ed1; border: 1px solid #d3adf7; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+    .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    @media (max-width: 900px) { .three-col { grid-template-columns: 1fr; } }
+    .pdf-btn { position: fixed; bottom: 24px; right: 24px; background: #1890ff; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-size: 15px; cursor: pointer; box-shadow: 0 4px 12px rgba(24,144,255,0.4); z-index: 999; }
+    .pdf-btn:hover { background: #096dd9; }
+    .status-done { color: #52c41a; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+<button class="pdf-btn no-print" onclick="window.print()">导出 PDF</button>
+
+<h1>销售管理 — 从订单到发货到退货全流程方案</h1>
+<p class="subtitle">基于代码分析 + 缺失环节补充设计 · P0/P1/P2/P3 全部已完成 · 最后更新: 2026-04-23</p>
+
+<!-- 一、全局流程总览 -->
+<div class="section">
+  <h2><span class="icon">🌐</span> 一、全局流程总览</h2>
+  <div class="mermaid">
+flowchart TB
+    SO["📋 销售订单\nsales_order"] -->|审批通过| PENDING["📦 待发货列表\nsales_order_detail\nshipping_status"]
+    PENDING -->|选择明细| SR["📝 发货申请\nshipping_request\nSR-YYYYMMDD-NNN"]
+    SR -->|审批通过| SO_GEN["🚚 生成发货单\nshipping_order\nSO-YYYYMMDD-NNN"]
+    SO_GEN -->|分批发货| SO_GEN
+    SO_GEN -->|确认发货| SHIPPED["✅ 已发货"]
+    SHIPPED -->|客户签收| SIGNED["📥 已签收"]
+    SHIPPED -->|发现问题| RT["🔙 退货单\nreturn_order\nRT-YYYYMMDD-NNN"]
+    SIGNED -->|发现问题| RT
+    SR -->|错误取消| SR_CANCEL["❌ 撤消发货申请"]
+    SO_GEN -->|错误取消| SO_CANCEL["❌ 撤消发货单"]
+    RT -->|错误驳回| RT_CANCEL["❌ 撤消退货单"]
+    SR_CANCEL -->|回写| PENDING
+    SO_CANCEL -->|回写| SR
+    RT_CANCEL -->|回写| SO_GEN
+  </div>
+</div>
+
+<!-- 二、编号规则 + ER图 -->
+<div class="section">
+  <h2><span class="icon">🔢</span> 二、单据编号规则</h2>
+  <table>
+    <tr><th>单据</th><th>编号格式</th><th>示例</th></tr>
+    <tr><td>销售订单</td><td><code>SO-YYYYMMDD-NNN</code></td><td>SO-20260423-001</td></tr>
+    <tr><td>发货申请</td><td><code>SR-YYYYMMDD-NNN</code></td><td>SR-20260423-001</td></tr>
+    <tr><td>发货单</td><td><code>SO-YYYYMMDD-NNN</code></td><td>SO-20260423-001</td></tr>
+    <tr><td>退货单</td><td><code>RT-YYYYMMDD-NNN</code></td><td>RT-20260423-001</td></tr>
+  </table>
+</div>
+
+<!-- 三、数据模型 ER 图 -->
+<div class="section">
+  <h2><span class="icon">🗄️</span> 三、数据模型（ER 图）</h2>
+  <div class="mermaid">
+erDiagram
+    sales_order ||--o{ sales_order_detail : "1-N 订单明细"
+    sales_order_detail ||--o{ shipping_request_detail : "1-N 发货申请"
+    shipping_request ||--o{ shipping_request_detail : "1-N 申请明细"
+    shipping_request ||--o{ shipping_order : "1-N 可分批发货"
+    shipping_order ||--o{ shipping_order_detail : "1-N 发货明细"
+    shipping_order_detail ||--o{ shipping_order_batch : "1-N 批次"
+    shipping_order ||--o{ return_order : "1-N 退货关联"
+    return_order ||--o{ return_order_detail : "1-N 退货明细"
+    return_order_detail ||--o{ return_order_batch : "1-N 退货批次"
+    sales_order {
+        NVARCHAR sales_order_number PK
+        NVARCHAR customer_number
+        NVARCHAR approval_status
+        NVARCHAR order_status
+    }
+    sales_order_detail {
+        INT id PK
+        NVARCHAR sales_order_number FK
+        NVARCHAR item_number
+        DECIMAL order_quantity
+        NVARCHAR status
+        NVARCHAR shipping_status
+        NVARCHAR production_status
+        NVARCHAR return_status
+        DECIMAL shipped_quantity
+        DECIMAL refunded_quantity
+    }
+    shipping_request {
+        NVARCHAR request_number PK
+        NVARCHAR customer_number
+        NVARCHAR status
+    }
+    shipping_order {
+        NVARCHAR shipping_order_number PK
+        NVARCHAR request_number FK
+        NVARCHAR status
+    }
+    return_order {
+        NVARCHAR return_order_number PK
+        NVARCHAR shipping_order_number FK
+        NVARCHAR type
+        NVARCHAR status
+    }
+  </div>
+</div>
+
+<!-- 四、状态维度总览 -->
+<div class="section">
+  <h2><span class="icon">🎯</span> 四、销售订单多维状态体系</h2>
+  <div class="info-box">
+    <strong>订单头 2 个状态</strong>：approval_status（审批状态）+ order_status（订单状态：生产中→已完成）<br>
+    <strong>明细行 4 个状态</strong>：status（行状态）+ shipping_status（发货状态）+ production_status（生产状态）+ return_status（退货状态）
+  </div>
+  <table>
+    <tr><th>维度</th><th>字段</th><th>状态值</th><th>触发时机</th></tr>
+    <tr><td>审批状态</td><td><code>approval_status</code></td><td>草稿 → 已审批 → 已反审</td><td>审批工作流</td></tr>
+    <tr><td>订单状态</td><td><code>order_status</code></td><td>生产中 → 已完成</td><td>全部行已完成时自动汇总</td></tr>
+    <tr><td>行状态</td><td><code>status</code></td><td>进行中 → 已完成</td><td>全部发货/超额发货时自动完成</td></tr>
+    <tr><td>发货状态</td><td><code>shipping_status</code></td><td>未申请 → 部分发货 → 全部发货 → 超额发货</td><td>发货申请/发货单/退货各环节回写</td></tr>
+    <tr><td>生产状态</td><td><code>production_status</code></td><td>未加入计划 → 待排产 → 计划中 → 待生产 → 生产中 → 生产完成</td><td>计划/派发/领料/报工各环节单向递进</td></tr>
+    <tr><td>退货状态</td><td><code>return_status</code></td><td>未申请 → 未退货 → 部分退货 → 全部退货</td><td>退货确认后自动计算</td></tr>
+  </table>
+</div>
+
+<!-- 五、订单下达与审批 -->
+<div class="section">
+  <h2><span class="icon">📋</span> 五、阶段一：销售订单下达与审批</h2>
+  <div class="two-col">
+    <div>
+      <h3>5.1 审批状态机</h3>
+      <div class="mermaid">
+stateDiagram-v2
+    [*] --> 草稿: 创建订单
+    草稿 --> 已提交: 提交审批
+    已提交 --> 已审批: 审批通过
+    已提交 --> 草稿: 撤回
+    已审批 --> 已反审: 反审批
+    已反审 --> 已审批: 重新审批
+    已审批 --> [*]: 进入待发货
+      </div>
+    </div>
+    <div>
+      <h3>5.2 流程</h3>
+      <div class="mermaid">
+flowchart TB
+    CREATE["📋 创建销售订单"] --> FILL["填写客户+物料明细"]
+    FILL --> SAVE["保存草稿"]
+    SAVE --> SUBMIT["提交审批"]
+    SUBMIT --> APPROVE{"审批结果"}
+    APPROVE -- 通过 --> APPROVED["已审批"]
+    APPROVE -- 驳回 --> SAVE
+    APPROVED --> INIT["初始化发货状态\nshipping_status=未申请"]
+    INIT --> DONE["进入待发货列表 ✅"]
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 六、待发货→发货申请 -->
+<div class="section">
+  <h2><span class="icon">📝</span> 六、阶段二：待发货 → 发货申请</h2>
+  <div class="formula-box">
+    <strong>待发数量</strong> = MAX(0, order_quantity − refunded_quantity − shipped_quantity)<br>
+    <strong>建议发货量</strong> = MAX(0, order_quantity − refunded_quantity − shipped_quantity − applied_quantity)
+  </div>
+  <div class="mermaid">
+flowchart TB
+    PENDING["📦 待发货列表\nGET /api/shipping-requests/pending"] --> FILTER["筛选: shipping_status IN\n未申请/未发货/部分发货\nAND approval_status=已审批"]
+    FILTER --> SHOW["显示待发明细:\n订单号/客户/物料/订单量/\n已发量/已申请量/待发量"]
+    SHOW --> SELECT["用户勾选明细行\n输入本次发货数量"]
+    SELECT --> VALIDATE{"校验发货数量"}
+    VALIDATE -- 无效 --> ERR["❌ 数量无效"]
+    VALIDATE -- 有效 --> CREATE["POST /api/shipping-requests\n创建发货申请"]
+    CREATE --> TX["开启事务"]
+    TX --> INSERT_H["插入 shipping_request\n状态=待审核"]
+    INSERT_H --> LOOP["🔁 遍历明细"]
+    LOOP --> INSERT_D["插入明细+更新shipping_status"]
+    INSERT_D --> LOOP
+    LOOP -- 完成 --> COMMIT["提交事务"]
+    COMMIT --> RESULT["返回 SR-YYYYMMDD-NNN"]
+  </div>
+  <h3>6.1 发货申请状态机</h3>
+  <div class="mermaid">
+stateDiagram-v2
+    [*] --> 待审核: 创建申请
+    待审核 --> 已审核: 审批通过
+    待审核 --> 已取消: 取消删除
+    已审核 --> 已发货: 创建发货单后
+    已审核 --> 已取消: 撤消
+    已取消 --> [*]: 回写订单状态
+  </div>
+</div>
+
+<!-- 七、发货申请→发货单 -->
+<div class="section">
+  <h2><span class="icon">🚚</span> 七、阶段三：发货申请 → 发货单（分批）</h2>
+  <div class="mermaid">
+flowchart LR
+    SR["发货申请 SR-001\n物料A: 100个\n物料B: 200个"] --> SO1["发货单 SO-001\n物料A: 50个\n物料B: 100个"]
+    SR --> SO2["发货单 SO-002\n物料A: 50个\n物料B: 80个"]
+    SR --> SO3["发货单 SO-003\n物料B: 20个\n最后一批"]
+  </div>
+  <div class="mermaid">
+flowchart TB
+    START["🚚 创建发货单\nPOST /api/shipping-orders"] --> CHECK{"申请状态=已审核?"}
+    CHECK -- 否 --> ERR1["❌ 申请未审核"]
+    CHECK -- 是 --> LOAD["加载申请明细\n计算已发vs可发"]
+    LOAD --> INPUT["用户输入:\n①每行发货数量\n②批次号+批次数量\n③仓库/承运商/运单号"]
+    INPUT --> V{"∑批次=行发货数量?\n行发货≤可发数量?"}
+    V -- 否 --> ERR2["❌ 数量不匹配"]
+    V -- 是 --> TX["开启事务"]
+    TX --> GEN["生成编号 SO-YYYYMMDD-NNN"]
+    GEN --> INSERT["插入主表+明细+批次"]
+    INSERT --> SR_CHK{"申请全部发完?"}
+    SR_CHK -- 是 --> SR_DONE["申请→已发货"]
+    SR_CHK -- 否 --> SR_KEEP["保持已审核"]
+    SR_DONE --> COMMIT["提交事务"]
+    SR_KEEP --> COMMIT
+  </div>
+  <h3>7.1 发货单状态机</h3>
+  <div class="mermaid">
+stateDiagram-v2
+    [*] --> 待发货: 创建发货单
+    待发货 --> 已发货: 确认发货
+    已发货 --> 已签收: 客户签收
+    待发货 --> 已取消: 撤消
+    已发货 --> 已取消: 撤消需回写
+    已取消 --> [*]: 回写申请+订单状态
+  </div>
+</div>
+
+<!-- 八、退货管理 -->
+<div class="section">
+  <h2><span class="icon">🔙</span> 八、阶段四：退货管理</h2>
+  <div class="formula-box">
+    <strong>退货条件</strong>: 发货单状态 IN ('已发货', '已签收')<br>
+    <strong>可退数量</strong> = 发货批次数量 − ∑已退数量(排除已驳回)
+  </div>
+  <div class="mermaid">
+flowchart TB
+    START["🔙 发起退货\n选择发货单"] --> LOAD["加载发货单明细+批次\n计算各批次可退数量"]
+    LOAD --> CHECK{"发货单状态=已发货/已签收?"}
+    CHECK -- 否 --> ERR["❌ 不允许退货"]
+    CHECK -- 是 --> INPUT["用户输入:\n退货类型/退货仓库/原因\n每个批次退货数量"]
+    INPUT --> V{"退货数量≤可退数量?"}
+    V -- 否 --> ERR2["❌ 超过可退数量"]
+    V -- 是 --> CREATE["POST /api/return-orders"]
+    CREATE --> TX["开启事务"]
+    TX --> INSERT["插入主表+明细+批次\nstatus=待确认"]
+    INSERT --> COMMIT["提交事务"]
+    COMMIT --> RESULT["返回 RT-YYYYMMDD-NNN"]
+    RESULT --> APPROVAL["提交审批"]
+    APPROVAL --> APPROVE{"审批通过?"}
+    APPROVE -- 是 --> CONFIRM["确认退货"]
+    APPROVE -- 否 --> REJECT["驳回退货"]
+    CONFIRM --> INBOUND["退货入库\n更新库存"]
+    CONFIRM --> WB["回写:\nrefunded_quantity\nshipping_status\nreturn_status\nstatus + order_status"]
+  </div>
+  <h3>8.1 退货单状态机</h3>
+  <div class="mermaid">
+stateDiagram-v2
+    [*] --> 待确认: 创建退货单
+    待确认 --> 审批中: 提交审批
+    审批中 --> 已审批: 审批通过
+    审批中 --> 草稿: 撤回
+    已审批 --> 已确认: 确认退货
+    已审批 --> 已驳回: 驳回退货
+    已驳回 --> [*]: 终态
+    已确认 --> [*]: 退货入库加回写
+  </div>
+</div>
+
+<!-- 九、撤消回写逻辑 -->
+<div class="section">
+  <h2><span class="icon">↩️</span> 九、撤消/删除 — 回写逻辑</h2>
+  <div class="three-col">
+    <div>
+      <h3>9.1 撤消发货申请</h3>
+      <div class="mermaid">
+flowchart TB
+    A["撤消发货申请"] --> B{"当前状态?"}
+    B -- 待审核 --> C["直接删除"]
+    B -- 已审核无发货单 --> D["状态→已取消"]
+    B -- 已审核有发货单 --> E["❌ 需先撤消发货单"]
+    C --> F["回写shipping_status"]
+    D --> F
+      </div>
+    </div>
+    <div>
+      <h3>9.2 撤消发货单</h3>
+      <div class="mermaid">
+flowchart TB
+    A["撤消发货单"] --> B{"当前状态?"}
+    B -- 待发货 --> C["状态→已取消"]
+    B -- 已发货无退货 --> C
+    B -- 已发货有退货 --> D["❌ 先处理退货"]
+    B -- 已签收 --> E["❌ 不可撤消"]
+    C --> F["回写申请已发数量"]
+    F --> G["回写shipped_quantity\n+shipping_status"]
+      </div>
+    </div>
+    <div>
+      <h3>9.3 撤消退货单</h3>
+      <div class="mermaid">
+flowchart TB
+    A["撤消退货单"] --> B{"当前状态?"}
+    B -- 待确认草稿 --> C["直接删除"]
+    B -- 已审批未确认 --> D["驳回"]
+    B -- 已确认 --> E["❌ 不可撤消"]
+    C --> F["✅ 无需回写"]
+    D --> G["✅ 可退数量自动恢复"]
+      </div>
+    </div>
+  </div>
+  <div class="formula-box">
+    <strong>shipping_status 回写公式（统一逻辑）：</strong><br>
+    优先看实发净量: net_shipped = shipped_quantity − refunded_quantity<br>
+    net_shipped ≥ order_quantity → '全部发货' 或 '超额发货'<br>
+    net_shipped > 0 → '部分发货' | 再看申请量: applied > 0 → '部分发货' | 否则 → '未申请'
+  </div>
+</div>
+
+<!-- 十、核心量级关系 -->
+<div class="section">
+  <h2><span class="icon">📊</span> 十、核心量级关系</h2>
+  <div class="mermaid">
+flowchart TB
+    subgraph 销售订单明细每行
+        OQ["order_quantity\n订单数量"]
+        SQ["shipped_quantity\n已发数量"]
+        RQ["refunded_quantity\n已退数量"]
+        AQ["applied_quantity\n已申请数量"]
+        PQ["pending_qty 待发数量\n= order_qty - refunded_qty - shipped_qty"]
+    end
+    subgraph 发货申请明细
+        SHIP_QTY["ship_quantity\n本次申请数量"]
+    end
+    subgraph 发货单明细
+        SO_QTY["quantity\n本次发货数量"]
+    end
+    subgraph 退货单明细
+        RT_QTY["return_quantity\n退货数量"]
+    end
+    OQ --> PQ
+    RQ --> PQ
+    SQ --> PQ
+    SHIP_QTY -->|创建时累加| AQ
+    SO_QTY -->|确认发货后累加| SQ
+    RT_QTY -->|确认退货后累加| RQ
+  </div>
+  <div class="info-box">
+    <strong>关键不变式：</strong><br>
+    shipped_quantity = ∑(所有已确认发货单的发货数量)<br>
+    refunded_quantity = ∑(所有已确认退货单的退货数量)<br>
+    实际净发 = shipped_quantity − refunded_quantity
+  </div>
+</div>
+
+<!-- 十一、状态联动闭环 -->
+<div class="section">
+  <h2><span class="icon">🔄</span> 十一、状态联动闭环</h2>
+  <div class="mermaid">
+flowchart LR
+    subgraph 触发源
+        A1["发货申请创建/修改/撤消"]
+        A2["发货单创建/撤消"]
+        A3["仓库出库确认"]
+        A4["退货确认"]
+        A5["计划加入/派发/领料/报工"]
+    end
+    subgraph 明细行状态
+        B1["shipping_status"]
+        B2["return_status"]
+        B3["production_status"]
+        B4["status 行状态"]
+    end
+    subgraph 订单头
+        C1["order_status"]
+    end
+    A1 --> B1
+    A2 --> B1
+    A3 --> B1
+    A4 --> B1
+    A4 --> B2
+    A5 --> B3
+    B1 --> B4
+    B4 --> C1
+  </div>
+  <div class="warn-box">
+    <strong>闭环服务：</strong><code>salesOrderSync.service.ts</code> 提供 4 个核心函数：<br>
+    • <code>syncReturnStatus</code> — 退货确认后自动计算 return_status<br>
+    • <code>syncProductionStatus</code> — 生产各环节单向递进 production_status（不回退）<br>
+    • <code>syncLineStatus</code> — 全部发货/超额发货→已完成，回退→进行中<br>
+    • <code>syncOrderHeaderStatus</code> — 全部行已完成→order_status=已完成
+  </div>
+</div>
+
+<!-- 十二、完整端到端时序图 -->
+<div class="section">
+  <h2><span class="icon">⏱️</span> 十二、完整端到端时序图</h2>
+  <div class="mermaid">
+sequenceDiagram
+    actor 销售员
+    actor 审批人
+    actor 仓库
+    actor 客户
+    rect rgb(230, 247, 255)
+    Note over 销售员: 阶段一：订单下达
+    销售员->>系统: 创建销售订单
+    销售员->>系统: 提交审批
+    审批人->>系统: 审批通过
+    系统->>系统: shipping_status = 未申请
+    end
+    rect rgb(246, 255, 237)
+    Note over 销售员: 阶段二：发货申请
+    销售员->>系统: 查看待发货列表
+    销售员->>系统: 选择明细创建发货申请
+    系统->>系统: shipping_status → 部分发货
+    审批人->>系统: 审批发货申请
+    end
+    rect rgb(255, 247, 230)
+    Note over 仓库: 阶段三：发货可分批
+    仓库->>系统: 基于申请创建发货单第1批
+    仓库->>系统: 录入批次号加数量
+    仓库->>系统: 确认发货
+    系统->>系统: shipped_quantity += 本批数量
+    仓库->>系统: 创建发货单第2批
+    仓库->>系统: 确认发货
+    系统->>系统: 申请状态 → 已发货
+    end
+    rect rgb(255, 230, 230)
+    Note over 客户: 阶段四：签收和退货
+    客户->>系统: 确认签收
+    客户->>销售员: 发现质量问题
+    销售员->>系统: 选择发货单创建退货单
+    审批人->>系统: 审批退货单
+    仓库->>系统: 确认退货入库
+    系统->>系统: refunded_quantity += 退货量
+    系统->>系统: 重新计算 shipping_status
+    系统->>系统: 同步 return_status + 行状态 + 订单头
+    end
+  </div>
+</div>
+
+<!-- 十三、已完成开发清单 -->
+<div class="section">
+  <h2><span class="icon">✅</span> 十三、已完成开发清单（P0 ~ P3）</h2>
+  <table>
+    <tr><th>功能</th><th>优先级</th><th>说明</th><th>状态</th></tr>
+    <tr><td><strong>发货单创建 API</strong></td><td><span class="tag tag-red">P0</span></td><td>POST /api/shipping-orders，含 UPDLOCK 防并发超发</td><td class="status-done">✅</td></tr>
+    <tr><td><strong>发货申请撤消回写</strong></td><td><span class="tag tag-red">P0</span></td><td>撤消已审核申请时回写 shipping_status（统一实发净量+申请量逻辑）</td><td class="status-done">✅</td></tr>
+    <tr><td><strong>发货单撤消回写</strong></td><td><span class="tag tag-red">P0</span></td><td>两层回写：shipped_quantity / delivered_quantity 扣减 + 申请状态回退</td><td class="status-done">✅</td></tr>
+    <tr><td><strong>退货确认回写</strong></td><td><span class="tag tag-orange">P1</span></td><td>确认退货后回写 refunded_quantity，按净发量重算 shipping_status</td><td class="status-done">✅</td></tr>
+    <tr><td>发货申请→发货单关联</td><td><span class="tag tag-orange">P1</span></td><td>shipping_order 增加 request_number（迁移脚本 042）</td><td class="status-done">✅</td></tr>
+    <tr><td>发货单已发数量追踪</td><td><span class="tag tag-orange">P1</span></td><td>shipping_request_detail 增加 delivered_quantity</td><td class="status-done">✅</td></tr>
+    <tr><td>退货入库联动</td><td><span class="tag tag-blue">P2</span></td><td>确认退货后自动调用 returnInboundService 生成退货入库单</td><td class="status-done">✅</td></tr>
+    <tr><td><strong>退货状态联动</strong></td><td><span class="tag tag-purple">P3</span></td><td>退货确认后自动计算 return_status</td><td class="status-done">✅</td></tr>
+    <tr><td><strong>生产状态全链路</strong></td><td><span class="tag tag-purple">P3</span></td><td>production_status 6态单向递进</td><td class="status-done">✅</td></tr>
+    <tr><td><strong>行状态自动完成</strong></td><td><span class="tag tag-purple">P3</span></td><td>全部发货→已完成，回退→进行中</td><td class="status-done">✅</td></tr>
+    <tr><td><strong>订单头状态汇总</strong></td><td><span class="tag tag-purple">P3</span></td><td>全部行已完成→order_status=已完成</td><td class="status-done">✅</td></tr>
+    <tr><td><strong>状态闭环迁移脚本</strong></td><td><span class="tag tag-purple">P3</span></td><td>043_sales_status_sync.ts 历史数据回填</td><td class="status-done">✅</td></tr>
+  </table>
+</div>
+
+<!-- 十四、API接口清单 -->
+<div class="section">
+  <h2><span class="icon">🔌</span> 十四、API 接口清单</h2>
+  <div class="two-col">
+    <div>
+      <h3>14.1 销售订单</h3>
+      <table>
+        <tr><th>方法</th><th>路径</th><th>说明</th></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/sales-orders</code></td><td>订单列表</td></tr>
+        <tr><td><span class="tag tag-blue">POST</span></td><td><code>/api/sales-orders</code></td><td>创建订单</td></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/sales-orders/:id</code></td><td>订单详情</td></tr>
+        <tr><td><span class="tag tag-orange">PUT</span></td><td><code>/api/sales-orders/:id</code></td><td>更新订单</td></tr>
+        <tr><td><span class="tag tag-red">DEL</span></td><td><code>/api/sales-orders/:id</code></td><td>删除订单</td></tr>
+      </table>
+      <h3>14.2 发货申请</h3>
+      <table>
+        <tr><th>方法</th><th>路径</th><th>说明</th></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/shipping-requests/pending</code></td><td>待发货列表</td></tr>
+        <tr><td><span class="tag tag-blue">POST</span></td><td><code>/api/shipping-requests</code></td><td>创建申请</td></tr>
+        <tr><td><span class="tag tag-orange">PUT</span></td><td><code>/api/shipping-requests/:id</code></td><td>修改申请</td></tr>
+        <tr><td><span class="tag tag-blue">POST</span></td><td><code>/api/shipping-requests/:id/cancel</code></td><td>撤消申请</td></tr>
+        <tr><td><span class="tag tag-red">DEL</span></td><td><code>/api/shipping-requests/:id</code></td><td>删除申请</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>14.3 发货单</h3>
+      <table>
+        <tr><th>方法</th><th>路径</th><th>说明</th></tr>
+        <tr><td><span class="tag tag-blue">POST</span></td><td><code>/api/shipping-orders</code></td><td>创建发货单</td></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/shipping-orders</code></td><td>列表</td></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/shipping-orders/:sn</code></td><td>详情</td></tr>
+        <tr><td><span class="tag tag-orange">PUT</span></td><td><code>/api/shipping-orders/:sn/logistics</code></td><td>更新物流</td></tr>
+        <tr><td><span class="tag tag-blue">POST</span></td><td><code>/api/shipping-orders/:sn/cancel</code></td><td>撤消含回写</td></tr>
+      </table>
+      <h3>14.4 退货单</h3>
+      <table>
+        <tr><th>方法</th><th>路径</th><th>说明</th></tr>
+        <tr><td><span class="tag tag-blue">POST</span></td><td><code>/api/return-orders</code></td><td>创建退货单</td></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/return-orders</code></td><td>列表</td></tr>
+        <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/return-orders/:rn</code></td><td>详情</td></tr>
+        <tr><td><span class="tag tag-blue">POST</span></td><td><code>/api/return-orders/:rn/confirm</code></td><td>确认含回写+入库</td></tr>
+        <tr><td><span class="tag tag-blue">POST</span></td><td><code>/api/return-orders/:rn/reject</code></td><td>驳回</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 十五、关键数据库表 + 代码位置 -->
+<div class="section">
+  <h2><span class="icon">📍</span> 十五、关键数据库表与代码位置</h2>
+  <div class="two-col">
+    <div>
+      <h3>数据库表</h3>
+      <table>
+        <tr><th>表名</th><th>用途</th></tr>
+        <tr><td><code>sales_order</code></td><td>订单主表 (approval_status, order_status)</td></tr>
+        <tr><td><code>sales_order_detail</code></td><td>订单明细 (4维状态 + 数量字段)</td></tr>
+        <tr><td><code>shipping_request</code></td><td>发货申请主表</td></tr>
+        <tr><td><code>shipping_request_detail</code></td><td>申请明细 (ship_quantity, delivered_quantity)</td></tr>
+        <tr><td><code>shipping_order</code></td><td>发货单主表 (request_number)</td></tr>
+        <tr><td><code>shipping_order_detail</code></td><td>发货明细 + 批次</td></tr>
+        <tr><td><code>return_order</code></td><td>退货单主表</td></tr>
+        <tr><td><code>return_order_detail</code></td><td>退货明细 + 批次</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>关键代码文件</h3>
+      <table>
+        <tr><th>文件</th><th>功能</th></tr>
+        <tr><td><code>salesOrder.controller.ts</code></td><td>订单CRUD + 审批</td></tr>
+        <tr><td><code>shippingRequest.controller.ts</code></td><td>发货申请全流程</td></tr>
+        <tr><td><code>shippingOrder.controller.ts</code></td><td>发货单全流程</td></tr>
+        <tr><td><code>returnOrder.controller.ts</code></td><td>退货单全流程</td></tr>
+        <tr><td><code>salesOrderSync.service.ts</code></td><td>状态闭环服务 (4函数)</td></tr>
+        <tr><td><code>warehouse.service.ts</code></td><td>出库回写shipping_status</td></tr>
+        <tr><td><code>orderDispatch.service.ts</code></td><td>派发→production_status</td></tr>
+        <tr><td><code>workReport.service.ts</code></td><td>报工→production_status</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+    er: { useMaxWidth: true },
+    sequence: { useMaxWidth: true, showSequenceNumbers: false },
+    themeVariables: {
+      primaryColor: '#e6f7ff',
+      primaryBorderColor: '#1890ff',
+      primaryTextColor: '#1a1a2e',
+      lineColor: '#1890ff',
+      secondaryColor: '#f6ffed',
+      tertiaryColor: '#fff7e6'
+    }
+  });
+</script>
+</body>
+</html>
