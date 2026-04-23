@@ -44,6 +44,8 @@ const detailColumns = [
   { title: '本次入库', dataIndex: 'stock_in_quantity', width: 90 },
   { title: '合格数量', dataIndex: 'qualified_quantity', width: 90 },
   { title: '不合格数量', dataIndex: 'unqualified_quantity', width: 90 },
+  { title: '检验单号', dataIndex: 'inspection_number', width: 160 },
+  { title: '检验状态', dataIndex: 'inspect_status', width: 100 },
   { title: '批次号', dataIndex: 'batch_number', width: 160 }
 ]
 

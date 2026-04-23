@@ -4,6 +4,7 @@ import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
 import { generateBatchNumber, generateMaterialTxnNumber, syncMaterialInventorySummary } from '@/services/inventory.service';
 import { ORDER_STATUS, PURCHASE_STATUS } from '@/shared/constants/statuses';
+import { createInspectionForStockIn } from '../../../modules/purchasing/purchaseInspection/purchaseInspection.controller';
 
 // ==================== 编号生成 ====================
 
@@ -167,6 +168,38 @@ export const createStockIn = async (req: Request, res: Response, next: NextFunct
             },
             transaction
           });
+        }
+
+        // 自动报检：遍历明细行，对“需要检验”的物料自动创建采购质量检验单
+        const autoInspections: string[] = [];
+        for (const d of b.details) {
+          if (!d.item_number) continue;
+          const [itemRows]: any = await sequelize.query(
+            `SELECT incoming_inspection FROM item_master WHERE item_number = :item_number`,
+            { replacements: { item_number: d.item_number }, transaction }
+          );
+          if (itemRows.length > 0 && itemRows[0].incoming_inspection === 'Y') {
+              const inspNo = await createInspectionForStockIn({
+                stock_in_number,
+                purchase_order_number: b.purchase_order_number || '',
+                supplier_number: poHeader[0]?.supplier_number || b.supplier_number || '',
+                supplier_name: poHeader[0]?.supplier_name || b.supplier_name || '',
+                item_number: d.item_number,
+                item_name: d.item_name || '',
+                specifications: d.specifications || '',
+                basic_unit: d.basic_unit || '',
+                received_quantity: d.stock_in_quantity || d.received_quantity || 0,
+                batch_number: '',
+                creation_man
+              }, transaction);
+              autoInspections.push(inspNo);
+              // 回写检验单号到入库明细行
+              await sequelize.query(
+                `UPDATE stock_in_detail SET inspection_number = :inspNo, inspect_status = N'待检验'
+                 WHERE stock_in_number = :stock_in_number AND item_number = :item_number`,
+                { replacements: { inspNo, stock_in_number, item_number: d.item_number }, transaction }
+              );
+          }
         }
       }
 

@@ -1,11 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
+import { Transaction } from 'sequelize';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 
 /**
  * 生成检验单号 QI-YYYYMMDD-###
  */
-async function generateInspectionNumber(): Promise<string> {
+async function generateInspectionNumber(transaction?: Transaction): Promise<string> {
   const today = new Date();
   const dateStr = today.getFullYear().toString() +
     String(today.getMonth() + 1).padStart(2, '0') +
@@ -17,7 +18,7 @@ async function generateInspectionNumber(): Promise<string> {
     FROM purchase_quality_inspection
     WHERE inspection_number LIKE :prefix
     ORDER BY inspection_number DESC
-  `, { replacements: { prefix: prefix + '%' } });
+  `, { replacements: { prefix: prefix + '%' }, ...(transaction ? { transaction } : {}) });
 
   let seq = 1;
   if (rows.length > 0) {
@@ -27,6 +28,154 @@ async function generateInspectionNumber(): Promise<string> {
   }
 
   return prefix + String(seq).padStart(3, '0');
+}
+
+/**
+ * 内部服务函数：为入库单自动创建检验单（可在事务中调用）
+ * 返回 inspection_number，不操作 res
+ */
+export async function createInspectionForStockIn(params: {
+  stock_in_number: string;
+  purchase_order_number: string;
+  supplier_number: string;
+  supplier_name: string;
+  item_number: string;
+  item_name: string;
+  specifications: string;
+  basic_unit: string;
+  received_quantity: number;
+  batch_number: string;
+  creation_man: string;
+}, transaction?: Transaction): Promise<string> {
+  const {
+    stock_in_number, purchase_order_number, supplier_number, supplier_name,
+    item_number, item_name, specifications, basic_unit,
+    received_quantity, batch_number, creation_man
+  } = params;
+
+  const inspection_number = await generateInspectionNumber(transaction);
+
+  // 匹配收料检验方案
+  const [planRows]: any = await sequelize.query(`
+    SELECT TOP 1 plan_name, inspector_name, inspect_method,
+           sampling_method, sampling_quantity
+    FROM incoming_inspect_plan
+    WHERE plan_name = :item_number
+  `, { replacements: { item_number }, ...(transaction ? { transaction } : {}) });
+
+  let inspect_plan_name = '';
+  let inspect_method = '';
+  let inspector_name = '';
+  let sample_quantity = received_quantity || 0;
+
+  if (planRows.length > 0) {
+    const plan = planRows[0];
+    inspect_plan_name = plan.plan_name || '';
+    inspect_method = plan.inspect_method || '';
+    inspector_name = plan.inspector_name || '';
+    if (plan.sampling_quantity && parseFloat(plan.sampling_quantity) > 0) {
+      sample_quantity = parseFloat(plan.sampling_quantity);
+    }
+  }
+
+  // 匹配来料检验规范
+  const [specRows]: any = await sequelize.query(`
+    SELECT TOP 1 spec_name
+    FROM incoming_inspect_spec
+    WHERE spec_name = :item_number
+  `, { replacements: { item_number }, ...(transaction ? { transaction } : {}) });
+
+  let inspect_spec_name = '';
+  if (specRows.length > 0) {
+    inspect_spec_name = specRows[0].spec_name || '';
+  }
+
+  // 创建检验单主表
+  await sequelize.query(`
+    INSERT INTO purchase_quality_inspection (
+      inspection_number, stock_in_number, purchase_order_number,
+      supplier_number, supplier_name,
+      item_number, item_name, specifications, basic_unit,
+      received_quantity, sample_quantity,
+      qualified_quantity, unqualified_quantity,
+      inspect_plan_name, inspect_method, inspect_spec_name,
+      inspector_name, inspect_date,
+      inspect_result, inspect_status,
+      batch_number, creation_date, creation_man
+    ) VALUES (
+      :inspection_number, :stock_in_number, :purchase_order_number,
+      :supplier_number, :supplier_name,
+      :item_number, :item_name, :specifications, :basic_unit,
+      :received_quantity, :sample_quantity,
+      0, 0,
+      :inspect_plan_name, :inspect_method, :inspect_spec_name,
+      :inspector_name, GETDATE(),
+      '', N'待检验',
+      :batch_number, GETDATE(), :creation_man
+    )
+  `, {
+    replacements: {
+      inspection_number,
+      stock_in_number: stock_in_number || '',
+      purchase_order_number: purchase_order_number || '',
+      supplier_number: supplier_number || '',
+      supplier_name: supplier_name || '',
+      item_number,
+      item_name: item_name || '',
+      specifications: specifications || '',
+      basic_unit: basic_unit || '',
+      received_quantity: received_quantity || 0,
+      sample_quantity,
+      inspect_plan_name,
+      inspect_method,
+      inspect_spec_name,
+      inspector_name,
+      batch_number: batch_number || '',
+      creation_man
+    },
+    ...(transaction ? { transaction } : {})
+  });
+
+  // 自动加载质量特性明细行
+  if (inspect_spec_name) {
+    const [specItems]: any = await sequelize.query(`
+      SELECT char_name, char_category, data_type,
+             upper_limit, standard_value, lower_limit,
+             inspect_requirement, sort_order
+      FROM incoming_inspect_spec_item
+      WHERE spec_name = :spec_name
+      ORDER BY sort_order ASC
+    `, { replacements: { spec_name: inspect_spec_name }, ...(transaction ? { transaction } : {}) });
+
+    for (const item of specItems) {
+      await sequelize.query(`
+        INSERT INTO purchase_quality_inspection_detail (
+          inspection_number, sort_order, char_name, char_category,
+          data_type, upper_limit, standard_value, lower_limit,
+          actual_value, is_qualified, inspect_requirement
+        ) VALUES (
+          :inspection_number, :sort_order, :char_name, :char_category,
+          :data_type, :upper_limit, :standard_value, :lower_limit,
+          '', '', :inspect_requirement
+        )
+      `, {
+        replacements: {
+          inspection_number,
+          sort_order: item.sort_order || 0,
+          char_name: item.char_name || '',
+          char_category: item.char_category || '',
+          data_type: item.data_type || '',
+          upper_limit: item.upper_limit,
+          standard_value: item.standard_value,
+          lower_limit: item.lower_limit,
+          inspect_requirement: item.inspect_requirement || ''
+        },
+        ...(transaction ? { transaction } : {})
+      });
+    }
+  }
+
+  return inspection_number;
 }
 
 /**
@@ -53,126 +202,14 @@ export const createPurchaseInspection = async (req: Request, res: Response, next
       return;
     }
 
-    const inspection_number = await generateInspectionNumber();
     const creation_man = (req as any).user?.username || '';
-
-    // 匹配收料检验方案
-    const [planRows]: any = await sequelize.query(`
-      SELECT TOP 1 plan_name, inspector_name, inspect_method,
-             sampling_method, sampling_quantity
-      FROM incoming_inspect_plan
-      WHERE plan_name = :item_number
-    `, { replacements: { item_number } });
-
-    let inspect_plan_name = '';
-    let inspect_method = '';
-    let inspector_name = '';
-    let sample_quantity = received_quantity || 0;
-
-    if (planRows.length > 0) {
-      const plan = planRows[0];
-      inspect_plan_name = plan.plan_name || '';
-      inspect_method = plan.inspect_method || '';
-      inspector_name = plan.inspector_name || '';
-      if (plan.sampling_quantity && parseFloat(plan.sampling_quantity) > 0) {
-        sample_quantity = parseFloat(plan.sampling_quantity);
-      }
-    }
-
-    // 匹配来料检验规范
-    const [specRows]: any = await sequelize.query(`
-      SELECT TOP 1 spec_name
-      FROM incoming_inspect_spec
-      WHERE spec_name = :item_number
-    `, { replacements: { item_number } });
-
-    let inspect_spec_name = '';
-    if (specRows.length > 0) {
-      inspect_spec_name = specRows[0].spec_name || '';
-    }
-
-    // 创建检验单主表
-    await sequelize.query(`
-      INSERT INTO purchase_quality_inspection (
-        inspection_number, stock_in_number, purchase_order_number,
-        supplier_number, supplier_name,
-        item_number, item_name, specifications, basic_unit,
-        received_quantity, sample_quantity,
-        qualified_quantity, unqualified_quantity,
-        inspect_plan_name, inspect_method, inspect_spec_name,
-        inspector_name, inspect_date,
-        inspect_result, inspect_status,
-        batch_number, creation_date, creation_man
-      ) VALUES (
-        :inspection_number, :stock_in_number, :purchase_order_number,
-        :supplier_number, :supplier_name,
-        :item_number, :item_name, :specifications, :basic_unit,
-        :received_quantity, :sample_quantity,
-        0, 0,
-        :inspect_plan_name, :inspect_method, :inspect_spec_name,
-        :inspector_name, GETDATE(),
-        '', N'待检验',
-        :batch_number, GETDATE(), :creation_man
-      )
-    `, {
-      replacements: {
-        inspection_number,
-        stock_in_number: stock_in_number || '',
-        purchase_order_number: purchase_order_number || '',
-        supplier_number: supplier_number || '',
-        supplier_name: supplier_name || '',
-        item_number,
-        item_name: item_name || '',
-        specifications: specifications || '',
-        basic_unit: basic_unit || '',
-        received_quantity: received_quantity || 0,
-        sample_quantity,
-        inspect_plan_name,
-        inspect_method,
-        inspect_spec_name,
-        inspector_name,
-        batch_number: batch_number || '',
-        creation_man
-      }
+    const inspection_number = await createInspectionForStockIn({
+      stock_in_number, purchase_order_number,
+      supplier_number, supplier_name,
+      item_number, item_name, specifications, basic_unit,
+      received_quantity, batch_number,
+      creation_man
     });
-
-    // 自动加载质量特性明细行
-    if (inspect_spec_name) {
-      const [specItems]: any = await sequelize.query(`
-        SELECT char_name, char_category, data_type,
-               upper_limit, standard_value, lower_limit,
-               inspect_requirement, sort_order
-        FROM incoming_inspect_spec_item
-        WHERE spec_name = :spec_name
-        ORDER BY sort_order ASC
-      `, { replacements: { spec_name: inspect_spec_name } });
-
-      for (const item of specItems) {
-        await sequelize.query(`
-          INSERT INTO purchase_quality_inspection_detail (
-            inspection_number, sort_order, char_name, char_category,
-            data_type, upper_limit, standard_value, lower_limit,
-            actual_value, is_qualified, inspect_requirement
-          ) VALUES (
-            :inspection_number, :sort_order, :char_name, :char_category,
-            :data_type, :upper_limit, :standard_value, :lower_limit,
-            '', '', :inspect_requirement
-          )
-        `, {
-          replacements: {
-            inspection_number,
-            sort_order: item.sort_order || 0,
-            char_name: item.char_name || '',
-            char_category: item.char_category || '',
-            data_type: item.data_type || '',
-            upper_limit: item.upper_limit,
-            standard_value: item.standard_value,
-            lower_limit: item.lower_limit,
-            inspect_requirement: item.inspect_requirement || ''
-          }
-        });
-      }
-    }
 
     res.json(success({ inspection_number, message: '检验单创建成功' }));
   } catch (err) {
@@ -543,6 +580,157 @@ export const getPurchaseInspectionSummary = async (req: Request, res: Response, 
       by_item: byItem,
       overall: overallStats[0] || {}
     }));
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * 不合格品处理
+ * PUT /api/quality-report/purchase-inspections/:inspection_number/defect-handling
+ * 支持: 挑选 / 拒收 / 报废 / 特采 / 退货
+ */
+export const defectHandlingPurchaseInspection = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { inspection_number } = req.params;
+    const {
+      defect_handling,      // 挑选 | 拒收 | 报废 | 特采 | 退货
+      handling_quantity,    // 处理数量
+      handling_remark,      // 处理备注
+      return_order_number,  // 关联退货单号
+      special_warehouse,    // 特采入库仓库
+      qualified_quantity,   // 挑选后合格数量
+      unqualified_quantity  // 挑选后不合格数量
+    } = req.body;
+
+    if (!defect_handling) {
+      res.status(400).json({ success: false, message: '处理方式不能为空' });
+      return;
+    }
+
+    const validHandlings = ['挑选', '拒收', '报废', '特采', '退货'];
+    if (!validHandlings.includes(defect_handling)) {
+      res.status(400).json({ success: false, message: `无效的处理方式，可选: ${validHandlings.join('/')}` });
+      return;
+    }
+
+    // 查询检验单
+    const [inspRows]: any = await sequelize.query(`
+      SELECT * FROM purchase_quality_inspection
+      WHERE inspection_number = :inspection_number
+    `, { replacements: { inspection_number } });
+
+    if (!inspRows.length) {
+      res.status(404).json({ success: false, message: '检验单不存在' });
+      return;
+    }
+
+    const insp = inspRows[0];
+    if (insp.inspect_status !== '已完成') {
+      res.status(400).json({ success: false, message: '检验单尚未完成，无法进行不合格品处理' });
+      return;
+    }
+
+    if (insp.defect_handling) {
+      res.status(400).json({ success: false, message: `该检验单已进行过不合格品处理（${insp.defect_handling}），不可重复操作` });
+      return;
+    }
+
+    const transaction = await sequelize.transaction();
+    try {
+      // 更新检验单不合格品处理信息
+      await sequelize.query(`
+        UPDATE purchase_quality_inspection SET
+          defect_handling = :defect_handling,
+          handling_quantity = :handling_quantity,
+          handling_remark = :handling_remark,
+          return_order_number = :return_order_number,
+          special_warehouse = :special_warehouse
+        WHERE inspection_number = :inspection_number
+      `, {
+        replacements: {
+          inspection_number,
+          defect_handling,
+          handling_quantity: handling_quantity || 0,
+          handling_remark: handling_remark || '',
+          return_order_number: return_order_number || '',
+          special_warehouse: special_warehouse || ''
+        },
+        transaction
+      });
+
+      // 根据处理方式执行不同业务动作
+      if (defect_handling === '挑选') {
+        // 挑选：更新合格/不合格数量
+        if (qualified_quantity !== undefined || unqualified_quantity !== undefined) {
+          await sequelize.query(`
+            UPDATE purchase_quality_inspection SET
+              qualified_quantity = :qualified_quantity,
+              unqualified_quantity = :unqualified_quantity,
+              inspect_result = CASE WHEN :unqualified_quantity > 0 THEN N'不合格' ELSE N'合格' END
+            WHERE inspection_number = :inspection_number
+          `, {
+            replacements: {
+              inspection_number,
+              qualified_quantity: qualified_quantity || 0,
+              unqualified_quantity: unqualified_quantity || 0
+            },
+            transaction
+          });
+        }
+      } else if (defect_handling === '特采') {
+        // 特采：将不合格品计入合格（让步接收）
+        const handlingQty = parseFloat(handling_quantity) || 0;
+        if (handlingQty > 0) {
+          await sequelize.query(`
+            UPDATE purchase_quality_inspection SET
+              qualified_quantity = qualified_quantity + :handlingQty,
+              unqualified_quantity = CASE WHEN unqualified_quantity - :handlingQty < 0 THEN 0 ELSE unqualified_quantity - :handlingQty END,
+              inspect_result = N'让步接收'
+            WHERE inspection_number = :inspection_number
+          `, {
+            replacements: { inspection_number, handlingQty },
+            transaction
+          });
+        }
+      }
+
+      // 回写入库单明细的合格/不合格数量
+      if (insp.stock_in_number) {
+        // 重新查询最新的检验单数据
+        const [updatedInsp]: any = await sequelize.query(`
+          SELECT qualified_quantity, unqualified_quantity
+          FROM purchase_quality_inspection
+          WHERE inspection_number = :inspection_number
+        `, { replacements: { inspection_number }, transaction });
+
+        if (updatedInsp.length > 0) {
+          await sequelize.query(`
+            UPDATE stock_in_detail SET
+              qualified_quantity = :qualified_quantity,
+              unqualified_quantity = :unqualified_quantity,
+              inspect_status = :inspect_status
+            WHERE stock_in_number = :stock_in_number
+              AND item_number = :item_number
+          `, {
+            replacements: {
+              stock_in_number: insp.stock_in_number,
+              item_number: insp.item_number,
+              qualified_quantity: updatedInsp[0].qualified_quantity,
+              unqualified_quantity: updatedInsp[0].unqualified_quantity,
+              inspect_status: `已处理-${defect_handling}`
+            },
+            transaction
+          });
+        }
+      }
+
+      await transaction.commit();
+      res.json(success({ message: `不合格品处理完成（${defect_handling}）` }));
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
+    }
   } catch (err) {
     next(err);
   }

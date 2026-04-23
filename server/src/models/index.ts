@@ -1499,6 +1499,39 @@ export const initDatabase = async () => {
       console.log('purchase_quality_inspection_detail 表迁移完成');
     } catch (e) { console.log('purchase_quality_inspection_detail 表迁移跳过或已存在'); }
 
+    // ======== purchase_quality_inspection 增加不合格品处理字段 ========
+    try {
+      const defectCols = [
+        { name: 'defect_handling', type: 'NVARCHAR(20)', def: "N''" },
+        { name: 'handling_quantity', type: 'DECIMAL(18,4)', def: '0' },
+        { name: 'handling_remark', type: 'NVARCHAR(500)', def: "N''" },
+        { name: 'return_order_number', type: 'NVARCHAR(50)', def: "N''" },
+        { name: 'special_warehouse', type: 'NVARCHAR(100)', def: "N''" }
+      ];
+      for (const col of defectCols) {
+        await sequelize.query(`
+          IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='purchase_quality_inspection' AND COLUMN_NAME='${col.name}')
+          ALTER TABLE purchase_quality_inspection ADD ${col.name} ${col.type} DEFAULT ${col.def}
+        `);
+      }
+      console.log('purchase_quality_inspection 不合格品处理字段迁移完成');
+    } catch (e: any) { console.log('purchase_quality_inspection 不合格品处理字段迁移跳过:', e.message || e); }
+
+    // ======== stock_in_detail 增加检验关联字段 ========
+    try {
+      const siCols = [
+        { name: 'inspection_number', type: 'NVARCHAR(50)', def: "N''" },
+        { name: 'inspect_status', type: 'NVARCHAR(20)', def: "N''" }
+      ];
+      for (const col of siCols) {
+        await sequelize.query(`
+          IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='stock_in_detail' AND COLUMN_NAME='${col.name}')
+          ALTER TABLE stock_in_detail ADD ${col.name} ${col.type} DEFAULT ${col.def}
+        `);
+      }
+      console.log('stock_in_detail 检验关联字段迁移完成');
+    } catch (e: any) { console.log('stock_in_detail 检验关联字段迁移跳过:', e.message || e); }
+
     // ======== 库位管理表 storage_location ========
     try {
       await sequelize.query(`

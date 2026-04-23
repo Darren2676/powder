@@ -112,3 +112,18 @@ export function getPurchaseInspectionSummary(params?: {
 }) {
   return request.get('/quality-report/purchase-inspection-summary', { params })
 }
+
+export function defectHandlingPurchaseInspection(
+  inspection_number: string,
+  data: {
+    defect_handling: string
+    handling_quantity?: number
+    handling_remark?: string
+    return_order_number?: string
+    special_warehouse?: string
+    qualified_quantity?: number
+    unqualified_quantity?: number
+  }
+) {
+  return request.put(`/quality-report/purchase-inspections/${inspection_number}/defect-handling`, data)
+}

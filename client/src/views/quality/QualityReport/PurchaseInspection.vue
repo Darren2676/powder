@@ -11,7 +11,8 @@ import {
   SafetyCertificateOutlined,
   ExclamationCircleOutlined,
   ClockCircleOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  ToolOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import {
@@ -19,7 +20,8 @@ import {
   createPurchaseInspection,
   getPurchaseInspectionDetail,
   updatePurchaseInspection,
-  completePurchaseInspection
+  completePurchaseInspection,
+  defectHandlingPurchaseInspection
 } from '@/api/quality/qualityReport'
 
 // ==================== 列表数据 ====================
@@ -62,7 +64,21 @@ const inspectSaving = ref(false)
 const inspectMode = ref<'view' | 'edit'>('view')
 const inspectData = ref<any>({ header: {}, details: [], options: {} })
 
-// ==================== 加载数据 ====================
+// ==================== 不合格品处理弹窗 ====================
+const defectVisible = ref(false)
+const defectLoading = ref(false)
+const defectRecord = ref<any>({})
+const defectForm = reactive({
+  defect_handling: '' as string,
+  handling_quantity: 0,
+  handling_remark: '',
+  return_order_number: '',
+  special_warehouse: '',
+  qualified_quantity: 0,
+  unqualified_quantity: 0
+})
+
+// ==================== 加载数据 ======================================
 const fetchData = async () => {
   loading.value = true
   try {
@@ -207,7 +223,48 @@ const handleComplete = async (record: any) => {
   }
 }
 
-// ==================== 自动判定 ====================
+// ==================== 不合格品处理 ====================
+const openDefectHandling = (record: any) => {
+  defectRecord.value = record
+  Object.assign(defectForm, {
+    defect_handling: '',
+    handling_quantity: parseFloat(record.unqualified_quantity) || 0,
+    handling_remark: '',
+    return_order_number: '',
+    special_warehouse: '',
+    qualified_quantity: parseFloat(record.qualified_quantity) || 0,
+    unqualified_quantity: parseFloat(record.unqualified_quantity) || 0
+  })
+  defectVisible.value = true
+}
+
+const submitDefectHandling = async () => {
+  if (!defectForm.defect_handling) {
+    message.warning('请选择处理方式')
+    return
+  }
+  defectLoading.value = true
+  try {
+    await defectHandlingPurchaseInspection(defectRecord.value.inspection_number, {
+      defect_handling: defectForm.defect_handling,
+      handling_quantity: defectForm.handling_quantity,
+      handling_remark: defectForm.handling_remark,
+      return_order_number: defectForm.return_order_number,
+      special_warehouse: defectForm.special_warehouse,
+      qualified_quantity: defectForm.qualified_quantity,
+      unqualified_quantity: defectForm.unqualified_quantity
+    })
+    message.success(`不合格品处理完成（${defectForm.defect_handling}）`)
+    defectVisible.value = false
+    fetchData()
+  } catch (e: any) {
+    message.error(e.response?.data?.message || '处理失败')
+  } finally {
+    defectLoading.value = false
+  }
+}
+
+// ==================== 自动判定 ======================================
 const autoJudge = (detail: any) => {
   if (!detail.actual_value || detail.actual_value === '') {
     detail.is_qualified = ''
@@ -281,6 +338,7 @@ const columns = [
   { title: '不合格数量', dataIndex: 'unqualified_quantity', key: 'unqualified_quantity', width: 110, align: 'right' as const },
   { title: '检验方法', dataIndex: 'inspect_method', key: 'inspect_method', width: 90 },
   { title: '检验结论', dataIndex: 'inspect_result', key: 'inspect_result', width: 100 },
+  { title: '处理方式', dataIndex: 'defect_handling', key: 'defect_handling', width: 100 },
   { title: '状态', dataIndex: 'inspect_status', key: 'inspect_status', width: 90 },
   { title: '检验日期', dataIndex: 'inspect_date', key: 'inspect_date', width: 110 },
   { title: '检验员', dataIndex: 'inspector_name', key: 'inspector_name', width: 120 },
@@ -327,6 +385,17 @@ const getResultColor = (result: string) => {
     case '合格': return 'green'
     case '不合格': return 'red'
     case '让步接收': return 'orange'
+    default: return 'default'
+  }
+}
+
+const getHandlingColor = (handling: string) => {
+  switch (handling) {
+    case '挑选': return 'blue'
+    case '拒收': return 'red'
+    case '报废': return 'volcano'
+    case '特采': return 'orange'
+    case '退货': return 'purple'
     default: return 'default'
   }
 }
@@ -465,6 +534,10 @@ onMounted(() => {
             <a-tag v-if="record.inspect_result" :color="getResultColor(record.inspect_result)">{{ record.inspect_result }}</a-tag>
             <span v-else style="color: #ccc;">-</span>
           </template>
+          <template v-else-if="column.key === 'defect_handling'">
+            <a-tag v-if="record.defect_handling" :color="getHandlingColor(record.defect_handling)">{{ record.defect_handling }}</a-tag>
+            <span v-else style="color: #ccc;">-</span>
+          </template>
           <template v-else-if="column.key === 'action'">
             <a-space>
               <a-button type="link" size="small" @click="openInspect(record, 'view')">
@@ -479,6 +552,16 @@ onMounted(() => {
               >
                 <template #icon><EditOutlined /></template>
                 检验
+              </a-button>
+              <a-button
+                v-if="record.inspect_status === '已完成' && record.inspect_result === '不合格' && !record.defect_handling"
+                type="link"
+                size="small"
+                style="color: #fa541c;"
+                @click="openDefectHandling(record)"
+              >
+                <template #icon><ToolOutlined /></template>
+                不合格品处理
               </a-button>
             </a-space>
           </template>
@@ -753,6 +836,86 @@ onMounted(() => {
           </div>
         </div>
       </a-spin>
+    </a-modal>
+
+    <!-- 不合格品处理弹窗 -->
+    <a-modal
+      v-model:open="defectVisible"
+      title="不合格品处理"
+      :confirm-loading="defectLoading"
+      width="600px"
+      @ok="submitDefectHandling"
+    >
+      <div style="margin-top: 16px;">
+        <a-descriptions bordered size="small" :column="2" style="margin-bottom: 16px;">
+          <a-descriptions-item label="检验单号"><b>{{ defectRecord.inspection_number }}</b></a-descriptions-item>
+          <a-descriptions-item label="物料">{{ defectRecord.item_number }} {{ defectRecord.item_name }}</a-descriptions-item>
+          <a-descriptions-item label="不合格数量"><span style="color: #ff4d4f; font-weight: 600;">{{ formatNumber(defectRecord.unqualified_quantity) }}</span></a-descriptions-item>
+          <a-descriptions-item label="合格数量"><span style="color: #52c41a; font-weight: 600;">{{ formatNumber(defectRecord.qualified_quantity) }}</span></a-descriptions-item>
+        </a-descriptions>
+
+        <a-form layout="vertical">
+          <a-form-item label="处理方式" required>
+            <a-radio-group v-model:value="defectForm.defect_handling" button-style="solid">
+              <a-radio-button value="挑选">挑选</a-radio-button>
+              <a-radio-button value="拒收">拒收</a-radio-button>
+              <a-radio-button value="报废">报废</a-radio-button>
+              <a-radio-button value="特采">特采</a-radio-button>
+              <a-radio-button value="退货">退货</a-radio-button>
+            </a-radio-group>
+          </a-form-item>
+
+          <!-- 挑选：显示合格/不合格数量调整 -->
+          <template v-if="defectForm.defect_handling === '挑选'">
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item label="挑选后合格数量">
+                  <a-input-number v-model:value="defectForm.qualified_quantity" :min="0" style="width: 100%;" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item label="挑选后不合格数量">
+                  <a-input-number v-model:value="defectForm.unqualified_quantity" :min="0" style="width: 100%;" />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </template>
+
+          <!-- 特采：显示特采数量和仓库 -->
+          <template v-if="defectForm.defect_handling === '特采'">
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item label="特采数量">
+                  <a-input-number v-model:value="defectForm.handling_quantity" :min="0" style="width: 100%;" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item label="特采入库仓库">
+                  <a-input v-model:value="defectForm.special_warehouse" placeholder="输入特采入库仓库" />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </template>
+
+          <!-- 报废：显示报废数量 -->
+          <template v-if="defectForm.defect_handling === '报废'">
+            <a-form-item label="报废数量">
+              <a-input-number v-model:value="defectForm.handling_quantity" :min="0" style="width: 100%;" />
+            </a-form-item>
+          </template>
+
+          <!-- 退货：显示退货单号 -->
+          <template v-if="defectForm.defect_handling === '退货'">
+            <a-form-item label="关联退货单号">
+              <a-input v-model:value="defectForm.return_order_number" placeholder="输入退货单号（可选）" />
+            </a-form-item>
+          </template>
+
+          <a-form-item label="处理备注">
+            <a-textarea v-model:value="defectForm.handling_remark" :rows="2" placeholder="输入处理备注" />
+          </a-form-item>
+        </a-form>
+      </div>
     </a-modal>
   </div>
 </template>

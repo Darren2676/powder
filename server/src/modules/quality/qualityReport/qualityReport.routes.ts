@@ -14,7 +14,8 @@ import {
   getPurchaseInspectionDetail,
   updatePurchaseInspection,
   completePurchaseInspection,
-  getPurchaseInspectionSummary
+  getPurchaseInspectionSummary,
+  defectHandlingPurchaseInspection
 } from '../../purchasing/purchaseInspection/purchaseInspection.controller';
 
 const router = Router();
@@ -53,5 +54,8 @@ router.put('/purchase-inspections/:inspection_number', authenticate, validateUpd
 
 // 完成检验
 router.put('/purchase-inspections/:inspection_number/complete', authenticate, completePurchaseInspection);
+
+// 不合格品处理
+router.put('/purchase-inspections/:inspection_number/defect-handling', authenticate, defectHandlingPurchaseInspection);
 
 export default router;
