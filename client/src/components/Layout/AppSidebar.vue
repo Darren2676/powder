@@ -2,11 +2,10 @@
 import { computed, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '@/store/auth';
+import { useMenuStore } from '@/store/menu';
+import type { MenuItem } from '@/store/menu';
 import {
   DashboardOutlined,
-  FileTextOutlined,
-  PlusCircleOutlined,
-  ContainerOutlined,
   TeamOutlined,
   AppstoreOutlined,
   ShoppingOutlined,
@@ -26,7 +25,47 @@ import {
   ApartmentOutlined,
   NodeIndexOutlined,
   BranchesOutlined,
-  ProfileOutlined
+  ProfileOutlined,
+  FileDoneOutlined,
+  UnorderedListOutlined,
+  InboxOutlined,
+  FormOutlined,
+  SafetyCertificateOutlined,
+  BarChartOutlined,
+  PieChartOutlined,
+  PrinterOutlined,
+  SendOutlined,
+  CarOutlined,
+  ContainerOutlined,
+  ImportOutlined,
+  ExportOutlined,
+  SwapOutlined,
+  CloudOutlined,
+  ThunderboltOutlined,
+  AccountBookOutlined,
+  FileTextOutlined,
+  ExclamationCircleOutlined,
+  SettingOutlined,
+  LineChartOutlined,
+  CalculatorOutlined,
+  CalendarOutlined,
+  PauseCircleOutlined,
+  CheckSquareOutlined,
+  MedicineBoxOutlined,
+  StockOutlined,
+  FundOutlined,
+  AuditOutlined,
+  FileSearchOutlined,
+  ReconciliationOutlined,
+  PlusCircleOutlined,
+  OrderedListOutlined,
+  TableOutlined,
+  PartitionOutlined,
+  ProjectOutlined,
+  AppstoreAddOutlined,
+  HddOutlined,
+  ClusterOutlined,
+  MenuOutlined
 } from '@ant-design/icons-vue';
 
 interface Props {
@@ -38,313 +77,323 @@ const props = defineProps<Props>();
 const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
+const menuStore = useMenuStore();
 
-const allSubMenuKeys = ['basic-data', 'order-management', 'product-data', 'production-data', 'equipment-management'];
 const openKeys = ref<string[]>([]);
 let preCollapsedOpenKeys: string[] = [];
 
-const pathMap: Record<string, string> = {
+// 图标名称到组件的映射
+const iconMap: Record<string, any> = {
+  DashboardOutlined, TeamOutlined, AppstoreOutlined, ShoppingOutlined,
+  DatabaseOutlined, ScheduleOutlined, UserOutlined, ShopOutlined,
+  IdcardOutlined, ClockCircleOutlined, UsergroupAddOutlined, HomeOutlined,
+  DeploymentUnitOutlined, TagsOutlined, FolderOutlined, GroupOutlined,
+  ToolOutlined, ApartmentOutlined, NodeIndexOutlined, BranchesOutlined,
+  ProfileOutlined, FileDoneOutlined, UnorderedListOutlined, InboxOutlined,
+  FormOutlined, SafetyCertificateOutlined, BarChartOutlined, PieChartOutlined,
+  PrinterOutlined, SendOutlined, CarOutlined, ContainerOutlined,
+  ImportOutlined, ExportOutlined, SwapOutlined, CloudOutlined,
+  ThunderboltOutlined, AccountBookOutlined, FileTextOutlined,
+  ExclamationCircleOutlined, SettingOutlined, LineChartOutlined,
+  CalculatorOutlined, CalendarOutlined, PauseCircleOutlined,
+  CheckSquareOutlined, MedicineBoxOutlined, StockOutlined, FundOutlined,
+  AuditOutlined, FileSearchOutlined, ReconciliationOutlined,
+  PlusCircleOutlined, OrderedListOutlined, TableOutlined, PartitionOutlined,
+  ProjectOutlined, AppstoreAddOutlined, HddOutlined, ClusterOutlined,
+  MenuOutlined
+};
+
+// 获取图标组件
+const getIcon = (iconName: string | null) => {
+  if (!iconName || !iconMap[iconName]) return null;
+  return iconMap[iconName];
+};
+
+// 路由映射表（从菜单key到路由路径的映射，用于fallback）
+const keyToRoute: Record<string, string> = {
   'dashboard': '/',
-  'tickets': '/tickets',
-  'create-ticket': '/tickets/create',
-  'item-masters': '/item-masters',
-  'customers': '/customers',
-  'suppliers': '/suppliers',
+  'my-tasks': '/my-tasks',
+  'sales-orders': '/sales-orders',
+  'sales-order-details': '/sales-order-details',
+  'forecasts': '/forecasts',
+  'forecast-details': '/forecast-details',
+  'shipping-requests': '/shipping-requests',
+  'pending-shipments': '/pending-shipments',
+  'shipping-orders-list': '/shipping-orders-list',
+  'pending-request-details': '/pending-request-details',
+  'shipping-order-details': '/shipping-order-details',
+  'return-orders': '/return-orders',
+  'return-order-details': '/return-order-details',
+  'sales-report': '/sales-report',
+  'sales-prices': '/sales-prices',
+  'mps-report': '/mps-report',
   'plans': '/plans',
-  'users': '/users',
-  'employees': '/employees',
-  'schedules': '/schedules',
-  'groups': '/groups',
-  'workshops': '/workshops',
-  'productionlines': '/productionlines',
+  'mrp': '/mrp',
+  'mrp-history': '/mrp-history',
+  'orders': '/orders',
+  'gantt': '/gantt',
+  'process-tasks': '/process-tasks',
+  'material-preparations': '/material-preparations',
+  'material-preparation-by-process': '/material-preparation-by-process',
+  'material-issue': '/material-issue',
+  'material-issue-by-process': '/material-issue-by-process',
+  'work-reports': '/work-reports',
+  'continuous-report': '/continuous-report',
+  'dispatch-print': '/dispatch-print',
+  'outsourcing-reqs': '/outsourcing-reqs',
+  'outsourcing-orders': '/outsourcing-orders',
+  'wip-by-order': '/wip-by-order',
+  'wip-by-work-center': '/wip-by-work-center',
+  'wip-lineside-transactions': '/wip-lineside-transactions',
+  'fg-inventory': '/fg-inventory',
+  'fg-inbound': '/fg-inbound',
+  'fg-inbound-orders': '/fg-inbound-orders',
+  'fg-outbound': '/fg-outbound',
+  'fg-transactions': '/fg-transactions',
+  'fg-abnormal-io': '/fg-abnormal-io',
+  'fg-stock-count': '/fg-stock-count',
+  'fg-stock-count-report': '/fg-stock-count-report',
+  'fg-monthly-report': '/fg-monthly-report',
+  'fg-return-inbound': '/fg-return-inbound',
+  'mw-inventory': '/mw-inventory',
+  'mw-inbound': '/mw-inbound',
+  'mw-outbound': '/mw-outbound',
+  'mw-transactions': '/mw-transactions',
+  'mw-safety-stock': '/mw-safety-stock',
+  'stock-ins': '/stock-ins',
+  'purchase-reqs': '/purchase-reqs',
+  'purchase-req-details': '/purchase-req-details',
+  'purchase-orders': '/purchase-orders',
+  'purchase-prices': '/purchase-prices',
+  'purchase-calc': '/purchase-calc',
+  'piece-rate-prices': '/piece-rate-prices',
+  'defect-reasons': '/defect-reasons',
+  'defect-classes': '/defect-classes',
+  'defects': '/defects',
+  'quality-characteristics': '/quality-characteristics',
+  'inspection-specs-production': '/inspection-specs-production',
+  'inspection-specs-incoming': '/inspection-specs-incoming',
+  'inspection-plans': '/inspection-plans',
+  'incoming-inspect-plans': '/incoming-inspect-plans',
+  'quality-report': '/quality-report',
+  'product-quality-summary': '/product-quality-summary',
+  'purchase-inspection': '/purchase-inspection',
+  'production-inspections': '/production-inspections',
+  'xhy-inspect': '/xhy-inspect',
+  'xhy-inspect-lines': '/xhy-inspect-lines',
+  'xhy-inspect-summary': '/xhy-inspect-summary',
+  'xhy-packaging-quality': '/xhy-packaging-quality',
+  'xhy-inventory': '/xhy-inventory',
+  'xhy-inventory-txn': '/xhy-inventory-txn',
+  'batch-trace': '/batch-trace',
+  'accounting-periods': '/accounting-periods',
+  'equipments': '/equipments',
+  'moulds': '/moulds',
+  'mould-maintenance': '/mould-maintenance',
+  'equipment-downtime': '/equipment-downtime',
+  'equipment-maintenance-plan': '/equipment-maintenance-plan',
+  'equipment-oee': '/equipment-oee',
+  'item-masters': '/item-masters',
   'materia-properties': '/materia-properties',
   'material-classes': '/material-classes',
   'product-classes': '/product-classes',
-  'equipments': '/equipments',
-  'moulds': '/moulds',
-  'procedures': '/procedures',
-  'work-centers': '/work-centers',
-  'routings': '/routings',
-  'routing-masters': '/routing-masters',
-  'warehouses': '/warehouses',
-  'tasks': '/tasks',
   'boms': '/boms',
   'bom-tree': '/bom-tree',
-  'units': '/units'
+  'mfg-boms': '/mfg-boms',
+  'mfg-bom-tree': '/mfg-bom-tree',
+  'procedures': '/procedures',
+  'work-centers': '/work-centers',
+  'routing-masters': '/routing-masters',
+  'customers': '/customers',
+  'suppliers': '/suppliers',
+  'employees': '/employees',
+  'schedules': '/schedules',
+  'teams': '/teams',
+  'workshops': '/workshops',
+  'productionlines': '/productionlines',
+  'warehouses': '/warehouses',
+  'units': '/units',
+  'storage-locations': '/storage-locations',
+  'logistics-companies': '/logistics-companies',
+  'customer-material-mapping': '/customer-material-mapping',
+  'users': '/users',
+  'roles': '/roles',
+  'permissions': '/permissions',
+  'departments': '/departments',
+  'workflow': '/workflow',
 };
 
-const onOpenChange = (keys: string[]) => {
-  openKeys.value = keys;
+// 从路由路径查找对应的菜单key
+const findKeyByPath = (path: string): string => {
+  const findKey = (items: MenuItem[]): string | null => {
+    for (const item of items) {
+      if (item.route && path === item.route) return item.key;
+      if (item.route && path.startsWith(item.route + '/')) return item.key;
+      if (item.children) {
+        const childKey = findKey(item.children);
+        if (childKey) return childKey;
+      }
+    }
+    return null;
+  };
+  const key = findKey(menuStore.menuTree);
+  if (key) return key;
+  // fallback: 用路由路径反查key
+  const found = Object.entries(keyToRoute).find(([, v]) => v === path);
+  if (found) return found[0];
+  const lastPart = path.split('/').filter(Boolean).pop();
+  return lastPart || 'dashboard';
 };
 
-watch(() => props.collapsed, (collapsed) => {
-  if (collapsed) {
+// 当前选中的菜单key（使用 ref 而非 computed，避免 a-menu 因数组引用变化频繁重渲染导致内部状态混乱）
+const selectedKeys = ref<string[]>([findKeyByPath(route.path)]);
+
+// 展开/收起逻辑
+watch(() => props.collapsed, (val) => {
+  if (val) {
     preCollapsedOpenKeys = [...openKeys.value];
     openKeys.value = [];
   } else {
-    openKeys.value = [...preCollapsedOpenKeys];
+    openKeys.value = preCollapsedOpenKeys;
   }
 });
 
-const selectedKeys = computed(() => {
-  const path = route.path;
-  if (path === '/') return ['dashboard'];
-  if (path.startsWith('/tickets/create')) return ['create-ticket'];
-  if (path.startsWith('/tickets')) return ['tickets'];
-  if (path.startsWith('/users')) return ['users'];
-  if (path.startsWith('/item-masters')) return ['item-masters'];
-  if (path.startsWith('/customers')) return ['customers'];
-  if (path.startsWith('/suppliers')) return ['suppliers'];
-  if (path.startsWith('/plans')) return ['plans'];
-  if (path.startsWith('/employees')) return ['employees'];
-  if (path.startsWith('/schedules')) return ['schedules'];
-  if (path.startsWith('/groups')) return ['groups'];
-  if (path.startsWith('/workshops')) return ['workshops'];
-  if (path.startsWith('/productionlines')) return ['productionlines'];
-  if (path.startsWith('/materia-properties')) return ['materia-properties'];
-  if (path.startsWith('/material-classes')) return ['material-classes'];
-  if (path.startsWith('/product-classes')) return ['product-classes'];
-  if (path.startsWith('/equipments')) return ['equipments'];
-  if (path.startsWith('/moulds')) return ['moulds'];
-  if (path.startsWith('/procedures')) return ['procedures'];
-  if (path.startsWith('/work-centers')) return ['work-centers'];
-  if (path.startsWith('/routing-masters')) return ['routing-masters'];
-  if (path.startsWith('/routings')) return ['routings'];
-  if (path.startsWith('/warehouses')) return ['warehouses'];
-  if (path.startsWith('/tasks')) return ['tasks'];
-  if (path.startsWith('/bom-tree')) return ['bom-tree'];
-  if (path.startsWith('/boms')) return ['boms'];
-  if (path.startsWith('/units')) return ['units'];
-  return [];
-});
+watch(() => route.path, (newPath) => {
+  // 更新选中的菜单key（仅在 key 变化时更新，避免不必要的 a-menu 重渲染）
+  const newKey = findKeyByPath(newPath);
+  if (selectedKeys.value[0] !== newKey) {
+    selectedKeys.value = [newKey];
+  }
+
+  // 自动展开父级菜单
+  const collectParentKeys = (items: MenuItem[], parents: string[] = []): string[] => {
+    for (const item of items) {
+      if (item.route && (newPath === item.route || newPath.startsWith(item.route + '/'))) {
+        return parents;
+      }
+      if (item.children) {
+        const result = collectParentKeys(item.children, [...parents, item.key]);
+        if (result.length > 0) return result;
+        if (item.children.some(c => c.route && (newPath === c.route || newPath.startsWith(c.route + '/')))) {
+          return [...parents, item.key];
+        }
+      }
+    }
+    return [];
+  };
+  const parentKeys = collectParentKeys(menuStore.menuTree);
+  for (const key of parentKeys) {
+    if (!openKeys.value.includes(key)) {
+      openKeys.value.push(key);
+    }
+  }
+}, { immediate: true });
+
+const handleOpenChange = (keys: string[]) => {
+  openKeys.value = keys;
+};
 
 const handleMenuClick = ({ key }: { key: string }) => {
-  if (pathMap[key]) {
-    router.push(pathMap[key]);
+  let targetRoute: string | null = null;
+
+  // 1. 特殊key处理
+  if (key === 'dashboard') {
+    targetRoute = '/';
+  } else if (key === 'my-tasks') {
+    targetRoute = '/my-tasks';
+  } else {
+    // 2. 从菜单树查找路由
+    const findRoute = (items: MenuItem[]): string | null => {
+      for (const item of items) {
+        if (item.key === key && item.route) return item.route;
+        if (item.children) {
+          const r = findRoute(item.children);
+          if (r) return r;
+        }
+      }
+      return null;
+    };
+    targetRoute = findRoute(menuStore.menuTree);
+
+    // 3. Fallback: 从静态映射表查找
+    if (!targetRoute && keyToRoute[key]) {
+      targetRoute = keyToRoute[key];
+    }
+
+    // 4. 最终fallback: 尝试用 /key 作为路径
+    if (!targetRoute && key && !key.includes('-management') && !key.includes('-data') && key !== 'system') {
+      targetRoute = '/' + key;
+    }
+  }
+
+  // 立即更新选中状态，提供即时视觉反馈
+  if (selectedKeys.value[0] !== key) {
+    selectedKeys.value = [key];
+  }
+
+  // 仅在目标路由与当前路由不同时才导航，避免 NavigationDuplicated 错误
+  if (targetRoute && targetRoute !== route.path) {
+    router.push(targetRoute).catch(() => { /* 忽略 Vue Router 4 的导航失败（如被守卫中断） */ });
   }
 };
 </script>
 
 <template>
   <a-menu
-    theme="dark"
     mode="inline"
-    :open-keys="openKeys"
     :selected-keys="selectedKeys"
+    :open-keys="openKeys"
+    @openChange="handleOpenChange"
     @click="handleMenuClick"
-    @openChange="onOpenChange"
+    style="height: 100%; border-right: none;"
   >
+    <!-- Dashboard -->
     <a-menu-item key="dashboard">
-      <router-link :to="pathMap['dashboard']" class="menu-link" @click.prevent>
-        <DashboardOutlined />
-        <span>仪表板</span>
-      </router-link>
-    </a-menu-item>
-    
-    <a-sub-menu key="order-management">
-      <template #icon>
-        <ContainerOutlined />
-      </template>
-      <template #title>订单管理</template>
-      <a-menu-item key="create-ticket">
-        <router-link :to="pathMap['create-ticket']" class="menu-link" @click.prevent>
-          <PlusCircleOutlined />
-          <span>创建工单</span>
-        </router-link>
-      </a-menu-item>
-      <a-menu-item key="tickets">
-        <router-link :to="pathMap['tickets']" class="menu-link" @click.prevent>
-          <FileTextOutlined />
-          <span>工单管理</span>
-        </router-link>
-      </a-menu-item>
-    </a-sub-menu>
-
-    <a-menu-item key="plans">
-      <router-link :to="pathMap['plans']" class="menu-link" @click.prevent>
-        <ScheduleOutlined />
-        <span>计划管理</span>
-      </router-link>
+      <DashboardOutlined />
+      <span>仪表板</span>
     </a-menu-item>
 
-    <a-menu-item key="tasks">
-      <router-link :to="pathMap['tasks']" class="menu-link" @click.prevent>
-        <ScheduleOutlined />
-        <span>生产任务单</span>
-      </router-link>
+    <!-- 我的待办 -->
+    <a-menu-item key="my-tasks">
+      <FileDoneOutlined />
+      <span>我的待办</span>
     </a-menu-item>
-    
-    <a-sub-menu key="basic-data">
-      <template #icon>
-        <DatabaseOutlined />
-      </template>
-      <template #title>基础数据</template>
-      <a-sub-menu key="production-data">
+
+    <!-- 动态菜单 - 递归渲染 -->
+    <template v-for="menu in menuStore.menuTree" :key="menu.key">
+      <a-sub-menu v-if="menu.children && menu.children.length > 0" :key="menu.key">
         <template #icon>
-          <DeploymentUnitOutlined />
+          <component :is="getIcon(menu.icon)" v-if="getIcon(menu.icon)" />
         </template>
-        <template #title>生产数据管理</template>
-        <a-menu-item key="schedules">
-          <router-link :to="pathMap['schedules']" class="menu-link" @click.prevent>
-            <ClockCircleOutlined />
-            <span>班次管理</span>
-          </router-link>
-        </a-menu-item>
-        <a-menu-item key="groups">
-          <router-link :to="pathMap['groups']" class="menu-link" @click.prevent>
-            <UsergroupAddOutlined />
-            <span>班组管理</span>
-          </router-link>
-        </a-menu-item>
-        <a-menu-item key="workshops">
-          <router-link :to="pathMap['workshops']" class="menu-link" @click.prevent>
-            <HomeOutlined />
-            <span>车间管理</span>
-          </router-link>
-        </a-menu-item>
-        <a-menu-item key="productionlines">
-          <router-link :to="pathMap['productionlines']" class="menu-link" @click.prevent>
-            <DeploymentUnitOutlined />
-            <span>生产线管理</span>
-          </router-link>
-        </a-menu-item>
-        <a-menu-item key="warehouses">
-          <router-link :to="pathMap['warehouses']" class="menu-link" @click.prevent>
-            <AppstoreOutlined />
-            <span>仓库管理</span>
-          </router-link>
-        </a-menu-item>
-        <a-menu-item key="units">
-          <router-link :to="pathMap['units']" class="menu-link" @click.prevent>
-            <ProfileOutlined />
-            <span>单位管理</span>
-          </router-link>
-        </a-menu-item>
-      </a-sub-menu>
-      <a-sub-menu key="product-data">
-        <template #icon>
-          <ShoppingOutlined />
+        <template #title>{{ menu.name }}</template>
+
+        <template v-for="child in menu.children" :key="child.key">
+          <a-sub-menu v-if="child.children && child.children.length > 0" :key="child.key">
+            <template #icon>
+              <component :is="getIcon(child.icon)" v-if="getIcon(child.icon)" />
+            </template>
+            <template #title>{{ child.name }}</template>
+
+            <a-menu-item v-for="grandChild in child.children" :key="grandChild.key">
+              <component :is="getIcon(grandChild.icon)" v-if="getIcon(grandChild.icon)" />
+              <span>{{ grandChild.name }}</span>
+            </a-menu-item>
+          </a-sub-menu>
+
+          <a-menu-item v-else :key="child.key">
+            <component :is="getIcon(child.icon)" v-if="getIcon(child.icon)" />
+            <span>{{ child.name }}</span>
+          </a-menu-item>
         </template>
-        <template #title>产品数据管理</template>
-        <a-menu-item key="item-masters">
-          <router-link :to="pathMap['item-masters']" class="menu-link" @click.prevent>
-            <DatabaseOutlined />
-            <span>物品主数据</span>
-          </router-link>
-        </a-menu-item>
-        <a-menu-item key="boms">
-          <router-link :to="pathMap['boms']" class="menu-link" @click.prevent>
-            <ProfileOutlined />
-            <span>BOM物料清单</span>
-          </router-link>
-        </a-menu-item>
-        <a-menu-item key="bom-tree">
-          <router-link :to="pathMap['bom-tree']" class="menu-link" @click.prevent>
-            <ApartmentOutlined />
-            <span>BOM结构树</span>
-          </router-link>
-        </a-menu-item>
-        <a-menu-item key="materia-properties">
-          <router-link :to="pathMap['materia-properties']" class="menu-link" @click.prevent>
-            <TagsOutlined />
-            <span>物料属性管理</span>
-          </router-link>
-        </a-menu-item>
-        <a-menu-item key="material-classes">
-          <router-link :to="pathMap['material-classes']" class="menu-link" @click.prevent>
-            <FolderOutlined />
-            <span>物料分类管理</span>
-          </router-link>
-        </a-menu-item>
-        <a-menu-item key="product-classes">
-          <router-link :to="pathMap['product-classes']" class="menu-link" @click.prevent>
-            <GroupOutlined />
-            <span>产品分类管理</span>
-          </router-link>
-        </a-menu-item>
-        <a-menu-item key="procedures">
-          <router-link :to="pathMap['procedures']" class="menu-link" @click.prevent>
-            <NodeIndexOutlined />
-            <span>标准工序</span>
-          </router-link>
-        </a-menu-item>
-        <a-menu-item key="work-centers">
-          <router-link :to="pathMap['work-centers']" class="menu-link" @click.prevent>
-            <ApartmentOutlined />
-            <span>工作中心</span>
-          </router-link>
-        </a-menu-item>
-        <a-menu-item key="routings">
-          <router-link :to="pathMap['routings']" class="menu-link" @click.prevent>
-            <BranchesOutlined />
-            <span>工艺路线</span>
-          </router-link>
-        </a-menu-item>
-        <a-menu-item key="routing-masters">
-          <router-link :to="pathMap['routing-masters']" class="menu-link" @click.prevent>
-            <BranchesOutlined />
-            <span>工艺路线（主从）</span>
-          </router-link>
-        </a-menu-item>
       </a-sub-menu>
-      <a-menu-item key="customers">
-        <router-link :to="pathMap['customers']" class="menu-link" @click.prevent>
-          <UserOutlined />
-          <span>客户管理</span>
-        </router-link>
+
+      <a-menu-item v-else :key="menu.key">
+        <component :is="getIcon(menu.icon)" v-if="getIcon(menu.icon)" />
+        <span>{{ menu.name }}</span>
       </a-menu-item>
-      <a-menu-item key="suppliers">
-        <router-link :to="pathMap['suppliers']" class="menu-link" @click.prevent>
-          <ShopOutlined />
-          <span>供应商管理</span>
-        </router-link>
-      </a-menu-item>
-      <a-menu-item key="employees">
-        <router-link :to="pathMap['employees']" class="menu-link" @click.prevent>
-          <IdcardOutlined />
-          <span>员工管理</span>
-        </router-link>
-      </a-menu-item>
-    </a-sub-menu>
-    
-    <a-sub-menu key="equipment-management">
-      <template #icon>
-        <ToolOutlined />
-      </template>
-      <template #title>设备管理</template>
-      <a-menu-item key="equipments">
-        <router-link :to="pathMap['equipments']" class="menu-link" @click.prevent>
-          <ToolOutlined />
-          <span>设备台帐管理</span>
-        </router-link>
-      </a-menu-item>
-      <a-menu-item key="moulds">
-        <router-link :to="pathMap['moulds']" class="menu-link" @click.prevent>
-          <AppstoreOutlined />
-          <span>模具管理</span>
-        </router-link>
-      </a-menu-item>
-    </a-sub-menu>
-    
-    <a-menu-item v-if="authStore.isAdmin" key="users">
-      <router-link :to="pathMap['users']" class="menu-link" @click.prevent>
-        <TeamOutlined />
-        <span>用户管理</span>
-      </router-link>
-    </a-menu-item>
+    </template>
   </a-menu>
 </template>
 
 <style scoped>
-.menu-link {
-  color: inherit;
-  text-decoration: none;
-  display: inline;
-}
-
-.menu-link:hover,
-.menu-link:focus {
-  color: inherit;
-  text-decoration: none;
-}
 </style>
