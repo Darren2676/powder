@@ -81,16 +81,16 @@ export const createShippingOrder = async (req: Request, res: Response, next: Nex
 
       const shipping_order_number = await generateShippingOrderNumber(transaction);
 
-      // 1. 插入发货单主表 (status = 待发货)
+      // 1. 插入发货单主表 (status = 待发货, 关联发货申请)
       await sequelize.query(`
         INSERT INTO shipping_order
-          (shipping_order_number, customer_number, customer_name,
+          (shipping_order_number, request_number, customer_number, customer_name,
            warehouse_number, warehouse_name, shipping_date, status,
            carrier, tracking_number, freight,
            shipping_address, contact_person, contact_phone,
            remark, creation_man, creation_date)
         VALUES
-          (:shipping_order_number, :customer_number, :customer_name,
+          (:shipping_order_number, :request_number, :customer_number, :customer_name,
            :warehouse_number, :warehouse_name, GETDATE(), N'待发货',
            :carrier, :tracking_number, :freight,
            :shipping_address, :contact_person, :contact_phone,
@@ -98,6 +98,7 @@ export const createShippingOrder = async (req: Request, res: Response, next: Nex
       `, {
         replacements: {
           shipping_order_number,
+          request_number: b.request_number,
           customer_number: b.customer_number || reqRows[0].customer_number || '',
           customer_name: b.customer_name || reqRows[0].customer_name || '',
           warehouse_number: b.warehouse_number || '',
@@ -171,6 +172,14 @@ export const createShippingOrder = async (req: Request, res: Response, next: Nex
               transaction
             });
           }
+        }
+
+        // 累加申请明细 delivered_quantity
+        if (reqDetail?.id) {
+          await sequelize.query(
+            `UPDATE shipping_request_detail SET delivered_quantity = ISNULL(delivered_quantity, 0) + :qty WHERE id = :id`,
+            { replacements: { qty: Number(d.quantity) || 0, id: reqDetail.id }, transaction }
+          );
         }
       }
 
@@ -518,6 +527,23 @@ export const cancelShippingOrder = async (req: Request, res: Response, next: Nex
         `UPDATE shipping_order SET status = N'已取消' WHERE shipping_order_number = :sn`,
         { replacements: { sn: shipping_order_number }, transaction }
       );
+
+      // 4.1 扣减申请明细 delivered_quantity
+      for (const d of soDetails) {
+        if (d.request_number) {
+          await sequelize.query(`
+            UPDATE shipping_request_detail
+            SET delivered_quantity = ISNULL(delivered_quantity, 0) - :qty
+            WHERE request_number = :rn AND sales_detail_id = :sid
+          `, {
+            replacements: {
+              qty: Number(d.quantity) || 0,
+              rn: d.request_number,
+              sid: d.sales_detail_id || 0
+            }, transaction
+          });
+        }
+      }
 
       // 5. 回写销售订单明细：如果是已发货状态，需扣减 shipped_quantity
       if (currentStatus === '已发货') {

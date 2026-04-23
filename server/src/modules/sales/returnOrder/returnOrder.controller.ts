@@ -449,33 +449,115 @@ export const remove = async (req: Request, res: Response, next: NextFunction) =>
   } catch (err) { next(err); }
 };
 
-// ==================== 确认退货（简化版，库存操作由退货入库处理） ====================
+// ==================== 确认退货（含回写 refunded_quantity + 重算 shipping_status） ====================
 export const confirm = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { return_order_number } = req.params;
     const { confirm_remark = '' } = req.body;
     const operator = (req as any).user?.username || '';
 
-    const [headerRows]: any = await sequelize.query(
-      `SELECT * FROM return_order WHERE return_order_number = :rn`,
-      { replacements: { rn: return_order_number } }
-    );
-    if (headerRows.length === 0) {
-      res.status(404).json({ success: false, message: '退货单不存在' }); return;
-    }
-    if (headerRows[0].approval_status !== '已审批') {
-      res.status(400).json({ success: false, message: '只有已审批状态可以确认退货' }); return;
-    }
+    const transaction = await sequelize.transaction();
+    try {
+      // 1. 校验退货单状态（加锁）
+      const [headerRows]: any = await sequelize.query(
+        `SELECT * FROM return_order WITH (UPDLOCK) WHERE return_order_number = :rn`,
+        { replacements: { rn: return_order_number }, transaction }
+      );
+      if (headerRows.length === 0) {
+        await transaction.rollback();
+        res.status(404).json({ success: false, message: '退货单不存在' }); return;
+      }
+      if (headerRows[0].status === '已确认') {
+        await transaction.rollback();
+        res.status(400).json({ success: false, message: '该退货单已确认' }); return;
+      }
+      if (headerRows[0].approval_status !== '已审批') {
+        await transaction.rollback();
+        res.status(400).json({ success: false, message: '只有已审批状态可以确认退货' }); return;
+      }
 
-    await sequelize.query(`
-      UPDATE return_order SET status = N'已确认',
-        confirmed_by = :confirmed_by, confirmed_date = GETDATE(), confirm_remark = :confirm_remark
-      WHERE return_order_number = :rn
-    `, {
-      replacements: { rn: return_order_number, confirmed_by: operator, confirm_remark }
-    });
+      // 2. 更新退货单状态
+      await sequelize.query(`
+        UPDATE return_order SET status = N'已确认',
+          confirmed_by = :confirmed_by, confirmed_date = GETDATE(), confirm_remark = :confirm_remark
+        WHERE return_order_number = :rn
+      `, {
+        replacements: { rn: return_order_number, confirmed_by: operator, confirm_remark },
+        transaction
+      });
 
-    res.json(success(null, '退货确认成功'));
+      // 3. 查询退货单明细（用于回写）
+      const [rtDetails]: any = await sequelize.query(
+        `SELECT * FROM return_order_detail WHERE return_order_number = :rn`,
+        { replacements: { rn: return_order_number }, transaction }
+      );
+
+      // 4. 回写 sales_order_detail.refunded_quantity：累加退货数量
+      for (const d of rtDetails) {
+        if (d.sales_detail_id && d.sales_detail_id > 0) {
+          const qty = Number(d.return_quantity) || 0;
+          await sequelize.query(
+            `UPDATE sales_order_detail SET refunded_quantity = ISNULL(refunded_quantity, 0) + :qty WHERE id = :id`,
+            { replacements: { qty, id: d.sales_detail_id }, transaction }
+          );
+        }
+      }
+
+      // 5. 重新计算各 sales_order_detail 的 shipping_status
+      const salesDetailIds = [...new Set(
+        rtDetails
+          .map((d: any) => d.sales_detail_id)
+          .filter((id: number) => id > 0)
+      )];
+
+      for (const detailId of salesDetailIds) {
+        const [detailRows]: any = await sequelize.query(
+          `SELECT order_quantity, ISNULL(shipped_quantity, 0) as shipped_quantity,
+                 ISNULL(refunded_quantity, 0) as refunded_quantity
+           FROM sales_order_detail WHERE id = :id`,
+          { replacements: { id: detailId }, transaction }
+        );
+        if (detailRows.length === 0) continue;
+
+        const orderQty = Number(detailRows[0].order_quantity) || 0;
+        const shippedQty = Number(detailRows[0].shipped_quantity) || 0;
+        const refundedQty = Number(detailRows[0].refunded_quantity) || 0;
+        // 实际净发 = shipped - refunded
+        const netShipped = shippedQty - refundedQty;
+
+        let newStatus = '未申请';
+        if (netShipped > 0) {
+          if (netShipped >= orderQty) {
+            newStatus = netShipped > orderQty ? '超额发货' : '全部发货';
+          } else {
+            newStatus = '部分发货';
+          }
+        } else {
+          // 净发为0，看是否有申请
+          const [aggRows]: any = await sequelize.query(`
+            SELECT ISNULL(SUM(srd.ship_quantity), 0) as total_applied
+            FROM shipping_request_detail srd
+            INNER JOIN shipping_request sr ON sr.request_number = srd.request_number
+            WHERE srd.sales_detail_id = :detailId AND sr.status != N'已取消'
+          `, { replacements: { detailId }, transaction });
+          const totalApplied = Number(aggRows[0]?.total_applied) || 0;
+          if (totalApplied > 0) {
+            newStatus = totalApplied >= orderQty ? '全部发货' : '部分发货';
+          }
+        }
+
+        await sequelize.query(
+          `UPDATE sales_order_detail SET shipping_status = :status WHERE id = :id`,
+          { replacements: { status: newStatus, id: detailId }, transaction }
+        );
+      }
+
+      await transaction.commit();
+      res.json(success(null, '退货确认成功'));
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
+    }
   } catch (err) { next(err); }
 };
 
