@@ -1,0 +1,72 @@
+[
+  {
+    "id": 2,
+    "permission_name": "生产计划",
+    "permission_code": "planning",
+    "parent_id": null,
+    "menu_key": "production-planning",
+    "route_path": null,
+    "sort_order": 2,
+    "permission_type": "menu"
+  },
+  {
+    "id": 3,
+    "permission_name": "生产管理",
+    "permission_code": "production",
+    "parent_id": null,
+    "menu_key": "production-management",
+    "route_path": null,
+    "sort_order": 3,
+    "permission_type": "menu"
+  },
+  {
+    "id": 19,
+    "permission_name": "生产计划",
+    "permission_code": "plans",
+    "parent_id": 2,
+    "menu_key": "plans",
+    "route_path": "/plans",
+    "sort_order": 2,
+    "permission_type": "page"
+  },
+  {
+    "id": 49,
+    "permission_name": "设备保养计划",
+    "permission_code": "equipment-maintenance-plan",
+    "parent_id": 8,
+    "menu_key": "equipment-maintenance-plan",
+    "route_path": "/equipment-maintenance-plan",
+    "sort_order": 5,
+    "permission_type": "page"
+  },
+  {
+    "id": 72,
+    "permission_name": "MRP管理",
+    "permission_code": "mrp-management",
+    "parent_id": 2,
+    "menu_key": "mrp-management",
+    "route_path": null,
+    "sort_order": 2,
+    "permission_type": "menu"
+  },
+  {
+    "id": 74,
+    "permission_name": "在制管理",
+    "permission_code": "wip-management",
+    "parent_id": 3,
+    "menu_key": "wip-management",
+    "route_path": null,
+    "sort_order": 3,
+    "permission_type": "menu"
+  },
+  {
+    "id": 111,
+    "permission_name": "调度单打印",
+    "permission_code": "dispatch-print",
+    "parent_id": 74,
+    "menu_key": "dispatch-print",
+    "route_path": "/dispatch-print",
+    "sort_order": 4,
+    "permission_type": "page"
+  }
+]

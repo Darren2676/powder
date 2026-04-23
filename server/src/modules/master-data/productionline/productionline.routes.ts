@@ -1,0 +1,15 @@
+import { Router } from 'express';
+import { validateCreateProductionline, validateUpdateProductionline } from '../../../validators/master-data.validator';
+import { authenticate } from '../../../middleware/auth.middleware';
+import { getProductionlines, createProductionline, updateProductionline, deleteProductionline, exportProductionlines, importProductionlines, toggleProductionlineStatus, approveProductionline, withdrawProductionline } from './productionline.controller';
+const router = Router();
+router.get('/', authenticate, getProductionlines);
+router.post('/', authenticate, validateCreateProductionline, createProductionline);
+router.put('/:id', authenticate, validateUpdateProductionline, updateProductionline);
+router.put('/:id/toggle-status', authenticate, toggleProductionlineStatus);
+router.put('/:id/approve', authenticate, approveProductionline);
+router.put('/:id/withdraw', authenticate, withdrawProductionline);
+router.delete('/:id', authenticate, deleteProductionline);
+router.get('/export', authenticate, exportProductionlines);
+router.post('/import', authenticate, importProductionlines);
+export default router;

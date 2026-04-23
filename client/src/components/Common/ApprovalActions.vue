@@ -3,7 +3,7 @@ import { ref, computed, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { useAuthStore } from '@/store/auth'
-import { submitForApproval, approveRecord, reverseApproval, withdrawApproval } from '@/api/approval'
+import { submitForApproval, approveRecord, reverseApproval, withdrawApproval } from '@/api/system/approval'
 
 const props = defineProps<{
   module: string

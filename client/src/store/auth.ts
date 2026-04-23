@@ -1,7 +1,9 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type { User, LoginFormData, RegisterFormData, UpdateProfileFormData } from '@/types';
-import * as authApi from '@/api/auth';
+import * as authApi from '@/api/system/auth';
+import { usePermissionStore } from './permission';
+import { useMenuStore } from './menu';
 import { message } from 'ant-design-vue';
 
 export const useAuthStore = defineStore('auth', () => {
@@ -34,6 +36,16 @@ export const useAuthStore = defineStore('auth', () => {
         // Save user info
         user.value = response.data.user;
         localStorage.setItem('user', JSON.stringify(response.data.user));
+
+        // 加载权限信息
+        if (response.data.permissions) {
+          const permStore = usePermissionStore();
+          permStore.loadFromLogin(response.data.permissions);
+        }
+        
+        // 加载菜单树
+        const menuStore = useMenuStore();
+        await menuStore.fetchMenuTree();
         
         message.success('登录成功');
         return true;
@@ -66,6 +78,16 @@ export const useAuthStore = defineStore('auth', () => {
         // Save user info
         user.value = response.data.user;
         localStorage.setItem('user', JSON.stringify(response.data.user));
+
+        // 加载权限信息
+        if (response.data.permissions) {
+          const permStore = usePermissionStore();
+          permStore.loadFromLogin(response.data.permissions);
+        }
+        
+        // 加载菜单树
+        const menuStore = useMenuStore();
+        await menuStore.fetchMenuTree();
         
         message.success('注册成功');
         return true;
@@ -86,19 +108,22 @@ export const useAuthStore = defineStore('auth', () => {
    * 用户登出
    */
   const logout = async () => {
-    try {
-      await authApi.logout();
-    } catch (error) {
-      console.error('Logout error:', error);
-    } finally {
-      // Clear all stored data
-      token.value = '';
-      user.value = null;
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      
-      message.success('已退出登录');
-    }
+    // JWT 是无状态的，不需要调用后端 logout 接口
+    // 直接清除本地状态即可，避免过期 token 触发 401 错误提示
+    token.value = '';
+    user.value = null;
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+
+    // 清除权限信息
+    const permStore = usePermissionStore();
+    permStore.clearPermissions();
+
+    // 清除菜单信息
+    const menuStore = useMenuStore();
+    menuStore.clearMenuTree();
+
+    message.success('已退出登录');
   };
 
   /**
@@ -112,6 +137,17 @@ export const useAuthStore = defineStore('auth', () => {
       if (response.success) {
         user.value = response.data;
         localStorage.setItem('user', JSON.stringify(response.data));
+
+        // 加载权限信息
+        if (response.data.permissions) {
+          const permStore = usePermissionStore();
+          permStore.loadFromLogin(response.data.permissions);
+        }
+
+        // 刷新菜单树
+        const menuStore = useMenuStore();
+        menuStore.fetchMenuTree();
+
         return true;
       }
       return false;
@@ -124,6 +160,12 @@ export const useAuthStore = defineStore('auth', () => {
         user.value = null;
         localStorage.removeItem('token');
         localStorage.removeItem('user');
+        
+        const permStore = usePermissionStore();
+        permStore.clearPermissions();
+        
+        const menuStore = useMenuStore();
+        menuStore.clearMenuTree();
       }
       
       return false;

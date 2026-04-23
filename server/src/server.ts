@@ -1,11 +1,11 @@
 import app from './app';
 import { initDatabase, User } from './models';
 import { hashPassword } from './utils/password.util';
-import dotenv from 'dotenv';
+import dotenv from 'dotenv'; // reload env
 
 dotenv.config();
 
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 const startServer = async () => {
   try {
@@ -20,7 +20,7 @@ const startServer = async () => {
     if (!adminExists) {
       console.log('创建默认管理员账号...');
       const hashedPassword = await hashPassword('admin123');
-      
+
       await User.create({
         username: 'admin',
         email: 'admin@system.com',
@@ -35,13 +35,16 @@ const startServer = async () => {
       console.log('密码: admin123');
     }
 
-    const server = app.listen(PORT, () => {
+    const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`服务器运行在端口 ${PORT}`);
       console.log(`API地址: http://localhost:${PORT}/api`);
     });
 
-    // 防止进程意外退出
-    server.on('error', (err: Error) => {
+    server.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        console.error(`端口 ${PORT} 已被占用，请关闭占用端口的程序后重试`);
+        process.exit(1);
+      }
       console.error('服务器错误:', err);
     });
 

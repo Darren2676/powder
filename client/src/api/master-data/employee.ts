@@ -1,0 +1,11 @@
+import request from '@/utils/request'
+export const getEmployees = (params?: any) => request.get('/employees', { params })
+export const createEmployee = (data: any) => request.post('/employees', data)
+export const updateEmployee = (id: string, data: any) => request.put(`/employees/${encodeURIComponent(id)}`, data)
+export const deleteEmployee = (id: string) => request.delete(`/employees/${encodeURIComponent(id)}`)
+export const approveEmployee = (id: string) => request.put(`/employees/${encodeURIComponent(id)}/approve`)
+export const withdrawEmployee = (id: string) => request.put(`/employees/${encodeURIComponent(id)}/withdraw`)
+export const enableEmployee = (id: string) => request.put(`/employees/${encodeURIComponent(id)}/enable`)
+export const disableEmployee = (id: string) => request.put(`/employees/${encodeURIComponent(id)}/disable`)
+export const exportEmployees = () => request.get('/employees/export', { responseType: 'blob' })
+export const importEmployees = (formData: FormData) => request.post('/employees/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } })

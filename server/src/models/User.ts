@@ -9,9 +9,14 @@ interface UserAttributes {
   real_name: string;
   role: 'admin' | 'manager' | 'staff';
   department?: string;
+  employee_number?: string;
+  employee_name?: string;
   phone?: string;
   avatar?: string;
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'disabled';
+  failed_login_attempts?: number;
+  locked_until?: Date | null;
+  phone_verified?: boolean;
   created_at?: Date;
   updated_at?: Date;
 }
@@ -26,9 +31,14 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
   public real_name!: string;
   public role!: 'admin' | 'manager' | 'staff';
   public department?: string;
+  public employee_number?: string;
+  public employee_name?: string;
   public phone?: string;
   public avatar?: string;
   public status!: 'active' | 'inactive';
+  public failed_login_attempts?: number;
+  public locked_until?: Date | null;
+  public phone_verified?: boolean;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
 }
@@ -47,8 +57,8 @@ User.init(
     },
     email: {
       type: DataTypes.STRING(100),
-      allowNull: false,
-      unique: true
+      allowNull: true,
+      defaultValue: null
     },
     password: {
       type: DataTypes.STRING(255),
@@ -70,6 +80,14 @@ User.init(
       type: DataTypes.STRING(100),
       allowNull: true
     },
+    employee_number: {
+      type: DataTypes.STRING(50),
+      allowNull: true
+    },
+    employee_name: {
+      type: DataTypes.STRING(100),
+      allowNull: true
+    },
     phone: {
       type: DataTypes.STRING(20),
       allowNull: true
@@ -83,8 +101,23 @@ User.init(
       allowNull: false,
       defaultValue: 'active',
       validate: {
-        isIn: [['active', 'inactive']]
+        isIn: [['active', 'inactive', 'disabled']]
       }
+    },
+    failed_login_attempts: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0
+    },
+    locked_until: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null
+    },
+    phone_verified: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true,
+      defaultValue: false
     },
     created_at: {
       type: DataTypes.DATE,

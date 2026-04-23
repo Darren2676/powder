@@ -1,0 +1,14 @@
+import { Router } from 'express';
+import { validateCreateWorkCenter, validateUpdateWorkCenter } from '../../../validators/master-data.validator';
+import { authenticate } from '../../../middleware/auth.middleware';
+import multer from 'multer';
+import { getWorkCenters, createWorkCenter, updateWorkCenter, deleteWorkCenter, exportWorkCenters, importWorkCenters } from './workCenter.controller';
+const router = Router();
+const upload = multer({ storage: multer.memoryStorage() });
+router.get('/', authenticate, getWorkCenters);
+router.get('/export', authenticate, exportWorkCenters);
+router.post('/import', authenticate, upload.single('file'), importWorkCenters);
+router.post('/', authenticate, validateCreateWorkCenter, createWorkCenter);
+router.put('/:id', authenticate, validateUpdateWorkCenter, updateWorkCenter);
+router.delete('/:id', authenticate, deleteWorkCenter);
+export default router;

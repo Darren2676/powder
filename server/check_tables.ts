@@ -2,8 +2,8 @@ import sequelize from './src/config/database';
 
 (async () => {
   try {
-    const tables = ['employee', 'schedules', '[group]', 'workshop', 'productionline'];
-    const tableNames = ['employee', 'schedules', 'group', 'workshop', 'productionline'];
+    const tables = ['employee', 'schedules', '[team]', 'workshop', 'productionline'];
+    const tableNames = ['employee', 'schedules', 'team', 'workshop', 'productionline'];
     
     for (let i = 0; i < tableNames.length; i++) {
       const tbl = tableNames[i];

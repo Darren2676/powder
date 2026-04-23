@@ -10,12 +10,18 @@ const request: AxiosInstance = axios.create({
   }
 });
 
-// Request interceptor - attach JWT token
+// Request interceptor - attach JWT token and prevent GET caching
 request.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('token');
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    // 防止浏览器缓存 GET 请求
+    if (config.method === 'get') {
+      config.headers['Cache-Control'] = 'no-cache';
+      config.headers['Pragma'] = 'no-cache';
+      config.params = { ...config.params, _t: Date.now() };
     }
     return config;
   },
@@ -41,10 +47,16 @@ request.interceptors.response.use(
     
     // Handle 401 Unauthorized - clear token and redirect to login
     if (error.response?.status === 401) {
+      // 如果 token 已被清除（如 logout 后），不再重复提示
+      const hasToken = !!localStorage.getItem('token');
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      message.error('登录已过期,请重新登录');
-      
+
+      if (hasToken) {
+        // 只在 token 刚过期时提示，避免 logout 后的残留请求误报
+        message.error('登录已过期,请重新登录');
+      }
+
       // Redirect to login page
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';

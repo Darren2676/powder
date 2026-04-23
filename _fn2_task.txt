@@ -1,0 +1,17 @@
+
+    let tasksBody = ''
+    if (tasks.length > 0) {
+      tasks.forEach((t: any, tIdx: number) => {
+        tasksBody += `<tr><td>${tIdx + 1}</td><td>${t.step_number || ''}</td><td class="text-left">${t.standard_process_name || ''}</td><td>${t.work_center_name || t.work_center_number || ''}</td><td class="text-right">${t.planned_quantity ?? ''}</td><td class="text-right">${t.completed_quantity ?? ''}</td><td class="blank-cell"></td><td>${t.task_status || ''}</td></tr>`
+      })
+    } else {
+      tasksBody = '<tr><td colspan="8" class="empty-note">暂无工序任务数据</td></tr>'
+    }
+    const tasksHtml = `
+      <div class="section">
+        <div class="section-title">三、工序任务</div>
+        <table class="data-table">
+          <thead><tr><th style="width:35px">序号</th><th style="width:55px">工序号</th><th>工序名称</th><th style="width:90px">工作中心</th><th style="width:70px">计划数量</th><th style="width:70px">已完成</th><th style="width:80px">实际数量</th><th style="width:60px">状态</th></tr></thead>
+          <tbody>${tasksBody}</tbody>
+        </table>
+      </div>`

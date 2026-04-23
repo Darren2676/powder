@@ -39,6 +39,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       req.user = {
         id: user.id,
         username: user.username,
+        real_name: (user as any).real_name || '',
         role: user.role
       };
 

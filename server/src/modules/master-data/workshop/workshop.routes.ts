@@ -1,0 +1,15 @@
+import { Router } from 'express';
+import { validateCreateWorkshop, validateUpdateWorkshop } from '../../../validators/master-data.validator';
+import { authenticate } from '../../../middleware/auth.middleware';
+import { getWorkshops, createWorkshop, updateWorkshop, deleteWorkshop, exportWorkshops, importWorkshops, toggleWorkshopStatus, approveWorkshop, withdrawWorkshop } from './workshop.controller';
+const router = Router();
+router.get('/', authenticate, getWorkshops);
+router.post('/', authenticate, validateCreateWorkshop, createWorkshop);
+router.put('/:id', authenticate, validateUpdateWorkshop, updateWorkshop);
+router.put('/:id/toggle-status', authenticate, toggleWorkshopStatus);
+router.put('/:id/approve', authenticate, approveWorkshop);
+router.put('/:id/withdraw', authenticate, withdrawWorkshop);
+router.delete('/:id', authenticate, deleteWorkshop);
+router.get('/export', authenticate, exportWorkshops);
+router.post('/import', authenticate, importWorkshops);
+export default router;

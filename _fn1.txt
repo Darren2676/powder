@@ -1,0 +1,21 @@
+// ==================== 详细打印功能 ====================
+const handleDetailPrint = async () => {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先勾选需要打印的调度单')
+    return
+  }
+  detailPrintLoading.value = true
+  try {
+    const res = await getPrintData(selectedRowKeys.value)
+    if (res.success && res.data?.items?.length > 0) {
+      detailPrintData.value = res.data.items
+      setTimeout(() => { triggerDetailPrint() }, 300)
+    } else {
+      message.warning('未获取到打印数据')
+    }
+  } catch {
+    message.error('获取打印数据失败')
+  } finally {
+    detailPrintLoading.value = false
+  }
+}

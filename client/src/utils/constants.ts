@@ -63,13 +63,15 @@ export const NOTIFICATION_TYPE_COLORS: Record<string, string> = {
 // User status mapping
 export const USER_STATUS_MAP: Record<string, string> = {
   active: '激活',
-  inactive: '停用'
+  inactive: '停用',
+  disabled: '禁用'
 };
 
 // User status colors
 export const USER_STATUS_COLORS: Record<string, string> = {
   active: 'success',
-  inactive: 'default'
+  inactive: 'default',
+  disabled: 'error'
 };
 
 // Date format

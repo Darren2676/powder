@@ -4,12 +4,14 @@ defineProps<{ status: string }>()
 const colorMap: Record<string, string> = {
   '草稿': 'default',
   '待审批': 'processing',
+  '审批中': 'processing',
   '已审批': 'success'
 }
 
 const displayMap: Record<string, string> = {
   '草稿': '草稿',
   '待审批': '待审核',
+  '审批中': '审批中',
   '已审批': '已审'
 }
 </script>

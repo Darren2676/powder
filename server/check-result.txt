@@ -1,0 +1,36 @@
+routing_header for 110103: 1
+[
+  {
+    "process_route_number": "110103",
+    "item_number": "110103",
+    "condition": "启用",
+    "approval_status": "待审批"
+  }
+]
+bom_header for 110103: 1
+[
+  {
+    "bom_number": "110103",
+    "item_number": "110103",
+    "condition": "启用",
+    "approval_status": "已审批"
+  }
+]
+mfg_bom_header for 110103: 1
+[
+  {
+    "mfg_bom_number": "110103",
+    "item_number": "110103",
+    "condition": "启用",
+    "approval_status": "已审批"
+  }
+]
+P20260405018 备料单: 1
+[
+  {
+    "preparation_number": "MP-20260405-001",
+    "production_order_number": "P20260405018",
+    "bom_number": "110103",
+    "remark": ""
+  }
+]

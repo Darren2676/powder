@@ -12,7 +12,7 @@ dotenv.config();
 const app = express();
 
 app.use(cors());
-app.use(helmet());
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -22,12 +22,17 @@ app.use('/uploads', express.static(path.join(process.cwd(), uploadDir)));
 
 app.use('/api', routes);
 
-app.get('/', (req, res) => {
-  res.json({
-    success: true,
-    message: '睿信橡胶密封件MES系统 API',
-    version: '1.0.0'
-  });
+// 提供前端静态文件
+const clientDistPath = path.join(__dirname, '../../client/dist');
+app.use(express.static(clientDistPath));
+
+// SPA 路由回退：所有非 API/uploads 请求返回 index.html
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+  } else {
+    next();
+  }
 });
 
 app.use(errorHandler);

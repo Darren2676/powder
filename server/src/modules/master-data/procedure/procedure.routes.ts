@@ -1,0 +1,14 @@
+import { Router } from 'express';
+import { validateCreateProcedure, validateUpdateProcedure } from '../../../validators/master-data.validator';
+import { authenticate } from '../../../middleware/auth.middleware';
+import multer from 'multer';
+import { getProcedures, createProcedure, updateProcedure, deleteProcedure, exportProcedures, importProcedures } from './procedure.controller';
+const router = Router();
+const upload = multer({ storage: multer.memoryStorage() });
+router.get('/', authenticate, getProcedures);
+router.get('/export', authenticate, exportProcedures);
+router.post('/import', authenticate, upload.single('file'), importProcedures);
+router.post('/', authenticate, validateCreateProcedure, createProcedure);
+router.put('/:id', authenticate, validateUpdateProcedure, updateProcedure);
+router.delete('/:id', authenticate, deleteProcedure);
+export default router;

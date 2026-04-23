@@ -1,0 +1,9 @@
+// test with chinese: 详细打印
+const handleDetailPrint = async () => {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先勾选')
+    return
+  }
+  const x = `hello ${world} backtick`
+  console.log('done')
+}

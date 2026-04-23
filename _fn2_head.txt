@@ -1,0 +1,17 @@
+const triggerDetailPrint = () => {
+  const items = detailPrintData.value
+  if (!items || items.length === 0) return
+
+  const printWindow = window.open('', '_blank', 'width=1000,height=750')
+  if (!printWindow) {
+    message.error('无法打开打印窗口，请检查浏览器是否允许弹出窗口')
+    return
+  }
+
+  let pagesHtml = ''
+  items.forEach((item: any, pageIdx: number) => {
+    const order = item.order
+    const materials = item.materials || []
+    const tasks = item.tasks || []
+    const scheduleName = getScheduleName(order.schedule_id)
+    const isLast = pageIdx === items.length - 1

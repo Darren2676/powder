@@ -1,0 +1,63 @@
+[dotenv@17.3.1] injecting env (13) from .env -- tip: 🔐 prevent building .env in docker: https://dotenvx.com/prebuild
+(node:33868) [SEQUELIZE0006] DeprecationWarning: This database engine version is not supported, please update your database server. More information https://github.com/sequelize/sequelize/blob/main/ENGINE.md
+(Use `node --trace-deprecation ...` to show where the warning was created)
+=== 生产单 ===
+[
+  {
+    "production_order_number": "P20260405018",
+    "production_number": "M20260405002",
+    "item_number": "110103",
+    "item_name": "油封",
+    "plan_status": "已派发",
+    "approval_status": "已审批"
+  }
+]
+Error
+    at Query.run (D:\rubber\Seals MES System\server\node_modules\sequelize\src\dialects\mssql\query.js:128:25)
+    at D:\rubber\Seals MES System\server\node_modules\sequelize\src\sequelize.js:650:28
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async D:\rubber\Seals MES System\server\src\scripts\check-print.ts:15:26 {
+  name: 'SequelizeDatabaseError',
+  parent: RequestError: Invalid column name 'sequence_number'.
+      at RequestTokenHandler.onErrorMessage (D:\rubber\Seals MES System\server\node_modules\tedious\src\token\handler.ts:389:21)
+      at Readable.<anonymous> (D:\rubber\Seals MES System\server\node_modules\tedious\src\token\token-stream-parser.ts:23:55)
+      at Readable.emit (node:events:508:20)
+      at Readable.emit (node:domain:489:12)
+      at addChunk (node:internal/streams/readable:564:12)
+      at readableAddChunkPushObjectMode (node:internal/streams/readable:541:3)
+      at Readable.push (node:internal/streams/readable:396:5)
+      at nextAsync (node:internal/streams/from:194:22)
+      at processTicksAndRejections (node:internal/process/task_queues:104:5) {
+    code: 'EREQUEST',
+    number: 207,
+    state: 1,
+    class: 16,
+    serverName: 'RIXIN',
+    procName: '',
+    lineNumber: 1,
+    sql: "SELECT * FROM process_task WHERE production_order_number = 'P20260405018' ORDER BY sequence_number",
+    parameters: undefined
+  },
+  original: RequestError: Invalid column name 'sequence_number'.
+      at RequestTokenHandler.onErrorMessage (D:\rubber\Seals MES System\server\node_modules\tedious\src\token\handler.ts:389:21)
+      at Readable.<anonymous> (D:\rubber\Seals MES System\server\node_modules\tedious\src\token\token-stream-parser.ts:23:55)
+      at Readable.emit (node:events:508:20)
+      at Readable.emit (node:domain:489:12)
+      at addChunk (node:internal/streams/readable:564:12)
+      at readableAddChunkPushObjectMode (node:internal/streams/readable:541:3)
+      at Readable.push (node:internal/streams/readable:396:5)
+      at nextAsync (node:internal/streams/from:194:22)
+      at processTicksAndRejections (node:internal/process/task_queues:104:5) {
+    code: 'EREQUEST',
+    number: 207,
+    state: 1,
+    class: 16,
+    serverName: 'RIXIN',
+    procName: '',
+    lineNumber: 1,
+    sql: "SELECT * FROM process_task WHERE production_order_number = 'P20260405018' ORDER BY sequence_number",
+    parameters: undefined
+  },
+  sql: "SELECT * FROM process_task WHERE production_order_number = 'P20260405018' ORDER BY sequence_number",
+  parameters: {}
+}

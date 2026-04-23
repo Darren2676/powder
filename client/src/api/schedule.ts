@@ -1,7 +1,0 @@
-import request from '@/utils/request'
-export const getSchedules = (params?: any) => request.get('/schedules', { params })
-export const createSchedule = (data: any) => request.post('/schedules', data)
-export const updateSchedule = (id: string, data: any) => request.put(`/schedules/${encodeURIComponent(id)}`, data)
-export const deleteSchedule = (id: string) => request.delete(`/schedules/${encodeURIComponent(id)}`)
-export const exportSchedules = () => request.get('/schedules/export', { responseType: 'blob' })
-export const importSchedules = (formData: FormData) => request.post('/schedules/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } })

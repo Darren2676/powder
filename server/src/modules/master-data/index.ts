@@ -1,0 +1,53 @@
+// 基础数据域路由聚合
+import { Router } from 'express';
+import customerRoutes from './customer/customer.routes';
+import supplierRoutes from './supplier/supplier.routes';
+import employeeRoutes from './employee/employee.routes';
+import logisticsCompanyRoutes from './logisticsCompany/logisticsCompany.routes';
+import workshopRoutes from './workshop/workshop.routes';
+import productionlineRoutes from './productionline/productionline.routes';
+import teamRoutes from './team/team.routes';
+import scheduleRoutes from './schedule/schedule.routes';
+import warehouseRoutes from './warehouse/warehouse.routes';
+import storageLocationRoutes from './storageLocation/storageLocation.routes';
+import unitRoutes from './unit/unit.routes';
+import workCenterRoutes from './workCenter/workCenter.routes';
+import procedureRoutes from './procedure/procedure.routes';
+import itemMasterRoutes from './itemMaster/itemMaster.routes';
+import materialClassRoutes from './materialClass/materialClass.routes';
+import materiaPropertyRoutes from './materiaProperty/materiaProperty.routes';
+import productClassRoutes from './productClass/productClass.routes';
+import bomRoutes from './bom/bom.routes';
+import mfgBomRoutes from './mfgBom/mfgBom.routes';
+import routingMasterRoutes from './routingMaster/routingMaster.routes';
+import customerMaterialMappingRoutes from './customerMaterialMapping/customerMaterialMapping.routes';
+import materialRoutes from './material/material.routes';
+import productRoutes from './product/product.routes';
+
+const router = Router();
+
+router.use('/customers', customerRoutes);
+router.use('/suppliers', supplierRoutes);
+router.use('/employees', employeeRoutes);
+router.use('/logistics-companies', logisticsCompanyRoutes);
+router.use('/workshops', workshopRoutes);
+router.use('/productionlines', productionlineRoutes);
+router.use('/teams', teamRoutes);
+router.use('/schedules', scheduleRoutes);
+router.use('/warehouses', warehouseRoutes);
+router.use('/storage-locations', storageLocationRoutes);
+router.use('/units', unitRoutes);
+router.use('/work-centers', workCenterRoutes);
+router.use('/procedures', procedureRoutes);
+router.use('/item-masters', itemMasterRoutes);
+router.use('/material-classes', materialClassRoutes);
+router.use('/materia-properties', materiaPropertyRoutes);
+router.use('/product-classes', productClassRoutes);
+router.use('/boms', bomRoutes);
+router.use('/mfg-boms', mfgBomRoutes);
+router.use('/routing-masters', routingMasterRoutes);
+router.use('/customer-material-mappings', customerMaterialMappingRoutes);
+router.use('/materials', materialRoutes);
+router.use('/products', productRoutes);
+
+export default router;

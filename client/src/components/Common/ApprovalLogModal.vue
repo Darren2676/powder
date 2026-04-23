@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { getApprovalLog } from '@/api/approval'
+import { getApprovalLog } from '@/api/system/approval'
 import {
   SendOutlined, CheckCircleOutlined, RollbackOutlined, UndoOutlined
 } from '@ant-design/icons-vue'

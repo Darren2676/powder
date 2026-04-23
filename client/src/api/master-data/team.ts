@@ -1,0 +1,10 @@
+import request from '@/utils/request'
+export const getTeams = (params?: any) => request.get('/teams', { params })
+export const createTeam = (data: any) => request.post('/teams', data)
+export const updateTeam = (id: string, data: any) => request.put(`/teams/${encodeURIComponent(id)}`, data)
+export const deleteTeam = (id: string) => request.delete(`/teams/${encodeURIComponent(id)}`)
+export const exportTeams = () => request.get('/teams/export', { responseType: 'blob' })
+export const importTeams = (formData: FormData) => request.post('/teams/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+export const toggleTeamStatus = (id: string) => request.put(`/teams/${encodeURIComponent(id)}/toggle-status`)
+export const approveTeam = (id: string) => request.put(`/teams/${encodeURIComponent(id)}/approve`)
+export const withdrawTeam = (id: string) => request.put(`/teams/${encodeURIComponent(id)}/withdraw`)

@@ -1,13 +1,25 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import AppSidebar from './AppSidebar.vue';
 import AppHeader from './AppHeader.vue';
+import { useAuthStore } from '@/store/auth';
+import { useMenuStore } from '@/store/menu';
 
 const collapsed = ref(false);
+const authStore = useAuthStore();
+const menuStore = useMenuStore();
 
 const toggleCollapsed = () => {
   collapsed.value = !collapsed.value;
 };
+
+// 初始化：已登录时，确保菜单树和权限已加载
+onMounted(async () => {
+  if (authStore.isLoggedIn) {
+    // 始终从服务器刷新菜单树，避免旧缓存问题
+    await menuStore.fetchMenuTree();
+  }
+});
 </script>
 
 <template>
@@ -33,13 +45,13 @@ const toggleCollapsed = () => {
       <AppHeader @toggle-collapsed="toggleCollapsed" />
 
       <!-- Content -->
-      <a-layout-content style="margin: 8px; padding: 16px; background: #f0f2f5; min-height: 280px;">
+      <a-layout-content style="margin: 8px; padding: 16px; background: #f7f8fa; min-height: 280px;">
         <router-view />
       </a-layout-content>
 
       <!-- Footer -->
       <a-layout-footer class="app-footer">
-        睿信橡胶密封件MES系统 ©2026 Created by 宁国睿信信息技术有限责任公司
+        睿信橡胶密封件MES系统 ©2026 Created by 宁国市睿信信息技术有限责任公司
       </a-layout-footer>
     </a-layout>
   </a-layout>
@@ -51,13 +63,13 @@ const toggleCollapsed = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   color: #fff;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: bold;
-  background: rgba(255, 255, 255, 0.1);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 0 12px;
+  background: #2a6cb8;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 0 8px;
   overflow: hidden;
 }
 
@@ -76,7 +88,7 @@ const toggleCollapsed = () => {
 
 .app-footer {
   text-align: center;
-  background: #f0f2f5;
+  background: #f7f8fa;
   padding: 12px 50px;
   font-size: 13px;
 }

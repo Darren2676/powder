@@ -1,0 +1,17 @@
+
+    let materialsBody = ''
+    if (materials.length > 0) {
+      materials.forEach((m: any, mIdx: number) => {
+        materialsBody += `<tr><td>${mIdx + 1}</td><td>${m.material_number || ''}</td><td class="text-left">${m.material_name || ''}</td><td>${m.material_type || ''}</td><td>${m.unit || ''}</td><td class="text-right">${m.required_quantity ?? ''}</td><td class="text-right">${m.adjusted_quantity ?? ''}</td><td class="blank-cell"></td><td>${m.step_number || ''}</td><td>${m.supply_type || ''}</td><td class="text-left">${m.remark || ''}</td></tr>`
+      })
+    } else {
+      materialsBody = '<tr><td colspan="11" class="empty-note">暂无备料数据</td></tr>'
+    }
+    const materialsHtml = `
+      <div class="section">
+        <div class="section-title">二、备料清单</div>
+        <table class="data-table">
+          <thead><tr><th style="width:35px">序号</th><th style="width:100px">物料编号</th><th>物料名称</th><th style="width:55px">类型</th><th style="width:45px">单位</th><th style="width:70px">需求数量</th><th style="width:70px">调整数量</th><th style="width:80px">实发数量</th><th style="width:50px">工序</th><th style="width:65px">供应方式</th><th style="width:80px">备注</th></tr></thead>
+          <tbody>${materialsBody}</tbody>
+        </table>
+      </div>`

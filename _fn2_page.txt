@@ -1,0 +1,11 @@
+
+    pagesHtml += `
+      <div class="page${isLast ? ' last-page' : ''}">
+        <div class="page-header-area"><div class="page-title">生产调度单</div><div class="page-subtitle">睿信橡胶密封件MES系统</div></div>
+        <div class="page-meta"><span>第 ${pageIdx + 1} 页 / 共 ${items.length} 页</span><span>打印时间: ${dayjs().format('YYYY-MM-DD HH:mm')}</span></div>
+        ${infoHtml}
+        ${materialsHtml}
+        ${tasksHtml}
+        <div class="detail-footer"><div class="footer-item">调度员: <span class="sig-line"></span></div><div class="footer-item">班组长: <span class="sig-line"></span></div><div class="footer-item">操作员: <span class="sig-line"></span></div><div class="footer-item">日期: <span class="sig-line"></span></div></div>
+      </div>`
+  })

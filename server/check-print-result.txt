@@ -1,0 +1,12 @@
+ERROR: 
+=== 生产单 ===
+[
+  {
+    "production_order_number": "P20260405018",
+    "production_number": "M20260405002",
+    "item_number": "110103",
+    "item_name": "油封",
+    "plan_status": "已派发",
+    "approval_status": "已审批"
+  }
+]

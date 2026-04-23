@@ -15,6 +15,7 @@ const sequelize = new Sequelize({
     options: {
       encrypt: false,
       trustServerCertificate: true,
+      tdsVersion: '7_2',  // 兼容 SQL Server 2008+
     }
   },
   pool: {

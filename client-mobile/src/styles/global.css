@@ -1,0 +1,191 @@
+/* ===== 移动端全局样式 ===== */
+:root {
+  --primary: #1989fa;
+  --primary-light: #ecf5ff;
+  --success: #07c160;
+  --success-light: #e8f8ef;
+  --warning: #ff976a;
+  --warning-light: #fff7f0;
+  --danger: #ee0a24;
+  --danger-light: #fef0f0;
+  --text-primary: #1a1a2e;
+  --text-secondary: #666;
+  --text-muted: #999;
+  --bg-page: #f5f6fa;
+  --bg-card: #fff;
+  --border-color: #ebeef5;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.06);
+  --shadow-float: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  color: var(--text-primary);
+  background-color: var(--bg-page);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 安全区域适配 */
+body {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* 隐藏滚动条但保留滚动功能 */
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* 通用卡片 */
+.card {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+/* 页面容器 */
+.page-container {
+  min-height: 100vh;
+  background: var(--bg-page);
+  padding-bottom: 16px;
+}
+
+/* 状态标签通用样式 */
+.status-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.status-tag--success {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.status-tag--primary {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.status-tag--warning {
+  background: var(--warning-light);
+  color: var(--warning);
+}
+
+.status-tag--danger {
+  background: var(--danger-light);
+  color: var(--danger);
+}
+
+.status-tag--default {
+  background: #f4f4f5;
+  color: #909399;
+}
+
+/* 进度条容器 */
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #ebeef5;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar__inner {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--primary), #67b3ff);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.progress-bar__inner--success {
+  background: linear-gradient(90deg, var(--success), #6dd5a0);
+}
+
+/* 空状态 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+}
+
+.empty-state__icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.empty-state__text {
+  font-size: 14px;
+}
+
+/* 骨架占位 */
+.skeleton-line {
+  height: 14px;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.4s infinite;
+  border-radius: 4px;
+}
+
+@keyframes skeleton-loading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* 操作区按钮组 */
+.action-group {
+  display: flex;
+  gap: 8px;
+}
+
+.action-group .van-button {
+  flex: 1;
+}
+
+/* 数值高亮 */
+.num-highlight {
+  font-weight: 600;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 页面过渡 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.25s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.slide-right-enter-from {
+  transform: translateX(100%);
+}
+.slide-right-leave-to {
+  transform: translateX(-30%);
+}

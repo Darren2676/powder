@@ -1,0 +1,14 @@
+
+    const infoHtml = `
+      <div class="section">
+        <div class="section-title">一、生产单基本信息</div>
+        <table class="info-table">
+          <tr><td class="info-label">生产单编号</td><td class="info-value">${order.production_order_number || ''}</td><td class="info-label">生产计划编号</td><td class="info-value">${order.production_number || ''}</td><td class="info-label">生产日期</td><td class="info-value">${formatDate(order.production_date)}</td></tr>
+          <tr><td class="info-label">产品编号</td><td class="info-value">${order.item_number || ''}</td><td class="info-label">产品名称</td><td class="info-value" colspan="3">${order.item_name || ''}</td></tr>
+          <tr><td class="info-label">规格</td><td class="info-value">${order.specifications || ''}</td><td class="info-label">单位</td><td class="info-value">${order.basic_unit || ''}</td><td class="info-label">计划数量</td><td class="info-value">${order.planned_quantity ?? ''}</td></tr>
+          <tr><td class="info-label">胶料编号</td><td class="info-value">${order.rubber_compound_number || ''}</td><td class="info-label">设备名称</td><td class="info-value">${order.equipment_name || order.equipment_number || ''}</td><td class="info-label">班次</td><td class="info-value">${scheduleName}</td></tr>
+          <tr><td class="info-label">模具编号</td><td class="info-value">${order.mould_number || ''}</td><td class="info-label">成型件规格</td><td class="info-value">${order.formed_part_specifications || ''}</td><td class="info-label">成型件单耗</td><td class="info-value">${order.formed_part_unit_consumption || ''}</td></tr>
+          <tr><td class="info-label">实际模腔</td><td class="info-value">${order.actual_cavity_count || ''}</td><td class="info-label">实际模穴</td><td class="info-value">${order.actual_hole_count || ''}</td><td class="info-label">实际班产</td><td class="info-value">${order.actual_daily_output || ''}</td></tr>
+          <tr><td class="info-label">备注</td><td class="info-value" colspan="5">${order.remark || ''}</td></tr>
+        </table>
+      </div>`

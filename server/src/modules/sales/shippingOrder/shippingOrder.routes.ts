@@ -1,0 +1,24 @@
+import { Router } from 'express';
+import { authenticate } from '../../../middleware/auth.middleware';
+import {
+  getShippingOrderDetailsPage,
+  exportShippingOrderDetailsSelected,
+  getShippingOrders,
+  getShippingOrderDetail,
+  updateLogistics,
+  updateStatus,
+  getPrintData
+} from './shippingOrder.controller';
+import { validateCreateShippingOrder, validateUpdateShippingOrder } from '../../../validators/sales.validator';
+
+const router = Router();
+
+router.get('/details-page', authenticate, getShippingOrderDetailsPage);
+router.post('/details-page/export-selected', authenticate, exportShippingOrderDetailsSelected);
+router.get('/', authenticate, getShippingOrders);
+router.get('/:shipping_order_number/print', authenticate, getPrintData);
+router.get('/:shipping_order_number', authenticate, getShippingOrderDetail);
+router.put('/:shipping_order_number/logistics', authenticate, updateLogistics);
+router.put('/:shipping_order_number/status', authenticate, updateStatus);
+
+export default router;

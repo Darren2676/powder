@@ -7,7 +7,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || 'uploads';
-const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE || '10485760');
+const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE || '104857600');
 
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -36,9 +36,17 @@ const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCa
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     'application/vnd.ms-excel',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     'application/zip',
     'application/x-zip-compressed',
-    'text/plain'
+    'text/plain',
+    'video/mp4',
+    'video/webm',
+    'video/ogg',
+    'video/quicktime',
+    'video/x-msvideo',
+    'video/x-ms-wmv'
   ];
 
   if (allowedMimes.includes(file.mimetype)) {
