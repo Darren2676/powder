@@ -3,6 +3,7 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
+import { returnInbound as returnInboundService } from '@/services/warehouse.service';
 
 // ==================== 编号生成 ====================
 const generateReturnOrderNumber = async (transaction?: any): Promise<string> => {
@@ -452,7 +453,7 @@ export const remove = async (req: Request, res: Response, next: NextFunction) =>
 // ==================== 确认退货（含回写 refunded_quantity + 重算 shipping_status） ====================
 export const confirm = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { return_order_number } = req.params;
+    const rn = req.params.return_order_number as string;
     const { confirm_remark = '' } = req.body;
     const operator = (req as any).user?.username || '';
 
@@ -461,7 +462,7 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
       // 1. 校验退货单状态（加锁）
       const [headerRows]: any = await sequelize.query(
         `SELECT * FROM return_order WITH (UPDLOCK) WHERE return_order_number = :rn`,
-        { replacements: { rn: return_order_number }, transaction }
+        { replacements: { rn }, transaction }
       );
       if (headerRows.length === 0) {
         await transaction.rollback();
@@ -482,14 +483,14 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
           confirmed_by = :confirmed_by, confirmed_date = GETDATE(), confirm_remark = :confirm_remark
         WHERE return_order_number = :rn
       `, {
-        replacements: { rn: return_order_number, confirmed_by: operator, confirm_remark },
+        replacements: { rn, confirmed_by: operator, confirm_remark },
         transaction
       });
 
       // 3. 查询退货单明细（用于回写）
       const [rtDetails]: any = await sequelize.query(
         `SELECT * FROM return_order_detail WHERE return_order_number = :rn`,
-        { replacements: { rn: return_order_number }, transaction }
+        { replacements: { rn }, transaction }
       );
 
       // 4. 回写 sales_order_detail.refunded_quantity：累加退货数量
@@ -553,6 +554,36 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
       }
 
       await transaction.commit();
+
+      // 6. 自动触发退货入库（P2：默认全部作为合格品入库）
+      const header = headerRows[0];
+      try {
+        await returnInboundService(
+          {
+            return_order_number: rn,
+            warehouse_number: header.warehouse_number || '',
+            warehouse_name: header.warehouse_name || '',
+            details: rtDetails.map((d: any) => ({
+              item_number: d.item_number || '',
+              item_name: d.item_name || '',
+              specifications: d.specifications || '',
+              basic_unit: d.basic_unit || '',
+              product_drawing_number: d.product_drawing_number || '',
+              return_quantity: Number(d.return_quantity) || 0,
+              qualified_qty: Number(d.return_quantity) || 0,
+              unqualified_qty: 0,
+              detail_id: d.id
+            })),
+            remark: header.reason || '退货确认自动入库',
+            accounting_period: header.accounting_period || ''
+          },
+          operator
+        );
+      } catch (inboundErr: any) {
+        // 入库失败不影响确认结果，仅记录日志，仓库可稍后手动入库
+        console.warn(`[退货入库] ${rn} 自动入库失败:`, inboundErr?.message || inboundErr);
+      }
+
       res.json(success(null, '退货确认成功'));
     } catch (e) {
       await transaction.rollback();
