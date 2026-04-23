@@ -442,8 +442,8 @@ export const updateStatus = async (req: Request, res: Response, next: NextFuncti
     const { shipping_order_number } = req.params;
     const { status: newStatus } = req.body;
 
-    if (!['已签收', '已取消'].includes(newStatus)) {
-      res.status(400).json({ success: false, message: '无效的状态值' }); return;
+    if (!['已签收', '已发货'].includes(newStatus)) {
+      res.status(400).json({ success: false, message: '无效的状态值，撤消请使用撤消接口' }); return;
     }
 
     const [existing]: any = await sequelize.query(
@@ -458,7 +458,7 @@ export const updateStatus = async (req: Request, res: Response, next: NextFuncti
     if (currentStatus === '已取消') {
       res.status(400).json({ success: false, message: '已取消的发货单不能修改状态' }); return;
     }
-    if (currentStatus === '已签收' && newStatus !== '已取消') {
+    if (currentStatus === '已签收' && newStatus !== '已发货') {
       res.status(400).json({ success: false, message: '已签收的发货单不能修改状态' }); return;
     }
 
@@ -533,7 +533,7 @@ export const cancelShippingOrder = async (req: Request, res: Response, next: Nex
         if (d.request_number) {
           await sequelize.query(`
             UPDATE shipping_request_detail
-            SET delivered_quantity = ISNULL(delivered_quantity, 0) - :qty
+            SET delivered_quantity = IIF(ISNULL(delivered_quantity, 0) - :qty < 0, 0, ISNULL(delivered_quantity, 0) - :qty)
             WHERE request_number = :rn AND sales_detail_id = :sid
           `, {
             replacements: {
@@ -552,7 +552,7 @@ export const cancelShippingOrder = async (req: Request, res: Response, next: Nex
             const qty = Number(d.quantity) || 0;
             // 扣减已发数量
             await sequelize.query(
-              `UPDATE sales_order_detail SET shipped_quantity = ISNULL(shipped_quantity, 0) - :qty WHERE id = :id`,
+              `UPDATE sales_order_detail SET shipped_quantity = IIF(ISNULL(shipped_quantity, 0) - :qty < 0, 0, ISNULL(shipped_quantity, 0) - :qty) WHERE id = :id`,
               { replacements: { qty, id: d.sales_detail_id }, transaction }
             );
           }

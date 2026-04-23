@@ -399,9 +399,9 @@ export const updateShippingRequestStatus = async (req: Request, res: Response, n
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const validStatuses = ['待审核', '已审核', '已发货', '已取消'];
+    const validStatuses = ['待审核', '已审核', '已发货'];
     if (!validStatuses.includes(status)) {
-      res.status(400).json({ success: false, message: '无效的状态值' }); return;
+      res.status(400).json({ success: false, message: '无效的状态值，撤消请使用撤消接口' }); return;
     }
     await sequelize.query(
       `UPDATE shipping_request SET status = :status WHERE request_number = :id`,
@@ -412,31 +412,47 @@ export const updateShippingRequestStatus = async (req: Request, res: Response, n
 };
 
 // ==================== 回写销售订单明细发货状态（公共函数） ====================
+// 统一逻辑：优先看实发净量(shipped-refunded)，再看申请量
 const recomputeShippingStatus = async (salesDetailIds: number[], transaction: any) => {
   for (const detailId of salesDetailIds) {
-    // 汇总该订单明细行所有非取消申请的申请量
-    const [aggRows]: any = await sequelize.query(`
-      SELECT ISNULL(SUM(srd.ship_quantity), 0) as total_applied
-      FROM shipping_request_detail srd
-      INNER JOIN shipping_request sr ON sr.request_number = srd.request_number
-      WHERE srd.sales_detail_id = :detailId
-        AND sr.status != N'已取消'
-    `, { replacements: { detailId }, transaction });
-
-    const totalApplied = Number(aggRows[0]?.total_applied) || 0;
-
-    // 查询订单数量
+    // 查询实发量、退货量、订单量
     const [detailRows]: any = await sequelize.query(
-      `SELECT order_quantity FROM sales_order_detail WHERE id = :detailId`,
+      `SELECT order_quantity, ISNULL(shipped_quantity, 0) as shipped_quantity,
+             ISNULL(refunded_quantity, 0) as refunded_quantity
+       FROM sales_order_detail WHERE id = :detailId`,
       { replacements: { detailId }, transaction }
     );
-    const orderQty = Number(detailRows[0]?.order_quantity) || 0;
+    if (detailRows.length === 0) continue;
+
+    const orderQty = Number(detailRows[0].order_quantity) || 0;
+    const shippedQty = Number(detailRows[0].shipped_quantity) || 0;
+    const refundedQty = Number(detailRows[0].refunded_quantity) || 0;
+    const netShipped = shippedQty - refundedQty;
 
     let newStatus = '未申请';
-    if (totalApplied > 0 && totalApplied < orderQty) {
-      newStatus = '部分发货';
-    } else if (totalApplied >= orderQty && totalApplied > 0) {
-      newStatus = totalApplied > orderQty ? '超额发货' : '全部发货';
+    if (netShipped > 0) {
+      // 有实发记录，按实发净量判断
+      if (netShipped >= orderQty) {
+        newStatus = netShipped > orderQty ? '超额发货' : '全部发货';
+      } else {
+        newStatus = '部分发货';
+      }
+    } else {
+      // 净发为0，回退到看申请量
+      const [aggRows]: any = await sequelize.query(`
+        SELECT ISNULL(SUM(srd.ship_quantity), 0) as total_applied
+        FROM shipping_request_detail srd
+        INNER JOIN shipping_request sr ON sr.request_number = srd.request_number
+        WHERE srd.sales_detail_id = :detailId AND sr.status != N'已取消'
+      `, { replacements: { detailId }, transaction });
+      const totalApplied = Number(aggRows[0]?.total_applied) || 0;
+      if (totalApplied > 0) {
+        if (totalApplied >= orderQty) {
+          newStatus = totalApplied > orderQty ? '超额发货' : '全部发货';
+        } else {
+          newStatus = '部分发货';
+        }
+      }
     }
 
     await sequelize.query(
