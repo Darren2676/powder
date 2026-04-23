@@ -2,6 +2,209 @@ import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
+import { generateShippingOrderNumber } from '../../../services/documentNumber.service';
+
+// ==================== 创建发货单（基于发货申请，支持分批） ====================
+export const createShippingOrder = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const b = req.body;
+
+    // ---- 基础校验 ----
+    if (!b.request_number) {
+      res.status(400).json({ success: false, message: '请选择发货申请' }); return;
+    }
+    if (!b.details || !Array.isArray(b.details) || b.details.length === 0) {
+      res.status(400).json({ success: false, message: '请添加至少一条发货明细' }); return;
+    }
+
+    // ---- 事务处理（查询+校验+写入在同一事务内，防止并发竞态） ----
+    const transaction = await sequelize.transaction();
+    try {
+      // 校验发货申请状态（事务内加锁）
+      const [reqRows]: any = await sequelize.query(
+        `SELECT * FROM shipping_request WITH (UPDLOCK) WHERE request_number = :rn`,
+        { replacements: { rn: b.request_number }, transaction }
+      );
+      if (reqRows.length === 0) {
+        await transaction.rollback();
+        res.status(404).json({ success: false, message: '发货申请不存在' }); return;
+      }
+      if (reqRows[0].status !== '已审核') {
+        await transaction.rollback();
+        res.status(400).json({ success: false, message: '只有已审核的发货申请可以创建发货单' }); return;
+      }
+
+      // 加载申请明细 + 计算每行已分配发货数量（事务内加锁防止并发超发）
+      const [reqDetails]: any = await sequelize.query(`
+        SELECT d.*,
+               ISNULL((SELECT SUM(sod.quantity)
+                       FROM shipping_order_detail sod
+                       INNER JOIN shipping_order so ON so.shipping_order_number = sod.shipping_order_number
+                       WHERE sod.request_number = d.request_number
+                         AND sod.sales_detail_id = d.sales_detail_id
+                         AND so.status != N'已取消'), 0) as already_shipped_qty
+        FROM shipping_request_detail d WITH (UPDLOCK)
+        WHERE d.request_number = :rn
+      `, { replacements: { rn: b.request_number }, transaction });
+
+      // 逐行校验
+      for (const d of b.details) {
+        const reqDetail = reqDetails.find((rd: any) => rd.id === d.request_detail_id);
+        if (!reqDetail) {
+          await transaction.rollback();
+          res.status(400).json({ success: false, message: `发货申请明细不存在: ID=${d.request_detail_id}` }); return;
+        }
+        const remaining = Number(reqDetail.ship_quantity) - Number(reqDetail.already_shipped_qty);
+        if (Number(d.quantity) <= 0) {
+          await transaction.rollback();
+          res.status(400).json({ success: false, message: `物料 ${reqDetail.item_number} 发货数量必须大于0` }); return;
+        }
+        if (Number(d.quantity) > remaining + 0.0001) {
+          await transaction.rollback();
+          res.status(400).json({
+            success: false,
+            message: `物料 ${reqDetail.item_number} 发货数量(${d.quantity})超过可发数量(${remaining})`
+          }); return;
+        }
+        // 批次数量合计校验
+        if (d.batches && Array.isArray(d.batches) && d.batches.length > 0) {
+          const batchSum = d.batches.reduce((sum: number, bt: any) => sum + (Number(bt.quantity) || 0), 0);
+          if (Math.abs(batchSum - Number(d.quantity)) > 0.0001) {
+            await transaction.rollback();
+            res.status(400).json({
+              success: false,
+              message: `物料 ${reqDetail.item_number} 批次数量合计(${batchSum})与发货数量(${d.quantity})不一致`
+            }); return;
+          }
+        }
+      }
+
+      const shipping_order_number = await generateShippingOrderNumber(transaction);
+
+      // 1. 插入发货单主表 (status = 待发货)
+      await sequelize.query(`
+        INSERT INTO shipping_order
+          (shipping_order_number, customer_number, customer_name,
+           warehouse_number, warehouse_name, shipping_date, status,
+           carrier, tracking_number, freight,
+           shipping_address, contact_person, contact_phone,
+           remark, creation_man, creation_date)
+        VALUES
+          (:shipping_order_number, :customer_number, :customer_name,
+           :warehouse_number, :warehouse_name, GETDATE(), N'待发货',
+           :carrier, :tracking_number, :freight,
+           :shipping_address, :contact_person, :contact_phone,
+           :remark, :creation_man, GETDATE())
+      `, {
+        replacements: {
+          shipping_order_number,
+          customer_number: b.customer_number || reqRows[0].customer_number || '',
+          customer_name: b.customer_name || reqRows[0].customer_name || '',
+          warehouse_number: b.warehouse_number || '',
+          warehouse_name: b.warehouse_name || '',
+          carrier: b.carrier || '',
+          tracking_number: b.tracking_number || '',
+          freight: b.freight || 0,
+          shipping_address: b.shipping_address || '',
+          contact_person: b.contact_person || '',
+          contact_phone: b.contact_phone || '',
+          remark: b.remark || '',
+          creation_man: (req as any).user?.username || ''
+        },
+        transaction
+      });
+
+      // 2. 遍历明细行：插入 shipping_order_detail + shipping_order_batch
+      for (let i = 0; i < b.details.length; i++) {
+        const d = b.details[i];
+        const reqDetail = reqDetails.find((rd: any) => rd.id === d.request_detail_id);
+
+        // 插入明细行并获取自增 ID
+        const [insertResult]: any = await sequelize.query(`
+          INSERT INTO shipping_order_detail
+            (shipping_order_number, line_number, request_number,
+             sales_order_number, sales_detail_id,
+             item_number, item_name, specifications, basic_unit, product_drawing_number,
+             quantity, remark)
+          VALUES
+            (:shipping_order_number, :line_number, :request_number,
+             :sales_order_number, :sales_detail_id,
+             :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number,
+             :quantity, :remark);
+          SELECT SCOPE_IDENTITY() AS detail_id;
+        `, {
+          replacements: {
+            shipping_order_number,
+            line_number: (i + 1) * 10,
+            request_number: b.request_number,
+            sales_order_number: reqDetail?.sales_order_number || '',
+            sales_detail_id: reqDetail?.sales_detail_id || 0,
+            item_number: reqDetail?.item_number || '',
+            item_name: reqDetail?.item_name || '',
+            specifications: reqDetail?.specifications || '',
+            basic_unit: reqDetail?.basic_unit || '',
+            product_drawing_number: reqDetail?.product_drawing_number || '',
+            quantity: Number(d.quantity) || 0,
+            remark: d.remark || ''
+          },
+          transaction
+        });
+
+        const detailId = insertResult[0]?.detail_id || 0;
+
+        // 插入批次明细
+        if (d.batches && Array.isArray(d.batches)) {
+          for (const batch of d.batches) {
+            await sequelize.query(`
+              INSERT INTO shipping_order_batch
+                (shipping_order_number, detail_id, item_number, batch_number, quantity)
+              VALUES
+                (:shipping_order_number, :detail_id, :item_number, :batch_number, :quantity)
+            `, {
+              replacements: {
+                shipping_order_number,
+                detail_id: detailId,
+                item_number: reqDetail?.item_number || '',
+                batch_number: batch.batch_number || '',
+                quantity: Number(batch.quantity) || 0
+              },
+              transaction
+            });
+          }
+        }
+      }
+
+      // 3. 判断发货申请是否所有行都已全部分配发货 → 更新申请状态为"已发货"
+      const [remainCheck]: any = await sequelize.query(`
+        SELECT d.id, d.ship_quantity,
+               ISNULL((SELECT SUM(sod.quantity)
+                       FROM shipping_order_detail sod
+                       INNER JOIN shipping_order so ON so.shipping_order_number = sod.shipping_order_number
+                       WHERE sod.request_number = d.request_number
+                         AND sod.sales_detail_id = d.sales_detail_id
+                         AND so.status != N'已取消'), 0) as total_shipped
+        FROM shipping_request_detail d
+        WHERE d.request_number = :rn
+      `, { replacements: { rn: b.request_number }, transaction });
+
+      const allFullyShipped = remainCheck.every(
+        (r: any) => Number(r.total_shipped) >= Number(r.ship_quantity)
+      );
+      if (allFullyShipped) {
+        await sequelize.query(
+          `UPDATE shipping_request SET status = N'已发货' WHERE request_number = :rn`,
+          { replacements: { rn: b.request_number }, transaction }
+        );
+      }
+
+      await transaction.commit();
+      res.json(success({ shipping_order_number }, '发货单创建成功'));
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
+    }
+  } catch (err) { next(err); }
+};
 
 // ==================== 发货单明细列表（批次级别） ====================
 export const getShippingOrderDetailsPage = async (req: Request, res: Response, next: NextFunction) => {
@@ -256,6 +459,178 @@ export const updateStatus = async (req: Request, res: Response, next: NextFuncti
     );
 
     res.json(success(null, `状态已更新为"${newStatus}"`));
+  } catch (err) { next(err); }
+};
+
+// ==================== 撤消发货单（含回写申请状态 + 订单已发数量） ====================
+export const cancelShippingOrder = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { shipping_order_number } = req.params;
+
+    const transaction = await sequelize.transaction();
+    try {
+      // 1. 查询发货单状态（加锁）
+      const [soRows]: any = await sequelize.query(
+        `SELECT * FROM shipping_order WITH (UPDLOCK) WHERE shipping_order_number = :sn`,
+        { replacements: { sn: shipping_order_number }, transaction }
+      );
+      if (soRows.length === 0) {
+        await transaction.rollback();
+        res.status(404).json({ success: false, message: '发货单不存在' }); return;
+      }
+
+      const currentStatus = soRows[0].status;
+      if (currentStatus === '已取消') {
+        await transaction.rollback();
+        res.status(400).json({ success: false, message: '该发货单已取消' }); return;
+      }
+      if (currentStatus === '已签收') {
+        await transaction.rollback();
+        res.status(400).json({ success: false, message: '已签收的发货单不可撤消' }); return;
+      }
+
+      // 2. 已发货状态需检查是否已有非取消/非驳回的退货单
+      if (currentStatus === '已发货') {
+        const [rtCheck]: any = await sequelize.query(`
+          SELECT TOP 1 return_order_number
+          FROM return_order
+          WHERE shipping_order_number = :sn
+            AND status NOT IN (N'已驳回')
+        `, { replacements: { sn: shipping_order_number }, transaction });
+
+        if (rtCheck.length > 0) {
+          await transaction.rollback();
+          res.status(400).json({
+            success: false,
+            message: `该发货单已有退货单(${rtCheck[0].return_order_number})，请先处理退货单`
+          }); return;
+        }
+      }
+
+      // 3. 查询发货单明细（用于回写）
+      const [soDetails]: any = await sequelize.query(
+        `SELECT * FROM shipping_order_detail WHERE shipping_order_number = :sn`,
+        { replacements: { sn: shipping_order_number }, transaction }
+      );
+
+      // 4. 更新发货单状态为已取消
+      await sequelize.query(
+        `UPDATE shipping_order SET status = N'已取消' WHERE shipping_order_number = :sn`,
+        { replacements: { sn: shipping_order_number }, transaction }
+      );
+
+      // 5. 回写销售订单明细：如果是已发货状态，需扣减 shipped_quantity
+      if (currentStatus === '已发货') {
+        for (const d of soDetails) {
+          if (d.sales_detail_id && d.sales_detail_id > 0) {
+            const qty = Number(d.quantity) || 0;
+            // 扣减已发数量
+            await sequelize.query(
+              `UPDATE sales_order_detail SET shipped_quantity = ISNULL(shipped_quantity, 0) - :qty WHERE id = :id`,
+              { replacements: { qty, id: d.sales_detail_id }, transaction }
+            );
+          }
+        }
+      }
+
+      // 6. 重新计算各 sales_order_detail 的 shipping_status
+      const salesDetailIds = [...new Set(
+        soDetails
+          .map((d: any) => d.sales_detail_id)
+          .filter((id: number) => id > 0)
+      )];
+
+      for (const detailId of salesDetailIds) {
+        // 查询该订单明细行的当前数据
+        const [detailRows]: any = await sequelize.query(
+          `SELECT order_quantity, ISNULL(shipped_quantity, 0) as shipped_quantity FROM sales_order_detail WHERE id = :id`,
+          { replacements: { id: detailId }, transaction }
+        );
+        if (detailRows.length === 0) continue;
+
+        const orderQty = Number(detailRows[0].order_quantity) || 0;
+        const shippedQty = Number(detailRows[0].shipped_quantity) || 0;
+
+        // 同时查询该行所有非取消申请的申请量
+        const [aggRows]: any = await sequelize.query(`
+          SELECT ISNULL(SUM(srd.ship_quantity), 0) as total_applied
+          FROM shipping_request_detail srd
+          INNER JOIN shipping_request sr ON sr.request_number = srd.request_number
+          WHERE srd.sales_detail_id = :detailId AND sr.status != N'已取消'
+        `, { replacements: { detailId }, transaction });
+        const totalApplied = Number(aggRows[0]?.total_applied) || 0;
+
+        // 综合判断 shipping_status：优先看实发，再看申请
+        let newStatus = '未申请';
+        if (shippedQty > 0) {
+          if (shippedQty >= orderQty) {
+            newStatus = shippedQty > orderQty ? '超额发货' : '全部发货';
+          } else {
+            newStatus = '部分发货';
+          }
+        } else if (totalApplied > 0) {
+          if (totalApplied >= orderQty) {
+            newStatus = totalApplied > orderQty ? '超额发货' : '全部发货';
+          } else {
+            newStatus = '部分发货';
+          }
+        }
+
+        await sequelize.query(
+          `UPDATE sales_order_detail SET shipping_status = :status WHERE id = :id`,
+          { replacements: { status: newStatus, id: detailId }, transaction }
+        );
+      }
+
+      // 7. 回写发货申请状态：重新判断申请是否全部发完
+      const requestNumbers = [...new Set(
+        soDetails
+          .map((d: any) => d.request_number)
+          .filter((rn: string) => rn)
+      )];
+
+      for (const rn of requestNumbers) {
+        // 查询申请当前状态
+        const [srRows]: any = await sequelize.query(
+          `SELECT status FROM shipping_request WHERE request_number = :rn`,
+          { replacements: { rn }, transaction }
+        );
+        if (srRows.length === 0) continue;
+        // 只有当前状态为"已发货"的申请才需要回退
+        if (srRows[0].status !== '已发货') continue;
+
+        // 检查该申请下所有行是否仍全部发完
+        const [remainCheck]: any = await sequelize.query(`
+          SELECT d.id, d.ship_quantity,
+                 ISNULL((SELECT SUM(sod.quantity)
+                         FROM shipping_order_detail sod
+                         INNER JOIN shipping_order so ON so.shipping_order_number = sod.shipping_order_number
+                         WHERE sod.request_number = d.request_number
+                           AND sod.sales_detail_id = d.sales_detail_id
+                           AND so.status != N'已取消'), 0) as total_shipped
+          FROM shipping_request_detail d
+          WHERE d.request_number = :rn
+        `, { replacements: { rn }, transaction });
+
+        const allFullyShipped = remainCheck.every(
+          (r: any) => Number(r.total_shipped) >= Number(r.ship_quantity)
+        );
+
+        if (!allFullyShipped) {
+          // 回退申请状态为“已审核”
+          await sequelize.query(
+            `UPDATE shipping_request SET status = N'已审核' WHERE request_number = :rn`,
+            { replacements: { rn }, transaction }
+          );
+        }
+      }
+
+      await transaction.commit();
+      res.json(success(null, '发货单已撤消'));
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
+    }
   } catch (err) { next(err); }
 };
 

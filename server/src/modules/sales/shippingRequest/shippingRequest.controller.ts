@@ -411,21 +411,147 @@ export const updateShippingRequestStatus = async (req: Request, res: Response, n
   } catch (err) { next(err); }
 };
 
-// ==================== 删除发货申请 ====================
+// ==================== 回写销售订单明细发货状态（公共函数） ====================
+const recomputeShippingStatus = async (salesDetailIds: number[], transaction: any) => {
+  for (const detailId of salesDetailIds) {
+    // 汇总该订单明细行所有非取消申请的申请量
+    const [aggRows]: any = await sequelize.query(`
+      SELECT ISNULL(SUM(srd.ship_quantity), 0) as total_applied
+      FROM shipping_request_detail srd
+      INNER JOIN shipping_request sr ON sr.request_number = srd.request_number
+      WHERE srd.sales_detail_id = :detailId
+        AND sr.status != N'已取消'
+    `, { replacements: { detailId }, transaction });
+
+    const totalApplied = Number(aggRows[0]?.total_applied) || 0;
+
+    // 查询订单数量
+    const [detailRows]: any = await sequelize.query(
+      `SELECT order_quantity FROM sales_order_detail WHERE id = :detailId`,
+      { replacements: { detailId }, transaction }
+    );
+    const orderQty = Number(detailRows[0]?.order_quantity) || 0;
+
+    let newStatus = '未申请';
+    if (totalApplied > 0 && totalApplied < orderQty) {
+      newStatus = '部分发货';
+    } else if (totalApplied >= orderQty && totalApplied > 0) {
+      newStatus = totalApplied > orderQty ? '超额发货' : '全部发货';
+    }
+
+    await sequelize.query(
+      `UPDATE sales_order_detail SET shipping_status = :status WHERE id = :detailId`,
+      { replacements: { status: newStatus, detailId }, transaction }
+    );
+  }
+};
+
+// ==================== 撤消发货申请（含回写） ====================
+export const cancelShippingRequest = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+
+    const transaction = await sequelize.transaction();
+    try {
+      // 查询申请状态（加锁）
+      const [chk]: any = await sequelize.query(
+        `SELECT status FROM shipping_request WITH (UPDLOCK) WHERE request_number = :id`,
+        { replacements: { id }, transaction }
+      );
+      if (!chk.length) {
+        await transaction.rollback();
+        res.status(404).json({ success: false, message: '发货申请不存在' }); return;
+      }
+      if (chk[0].status === '已取消') {
+        await transaction.rollback();
+        res.status(400).json({ success: false, message: '该发货申请已取消' }); return;
+      }
+      if (chk[0].status === '已发货') {
+        await transaction.rollback();
+        res.status(400).json({ success: false, message: '该发货申请已发货，不可撤消' }); return;
+      }
+
+      // 已审核状态需检查是否已有发货单
+      if (chk[0].status === '已审核') {
+        const [soCheck]: any = await sequelize.query(`
+          SELECT TOP 1 so.shipping_order_number
+          FROM shipping_order_detail sod
+          INNER JOIN shipping_order so ON so.shipping_order_number = sod.shipping_order_number
+          WHERE sod.request_number = :id AND so.status != N'已取消'
+        `, { replacements: { id }, transaction });
+
+        if (soCheck.length > 0) {
+          await transaction.rollback();
+          res.status(400).json({
+            success: false,
+            message: `该申请已有发货单(${soCheck[0].shipping_order_number})，请先撤消发货单`
+          }); return;
+        }
+      }
+
+      // 获取明细中关联的 sales_detail_id（用于回写）
+      const [details]: any = await sequelize.query(
+        `SELECT sales_detail_id FROM shipping_request_detail WHERE request_number = :id`,
+        { replacements: { id }, transaction }
+      );
+      const salesDetailIds = details
+        .map((d: any) => d.sales_detail_id)
+        .filter((id: number) => id > 0);
+
+      // 更新状态为已取消
+      await sequelize.query(
+        `UPDATE shipping_request SET status = N'已取消' WHERE request_number = :id`,
+        { replacements: { id }, transaction }
+      );
+
+      // 回写销售订单明细发货状态
+      if (salesDetailIds.length > 0) {
+        await recomputeShippingStatus(salesDetailIds, transaction);
+      }
+
+      await transaction.commit();
+      res.json(success(null, '发货申请已撤消'));
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
+    }
+  } catch (err) { next(err); }
+};
+
+// ==================== 删除发货申请（含回写） ====================
 export const deleteShippingRequest = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const [chk]: any = await sequelize.query(
       `SELECT status FROM shipping_request WHERE request_number = :id`, { replacements: { id } }
     );
-    if (chk.length && chk[0].status !== '待审核') {
+    if (!chk.length) {
+      res.status(404).json({ success: false, message: '发货申请不存在' }); return;
+    }
+    if (chk[0].status !== '待审核') {
       res.status(403).json({ success: false, message: '只有待审核的发货申请可以删除' }); return;
     }
 
     const transaction = await sequelize.transaction();
     try {
+      // 获取明细中关联的 sales_detail_id（用于回写）
+      const [details]: any = await sequelize.query(
+        `SELECT sales_detail_id FROM shipping_request_detail WHERE request_number = :id`,
+        { replacements: { id }, transaction }
+      );
+      const salesDetailIds = details
+        .map((d: any) => d.sales_detail_id)
+        .filter((sid: number) => sid > 0);
+
+      // 删除明细和主表
       await sequelize.query(`DELETE FROM shipping_request_detail WHERE request_number = :id`, { replacements: { id }, transaction });
       await sequelize.query(`DELETE FROM shipping_request WHERE request_number = :id`, { replacements: { id }, transaction });
+
+      // 回写销售订单明细发货状态
+      if (salesDetailIds.length > 0) {
+        await recomputeShippingStatus(salesDetailIds, transaction);
+      }
+
       await transaction.commit();
       res.json(success(null, '删除成功'));
     } catch (e) {

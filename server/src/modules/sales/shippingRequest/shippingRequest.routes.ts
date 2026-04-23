@@ -9,6 +9,7 @@ import {
   getShippingRequestDetail,
   updateShippingRequest,
   updateShippingRequestStatus,
+  cancelShippingRequest,
   deleteShippingRequest
 } from './shippingRequest.controller';
 import { validateCreateShippingRequest, validateUpdateShippingRequest } from '../../../validators/sales.validator';
@@ -27,6 +28,7 @@ router.post('/', authenticate, validateCreateShippingRequest, createShippingRequ
 router.get('/:id', authenticate, getShippingRequestDetail);
 router.put('/:id', authenticate, validateUpdateShippingRequest, updateShippingRequest);
 router.put('/:id/status', authenticate, updateShippingRequestStatus);
+router.post('/:id/cancel', authenticate, cancelShippingRequest);
 router.delete('/:id', authenticate, deleteShippingRequest);
 
 export default router;
