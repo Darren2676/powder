@@ -1,7 +1,8 @@
 # Seals MES 系统 — Git 版本管理手册
 
-> 生成日期：2026-03-17  
-> 仓库路径：`d:\rubber\Seals MES System`
+> 最后更新：2026-04-29  
+> 仓库路径：`d:\rubber\Seals MES System`  
+> 远程仓库：https://github.com/Darren2676/rubber.git
 
 ---
 
@@ -59,7 +60,85 @@ Git 是一个**分布式版本控制系统**，由 Linus Torvalds 于 2005 年�
 | `git stash` | 临时保存当前修改 | 紧急切分支时 |
 | `git revert <hash>` | 撤销某次提交 | 发现问题时 |
 
-### 1.5 推荐的提交规范
+### 1.5 Git Flow 分支策略
+
+对于 MES 系统项目，推荐使用 **Git Flow** 工作流：
+
+```
+main (生产环境 - 稳定版本)
+  │
+  └── develop (开发环境 - 集成最新功能)
+       │
+       ├── feature/xxx (功能开发分支)
+       ├── bugfix/xxx (Bug 修复分支)
+       ├── release/x.x (发布准备分支)
+       └── hotfix/xxx (紧急修复分支，从 main 直接拉出)
+```
+
+#### 分支说明
+
+| 分支 | 用途 | 生命周期 | 保护级别 |
+|------|------|---------|---------|
+| **main** | 生产环境代码，只接受稳定版本 | 永久 | 🔴 严格保护 |
+| **develop** | 开发环境代码，集成所有功能 | 永久 | 🟡 适度保护 |
+| **feature/*** | 开发新功能 | 临时，功能完成后合并到 develop | 🟢 自由 |
+| **bugfix/*** | 修复非紧急 Bug | 临时，修复后合并到 develop | 🟢 自由 |
+| **release/*** | 发布准备，进行测试和文档 | 临时，发布后合并到 main 和 develop | 🟡 适度保护 |
+| **hotfix/*** | 紧急修复生产问题 | 临时，修复后合并到 main 和 develop | 🟡 适度保护 |
+
+#### 分支命名规范
+
+```
+feature/user-authentication      # 用户认证功能
+feature/menu-optimization        # 菜单优化功能
+bugfix/login-error               # 登录错误修复
+bugfix/report-export             # 报表导出修复
+release/1.2.0                    # 1.2.0 版本发布准备
+hotfix/critical-security         # 紧急安全修复
+```
+
+### 1.6 版本标签管理
+
+#### 语义化版本控制 (SemVer)
+
+版本格式：`MAJOR.MINOR.PATCH`（主版本号.次版本号.修订号）
+
+- **MAJOR**：不兼容的 API 变更
+- **MINOR**：向后兼容的功能新增
+- **PATCH**：向后兼容的问题修正
+
+#### 标签命名规范
+
+```
+v1.0.0    # 初始版本
+v1.1.0    # 新增功能
+v1.1.1    # Bug 修复
+v2.0.0    # 重大更新
+```
+
+#### 标签操作
+
+```bash
+# 创建标签
+git tag -a v1.0.0 -m "发布版本 1.0.0 - MES系统初始版本"
+
+# 查看标签
+git tag -l
+git tag -l -n1  # 显示标签说明
+
+# 推送标签到远程
+git push origin v1.0.0
+git push origin --tags  # 推送所有标签
+
+# 切换到某个标签
+git checkout v1.0.0
+
+# 删除标签
+git tag -d v1.0.0  # 本地
+git push origin --delete v1.0.0  # 远程
+```
+
+### 1.7 推荐的提交规范
 
 ```
 <类型>(<范围>): <简要描述>
@@ -225,21 +304,143 @@ git push -u origin main
 
 ### 3.3 日常开发工作流
 
+#### 完整 Git Flow 工作流程
+
 ```
-1. 开始新功能前
-   git checkout -b feat/xxx          # 创建功能分支
+【功能开发流程】
+
+1. 从 develop 创建功能分支
+   git checkout develop
+   git pull origin develop
+   git checkout -b feature/user-authentication
 
 2. 开发过程中（每完成一个小步骤）
+   git status                    # 查看修改状态
+   git diff                      # 查看具体修改
+   git add .                     # 暂存所有修改
+   git commit -m "feat(auth): 添加用户登录功能"
+
+3. 功能完成，合并回 develop
+   git checkout develop
+   git pull origin develop       # 确保 develop 是最新的
+   git merge feature/user-authentication --no-ff
+   git push origin develop
+   git branch -d feature/user-authentication  # 删除本地功能分支
+
+【Bug 修复流程】
+
+1. 从 develop 创建修复分支
+   git checkout develop
+   git checkout -b bugfix/login-error
+
+2. 修复并提交
+   git add .
+   git commit -m "fix(auth): 修复登录页面空白问题"
+
+3. 合并回 develop
+   git checkout develop
+   git merge bugfix/login-error --no-ff
+   git push origin develop
+
+【发布流程】
+
+1. 从 develop 创建发布分支
+   git checkout develop
+   git checkout -b release/1.2.0
+
+2. 进行测试和文档更新
+   # 修复发现的问题
+   git commit -m "fix: 修复发布前发现的问题"
+
+3. 发布到生产环境
+   git checkout main
+   git merge release/1.2.0 --no-ff
+   git tag -a v1.2.0 -m "发布版本 1.2.0"
+   git push origin main
+   git push origin v1.2.0
+
+4. 合并回 develop
+   git checkout develop
+   git merge release/1.2.0 --no-ff
+   git push origin develop
+   git branch -d release/1.2.0
+
+【紧急修复流程 (Hotfix)】
+
+1. 从 main 创建紧急修复分支
+   git checkout main
+   git checkout -b hotfix/critical-security
+
+2. 修复问题
+   git add .
+   git commit -m "hotfix: 修复安全漏洞"
+
+3. 合并到 main 和 develop
+   git checkout main
+   git merge hotfix/critical-security --no-ff
+   git tag -a v1.2.1 -m "紧急修复安全漏洞"
+   git push origin main
+   git push origin v1.2.1
+   
+   git checkout develop
+   git merge hotfix/critical-security --no-ff
+   git push origin develop
+   git branch -d hotfix/critical-security
+```
+
+#### 简化工作流（个人项目）
+
+如果是个人开发，可以简化为：
+
+```
+1. 开始新功能前
+   git checkout -b feature/xxx          # 从 develop 创建功能分支
+
+2. 开发过程中
    git add .
    git commit -m "feat(xxx): 具体描述"
 
 3. 功能完成
-   git checkout main                 # 切回主分支
-   git merge feat/xxx                # 合并功能分支
-   git push                          # 推送远程
+   git checkout develop                 # 切回开发分支
+   git pull origin develop              # 拉取最新代码
+   git merge feature/xxx --no-ff        # 合并功能分支
+   git push origin develop              # 推送到远程
 
-4. 每天开始工作
-   git pull                          # 拉取最新代码
+4. 定期发布到生产
+   git checkout main                    # 切到生产分支
+   git merge develop --no-ff            # 合并开发分支
+   git tag -a v1.x.0 -m "发布版本"
+   git push origin main
+   git push origin v1.x.0
+   git checkout develop                 # 切回开发分支
+```
+
+#### 常用快捷命令
+
+```bash
+# 查看当前分支和状态
+git status
+git branch
+
+# 查看提交历史
+git log --oneline -10                   # 最近 10 条提交
+git log --graph --oneline --all         # 图形化显示分支
+
+# 撤销操作
+git restore <file>                      # 撤销工作区修改
+git restore --staged <file>             # 取消暂存
+git reset --hard HEAD~1                 # 回退到上一次提交（危险！）
+git revert <commit-hash>                # 安全撤销某次提交
+
+# 临时保存修改
+git stash                               # 保存当前修改
+git stash list                          # 查看保存的列表
+git stash pop                           # 恢复并删除
+
+# 同步远程
+git fetch origin                        # 拉取远程信息
+git pull origin develop                 # 拉取并合并
+git push origin develop                 # 推送到远程
 ```
 
 ### 3.4 `.gitignore` 补充建议
@@ -277,12 +478,67 @@ server/src/debug_*.ts
 
 ## 四、总结
 
-| 维度 | 当前状态 | 目标状态 |
+### 4.1 版本管理最佳实践
+
+| 维度 | 建议 | 说明 |
+|------|------|------|
+| **分支策略** | Git Flow | main + develop + feature/bugfix/release/hotfix |
+| **提交频率** | 小而频繁 | 每个提交应该是完整的工作单元 |
+| **提交信息** | 规范化 | 使用 `type(scope): description` 格式 |
+| **版本标签** | 语义化版本 | vMAJOR.MINOR.PATCH，重要里程碑打标签 |
+| **远程备份** | 定期推送 | 每天至少推送一次到 GitHub |
+| **代码审查** | Pull Request | 团队协作时使用 PR 进行代码审查 |
+
+### 4.2 当前仓库状态
+
+| 项目 | 状态 | 说明 |
+|------|------|------|
+| 远程仓库 | ✅ 已配置 | https://github.com/Darren2676/rubber.git |
+| GitHub CLI | ✅ 已安装 | 路径：`C:\Program Files\GitHub CLI\gh.exe` |
+| 主分支 | ✅ main | 生产环境代码 |
+| 开发分支 | ✅ develop | 开发环境代码 |
+| 版本标签 | ✅ v1.0.0, v1.1.0 | 重要版本已标记 |
+| .gitignore | ✅ 已配置 | 排除不必要的文件 |
+
+### 4.3 快速参考卡片
+
+```bash
+# 每天开始工作
+git checkout develop
+git pull origin develop
+
+# 开发新功能
+git checkout -b feature/xxx
+# ... 开发 ...
+git add .
+git commit -m "feat(xxx): 描述"
+git checkout develop
+git merge feature/xxx --no-ff
+git push origin develop
+
+# 发布新版本
+git checkout main
+git merge develop --no-ff
+git tag -a v1.x.0 -m "发布版本"
+git push origin main
+git push origin v1.x.0
+
+# 查看状态
+git status
+git log --oneline -10
+git branch -a
+git tag -l
+```
+
+### 4.4 历史状态对比
+
+| 维度 | 初始状态 | 当前状态 |
 |------|---------|---------|
 | 版本记录 | ❌ 17,635 行代码未提交 | ✅ 按功能分批提交，历史清晰 |
-| 远程备份 | ❌ 无远程仓库 | ✅ 推送到 Gitee/GitHub |
-| 分支策略 | ❌ 单分支 main | ✅ 功能分支 + 主分支 |
+| 远程备份 | ❌ 无远程仓库 | ✅ 推送到 GitHub |
+| 分支策略 | ❌ 单分支 main | ✅ main + develop + 功能分支 |
 | 提交规范 | ⚠️ 部分提交格式良好 | ✅ 统一 `type(scope): desc` 格式 |
-| .gitignore | ✅ 基本覆盖 | ✅ 补充 IDE/临时文件 |
+| .gitignore | ✅ 基本覆盖 | ✅ 补充 server/uploads 等 |
+| 版本标签 | ⚠️ 仅 v1.0.0 | ✅ 完整的版本标签体系 |
 
-**最紧急操作：立即执行分批提交，防止代码丢失。**
+**🎉 版本管理已完善，可以安心开发了！**
