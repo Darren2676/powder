@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>模具级MRP重算对比确认方案 - 业务逻辑流程图</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #f5f7fa; color: #1a1a2e; line-height: 1.6; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 40px 24px; }
+    h1 { text-align: center; font-size: 28px; margin-bottom: 8px; color: #1a1a2e; }
+    .subtitle { text-align: center; font-size: 14px; color: #888; margin-bottom: 32px; }
+    h2 { font-size: 20px; margin: 32px 0 16px; padding-left: 12px; border-left: 4px solid #1890ff; color: #1a1a2e; }
+    h3 { font-size: 16px; margin: 24px 0 12px; color: #333; }
+    .section { background: #fff; border-radius: 8px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .mermaid { display: flex; justify-content: center; }
+    .note { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; padding: 12px 16px; margin: 16px 0; font-size: 13px; color: #096dd9; }
+    .note.warn { background: #fff7e6; border-color: #ffd591; color: #d46b08; }
+    .note.success { background: #f6ffed; border-color: #b7eb8f; color: #389e0d; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 16px 0; }
+    th, td { border: 1px solid #e8e8e8; padding: 10px 12px; text-align: left; }
+    th { background: #fafafa; font-weight: 600; color: #333; }
+    tr:nth-child(even) { background: #fafafa; }
+    .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+    .tag-gray { background: #f5f5f5; color: #666; border: 1px solid #d9d9d9; }
+    .tag-blue { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
+    .tag-green { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+    .tag-red { background: #fff1f0; color: #ff4d4f; border: 1px solid #ffa39e; }
+    .tag-orange { background: #fff7e6; color: #fa8c16; border: 1px solid #ffd591; }
+    .pdf-btn { position: fixed; bottom: 24px; right: 24px; background: #1890ff; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-size: 15px; cursor: pointer; box-shadow: 0 4px 12px rgba(24,144,255,0.4); z-index: 999; }
+    .pdf-btn:hover { background: #096dd9; }
+    @media print { .pdf-btn { display: none; } .page-break { page-break-before: always; } }
+  </style>
+</head>
+<body>
+
+<button class="pdf-btn no-print" onclick="window.print()">导出 PDF</button>
+
+<div class="container">
+  <h1>模具级MRP重算对比确认方案</h1>
+  <p class="subtitle">业务逻辑流程图与可视化图表</p>
+
+  <!-- 一、总体业务流程 -->
+  <div class="section">
+    <h2>一、总体业务流程</h2>
+    <div class="mermaid">
+flowchart TB
+    subgraph MRP["Step 1: MRP运算（标准BOM）"]
+        M1["选择已审批生产计划"] --> M2["广度优先BOM分解"]
+        M2 --> M3["生成生产单（成品+预成型件）"]
+        M3 --> M4["plan_status=未开始<br/>approval_status=草稿"]
+    end
+
+    subgraph SPLIT["Step 2: 生产单拆分"]
+        S1["选择待拆分生产单"] --> S2{"plan_status=未开始?<br/>approval_status=草稿?"}
+        S2 --"否"--> S_ERR["禁止拆分"]
+        S2 --"是"--> S3["输入拆分数量"]
+        S3 --> S4["生成子生产单"]
+        S4 --> S5["原单数量扣减"]
+    end
+
+    subgraph APPROVE["Step 3: 审批流程"]
+        A1["提交审批"] --> A2{"审批通过?"}
+        A2 --"否"--> A3["撤回/修改"]
+        A3 --> A1
+        A2 --"是"--> A4["approval_status=已审批"]
+    end
+
+    subgraph DISPATCH["Step 4: 调度派发"]
+        D1["选择已审批生产单"] --> D2["填写设备/模具/时间"]
+        D2 --> D3{"选择了模具?"}
+        D3 --"否"--> D_DIRECT["直接派发<br/>生成工序任务+备料单"]
+        D3 --"是"--> D4{"存在模具BOM映射?"}
+        D4 --"否"--> D_DIRECT
+        D4 --"是"--> D5["调用模具MRP预览接口"]
+        D5 --> D6["展示差异对比弹窗"]
+        D6 --> D7{"用户确认?"}
+        D7 --"取消"--> D8["回到派发弹窗"]
+        D7 --"确认"--> D9["执行模具MRP重算"]
+        D9 --> D10["更新成品生产单为已派发"]
+        D10 --> D11["智能处理预成型件生产单"]
+        D11 --> D12["重新生成备料单"]
+        D12 --> D13["生成工序任务"]
+    end
+
+    M4 --> S1
+    S5 --> A1
+    A4 --> D1
+    D8 --> D2
+    D13 --> D_END["派发完成"]
+    D_DIRECT --> D_END
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- 二、差异对比算法流程 -->
+  <div class="section">
+    <h2>二、差异对比算法流程</h2>
+    <div class="mermaid">
+flowchart TB
+    START(["开始对比"]) --> INPUT["输入:<br/>1. parentOrder（成品生产单）<br/>2. mouldBomFlatten（模具BOM展平）<br/>3. standardBomFlatten（标准BOM展平）<br/>4. existingSemiOrders（现有预成型件生产单）"]
+
+    INPUT --> B1["Step 1: 构建模具BOM预成型件映射<br/>mouldSemiMap[material_number -> accumulated_quantity]"]
+    B1 --> B2["Step 2: 构建标准BOM预成型件映射<br/>standardSemiMap[material_number -> accumulated_quantity]"]
+    B2 --> B3["Step 3: 构建现有预成型件生产单映射<br/>existingMap[item_number -> order]"]
+
+    B3 --> LOOP1{"遍历 mouldSemiMap"}
+    LOOP1 --"还有未处理"--> C1{"existingMap 中存在?"}
+    C1 --"否"--> C_NEW["diff_type = new_added<br/>old_quantity = 0<br/>new_quantity = netReq"]
+    C1 --"是"--> C2{"数量差异 > 0.0001?"}
+    C2 --"否"--> C_UNCHANGED["diff_type = unchanged<br/>old_quantity = existing.planned_quantity<br/>new_quantity = netReq"]
+    C2 --"是"--> C_QTY["diff_type = quantity_changed<br/>old_quantity = existing.planned_quantity<br/>new_quantity = netReq"]
+
+    C_NEW --> LOOP1
+    C_UNCHANGED --> LOOP1
+    C_QTY --> LOOP1
+    LOOP1 --"全部处理完"--> LOOP2{"遍历 existingMap"}
+
+    LOOP2 --"还有未处理"--> C3{"mouldSemiMap 中存在?"}
+    C3 --"是"--> LOOP2
+    C3 --"否"--> C4{"checkIfReplaced?<br/>（标准BOM有但模具BOM无）"}
+    C4 --"是"--> C_MAT["diff_type = material_changed<br/>old_quantity = existing.planned_quantity<br/>new_quantity = 0"]
+    C4 --"否"--> C_REM["diff_type = removed<br/>old_quantity = existing.planned_quantity<br/>new_quantity = 0"]
+
+    C_MAT --> LOOP2
+    C_REM --> LOOP2
+    LOOP2 --"全部处理完"--> RETURN["返回 comparison 数组"]
+    RETURN --> END(["结束"])
+    </div>
+
+    <div class="note">
+      <strong>核心公式：</strong>净需求 = ROUND(成品计划数量 × 累计用量比例, 4)<br>
+      <strong>数量比较精度：</strong>Math.abs(oldQty - newQty) > 0.0001 视为变化
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- 三、差异类型处理策略 -->
+  <div class="section">
+    <h2>三、差异类型处理策略</h2>
+    <div class="mermaid">
+flowchart LR
+    INPUT["diff_type"] --> CHECK{判断类型}
+
+    CHECK -->|unchanged| A1["保留现有生产单"]
+    A1 --> A2["不操作"]
+
+    CHECK -->|quantity_changed| B1["UPDATE planned_quantity = :newQty"]
+    B1 --> B2["保留原单号"]
+
+    CHECK -->|new_added| C1["INSERT 新预成型件生产单"]
+    C1 --> C2["生成新单号"]
+    C2 --> C3["parent_production_order_number = 父单号"]
+    C3 --> C4["source_type = '模具MRP重算'"]
+
+    CHECK -->|removed| D1["UPDATE plan_status = '已取消'"]
+    D1 --> D2["remark += ' [模具MRP重算取消]'"]
+
+    CHECK -->|material_changed| E1["UPDATE item_number = :newMat"]
+    E1 --> E2["UPDATE item_name = :newName"]
+    E2 --> E3["UPDATE planned_quantity = :newQty"]
+    E3 --> E4["保留原单号"]
+    </div>
+
+    <h3>差异类型对照表</h3>
+    <table>
+      <tr><th>diff_type</th><th>说明</th><th>前端标签</th><th>后端操作</th></tr>
+      <tr><td><span class="tag tag-gray">unchanged</span></td><td>物料编码和数量均无变化</td><td>无变化 / 保留</td><td>不操作</td></tr>
+      <tr><td><span class="tag tag-blue">quantity_changed</span></td><td>物料编码相同，数量变化</td><td>数量变化(+/-N)</td><td>UPDATE planned_quantity</td></tr>
+      <tr><td><span class="tag tag-green">new_added</span></td><td>模具BOM中有，第一次无</td><td>新增 / 创建</td><td>INSERT 新生产单</td></tr>
+      <tr><td><span class="tag tag-red">removed</span></td><td>标准BOM中有，模具BOM中无</td><td>删除 / 取消</td><td>UPDATE plan_status='已取消'</td></tr>
+      <tr><td><span class="tag tag-orange">material_changed</span></td><td>物料编码变化（替换料）</td><td>物料替换 / 更新</td><td>UPDATE item_number/item_name</td></tr>
+    </table>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- 四、交互时序图 -->
+  <div class="section">
+    <h2>四、交互时序图</h2>
+    <div class="mermaid">
+sequenceDiagram
+    actor U as 用户
+    participant F as 前端派发弹窗
+    participant API1 as 预览接口<br/>/dispatch/mould-mrp-preview
+    participant API2 as 执行接口<br/>/dispatch/mould-mrp-execute
+    participant S as orderDispatch.service
+    participant DB as 数据库
+
+    U->>F: 选择设备、模具、时间，点击确定
+    F->>F: 前端预检（排产冲突检查）
+
+    alt 选择了模具且存在模具BOM映射
+        F->>API1: POST /dispatch/mould-mrp-preview
+        API1->>S: compareSemiProductOrders()
+        S->>DB: SELECT 现有预成型件生产单
+        S->>DB: 展平标准BOM和模具BOM
+        S->>S: 对比差异算法
+        API1-->>F: 返回 comparison + summary
+
+        F->>F: 展示 MouldMRPComparisonModal
+        U->>F: 查看差异对比表格
+
+        alt 用户点击确认
+            F->>API2: POST /dispatch/mould-mrp-execute
+            API2->>S: dispatchAndGenerateCore(confirmed=true)
+            S->>DB: UPDATE 成品生产单 plan_status='已派发'
+            S->>DB: 按 diff_type 处理预成型件
+            Note over S,DB: unchanged: 跳过<br/>quantity_changed: UPDATE数量<br/>new_added: INSERT新单<br/>removed: UPDATE plan_status='已取消'<br/>material_changed: UPDATE物料信息
+            S->>DB: DELETE旧备料单 + INSERT新备料单
+            S->>DB: INSERT工序任务
+            API2-->>F: 返回执行结果
+            F->>F: 展示派发结果弹窗
+        else 用户点击取消
+            F->>F: 关闭对比弹窗
+            F->>F: 回到派发弹窗
+        end
+    else 未选择模具或无模具BOM映射
+        F->>API2: POST /dispatch（原有逻辑）
+        API2->>S: dispatchAndGenerateCore()
+        S->>DB: 直接派发 + 生成工序任务 + 备料单
+        API2-->>F: 返回执行结果
+        F->>F: 展示派发结果弹窗
+    end
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- 五、数据关联关系图 -->
+  <div class="section">
+    <h2>五、数据关联关系图</h2>
+    <div class="mermaid">
+erDiagram
+    PRODUCTION_ORDER ||--o{ PRODUCTION_ORDER : "parent_production_order_number"
+    PRODUCTION_ORDER ||--o{ MATERIAL_PREPARATION : "production_order_number"
+    PRODUCTION_ORDER ||--o{ PROCESS_TASK : "production_order_number"
+    MFG_BOM_HEADER ||--o{ MFG_BOM_DETAIL : "mfg_bom_number"
+    MFG_BOM_HEADER ||--o{ MFG_BOM_MOULD_MAPPING : "mfg_bom_number"
+    ITEM_MASTER ||--o{ MFG_BOM_HEADER : "item_number"
+
+    PRODUCTION_ORDER {
+        nvarchar production_order_number PK
+        nvarchar production_number
+        nvarchar parent_production_order_number
+        nvarchar item_number
+        nvarchar item_name
+        decimal planned_quantity
+        nvarchar plan_status
+        nvarchar approval_status
+        bit is_semi_product
+        nvarchar source_type
+        nvarchar source_mould_number
+        nvarchar mould_number
+        nvarchar equipment_number
+        date production_date
+    }
+
+    MFG_BOM_HEADER {
+        nvarchar mfg_bom_number PK
+        nvarchar item_number
+        nvarchar mould_number
+        nvarchar mfg_bom_name
+        decimal base_quantity
+        nvarchar condition
+        nvarchar approval_status
+    }
+
+    MFG_BOM_DETAIL {
+        int id PK
+        nvarchar mfg_bom_number FK
+        nvarchar material_number
+        nvarchar material_name
+        nvarchar material_type
+        decimal actual_quantity
+    }
+
+    MFG_BOM_MOULD_MAPPING {
+        int id PK
+        nvarchar item_number
+        nvarchar mould_number
+        nvarchar mfg_bom_number FK
+        bit is_default
+    }
+
+    MATERIAL_PREPARATION {
+        nvarchar preparation_number PK
+        nvarchar production_order_number FK
+        nvarchar preparation_status
+        nvarchar approval_status
+    }
+
+    PROCESS_TASK {
+        nvarchar task_number PK
+        nvarchar production_order_number FK
+        nvarchar task_status
+        int step_number
+    }
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- 六、边界处理流程 -->
+  <div class="section">
+    <h2>六、边界处理与风险防控</h2>
+    <div class="mermaid">
+flowchart TB
+    START(["处理预成型件生产单"]) --> CHECK1{"检查现有单状态"}
+
+    CHECK1 -->|plan_status != '未开始'| A1["标记: 已执行不可修改"]
+    A1 --> A2{"diff_type?"}
+    A2 -->|removed| A3["跳过取消操作<br/>仅记录日志提醒"]
+    A2 -->|quantity_changed| A4["生成差额生产单<br/>或提示用户先撤销审核"]
+    A2 -->|其他| A5["跳过更新操作"]
+
+    CHECK1 -->|approval_status = '已审批'| B1["标记: 已审批不可修改"]
+    B1 --> B2{"diff_type?"}
+    B2 -->|removed| B3["跳过取消操作"]
+    B2 -->|quantity_changed| B4["生成差额生产单"]
+    B2 -->|其他| B5["跳过更新操作"]
+
+    CHECK1 -->|plan_status='未开始'<br/>approval_status='草稿'| C1["正常执行处理策略"]
+
+    A3 --> END
+    A4 --> END
+    A5 --> END
+    B3 --> END
+    B4 --> END
+    B5 --> END
+    C1 --> END(["结束"])
+    </div>
+
+    <div class="note warn">
+      <strong>关键边界：</strong>当现有预成型件生产单已审批或已派发/已备料/生产中时，不能直接更新或取消。系统需要标记这些不可修改的记录，并提供替代方案（如生成差额生产单）。
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- 七、前端组件数据流 -->
+  <div class="section">
+    <h2>七、前端组件数据流</h2>
+    <div class="mermaid">
+flowchart LR
+    subgraph PAGE["生产单列表页 List.vue"]
+        L1["dispatchModalVisible<br/>派发弹窗"] --> L2["handleDispatchSubmit"]
+        L2 --> L3{"选择了模具?"}
+        L3 --"是"--> L4["调用 previewMouldMRP API"]
+        L3 --"否"--> L5["调用 dispatchAndGenerate API"]
+        L4 --> L6["mouldMRPComparisonVisible = true"]
+        L6 --> L7["MouldMRPComparisonModal"]
+        L7 --> L8{"用户操作?"}
+        L8 --"确认"--> L9["调用 executeMouldMRP API"]
+        L8 --"取消"--> L10["关闭弹窗，回到派发弹窗"]
+        L9 --> L11["dispatchResultVisible = true"]
+        L5 --> L11
+        L11 --> L12["DispatchResultModal"]
+    end
+
+    subgraph MODAL["MouldMRPComparisonModal.vue"]
+        M1["props: comparisonData"] --> M2["渲染差异表格"]
+        M2 --> M3["计算汇总统计"]
+        M3 --> M4["emit: confirm / cancel"]
+    end
+
+    L7 --> M1
+    M4 --> L8
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- 八、API 接口定义 -->
+  <div class="section">
+    <h2>八、API 接口定义</h2>
+    <h3>接口1：预览模具级MRP重算差异</h3>
+    <table>
+      <tr><th>项目</th><th>内容</th></tr>
+      <tr><td>方法</td><td>POST</td></tr>
+      <tr><td>路径</td><td>/api/production-orders/dispatch/mould-mrp-preview</td></tr>
+      <tr><td>请求体</td><td>{ production_order_number, equipment_number, equipment_name, mould_number, production_date, schedule_id, ... }</td></tr>
+      <tr><td>响应</td><td>{ success, data: { parentOrder, mouldBomNumber, standardBomNumber, comparison[], summary } }</td></tr>
+    </table>
+
+    <h3>接口2：确认执行模具级MRP重算</h3>
+    <table>
+      <tr><th>项目</th><th>内容</th></tr>
+      <tr><td>方法</td><td>POST</td></tr>
+      <tr><td>路径</td><td>/api/production-orders/dispatch/mould-mrp-execute</td></tr>
+      <tr><td>请求体</td><td>{ confirmed: true, dispatchItems[], comparisonData }</td></tr>
+      <tr><td>响应</td><td>{ success, data: { dispatch, processTasks, materialPreparations, semiProductOrders, errors } }</td></tr>
+    </table>
+  </div>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+    sequence: { useMaxWidth: true },
+    er: { useMaxWidth: true },
+    themeVariables: {
+      primaryColor: '#e6f7ff',
+      primaryBorderColor: '#1890ff',
+      primaryTextColor: '#1a1a2e',
+      lineColor: '#1890ff',
+      secondaryColor: '#f6ffed',
+      tertiaryColor: '#fff7e6'
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>调度单详细打印格式说明</title>
+  <style>
+    @page { size: A4; margin: 15mm 18mm; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+      font-size: 11pt;
+      line-height: 1.7;
+      color: #333;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 {
+      font-size: 22pt;
+      color: #1a1a1a;
+      border-bottom: 3px solid #1890ff;
+      padding-bottom: 10px;
+      margin-bottom: 24px;
+    }
+    h2 {
+      font-size: 15pt;
+      color: #262626;
+      margin-top: 28px;
+      margin-bottom: 14px;
+      padding-left: 10px;
+      border-left: 4px solid #1890ff;
+    }
+    h3 {
+      font-size: 13pt;
+      color: #404040;
+      margin-top: 20px;
+      margin-bottom: 10px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 10pt;
+    }
+    th, td {
+      border: 1px solid #d9d9d9;
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f0f5ff;
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+    tr:nth-child(even) { background: #fafafa; }
+    code {
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: "Consolas", monospace;
+      font-size: 10pt;
+      color: #c41d7f;
+    }
+    pre {
+      background: #f6f8fa;
+      border: 1px solid #e8e8e8;
+      border-radius: 6px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      font-size: 9.5pt;
+      line-height: 1.5;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+      color: #333;
+    }
+    ul, ol { margin: 10px 0; padding-left: 24px; }
+    li { margin: 4px 0; }
+    strong { color: #1a1a1a; }
+    .page-break { page-break-before: always; }
+    .header-info {
+      text-align: right;
+      font-size: 9pt;
+      color: #888;
+      margin-bottom: 8px;
+    }
+    .file-path {
+      background: #f0f5ff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-family: Consolas, monospace;
+      font-size: 10pt;
+      color: #1890ff;
+    }
+  </style>
+</head>
+<body>
+  <div class="header-info">Seals MES System | 调度单详细打印格式说明 | 2026-04-24</div>
+  <h1>调度单详细打印格式说明</h1>
+
+  <h2>一、格式控制文件</h2>
+  <p><strong>前端文件</strong>：</p>
+  <p class="file-path">client/src/views/production/DispatchPrint/Index.vue</p>
+  <p>核心函数：<code>triggerDetailPrint()</code>（第 382~906 行）</p>
+
+  <h2>二、当前格式结构</h2>
+  <table>
+    <tr><th>区域</th><th>内容</th><th>代码位置</th></tr>
+    <tr><td>页面设置</td><td>A4 纵向，页边距 6mm/8mm，字号 8px</td><td>第 696~700 行 <code>@page</code> CSS</td></tr>
+    <tr><td>页面头部</td><td>标题"生产调度单"、二维码、单号、页码、打印时间</td><td>第 425~441 行 <code>headerHtml</code></td></tr>
+    <tr><td>第一栏</td><td>生产单基本信息（6 列 x 8 行表格）</td><td>第 444~510 行 <code>infoHtml</code></td></tr>
+    <tr><td>第二栏</td><td>备料清单（14 列表格：序号/物料编号/名称/类型/单位/BOM用量/需求量/调整量/已领量/实发量/工作中心/供应方式/仓库/备注）</td><td>第 537~563 行 <code>materialsHtml</code></td></tr>
+    <tr><td>第三栏</td><td>工序任务（14 列表格：序号/工序号/编号/名称/工作中心/计划数量/已完成/实际数量/投入物料/投入量/计划开始/计划结束/状态/备注）</td><td>第 590~616 行 <code>tasksHtml</code></td></tr>
+    <tr><td>第四栏</td><td>不良品记录（双栏 25 项固定缺陷名称，手写数量/备注）</td><td>第 646~666 行 <code>defectHtml</code></td></tr>
+    <tr><td>底部</td><td>备注"此流转卡作为工资核算依据" + 报工确认/入库确认签名栏</td><td>第 669~676 行 <code>footerHtml</code></td></tr>
+  </table>
+
+  <div class="page-break"></div>
+
+  <h2>三、常见调整方式</h2>
+  <table>
+    <tr><th>调整需求</th><th>修改位置</th><th>示例</th></tr>
+    <tr><td>改页面为横向</td><td><code>@page { size: A4 landscape; }</code></td><td>第 698 行 <code>portrait</code> &rarr; <code>landscape</code></td></tr>
+    <tr><td>调整页边距</td><td><code>@page { margin: 上下 左右; }</code></td><td>第 699 行 <code>6mm 8mm</code></td></tr>
+    <tr><td>增减基本信息字段</td><td><code>infoHtml</code> 中的表格行</td><td>第 449~508 行</td></tr>
+    <tr><td>调整表格列宽</td><td><code>&lt;th style="width:XXpx"&gt;</code></td><td>如第 544 行 <code>width:90px</code></td></tr>
+    <tr><td>增删不良品缺陷项</td><td><code>defectNames</code> 数组</td><td>第 620~625 行</td></tr>
+    <tr><td>修改底部备注文字</td><td><code>footerHtml</code></td><td>第 671 行</td></tr>
+    <tr><td>隐藏二维码</td><td>删除 <code>headerHtml</code> 中的 <code>header-qr</code></td><td>第 433~435 行</td></tr>
+  </table>
+
+  <h2>四、数据字段来源</h2>
+  <p><strong>后端接口</strong>：<code>POST /api/orders/print-data</code></p>
+  <p><strong>后端文件</strong>：<code>server/src/modules/production/order/order.controller.ts</code> 第 652 行 <code>getPrintData</code></p>
+  <p>返回结构：</p>
+  <pre><code>{
+  "items": [
+    {
+      "order": { /* 生产单基本信息 */ },
+      "materials": [ /* 备料清单 */ ],
+      "tasks": [ /* 工序任务 */ ]
+    }
+  ]
+}</code></pre>
+
+  <h2>五、基本信息字段清单</h2>
+  <table>
+    <tr><th>字段标签</th><th>对应数据字段</th></tr>
+    <tr><td>生产单编号</td><td><code>production_order_number</code></td></tr>
+    <tr><td>生产计划编号</td><td><code>production_number</code></td></tr>
+    <tr><td>生产日期</td><td><code>production_date</code></td></tr>
+    <tr><td>产品编号</td><td><code>item_number</code></td></tr>
+    <tr><td>产品名称</td><td><code>item_name</code></td></tr>
+    <tr><td>规格</td><td><code>specifications</code></td></tr>
+    <tr><td>单位</td><td><code>basic_unit</code></td></tr>
+    <tr><td>计划数量</td><td><code>planned_quantity</code></td></tr>
+    <tr><td>班次</td><td><code>schedule_id</code>（转名称）</td></tr>
+    <tr><td>设备名称</td><td><code>equipment_name / equipment_number</code></td></tr>
+    <tr><td>设备编号</td><td><code>equipment_number</code></td></tr>
+    <tr><td>胶料编号</td><td><code>rubber_compound_number</code></td></tr>
+    <tr><td>模具编号</td><td><code>mould_number</code></td></tr>
+    <tr><td>成型件规格</td><td><code>formed_part_specifications</code></td></tr>
+    <tr><td>成型件单耗</td><td><code>formed_part_unit_consumption</code></td></tr>
+    <tr><td>实际模腔</td><td><code>actual_cavity_count</code></td></tr>
+    <tr><td>实际模穴</td><td><code>actual_hole_count</code></td></tr>
+    <tr><td>实际班产</td><td><code>actual_cavity_count * actual_hole_count</code> 或 <code>actual_daily_output</code></td></tr>
+    <tr><td>产品图号</td><td><code>product_drawing_number</code></td></tr>
+    <tr><td>班产定额</td><td><code>batch_production_quota</code></td></tr>
+    <tr><td>状态</td><td><code>plan_status</code></td></tr>
+    <tr><td>备注</td><td><code>remark</code></td></tr>
+  </table>
+
+  <h2>六、不良品缺陷项（25 项）</h2>
+  <table>
+    <tr><th>序号</th><th>缺陷名称</th><th>序号</th><th>缺陷名称</th></tr>
+    <tr><td>1</td><td>缺料</td><td>14</td><td>拉缺、摆坏</td></tr>
+    <tr><td>2</td><td>模脏</td><td>15</td><td>变形</td></tr>
+    <tr><td>3</td><td>老化胶</td><td>16</td><td>骨架不良</td></tr>
+    <tr><td>4</td><td>裂口</td><td>17</td><td>分层</td></tr>
+    <tr><td>5</td><td>流痕</td><td>18</td><td>欠硫</td></tr>
+    <tr><td>6</td><td>气泡</td><td>19</td><td>包胶</td></tr>
+    <tr><td>7</td><td>烫坏</td><td>20</td><td>切坏</td></tr>
+    <tr><td>8</td><td>杂质</td><td>21</td><td>尺寸不良</td></tr>
+    <tr><td>9</td><td>脱胶</td><td>22</td><td>冻坏</td></tr>
+    <tr><td>10</td><td>撕修坏</td><td>23</td><td>短少</td></tr>
+    <tr><td>11</td><td>砂坏、车坏</td><td>24</td><td>磕碰</td></tr>
+    <tr><td>12</td><td>烂泡</td><td>25</td><td>（预留）</td></tr>
+    <tr><td>13</td><td>扒胶</td><td></td><td></td></tr>
+  </table>
+
+</body>
+</html>

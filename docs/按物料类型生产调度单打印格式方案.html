@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>按物料类型生产调度单打印格式方案</title>
+  <style>
+    @page { size: A4; margin: 15mm 18mm; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+      font-size: 11pt;
+      line-height: 1.7;
+      color: #333;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 {
+      font-size: 22pt;
+      color: #1a1a1a;
+      border-bottom: 3px solid #1890ff;
+      padding-bottom: 10px;
+      margin-bottom: 24px;
+    }
+    h2 {
+      font-size: 15pt;
+      color: #262626;
+      margin-top: 28px;
+      margin-bottom: 14px;
+      padding-left: 10px;
+      border-left: 4px solid #1890ff;
+    }
+    h3 {
+      font-size: 13pt;
+      color: #404040;
+      margin-top: 20px;
+      margin-bottom: 10px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 10pt;
+    }
+    th, td {
+      border: 1px solid #d9d9d9;
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f0f5ff;
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+    tr:nth-child(even) { background: #fafafa; }
+    code {
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: "Consolas", monospace;
+      font-size: 10pt;
+      color: #c41d7f;
+    }
+    pre {
+      background: #f6f8fa;
+      border: 1px solid #e8e8e8;
+      border-radius: 6px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      font-size: 9.5pt;
+      line-height: 1.5;
+    }
+    pre code {
+      background: transparent;
+      padding: 0;
+      color: #333;
+    }
+    ul, ol { margin: 10px 0; padding-left: 24px; }
+    li { margin: 4px 0; }
+    strong { color: #1a1a1a; }
+    .page-break { page-break-before: always; }
+    .header-info {
+      text-align: right;
+      font-size: 9pt;
+      color: #888;
+      margin-bottom: 8px;
+    }
+    .file-path {
+      background: #f0f5ff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-family: Consolas, monospace;
+      font-size: 10pt;
+      color: #1890ff;
+    }
+    .highlight {
+      background: #fff7e6;
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header-info">Seals MES System | 按物料类型生产调度单打印格式方案 | 2026-04-24</div>
+  <h1>按物料类型生产调度单打印格式方案</h1>
+
+  <h2>一、需求背景</h2>
+  <p>系统中不同物料类型均可能存在生产工单：</p>
+  <ul>
+    <li><strong>成品</strong>：橡胶密封件成品生产</li>
+    <li><strong>原材料（胶料）</strong>：胶料混炼生产</li>
+    <li><strong>骨架</strong>：金属骨架冲压/磷化生产</li>
+    <li><strong>预成型件</strong>：半成品预成型生产</li>
+  </ul>
+  <p>由于各类生产单的<span class="highlight">扩展数据不同</span>，统一打印格式存在冗余或缺失，需按物料类型匹配差异化模板。</p>
+
+  <h2>二、判断依据</h2>
+  <p>通过 <code>production_order.item_number</code> JOIN <code>item_master</code> 获取 <code>item_type</code>：</p>
+  <pre><code>production_order.item_number
+        &darr; JOIN
+item_master.item_type
+        &darr; 匹配
+    打印模板</code></pre>
+
+  <h2>三、各模板格式对比</h2>
+  <table>
+    <tr><th>维度</th><th>成品</th><th>原材料（胶料）</th><th>骨架</th><th>预成型件</th></tr>
+    <tr><td><strong>单据标题</strong></td><td>生产调度单</td><td>胶料生产调度单</td><td>骨架生产调度单</td><td>预成型件生产调度单</td></tr>
+    <tr><td><strong>核心字段</strong></td><td>模具/成型件/胶料/模腔模穴/班产</td><td>混炼机号/硬度/密度/拉伸强度/伸长率/TC10/TC90</td><td>材质/表面处理/供应商/尺寸公差/来料批号</td><td>来源BOM/半成品规格/下道工序/成型参数</td></tr>
+    <tr><td><strong>备料清单</strong></td><td>完整（胶料+骨架+预成型件+包材）</td><td>化工原料清单</td><td>金属原料清单</td><td>胶料+骨架</td></tr>
+    <tr><td><strong>工序任务</strong></td><td>完整工序（成型/硫化/修边/检验/包装）</td><td>混炼/检验/包装</td><td>冲压/磷化/检验</td><td>成型/硫化/修边</td></tr>
+    <tr><td><strong>不良品项</strong></td><td>25项橡胶缺陷</td><td>化学指标不合格项</td><td>金属件缺陷项</td><td>半成品缺陷项</td></tr>
+    <tr><td><strong>特殊区域</strong></td><td>二维码（扫码备料/报工）</td><td>胶料质量参数表</td><td>来料检验状态栏</td><td>工序流转记录栏</td></tr>
+  </table>
+
+  <div class="page-break"></div>
+
+  <h2>四、各模板详细字段</h2>
+
+  <h3>4.1 成品 — 生产调度单</h3>
+  <table>
+    <tr><th>区域</th><th>字段</th></tr>
+    <tr><td rowspan="8">基本信息</td><td>生产单编号 / 生产计划编号 / 生产日期</td></tr>
+    <tr><td>产品编号 / 产品名称 / 规格</td></tr>
+    <tr><td>单位 / 计划数量 / 班次</td></tr>
+    <tr><td>设备名称 / 设备编号 / 胶料编号</td></tr>
+    <tr><td>模具编号 / 成型件规格 / 成型件单耗</td></tr>
+    <tr><td>实际模腔 / 实际模穴 / 实际班产</td></tr>
+    <tr><td>产品图号 / 班产定额 / 状态</td></tr>
+    <tr><td>备注</td></tr>
+    <tr><td>备料清单</td><td>序号/物料编号/物料名称/类型/单位/BOM用量/需求量/调整量/已领量/实发量/工作中心/仓库/备注</td></tr>
+    <tr><td>工序任务</td><td>序号/工序号/工序编号/工序名称/工作中心/计划数量/已完成/实际数量/投入物料/投入量/计划开始/计划结束/状态/备注</td></tr>
+    <tr><td>不良品记录</td><td>缺料/模脏/老化胶/裂口/流痕/气泡/烫坏/杂质/脱胶/撕修坏/砂坏车坏/烂泡/扒胶/模痕/拉缺摆坏/变形/骨架不良/分层/欠硫/包胶/切坏/尺寸不良/冻坏/短少/磕碰</td></tr>
+  </table>
+
+  <h3>4.2 原材料（胶料）— 胶料生产调度单</h3>
+  <table>
+    <tr><th>区域</th><th>字段</th></tr>
+    <tr><td rowspan="6">基本信息</td><td>生产单编号 / 生产计划编号 / 生产日期</td></tr>
+    <tr><td>胶料编号 / 胶料名称 / 规格</td></tr>
+    <tr><td>单位 / 计划数量 / 班次</td></tr>
+    <tr><td>混炼机号 / 混炼温度 / 混炼时间</td></tr>
+    <tr><td>硬度(邵A) / 密度 / 拉伸强度 / 扯断伸长率 / TC10 / TC90</td></tr>
+    <tr><td>备注</td></tr>
+    <tr><td>备料清单</td><td>序号/化工原料编号/原料名称/类型/单位/标准用量/需求量/已领量/实发量/供应商/备注</td></tr>
+    <tr><td>工序任务</td><td>序号/工序号/工序名称/计划数量/已完成/计划开始/计划结束/状态/备注</td></tr>
+    <tr><td>质量检验</td><td>硬度/密度/拉伸强度/伸长率/TC10/TC90 — 实测值/标准值/判定</td></tr>
+  </table>
+
+  <h3>4.3 骨架 — 骨架生产调度单</h3>
+  <table>
+    <tr><th>区域</th><th>字段</th></tr>
+    <tr><td rowspan="6">基本信息</td><td>生产单编号 / 生产计划编号 / 生产日期</td></tr>
+    <tr><td>骨架编号 / 骨架名称 / 规格</td></tr>
+    <tr><td>单位 / 计划数量 / 班次</td></tr>
+    <tr><td>材质 / 表面处理 / 供应商</td></tr>
+    <tr><td>尺寸公差 / 来料批号 / 来料日期</td></tr>
+    <tr><td>备注</td></tr>
+    <tr><td>备料清单</td><td>序号/金属原料编号/原料名称/类型/单位/标准用量/需求量/已领量/实发量/供应商/备注</td></tr>
+    <tr><td>工序任务</td><td>序号/工序号/工序名称/计划数量/已完成/计划开始/计划结束/状态/备注</td></tr>
+    <tr><td>来料检验</td><td>外观/尺寸/硬度/盐雾试验 — 实测值/判定/检验员</td></tr>
+  </table>
+
+  <h3>4.4 预成型件 — 预成型件生产调度单</h3>
+  <table>
+    <tr><th>区域</th><th>字段</th></tr>
+    <tr><td rowspan="6">基本信息</td><td>生产单编号 / 来源BOM编号 / 生产日期</td></tr>
+    <tr><td>预成型件编号 / 预成型件名称 / 规格</td></tr>
+    <tr><td>单位 / 计划数量 / 班次</td></tr>
+    <tr><td>来源生产单 / 半成品规格 / 下道工序</td></tr>
+    <tr><td>成型参数（模腔/模穴/班产/硫化温度/硫化时间/硫化压力）</td></tr>
+    <tr><td>备注</td></tr>
+    <tr><td>备料清单</td><td>序号/物料编号/物料名称/类型/单位/BOM用量/需求量/已领量/实发量/仓库/备注</td></tr>
+    <tr><td>工序任务</td><td>序号/工序号/工序名称/计划数量/已完成/计划开始/计划结束/状态/备注</td></tr>
+    <tr><td>工序流转记录</td><td>工序/计划时间/完成时间/数量/检验/操作员/确认签字</td></tr>
+  </table>
+
+  <div class="page-break"></div>
+
+  <h2>五、技术实现路径</h2>
+
+  <h3>5.1 后端接口改造</h3>
+  <p><strong>文件</strong>：<span class="file-path">server/src/modules/production/order/order.controller.ts</span></p>
+  <p>在 <code>getPrintData</code> 中增加 <code>item_type</code> 查询：</p>
+  <pre><code>const [orders]: any = await sequelize.query(`
+  SELECT po.*, im.item_type 
+  FROM production_order po
+  LEFT JOIN item_master im ON po.item_number = im.item_number
+  WHERE po.production_order_number = :orderNum
+`, { replacements: { orderNum } });
+
+results.push({
+  order: orders[0],
+  materials,
+  tasks,
+  item_type: orders[0].item_type  // 新增
+});</code></pre>
+
+  <h3>5.2 前端模板路由</h3>
+  <p><strong>文件</strong>：<span class="file-path">client/src/views/production/DispatchPrint/Index.vue</span></p>
+  <p>在 <code>triggerDetailPrint</code> 中按 <code>item_type</code> 路由：</p>
+  <pre><code>items.forEach((item: any, pageIdx: number) => {
+  const itemType = item.item_type || '成品';
+  
+  switch (itemType) {
+    case '原材料':
+      pagesHtml += renderRawMaterialTemplate(item, pageIdx, items.length);
+      break;
+    case '骨架':
+      pagesHtml += renderSkeletonTemplate(item, pageIdx, items.length);
+      break;
+    case '预成型件':
+      pagesHtml += renderPreformTemplate(item, pageIdx, items.length);
+      break;
+    case '成品':
+    default:
+      pagesHtml += renderDefaultTemplate(item, pageIdx, items.length);
+  }
+});</code></pre>
+
+  <h2>六、实施计划</h2>
+  <table>
+    <tr><th>阶段</th><th>任务</th><th>工时</th></tr>
+    <tr><td>Phase 1</td><td>后端：改造 getPrintData 接口返回 item_type</td><td>0.5 天</td></tr>
+    <tr><td>Phase 2</td><td>前端：重构 triggerDetailPrint 为模板路由函数</td><td>0.5 天</td></tr>
+    <tr><td>Phase 3</td><td>前端：开发胶料生产调度单模板</td><td>1 天</td></tr>
+    <tr><td>Phase 4</td><td>前端：开发骨架生产调度单模板</td><td>1 天</td></tr>
+    <tr><td>Phase 5</td><td>前端：开发预成型件生产调度单模板</td><td>1 天</td></tr>
+    <tr><td>Phase 6</td><td>联调测试与打印效果验证</td><td>0.5 天</td></tr>
+  </table>
+
+  <h2>七、待确认数据问题</h2>
+  <table>
+    <tr><th>#</th><th>问题</th><th>影响</th></tr>
+    <tr><td>1</td><td>胶料扩展字段（硬度/密度/TC10/TC90）存在哪张表？</td><td>胶料模板质量参数区域数据来源</td></tr>
+    <tr><td>2</td><td>骨架的材质/表面处理/供应商信息存在哪？</td><td>骨架模板核心字段来源</td></tr>
+    <tr><td>3</td><td>预成型件的"来源BOM"和"成型参数"是否已维护？</td><td>预成型件模板数据完整性</td></tr>
+    <tr><td>4</td><td>混炼机号、混炼温度等胶料生产参数存在哪？</td><td>胶料模板基本信息字段来源</td></tr>
+  </table>
+
+</body>
+</html>

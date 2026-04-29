@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>生产单派发业务流程图 - 睿信橡胶密封件MES系统</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+  .page { max-width: 1200px; margin: 0 auto; padding: 32px; background: #fff; min-height: 100vh; }
+  .page-break { page-break-before: always; }
+  h1 { text-align: center; font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 20px; color: #1a1a2e; margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 16px; color: #333; margin: 20px 0 10px; }
+  .intro { background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px; padding: 16px; margin-bottom: 24px; font-size: 14px; }
+  .mermaid { text-align: center; margin: 16px 0; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  .warning { background: #fff2f0; border-left: 4px solid #ff4d4f; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  .info { background: #e6f7ff; border-left: 4px solid #1890ff; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+  @media print {
+    body { background: #fff; }
+    .page { padding: 20px; max-width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>生产单派发业务流程图</h1>
+<div class="subtitle">睿信橡胶密封件MES系统 | 基于当前代码实际逻辑</div>
+
+<div class="intro">
+  <strong>文档说明：</strong>本文档基于系统现有代码（<code>orderDispatch.service.ts</code>、<code>order.controller.ts</code>、<code>Order/List.vue</code>），完整梳理了生产单从勾选派发、前端校验、排产冲突检查，到后端事务内执行派发、自动生成工序任务和备料单的全链路业务逻辑。
+</div>
+
+<!-- ==================== 一、总体流程 ==================== -->
+<h2>一、总体派发流程</h2>
+<div class="mermaid">
+graph TD
+    START([开始]) --> SELECT[用户勾选生产单<br/>点击"派发"]
+    SELECT --> FE_CHECK{前端校验}
+    FE_CHECK -->|plan_status=未开始<br/>approval_status=已审批| OPEN[打开派发弹窗]
+    FE_CHECK -->|校验失败| FE_ERR[提示并拦截]
+    FE_ERR --> END_ERR1([结束-失败])
+
+    OPEN --> FILL[填写设备/模具<br/>生产日期/班次]
+    FILL --> BATCH[批量应用<br/>可选]
+    BATCH --> CONFIRM[点击"确定派发"]
+    CONFIRM --> FE_CONFLICT{前端排产冲突预检}
+    FE_CONFLICT -->|存在冲突| CONFLICT_ERR[展示冲突详情<br/>阻止提交]
+    CONFLICT_ERR --> FILL
+    FE_CONFLICT -->|无冲突| API[调用API<br/>POST /dispatch-and-generate]
+
+    API --> BE_CONFLICT{后端排产冲突检查}
+    BE_CONFLICT -->|本批次冲突| BE_ERR1[返回400]
+    BE_CONFLICT -->|数据库冲突| BE_ERR2[返回409]
+    BE_ERR1 --> END_ERR2([结束-失败])
+    BE_ERR2 --> END_ERR2
+
+    BE_CONFLICT -->|无冲突| TX[开启数据库事务]
+    TX --> LOOP[循环处理每个生产单]
+
+    LOOP --> VERIFY{验证生产单}
+    VERIFY -->|不存在/未审批/非未开始| SKIP_ERR[记录错误<br/>跳过该单]
+    SKIP_ERR --> NEXT{还有下一单?}
+    VERIFY -->|验证通过| DISPATCH[更新生产单<br/>plan_status=已派发]
+
+    DISPATCH --> BASELINE[Baseline记录<br/>首次设置生产日期]
+    BASELINE --> SYNC_SO[回写销售订单<br/>production_status=计划中]
+    SYNC_SO --> GEN_TASK[生成工序任务]
+    GEN_TASK --> GEN_PREP[生成备料单]
+    GEN_PREP --> NEXT
+
+    NEXT -->|是| LOOP
+    NEXT -->|否| COMMIT[提交事务]
+    COMMIT --> RESULT[返回派发结果]
+    RESULT --> SHOW[前端展示结果弹窗]
+    SHOW --> END_OK([结束-成功])
+</div>
+
+<div class="note">
+  <strong>关键设计：</strong>全部操作在同一个数据库事务中执行，任一环节的数据库异常导致整个事务回滚。但单个生产单的校验失败（如未审批）仅记录错误并跳过，不影响其他生产单的派发。
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== 二、前端详细流程 ==================== -->
+<h2>二、前端详细流程</h2>
+
+<h3>2.1 派发入口与校验</h3>
+<div class="mermaid">
+graph LR
+    A[勾选生产单] --> B{plan_status<br/>='未开始'?}
+    B -->|否| C[提示:只能派发未开始状态]
+    B -->|是| D{approval_status<br/>='已审批'?}
+    D -->|否| E[提示:请先完成审批]
+    D -->|是| F[打开派发弹窗]
+
+    F --> G[批量设置设备/模具/日期/班次]
+    G --> H[点击确定派发]
+    H --> I{本批次排产冲突检查}
+    I -->|模具+日期+班次冲突| J[展示冲突详情]
+    I -->|设备+日期+班次冲突| J
+    J --> F
+    I -->|无冲突| K[Modal.confirm确认]
+    K --> L[调用dispatch-and-generate API]
+</div>
+
+<div class="info">
+  <strong>前端预检规则：</strong>遍历所有派发行，按 <code>模具号\|生产日期\|班次</code> 和 <code>设备编号\|生产日期\|班次</code> 分组，若同一组合出现在多条生产单中则判定冲突。
+</div>
+
+<h3>2.2 前端请求参数</h3>
+<table>
+<tr><th>字段</th><th>来源</th><th>说明</th></tr>
+<tr><td>production_order_number</td><td>生产单</td><td>生产单编号</td></tr>
+<tr><td>equipment_number</td><td>用户填写</td><td>设备编号（远程搜索）</td></tr>
+<tr><td>equipment_name</td><td>设备选择自动带入</td><td>设备名称</td></tr>
+<tr><td>mould_number</td><td>用户填写</td><td>模具号（远程搜索）</td></tr>
+<tr><td>formed_part_specifications</td><td>模具自动带入</td><td>成型件规格</td></tr>
+<tr><td>formed_part_unit_consumption</td><td>模具自动带入</td><td>成型件单耗</td></tr>
+<tr><td>actual_cavity_count</td><td>模具自动带入</td><td>实际模腔数</td></tr>
+<tr><td>actual_hole_count</td><td>模具自动带入</td><td>实际穴数</td></tr>
+<tr><td>actual_daily_output</td><td>模具自动带入</td><td>实际班产</td></tr>
+<tr><td>production_date</td><td>用户填写</td><td>生产日期</td></tr>
+<tr><td>schedule_id</td><td>用户填写</td><td>班次</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ==================== 三、后端详细流程 ==================== -->
+<h2>三、后端详细流程</h2>
+
+<h3>3.1 排产冲突检查</h3>
+<div class="mermaid">
+graph TD
+    START[接收dispatch-and-generate请求] --> CHECK1[本批次内冲突检查]
+    CHECK1 --> CHECK2[数据库已派发记录检查]
+
+    CHECK1 --> M1{模具+日期+班次<br/>在本批次重复?}
+    M1 -->|是| ERR1[记录批次冲突]
+    M1 -->|否| E1{设备+日期+班次<br/>在本批次重复?}
+    E1 -->|是| ERR1
+    E1 -->|否| CHECK2
+
+    CHECK2 --> M2{模具+日期+班次<br/>已被占用?}
+    M2 -->|是| ERR2[记录数据库冲突<br/>含占用该资源的生产单号]
+    M2 -->|否| E2{设备+日期+班次<br/>已被占用?}
+    E2 -->|是| ERR2
+    E2 -->|否| PASS[通过冲突检查]
+
+    ERR1 -->|有冲突| RET400[抛出400错误<br/>返回批次冲突详情]
+    ERR2 -->|有冲突| RET409[抛出409错误<br/>返回数据库冲突详情]
+    PASS --> TX[进入事务处理]
+</div>
+
+<div class="warning">
+  <strong>冲突维度：</strong>检查范围覆盖 <code>production_order</code> 表中所有 <code>plan_status='已派发'</code> 的历史记录。任一冲突即阻止整个批次的派发。
+</div>
+
+<h3>3.2 事务内派发处理</h3>
+<div class="mermaid">
+graph TD
+    TX[事务开始] --> LOOP[遍历每个生产单]
+    LOOP --> V1{生产单存在?}
+    V1 -->|否| SKIP1[错误:生产单不存在]
+    V1 -->|是| V2{approval_status<br/>='已审批'?}
+    V2 -->|否| SKIP2[错误:需要已审批]
+    V2 -->|是| V3{plan_status<br/>='未开始'?}
+    V3 -->|否| SKIP3[错误:需要未开始]
+    V3 -->|是| UPDATE[UPDATE production_order<br/>plan_status=已派发<br/>写入设备/模具/日期/班次]
+
+    UPDATE --> BASE[首次设置生产日期?<br/>记录baseline日期]
+    BASE --> SYNC[回写销售订单明细<br/>production_status=计划中]
+    SYNC --> GEN_PT[生成工序任务<br/>generateProcessTasks]
+    GEN_PT --> GEN_MP[生成备料单<br/>generateMaterialPreparation]
+    GEN_MP --> NEXT{还有下一单?}
+
+    SKIP1 --> NEXT
+    SKIP2 --> NEXT
+    SKIP3 --> NEXT
+    NEXT -->|是| LOOP
+    NEXT -->|否| COMMIT[提交事务]
+    COMMIT --> RESP[组装响应结果]
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== 四、工序任务生成 ==================== -->
+<h2>四、工序任务生成流程</h2>
+
+<h3>4.1 工艺路线匹配</h3>
+<div class="mermaid">
+graph LR
+    A[输入:产品编号item_number] --> B[查询routing_header]
+    B --> C{条件}<br/>condition='启用'<br/>approval_status='已审批'
+    C --> D[ORDER BY<br/>is_primary='是'优先<br/>creation_date DESC]
+    D --> E[取TOP 1]
+    E --> F[获取工艺路线编号]
+    F --> G[查询routing_detail明细<br/>按step_number排序]
+    G --> H[查询routing_detail_material<br/>构建物料映射]
+</div>
+
+<h3>4.2 逐条生成工序任务</h3>
+<div class="mermaid">
+graph TD
+    START[遍历routing_detail每条记录] --> CHECK{process_task<br/>已存在?<br/>同生产单+同步骤号}
+    CHECK -->|是| SKIP[跳过<br/>幂等保护]
+    CHECK -->|否| GEN[生成任务编号<br/>PT-YYYYMMDD-NNN]
+    GEN --> INSERT[INSERT INTO process_task]
+    INSERT --> FIELD1[task_status='未开始']
+    INSERT --> FIELD2[approval_status='已审批']
+    INSERT --> FIELD3[inspect_status='无需检']
+    INSERT --> FIELD4[completed_quantity=0]
+    INSERT --> FIELD5[remark=routing_detail.remark]
+
+    INSERT --> OUT{is_outsourced<br/>=true?}
+    OUT -->|是| COLLECT[收集到<br/>委外申请明细列表]
+    OUT -->|否| NEXT
+    COLLECT --> NEXT{还有下一工序?}
+    SKIP --> NEXT
+    NEXT -->|是| START
+    NEXT -->|否| CREATE_OS{存在委外工序?}
+    CREATE_OS -->|是| GEN_REQ[生成outsourcing_req<br/>编号: OS-YYYYMMDD-NNN]
+    GEN_REQ --> GEN_DTL[生成outsourcing_req_detail]
+    CREATE_OS -->|否| END([结束])
+    GEN_DTL --> END
+</div>
+
+<div class="note">
+  <strong>工艺路线物料子表映射：</strong>读取 <code>routing_detail_material</code> 构建 <code>material_number → {step_number, work_center_number, work_center_name, standard_process_name}</code> 映射，供备料单生成时匹配工序号和工作中心。
+</div>
+
+<h3>4.3 工序任务字段映射</h3>
+<table>
+<tr><th>process_task字段</th><th>数据来源</th><th>说明</th></tr>
+<tr><td>process_task_number</td><td>自动生成</td><td>PT-YYYYMMDD-NNN</td></tr>
+<tr><td>production_order_number</td><td>生产单</td><td>直接取值</td></tr>
+<tr><td>production_number</td><td>生产单</td><td>生产计划编号</td></tr>
+<tr><td>process_route_number</td><td>routing_header</td><td>匹配到的工艺路线</td></tr>
+<tr><td>step_number</td><td>routing_detail</td><td>工序序号</td></tr>
+<tr><td>item_number / item_name</td><td>生产单</td><td>产品信息</td></tr>
+<tr><td>specifications / basic_unit</td><td>生产单</td><td>规格/单位</td></tr>
+<tr><td>planned_quantity</td><td>生产单</td><td>计划数量</td></tr>
+<tr><td>completed_quantity</td><td>常量</td><td>初始值0</td></tr>
+<tr><td>standard_process_number/name</td><td>routing_detail</td><td>标准工序</td></tr>
+<tr><td>work_center_number/name</td><td>routing_detail</td><td>工作中心</td></tr>
+<tr><td>excess_reporting_ratio</td><td>routing_detail</td><td>超额报工比例</td></tr>
+<tr><td>ingredient_addition_method</td><td>routing_detail</td><td>配料方式</td></tr>
+<tr><td>task_status</td><td>常量</td><td>"未开始"</td></tr>
+<tr><td>approval_status</td><td>常量</td><td>"已审批"（自动生成即审批）</td></tr>
+<tr><td>inspect_type/plan_name/spec_name</td><td>routing_detail</td><td>检验配置</td></tr>
+<tr><td>inspect_status</td><td>常量</td><td>"无需检"</td></tr>
+<tr><td>remark</td><td>routing_detail.remark</td><td>工艺路线明细备注</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ==================== 五、备料单生成 ==================== -->
+<h2>五、备料单生成流程</h2>
+
+<h3>5.1 BOM匹配与展平</h3>
+<div class="mermaid">
+graph TD
+    START[开始生成备料单] --> DUP{material_preparation<br/>已存在?}
+    DUP -->|是| SKIP[跳过:该生产单已存在备料单]
+    DUP -->|否| BOM1[查询routing_header<br/>获取关联bom_number]
+    BOM1 --> BOM2{routing_header<br/>有bom_number?}
+    BOM2 -->|是| BOM3[按bom_number精确查询BOM]
+    BOM2 -->|否| BOM4[按item_number查询最新版本BOM]
+    BOM3 --> BOM5{找到启用+已审批BOM?}
+    BOM4 --> BOM5
+    BOM5 -->|否| SKIP2[跳过:未找到匹配BOM]
+    BOM5 -->|是| FLAT[读取bom_detail第一层明细]
+    FLAT --> EMPTY{bom_detail<br/>有数据?}
+    EMPTY -->|否| SKIP3[跳过:BOM无物料明细]
+    EMPTY -->|是| CALC[计算需求量]
+</div>
+
+<div class="warning">
+  <strong>当前实现限制：</strong>备料单生成仅取 <code>bom_detail</code> 第一层明细，<strong>不做递归展平</strong>。若产品BOM包含子BOM（半成品又有自己的BOM），子BOM中的物料不会被展开到备料单中。
+</div>
+
+<h3>5.2 需求量计算与插入</h3>
+<div class="mermaid">
+graph LR
+    A[倍率 = planned_quantity / BOM基数量] --> B[需求量 = 倍率 x actual_quantity]
+    B --> C[生成备料单编号<br/>MP-YYYYMMDD-NNN]
+    C --> D[INSERT material_preparation<br/>approval_status='已审批']
+    D --> E[遍历bom_detail每条记录]
+    E --> F[step_number优先从<br/>routing_detail_material映射获取]
+    F --> G[work_center从<br/>已生成的process_task获取]
+    G --> H[INSERT material_preparation_detail]
+    H --> I{还有下一条?}
+    I -->|是| E
+    I -->|否| END([结束])
+</div>
+
+<h3>5.3 备料单字段映射</h3>
+<table>
+<tr><th>字段</th><th>来源</th><th>说明</th></tr>
+<tr><td>preparation_number</td><td>自动生成</td><td>MP-YYYYMMDD-NNN</td></tr>
+<tr><td>production_order_number</td><td>生产单</td><td>关联生产单</td></tr>
+<tr><td>bom_number / bom_version</td><td>bom_header</td><td>BOM信息</td></tr>
+<tr><td>planned_quantity</td><td>生产单</td><td>计划生产数量</td></tr>
+<tr><td>bom_base_quantity</td><td>bom_header</td><td>BOM基数量</td></tr>
+<tr><td>total_material_types</td><td>计算</td><td>第一层物料种类数</td></tr>
+<tr><td>preparation_status</td><td>常量</td><td>"未领料"</td></tr>
+<tr><td>approval_status</td><td>常量</td><td>"已审批"</td></tr>
+<tr><td>remark</td><td>常量</td><td>"派发自动审批"</td></tr>
+<tr><td>line_number</td><td>计算</td><td>(index+1) * 10</td></tr>
+<tr><td>material_number/name</td><td>bom_detail</td><td>物料信息</td></tr>
+<tr><td>bom_standard_quantity</td><td>bom_detail</td><td>标准用量</td></tr>
+<tr><td>bom_wastage_rate</td><td>bom_detail</td><td>损耗率</td></tr>
+<tr><td>required_quantity</td><td>计算</td><td>倍率 x actual_quantity</td></tr>
+<tr><td>adjusted_quantity</td><td>同上</td><td>初始等于需求量</td></tr>
+<tr><td>issued_quantity</td><td>常量</td><td>初始值0</td></tr>
+<tr><td>step_number</td><td>工艺路线物料映射</td><td>优先从routing_detail_material获取</td></tr>
+<tr><td>work_center_number/name</td><td>process_task</td><td>来自已生成的工序任务</td></tr>
+<tr><td>standard_process_name</td><td>工艺路线</td><td>工序名称</td></tr>
+<tr><td>is_key_material</td><td>bom_detail</td><td>是否关键物料</td></tr>
+<tr><td>supply_type</td><td>bom_detail</td><td>供应类型</td></tr>
+<tr><td>default_warehouse</td><td>bom_detail</td><td>默认仓库</td></tr>
+<tr><td>bom_path</td><td>bom_header</td><td>BOM编号（当前单层）</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ==================== 六、容错与事务 ==================== -->
+<h2>六、容错机制与事务策略</h2>
+
+<h3>6.1 事务边界</h3>
+<div class="mermaid">
+graph TD
+    TX[withTransaction<br/>事务开始] --> A[生产单A: 派发+工序任务+备料单]
+    A --> B[生产单B: 派发+工序任务+备料单]
+    B --> C[生产单C: 派发失败<br/>未审批]
+    C --> D[生产单D: 派发+工序任务+备料单]
+    D --> COMMIT[事务提交]
+
+    A -->|异常| ROLL[事务回滚<br/>全部撤销]
+    B -->|异常| ROLL
+    D -->|异常| ROLL
+    C -.->|记录错误<br/>继续处理| D
+</div>
+
+<div class="info">
+  <strong>事务策略：</strong>全部操作在同一个 <code>sequelize.transaction()</code> 中执行。但单个生产单的校验失败（如未审批）被 <code>try-catch</code> 捕获后仅记录错误并跳过，不影响其他生产单。真正的回滚仅发生在数据库异常时。
+</div>
+
+<h3>6.2 容错场景处理</h3>
+<table>
+<tr><th>场景</th><th>处理方式</th><th>结果影响</th></tr>
+<tr><td>生产单不存在</td><td>记录错误，跳过</td><td>该单不派发，其他继续</td></tr>
+<tr><td>审批状态非已审批</td><td>记录错误，跳过</td><td>该单不派发，其他继续</td></tr>
+<tr><td>计划状态非未开始</td><td>记录错误，跳过</td><td>该单不派发，其他继续</td></tr>
+<tr><td>无匹配工艺路线</td><td>派发成功，工序任务标记跳过</td><td>生产单已派发，无工序任务</td></tr>
+<tr><td>工艺路线无明细</td><td>派发成功，工序任务标记跳过</td><td>生产单已派发，无工序任务</td></tr>
+<tr><td>工序任务已存在</td><td>自动跳过该工序</td><td>幂等保护，不重复生成</td></tr>
+<tr><td>无匹配BOM</td><td>派发成功，备料单标记跳过</td><td>生产单已派发，无备料单</td></tr>
+<tr><td>BOM无物料明细</td><td>派发成功，备料单标记跳过</td><td>生产单已派发，无备料单</td></tr>
+<tr><td>备料单已存在</td><td>自动跳过</td><td>幂等保护</td></tr>
+<tr><td>备料单头插入成功但明细失败</td><td>自动清理孤立头记录</td><td>避免脏数据</td></tr>
+<tr><td>委外申请创建失败</td><td>捕获异常，不阻断主流程</td><td>工序任务已生成，委外申请缺失</td></tr>
+<tr><td>数据库事务异常</td><td>全部回滚</td><td>所有变更撤销</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ==================== 七、编号生成规则 ==================== -->
+<h2>七、编号生成规则</h2>
+
+<table>
+<tr><th>类型</th><th>前缀</th><th>格式</th><th>示例</th></tr>
+<tr><td>工序任务编号</td><td>PT</td><td>PT-YYYYMMDD-NNN</td><td>PT-20260325-001</td></tr>
+<tr><td>备料单编号</td><td>MP</td><td>MP-YYYYMMDD-NNN</td><td>MP-20260325-001</td></tr>
+<tr><td>委外申请编号</td><td>OS</td><td>OS-YYYYMMDD-NNN</td><td>OS-20260325-001</td></tr>
+</table>
+
+<div class="note">
+  <strong>生成逻辑：</strong>查询当日已有编号的最大序号，新序号 = 最大序号 + 1，序号不足3位补零，在事务内查询保证并发安全。
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== 八、API与数据表 ==================== -->
+<h2>八、API接口与数据库表</h2>
+
+<h3>8.1 API接口</h3>
+<table>
+<tr><th>项目</th><th>值</th></tr>
+<tr><td>URL</td><td><code>POST /api/orders/dispatch-and-generate</code></td></tr>
+<tr><td>认证</td><td>JWT Bearer Token</td></tr>
+<tr><td>Content-Type</td><td>application/json</td></tr>
+</table>
+
+<h3>8.2 涉及数据表</h3>
+<table>
+<tr><th>表名</th><th>用途</th><th>操作类型</th></tr>
+<tr><td>production_order</td><td>生产单主表</td><td>SELECT + UPDATE（派发状态+设备模具信息+baseline）</td></tr>
+<tr><td>routing_header</td><td>工艺路线主表</td><td>SELECT（匹配产品）</td></tr>
+<tr><td>routing_detail</td><td>工艺路线明细</td><td>SELECT（获取工序步骤）</td></tr>
+<tr><td>routing_detail_material</td><td>工艺路线物料子表</td><td>SELECT（构建物料→工序映射）</td></tr>
+<tr><td>process_task</td><td>工序任务表</td><td>SELECT（去重）+ INSERT</td></tr>
+<tr><td>bom_header</td><td>BOM主表</td><td>SELECT（匹配产品或关联BOM）</td></tr>
+<tr><td>bom_detail</td><td>BOM明细</td><td>SELECT（第一层物料）</td></tr>
+<tr><td>material_preparation</td><td>备料单主表</td><td>SELECT（去重）+ INSERT + DELETE（清理孤立）</td></tr>
+<tr><td>material_preparation_detail</td><td>备料单明细</td><td>INSERT</td></tr>
+<tr><td>outsourcing_req</td><td>委外申请主表</td><td>SELECT（去重）+ INSERT</td></tr>
+<tr><td>outsourcing_req_detail</td><td>委外申请明细</td><td>INSERT</td></tr>
+<tr><td>sales_order_detail</td><td>销售订单明细</td><td>UPDATE（回写production_status）</td></tr>
+</table>
+
+<h3>8.3 派发时写入 production_order 的字段</h3>
+<table>
+<tr><th>字段</th><th>值来源</th></tr>
+<tr><td>plan_status</td><td>常量 '已派发'</td></tr>
+<tr><td>equipment_number / equipment_name</td><td>请求参数</td></tr>
+<tr><td>mould_number</td><td>请求参数</td></tr>
+<tr><td>formed_part_specifications</td><td>请求参数（模具带入）</td></tr>
+<tr><td>formed_part_unit_consumption</td><td>请求参数（模具带入）</td></tr>
+<tr><td>actual_cavity_count / actual_hole_count</td><td>请求参数（模具带入）</td></tr>
+<tr><td>actual_daily_output</td><td>请求参数（模具带入）</td></tr>
+<tr><td>production_date</td><td>请求参数</td></tr>
+<tr><td>schedule_id</td><td>请求参数</td></tr>
+<tr><td>baseline_production_date</td><td>首次派发时同步记录</td></tr>
+<tr><td>baseline_planned_completion_time</td><td>首次派发时同步记录</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ==================== 九、状态流转 ==================== -->
+<h2>九、派发前后状态流转</h2>
+
+<h3>9.1 生产单状态变化</h3>
+<div class="mermaid">
+graph LR
+    A[approval_status=草稿] -->|提交审批| B[approval_status=待审批]
+    B -->|审批通过| C[approval_status=已审批<br/>plan_status=未开始]
+    C -->|派发| D[approval_status=已审批<br/>plan_status=已派发]
+    D -->|备料完成| E[plan_status=已备料]
+    E -->|首次报工| F[plan_status=生产中]
+    F -->|全部工序完成| G[plan_status=已完成]
+</div>
+
+<h3>9.2 工序任务初始状态</h3>
+<div class="mermaid">
+graph LR
+    A[派发生成] --> B[task_status=未开始<br/>approval_status=已审批<br/>inspect_status=无需检]
+    B -->|首次报工| C[task_status=进行中]
+    C -->|完成| D[task_status=已完成]
+</div>
+
+<h3>9.3 备料单初始状态</h3>
+<div class="mermaid">
+graph LR
+    A[派发生成] --> B[preparation_status=未领料<br/>approval_status=已审批<br/>remark=派发自动审批]
+    B -->|部分领料| C[preparation_status=部分领料]
+    C -->|全部领料| D[preparation_status=已领料]
+</div>
+
+<div class="info">
+  <strong>自动审批设计：</strong>派发时自动生成的工序任务和备料单直接置为 <code>approval_status='已审批'</code>，无需用户再次手动审批，可直接进入执行环节。备料单主表 <code>remark</code> 字段标记为 '派发自动审批' 用于追溯。
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== 十、返回结果结构 ==================== -->
+<h2>十、派发结果响应</h2>
+
+<h3>10.1 成功响应示例</h3>
+<pre style="background:#f5f5f5;padding:12px;border-radius:4px;font-size:12px;overflow-x:auto;">
+{
+  "success": true,
+  "message": "成功派发 3 条生产单",
+  "data": {
+    "dispatch": {
+      "count": 3,
+      "items": [
+        { "orderNo": "P20260325001", "status": "dispatched" },
+        { "orderNo": "P20260325002", "status": "dispatched" },
+        { "orderNo": "P20260325003", "status": "dispatched" }
+      ]
+    },
+    "processTasks": {
+      "totalGenerated": 9,
+      "details": [
+        { "orderNo": "P20260325001", "tasksGenerated": 3 },
+        { "orderNo": "P20260325002", "tasksGenerated": 4 },
+        { "orderNo": "P20260325003", "tasksGenerated": 2 }
+      ]
+    },
+    "materialPreparations": {
+      "totalGenerated": 3,
+      "details": [
+        { "orderNo": "P20260325001", "materialsGenerated": 8 },
+        { "orderNo": "P20260325002", "materialsGenerated": 6 },
+        { "orderNo": "P20260325003", "materialsGenerated": 10 }
+      ]
+    },
+    "semiProductOrders": { "totalGenerated": 0, "details": [] },
+    "errors": []
+  }
+}
+</pre>
+
+<h3>10.2 错误响应结构</h3>
+<table>
+<tr><th>HTTP状态码</th><th>触发场景</th><th>响应内容</th></tr>
+<tr><td>400</td><td>本批次内排产冲突</td><td>conflicts数组，含冲突详情</td></tr>
+<tr><td>409</td><td>数据库已派发记录冲突</td><td>conflicts数组，含占用资源的生产单号</td></tr>
+<tr><td>500</td><td>数据库事务异常</td><td>事务回滚，返回异常信息</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ==================== 十一、与设计文档差异 ==================== -->
+<h2>十一、当前实现与设计文档的差异</h2>
+
+<h3>11.1 业务规则增强（非破坏性变更）</h3>
+<table>
+<tr><th>项目</th><th>设计文档</th><th>当前实现</th></tr>
+<tr><td>工序任务审批状态</td><td>草稿</td><td>已审批（自动审批）</td></tr>
+<tr><td>备料单审批状态</td><td>草稿</td><td>已审批（remark='派发自动审批'）</td></tr>
+<tr><td>排产冲突检查</td><td>未提及</td><td>本批次+数据库双层冲突检查</td></tr>
+<tr><td>Baseline记录</td><td>未提及</td><td>首次派发时记录baseline日期</td></tr>
+<tr><td>销售订单回写</td><td>未提及</td><td>回写production_status='计划中'</td></tr>
+<tr><td>委外申请自动生成</td><td>未提及</td><td>检测is_outsourced工序自动生成委外申请</td></tr>
+<tr><td>备料单清理机制</td><td>未提及</td><td>头插入成功但明细失败时自动清理</td></tr>
+</table>
+
+<h3>11.2 实现简化</h3>
+<div class="warning">
+  <strong>BOM展平：</strong>设计文档要求递归展平多级BOM（最大深度10层，防止循环引用）。当前实现<strong>仅取bom_detail第一层明细</strong>，不做递归展开。若产品BOM包含子BOM（半成品又有自己的BOM），子BOM中的物料不会被展开到备料单中。
+</div>
+
+<h3>11.3 已取消功能残留</h3>
+<div class="note">
+  返回结构中保留了 <code>semiProductOrders: { totalGenerated: 0, details: [] }</code> 字段，这是模具级MRP重算功能取消后的残留，始终返回空数组，不影响业务功能。
+</div>
+
+<h3>11.4 字段映射差异</h3>
+<table>
+<tr><th>字段</th><th>设计文档</th><th>当前实现</th></tr>
+<tr><td>process_task.remark</td><td>空</td><td>取routing_detail.remark</td></tr>
+<tr><td>process_task.operator</td><td>未明确</td><td>优先取routing_detail.operator，否则取当前用户</td></tr>
+<tr><td>备料单BOM匹配</td><td>按产品编号</td><td>优先按routing_header关联bom_number，否则按产品编号</td></tr>
+<tr><td>备料单step_number</td><td>从bom_detail获取</td><td>优先从routing_detail_material映射，回退到bom_detail.step_number</td></tr>
+</table>
+
+<div style="margin-top:40px;text-align:center;color:#999;font-size:12px;">
+  ——— 文档结束 ———<br/>
+  基于代码版本：2026-03 | 睿信橡胶密封件MES系统
+</div>
+
+</div>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'default', flowchart: { htmlLabels: true, curve: 'basis' } });
+</script>
+</body>
+</html>

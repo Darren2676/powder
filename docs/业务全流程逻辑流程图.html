@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>业务全流程逻辑流程图 - 睿信橡胶密封件MES系统</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+  .page { max-width: 1200px; margin: 0 auto; padding: 32px; background: #fff; min-height: 100vh; }
+  .page-break { page-break-before: always; }
+  h1 { text-align: center; font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 20px; color: #1a1a2e; margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 16px; color: #333; margin: 20px 0 10px; }
+  .intro { background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px; padding: 16px; margin-bottom: 24px; font-size: 14px; }
+  .mermaid { text-align: center; margin: 16px 0; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  .legend { display: flex; flex-wrap: wrap; gap: 16px; margin: 12px 0; font-size: 13px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-box { width: 16px; height: 16px; border-radius: 3px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  @media print {
+    body { background: #fff; }
+    .page { padding: 20px; max-width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>业务全流程逻辑流程图</h1>
+<div class="subtitle">睿信橡胶密封件MES系统 | 从生产计划到入库的完整业务链路</div>
+
+<div class="intro">
+  <strong>文档说明：</strong>本文档基于系统现有代码逻辑，完整梳理了从销售订单/预测开始，经过MPS/MRP运算，到生产单派发、备料、报工、入库，以及采购、委外等分支流程的业务逻辑。包含各单据的生成条件、状态转换规则、删除/取消约束。
+</div>
+
+<!-- ==================== 一、总体业务流程图 ==================== -->
+<h2>一、总体业务流程图</h2>
+<div class="mermaid">
+graph TB
+    subgraph 需求端
+        SO[销售订单]
+        SF[销售预测]
+    end
+
+    subgraph 计划层
+        MPS[MPS计算]
+        PP[生产计划<br/>Production_plan]
+        MRP[MRP运算]
+    end
+
+    subgraph 生产层
+        PO[生产单<br/>production_order]
+        DIS[调度派发]
+        PT[工序任务<br/>process_task]
+        MP[备料单<br/>material_preparation]
+        WR[报工单<br/>work_report]
+        PI[生产入库单<br/>production_inbound_order]
+    end
+
+    subgraph 采购层
+        PR[采购申请<br/>purchase_req]
+        PUR[采购订单<br/>purchase_order]
+        SI[采购入库单<br/>stock_in]
+    end
+
+    subgraph 委外层
+        OR[委外申请<br/>outsourcing_req]
+        OO[委外订单<br/>outsourcing_order]
+        OS[委外发料]
+        OC[委外收回/入库]
+    end
+
+    subgraph 库存层
+        INV[库存更新]
+    end
+
+    SO -->|导入| MPS
+    SF -->|导入| MPS
+    MPS -->|生成| PP
+    PP -->|MRP分解| MRP
+    MRP -->|生成| PO
+    PO -->|审批后| DIS
+    DIS -->|自动生成| PT
+    DIS -->|自动生成| MP
+    PT -->|委外工序| OR
+    OR -->|转单| OO
+    OO -->|发料| OS
+    OS -->|加工完成| OC
+    OC -->|入库| INV
+    MP -->|领料完成| WR
+    WR -->|全部完成| PI
+    PI -->|半成品/成品| INV
+    MRP -->|外购件| PR
+    PR -->|转单| PUR
+    PUR -->|到货| SI
+    SI -->|原材料| INV
+    INV -->|物料供给| MP
+</div>
+
+<div class="note">
+  <strong>关键说明：</strong>调度派发(DIS)是核心触发点，派发后自动生成工序任务(PT)和备料单(MP)。若工序含委外标记，则自动收集生成委外申请(OR)。
+</div>
+
+<!-- ==================== 二、生产计划状态流转图 ==================== -->
+<h2 class="page-break">二、生产计划状态流转图</h2>
+
+<h3>2.1 审批状态机（approval_status）</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 草稿: 创建计划
+    草稿 --> 待审批: 提交审批
+    待审批 --> 已审批: 审批通过
+    待审批 --> 草稿: 审批不通过（保持草稿）
+    已审批 --> 已反审: 反审批
+    已反审 --> 已审批: 重新审批
+    已审批 --> [*]: 进入执行阶段
+</div>
+
+<h3>2.2 计划执行状态（plan_status）</h3>
+<div class="mermaid">
+graph LR
+    A[待加入任务] -->|MRP分解生成生产单| B[已加入任务]
+    B -->|删除生产计划| A
+</div>
+
+<h3>2.3 生产计划创建来源</h3>
+<div class="mermaid">
+graph TB
+    subgraph 来源类型
+        SRC1[MPS计算结果]
+        SRC2[销售订单]
+        SRC3[销售预测]
+        SRC4[手动创建]
+    end
+
+    subgraph 创建操作
+        OP1[importToPlan]
+        OP2[importFromDemandSources<br/>source_type=ORDER]
+        OP3[importFromDemandSources<br/>source_type=FORECAST]
+        OP4[手动填写]
+    end
+
+    subgraph 回写影响
+        RW1[sales_forecast_detail.status=计划中]
+        RW2[sales_order_detail.production_status=待排产]
+        RW3[sales_order_detail.status=进行中]
+        RW4[sales_order.order_status=生产中]
+        RW5[sales_forecast_detail.status=计划中]
+    end
+
+    SRC1 --> OP1 --> RW1
+    SRC2 --> OP2 --> RW2
+    OP2 --> RW3
+    OP2 --> RW4
+    SRC3 --> OP3 --> RW5
+    SRC4 --> OP4
+</div>
+
+<div class="note">
+  <strong>删除生产计划时的回退逻辑：</strong>deletePlan 使用事务包装，先读取 source_order_number 和 source_line_number，删除后根据来源类型级联回退关联状态（未加入计划/未开始）。
+</div>
+
+<!-- ==================== 三、生产单生命周期图 ==================== -->
+<h2 class="page-break">三、生产单生命周期图</h2>
+
+<h3>3.1 生产单状态流转</h3>
+<div class="mermaid">
+graph LR
+    subgraph plan_status
+        A[未开始] -->|调度派发| B[已派发]
+        B -->|备料完成| C[已备料]
+        C -->|首次报工| D[生产中]
+        D -->|全部工序完成| E[已完成]
+    end
+
+    subgraph inbound_status
+        F[未入库] -->|部分入库| G[部分入库]
+        G -->|全部入库| H[全部入库]
+        F -->|全部入库| H
+    end
+
+    E -.->|触发| F
+</div>
+
+<div class="note">
+  <strong>说明：</strong>plan_status 与 inbound_status 是两个独立字段。plan_status 描述生产执行阶段（未开始→已派发→已备料→生产中→已完成）；inbound_status 描述入库状态（未入库→部分入库→全部入库）。生产完成后可多次入库，inbound_status 独立流转。<br><br>
+  <strong>生产入库会计期间：</strong>生产入库单（production_inbound_order）关联 accounting_period（会计期间）字段，入库时根据系统当前日期自动匹配或手动指定会计期间，用于财务核算。
+</div>
+
+<h3>3.2 生产单创建与派发完整流程</h3>
+<div class="mermaid">
+graph TD
+    START([开始]) --> CREATE{创建方式}
+    CREATE -->|MRP分解| MRP[mrp.controller<br/>INSERT production_order]
+    CREATE -->|手动创建| MANUAL[order.controller<br/>INSERT production_order]
+
+    MRP --> PO_DRAFT[production_order<br/>plan_status=未开始<br/>approval_status=草稿]
+    MANUAL --> PO_DRAFT
+
+    PO_DRAFT --> APPROVAL{审批流程}
+    APPROVAL -->|提交| SUBMIT[approval_status=待审批]
+    SUBMIT -->|通过| APPROVED[approval_status=已审批]
+    APPROVAL -->|撤回| PO_DRAFT
+    APPROVED -->|反审| PO_DRAFT
+
+    APPROVED --> DISPATCH[调度派发<br/>dispatchAndGenerateCore]
+    DISPATCH --> CHECK{预检}
+    CHECK -->|模具冲突| ERR1[报错:模具已占用]
+    CHECK -->|设备冲突| ERR2[报错:设备已占用]
+    CHECK -->|通过| DIS_OK[更新 production_order<br/>plan_status=已派发]
+
+    style CHECK fill:#ff6b6b,color:#fff
+    style ERR1 fill:#ffcccc
+    style ERR2 fill:#ffcccc
+
+    DIS_OK --> AUTO1[自动生成工序任务<br/>generateProcessTasks]
+    DIS_OK --> AUTO2[自动生成备料单<br/>generateMaterialPreparation]
+    DIS_OK --> AUTO3[自动生成委外申请<br/>outsourcing_req]
+
+    AUTO1 --> SYNC1[syncProductionStatus<br/>sales_order_detail=计划中]
+    AUTO2 --> MP[material_preparation]
+    AUTO3 --> OR[outsourcing_req]
+
+    MP --> ISSUE[领料完成]
+    ISSUE --> SYNC2[plan_status=已备料<br/>sales_order_detail=待生产]
+
+    ERR1 --> END1([结束-失败])
+    ERR2 --> END1
+    SYNC2 --> END2([结束-可生产])
+</div>
+
+<div class="note">
+  <strong>排产冲突检查说明：</strong>调度派发时执行双重冲突检查：① 本批次内检查（同一派发批次中是否存在模具/设备/日期/班次重叠）；② 数据库已派发记录检查（查询 production_order 中 plan_status=已派发 的历史记录）。检查维度包括：模具+日期+班次、设备+日期+班次。任一冲突即阻止派发。
+</div>
+
+<h3>3.3 生产单拆分</h3>
+<div class="mermaid">
+graph TD
+    START([生产单拆分]) --> CHECK{检查条件}
+    CHECK -->|plan_status=未开始<br/>approval_status=草稿| OK[允许拆分]
+    CHECK -->|已派发/生产中/已完成| ERR[禁止拆分]
+
+    OK --> INPUT[输入拆分数量]
+    INPUT --> CREATE[createSplitOrders<br/>生成子生产单]
+    CREATE --> NEW[新生产单<br/>继承原单BOM/工艺路线]
+    CREATE --> UPDATE[原单更新<br/>planned_quantity -= 拆分数量]
+
+    ERR --> END_ERR([结束-失败])
+    NEW --> END_OK([结束-成功])
+    UPDATE --> END_OK
+</div>
+
+<div class="note">
+  <strong>拆分规则：</strong>仅允许对 plan_status=未开始 且 approval_status=草稿 的生产单进行拆分。拆分后生成新的生产单，继承原单的BOM和工艺路线，原单数量扣减。拆分后的子单可独立审批和派发。
+</div>
+
+<h3>3.4 生产单删除规则</h3>
+<table>
+<tr><th>操作</th><th>条件</th><th>级联影响</th></tr>
+<tr><td>删除生产单</td><td>approval_status=草稿</td><td>无</td></tr>
+<tr><td>撤回审批</td><td>approval_status=待审批</td><td>回到草稿</td></tr>
+<tr><td>反审批</td><td>approval_status=已审批</td><td>回到草稿，已生成下游单据需手动处理</td></tr>
+<tr><td>删除已派发单</td><td>不允许</td><td>需先反审→撤回→删除</td></tr>
+</table>
+
+<!-- ==================== 四、工序任务与报工流程图 ==================== -->
+<h2 class="page-break">四、工序任务与报工流程图</h2>
+
+<h3>4.1 工序任务状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 未开始: 派发自动生成
+    未开始 --> 进行中: 首次报工
+    进行中 --> 已完成: completed_quantity >= planned_quantity
+    进行中 --> 未开始: 删除报工单冲销
+    已完成 --> 进行中: 删除报工单回退
+    未开始 --> 已关闭: 手动关闭
+    进行中 --> 已关闭: 手动关闭
+    已完成 --> [*]: 生产单完成
+    已关闭 --> [*]: 不再参与流转
+</div>
+
+<h3>4.2 报工完整流程</h3>
+<div class="mermaid">
+graph TD
+    START([开始报工]) --> SELECT{选择工序}
+    SELECT -->|PC端| PC[ContinuousReport.vue<br/>多工序批量报工]
+    SELECT -->|移动端| MOB[WorkReport.vue<br/>快速报工]
+
+    PC --> CHECK{报工检查}
+    MOB --> CHECK
+    CHECK -->|物料门控blocked| ERR1[提示:物料未齐套]
+    CHECK -->|未审批| ERR2[提示:工序未审批]
+    CHECK -->|超最大可报量| ERR3[提示:超出允许报工量]
+    CHECK -->|通过| INPUT[填写报工信息]
+
+    INPUT --> PARAM[参数:合格量/不合格量/班次/班组/操作员等]
+    PARAM --> CREATE[createWorkReport<br/>INSERT work_report]
+    CREATE --> SYNC[syncTaskCompletion<br/>更新 completed_quantity]
+
+    SYNC --> FLOW{自动状态流转}
+    FLOW -->|completed > 0| ST1[process_task<br/>task_status=进行中]
+    FLOW -->|completed >= planned| ST2[process_task<br/>task_status=已完成]
+    FLOW -->|completed <= 0| ST3[process_task<br/>task_status=未开始]
+
+    ST1 --> ORDER1[production_order<br/>plan_status=生产中]
+    ST2 --> ORDER2{检查所有工序}
+    ORDER2 -->|全部完成| ORDER3[production_order<br/>plan_status=已完成]
+    ORDER2 -->|尚有未完工序| ORDER4[保持 plan_status]
+
+    ORDER1 --> SYNC_SO1[syncProductionStatus<br/>sales_order_detail=生产中]
+    ORDER3 --> SYNC_SO2[syncProductionStatus<br/>sales_order_detail=生产完成]
+
+    SYNC --> LINESIDE[logWorkReportLinesideMovement<br/>线边仓流转记录]
+    CREATE --> INSPECT[autoCreateInspections<br/>自动创建检验记录]
+
+    ERR1 --> END_ERR([结束-失败])
+    ERR2 --> END_ERR
+    ERR3 --> END_ERR
+    ORDER4 --> END_OK([结束-成功])
+    SYNC_SO1 --> END_OK
+    SYNC_SO2 --> END_OK
+    LINESIDE --> END_OK
+    INSPECT --> END_OK
+</div>
+
+<div class="note">
+  <strong>自动创建检验记录：</strong>报工时 `autoCreateInspections` 根据工序任务的检验配置（专检/自检/巡检）自动创建检验记录。检验类型由 process_task 的 inspection_type 字段决定，报工完成后同步写入 inspection_record 表。<br><br>
+  <strong>线边仓流转记录：</strong>报工时 `logWorkReportLinesideMovement` 自动记录物料从仓库到线边仓的流转；生产入库时 `logLinesideMovement` 记录从线边仓到成品仓的流转。删除报工单时通过 `logWorkReportReverseLinesideMovement` 执行冲销，回退线边仓库存。
+</div>
+
+<h3>4.3 报工单删除流程</h3>
+<div class="mermaid">
+graph TD
+    DEL([删除报工单]) --> CHECK{检查 approval_status}
+    CHECK -->|草稿| DEL_OK[DELETE work_report]
+    CHECK -->|已提交/已审批| DEL_ERR[禁止删除<br/>需先撤回/反审]
+
+    DEL_OK --> SYNC[syncTaskCompletion<br/>qtyDelta = -qualified_quantity]
+    SYNC --> REVERT1[回退工序完成数量]
+    SYNC --> REVERT2[回退 task_status]
+    SYNC --> REVERT3[回退 production_order.plan_status]
+    DEL_OK --> REVERSE[logWorkReportReverseLinesideMovement<br/>线边仓冲销]
+
+    DEL_ERR --> END_ERR([结束-失败])
+    REVERSE --> END_OK([结束-成功])
+</div>
+
+<div class="note">
+  <strong>报工单审批说明：</strong>报工单提交后进入审批流程。但实际业务中，报工单在草稿状态即计入 completed_quantity（实时进度可见），审批通过后仅做记录确认，不影响数量。
+</div>
+
+<!-- ==================== 五、备料单流程图 ==================== -->
+<h2 class="page-break">五、备料单流程图</h2>
+
+<h3>5.1 备料单状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 未领料: 派发自动生成
+    未领料 --> 部分领料: 部分物料领取
+    部分领料 --> 已领料: 全部物料领取
+    未领料 --> 已领料: 一次性全部领取
+    部分领料 --> 已关闭: 取消/完成关闭
+    已领料 --> 已关闭: 关闭
+    未领料 --> 已关闭: 取消
+    已关闭 --> [*]
+</div>
+
+<h3>5.2 备料单生成与领料流程</h3>
+<div class="mermaid">
+graph TD
+    DISPATCH[调度派发] --> GEN_MP[generateMaterialPreparation]
+    GEN_MP --> BOM[查询BOM]
+    BOM --> EXPAND[BOM展平<br/>flattenBomRecursive]
+    EXPAND --> CALC[计算需求量<br/>required = planned * actual_qty / base_qty]
+    CALC --> INSERT[INSERT material_preparation<br/>INSERT material_preparation_detail]
+
+    INSERT --> MP_AUTO[preparation_status=未领料<br/>approval_status=已审批<br/>（派发自动生成即已审批）]
+
+    MP_AUTO --> ISSUE[领料操作]
+    ISSUE -->|PC端| PC_ISSUE[MaterialIssue.vue<br/>按工序领料]
+    ISSUE -->|移动端| MOB_ISSUE[移动端扫码领料]
+
+    PC_ISSUE --> UPDATE[UPDATE material_preparation_detail<br/>issued_quantity += actual]
+    MOB_ISSUE --> UPDATE
+    UPDATE --> CHECK{检查领料状态}
+    CHECK -->|issued < required| ST1[preparation_status=部分领料]
+    CHECK -->|issued >= required| ST2[preparation_status=已领料]
+
+    ST2 --> SYNC_PO[回写 production_order<br/>plan_status=已备料]
+    SYNC_PO --> SYNC_SO[syncProductionStatus<br/>sales_order_detail=待生产]
+</div>
+
+<h3>5.3 备料单删除规则</h3>
+<table>
+<tr><th>操作</th><th>条件</th><th>影响</th></tr>
+<tr><td>删除备料单</td><td>approval_status=草稿</td><td>删除主表+明细</td></tr>
+<tr><td>修改明细</td><td>approval_status=草稿</td><td>可调整adjusted_quantity</td></tr>
+<tr><td>已审批备料单</td><td>不可删除</td><td>需先反审</td></tr>
+</table>
+
+<!-- ==================== 六、采购申请-订单-入库流程图 ==================== -->
+<h2 class="page-break">六、采购申请-订单-入库流程图</h2>
+
+<h3>6.1 采购申请状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 草稿: 创建申请
+    草稿 --> 待审批: 提交审批
+    待审批 --> 已审批: 审批通过
+    待审批 --> 草稿: 撤回
+    已审批 --> 草稿: 反审批
+    已审批 --> 已转单: 全部明细转采购订单
+    已审批 --> 部分转单: 部分明细转采购订单
+    部分转单 --> 已转单: 剩余明细转单
+    已转单 --> [*]: 流程结束
+</div>
+
+<h3>6.2 采购订单状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 草稿: 创建订单
+    草稿 --> 待审批: 提交审批
+    待审批 --> 已审批: 审批通过
+    待审批 --> 草稿: 撤回
+    已审批 --> 草稿: 反审批
+    已审批 --> 待执行: 审批完成
+    待执行 --> 执行中: 部分到货入库
+    执行中 --> 已完成: 全部到货
+    待执行 --> 已关闭: 手动关闭
+    执行中 --> 已关闭: 手动关闭
+    已完成 --> [*]
+    已关闭 --> [*]
+</div>
+
+<h3>6.3 采购申请 → 订单 → 入库 完整流程</h3>
+<div class="mermaid">
+graph TD
+    subgraph 采购申请
+        PR_CREATE[createPurchaseReq<br/>INSERT purchase_req]
+        PR_DRAFT[approval_status=草稿<br/>order_status=未执行]
+        PR_SUBMIT[提交审批]
+        PR_APPROVE[approval_status=已审批]
+    end
+
+    subgraph 转采购订单
+        TO_ORDER[openToOrder<br/>选择明细行+供应商]
+        CREATE_PO[createPurchaseOrder<br/>INSERT purchase_order]
+        PO_DRAFT[approval_status=草稿<br/>order_status=待执行]
+        UPDATE_PR[UPDATE purchase_req_detail<br/>ordered_quantity += remaining]
+        UPDATE_PR_STATUS[UPDATE purchase_req<br/>order_status=部分转单/已转单]
+    end
+
+    subgraph 采购订单审批
+        PO_SUBMIT[提交审批]
+        PO_APPROVE[approval_status=已审批]
+    end
+
+    subgraph 入库流程
+        CREATE_SI[openStockIn<br/>创建入库单]
+        SI_DRAFT[stock_in<br/>approval_status=草稿]
+        CONFIRM[confirmStockIn<br/>确认入库]
+        UPDATE_INV[写入批次库存<br/>material_batch_inventory]
+        UPDATE_PO[UPDATE purchase_order_detail<br/>receive_status=部分到货/已到货]
+        UPDATE_PO_STATUS[UPDATE purchase_order<br/>order_status=执行中/已完成]
+    end
+
+    PR_CREATE --> PR_DRAFT --> PR_SUBMIT --> PR_APPROVE
+    PR_APPROVE --> TO_ORDER --> CREATE_PO --> PO_DRAFT
+    TO_ORDER --> UPDATE_PR --> UPDATE_PR_STATUS
+    PO_DRAFT --> PO_SUBMIT --> PO_APPROVE
+    PO_APPROVE --> CREATE_SI --> SI_DRAFT --> CONFIRM
+    CONFIRM --> UPDATE_INV
+    CONFIRM --> UPDATE_PO --> UPDATE_PO_STATUS
+</div>
+
+<div class="note">
+  <strong>转单规则：</strong>同一采购申请的不同明细行可以转给不同的供应商，生成多个采购订单。当所有明细行的 ordered_quantity >= request_quantity 时，申请单 order_status 变为"已转单"。
+</div>
+
+<!-- ==================== 七、委外申请-订单-发料-入库流程图 ==================== -->
+<h2 class="page-break">七、委外申请-订单-发料-入库流程图</h2>
+
+<h3>7.1 委外申请状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 草稿: 创建申请
+    草稿 --> 待审批: 提交审批
+    待审批 --> 已审批: 审批通过
+    待审批 --> 草稿: 撤回
+    已审批 --> 草稿: 反审批
+    已审批 --> 已转单: 全部明细转委外订单
+    已审批 --> 部分转单: 部分明细转单
+    部分转单 --> 已转单: 剩余转单
+    已转单 --> [*]
+</div>
+
+<h3>7.2 委外订单状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 草稿: 创建订单
+    草稿 --> 待审批: 提交审批
+    待审批 --> 已审批: 审批通过
+    已审批 --> 待发出: 审批完成
+    待发出 --> 已发出: sendOut
+    已发出 --> 部分收回: confirmReceipt部分
+    部分收回 --> 已完成: confirmReceipt全部
+    已发出 --> 已完成: 一次性全部收回
+    待发出 --> 已关闭: closeOutsourcingOrder
+    部分收回 --> 已关闭: closeOutsourcingOrder
+    已完成 --> [*]
+    已关闭 --> [*]
+</div>
+
+<h3>7.3 委外全流程</h3>
+<div class="mermaid">
+graph TD
+    DISPATCH[调度派发] --> CHECK_OUT{检查委外工序}
+    CHECK_OUT -->|有委外工序| GEN_OR[自动生成委外申请<br/>outsourcing_req]
+    CHECK_OUT -->|无委外工序| END_NO([结束])
+
+    GEN_OR --> OR_DRAFT[approval_status=草稿<br/>order_status=未执行]
+    OR_DRAFT --> OR_SUBMIT[提交审批]
+    OR_SUBMIT --> OR_APPROVE[approval_status=已审批]
+
+    OR_APPROVE --> TO_OO[转委外订单<br/>选择工序+供应商+单价]
+    TO_OO --> CREATE_OO[createOutsourcingOrder<br/>INSERT outsourcing_order]
+    CREATE_OO --> OO_DRAFT[approval_status=草稿]
+    OO_DRAFT --> OO_SUBMIT[提交审批]
+    OO_SUBMIT --> OO_APPROVE[approval_status=已审批]
+
+    OO_APPROVE --> WAIT_SEND[order_status=待发出]
+    WAIT_SEND --> SEND[sendOut<br/>委外发料]
+    SEND --> OO_SENT[order_status=已发出]
+    OO_SENT --> RECEIPT[confirmReceipt<br/>确认收回数量]
+
+    RECEIPT -->|received < planned| PART[order_status=部分收回]
+    RECEIPT -->|received >= planned| DONE[order_status=已完成]
+    PART --> CLOSE[closeOutsourcingOrder<br/>关闭订单]
+    DONE --> CLOSE
+    CLOSE --> OO_CLOSED[order_status=已关闭]
+
+    RECEIPT --> UPDATE_INV[更新库存]
+    OO_CLOSED --> END_OK([结束])
+    END_NO --> END_OK
+</div>
+
+<div class="note">
+  <strong>委外申请生成时机：</strong>调度派发时，系统自动遍历该生产单的所有工序任务，收集 is_outsourced=1 的工序，自动生成一张委外申请单（一个生产单对应一张委外申请）。
+</div>
+
+<!-- ==================== 八、销售订单状态回写链路图 ==================== -->
+<h2 class="page-break">八、销售订单状态回写链路图</h2>
+
+<h3>8.1 完整回写链路</h3>
+<div class="mermaid">
+graph LR
+    subgraph 生产端状态
+        PO1[production_order<br/>plan_status=已派发]
+        PO2[production_order<br/>plan_status=已备料]
+        PO3[production_order<br/>plan_status=生产中]
+        PO4[production_order<br/>plan_status=已完成]
+    end
+
+    subgraph 计划层
+        PP[Production_plan]
+    end
+
+    subgraph 销售订单明细
+        SOD1[sales_order_detail<br/>production_status=计划中]
+        SOD2[sales_order_detail<br/>production_status=待生产]
+        SOD3[sales_order_detail<br/>production_status=生产中]
+        SOD4[sales_order_detail<br/>production_status=生产完成]
+    end
+
+    subgraph 销售订单头
+        SO1[sales_order<br/>order_status=生产中]
+        SO2[sales_order<br/>order_status=已完成]
+    end
+
+    subgraph 发货层
+        SHIP1[shipping_status=未申请]
+        SHIP2[shipping_status=部分发货]
+        SHIP3[shipping_status=全部发货]
+        SHIP4[shipping_status=超额发货]
+    end
+
+    PO1 -->|syncProductionStatus| SOD1
+    PO2 -->|syncProductionStatus| SOD2
+    PO3 -->|syncProductionStatus| SOD3
+    PO4 -->|syncProductionStatus| SOD4
+
+    SOD1 -->|汇总| SO1
+    SOD2 -->|汇总| SO1
+    SOD3 -->|汇总| SO1
+    SOD4 -->|汇总| SO1
+
+    SHIP2 -->|syncLineStatus| SOD5[sales_order_detail<br/>status=进行中]
+    SHIP3 -->|syncLineStatus| SOD6[sales_order_detail<br/>status=已完成]
+    SHIP4 -->|syncLineStatus| SOD6
+
+    SOD5 -->|syncOrderHeaderStatus| SO1
+    SOD6 -->|syncOrderHeaderStatus| SO2
+</div>
+
+<h3>8.2 单向递进原则</h3>
+<div class="mermaid">
+graph LR
+    A[未加入计划] --> B[待排产]
+    B --> C[计划中]
+    C --> D[待生产]
+    D --> E[生产中]
+    E --> F[生产完成]
+</div>
+
+<table>
+<tr><th>状态</th><th>等级</th><th>驱动来源</th></tr>
+<tr><td>未加入计划</td><td>0</td><td>初始状态/删除生产计划回退</td></tr>
+<tr><td>待排产</td><td>1</td><td>从销售订单导入生产计划</td></tr>
+<tr><td>计划中</td><td>2</td><td>生产单已派发</td></tr>
+<tr><td>待生产</td><td>3</td><td>生产单已备料</td></tr>
+<tr><td>生产中</td><td>4</td><td>生产单首次报工</td></tr>
+<tr><td>生产完成</td><td>5</td><td>生产单所有工序完成</td></tr>
+</table>
+
+<div class="note">
+  <strong>单向递进原则：</strong>sales_order_detail.production_status 只允许向前推进，不允许回退。即使生产单状态回退（如删除报工单），销售订单明细的 production_status 保持不变。这是为了防止销售端看到状态反复波动。
+</div>
+
+<!-- ==================== 九、单据删除规则图 ==================== -->
+<h2 class="page-break">九、单据删除规则总览</h2>
+
+<h3>9.1 各单据删除条件与级联影响</h3>
+<table>
+<tr><th>单据类型</th><th>表名</th><th>可删除条件</th><th>删除操作</th><th>级联影响</th></tr>
+<tr><td>生产计划</td><td>Production_plan</td><td>approval_status=草稿</td><td>DELETE + 回退关联状态</td><td>回写 sales_order_detail/sales_forecast_detail 状态</td></tr>
+<tr><td>生产单</td><td>production_order</td><td>approval_status=草稿</td><td>DELETE</td><td>无自动级联（下游工序/备料需手动清理）</td></tr>
+<tr><td>工序任务</td><td>process_task</td><td>无单独删除接口</td><td>-</td><td>随生产单生命周期管理</td></tr>
+<tr><td>报工单</td><td>work_report</td><td>approval_status=草稿</td><td>DELETE + syncTaskCompletion(-qty)</td><td>回退工序完成数量、线边仓冲销、生产单状态回退</td></tr>
+<tr><td>备料单</td><td>material_preparation</td><td>approval_status=草稿</td><td>DELETE 主表+明细</td><td>无</td></tr>
+<tr><td>采购申请</td><td>purchase_req</td><td>approval_status=草稿</td><td>DELETE 主表+明细</td><td>无</td></tr>
+<tr><td>采购订单</td><td>purchase_order</td><td>approval_status=草稿</td><td>DELETE 主表+明细</td><td>无</td></tr>
+<tr><td>采购入库单</td><td>stock_in</td><td>approval_status=草稿</td><td>DELETE</td><td>无（未确认入库不影响库存）</td></tr>
+<tr><td>委外申请</td><td>outsourcing_req</td><td>approval_status=草稿</td><td>DELETE 主表+明细</td><td>无</td></tr>
+<tr><td>委外订单</td><td>outsourcing_order</td><td>approval_status=草稿</td><td>DELETE</td><td>无</td></tr>
+<tr><td>生产入库单</td><td>production_inbound_order</td><td>无单独删除接口</td><td>-</td><td>通过库存调整处理</td></tr>
+</table>
+
+<h3>9.2 审批状态通用规则</h3>
+<div class="mermaid">
+graph TB
+    subgraph 通用审批状态机
+        D[草稿] --> S[待审批]
+        S --> A[已审批]
+        S --> D
+        A --> R[已反审]
+        R --> A
+        A --> D
+    end
+
+    subgraph 草稿状态可执行
+        E1[编辑]
+        E2[删除]
+        E3[提交审批]
+    end
+
+    subgraph 待审批状态可执行
+        E4[撤回]
+        E5[审批通过/不通过]
+    end
+
+    subgraph 已审批状态可执行
+        E6[反审]
+        E7[执行业务操作]
+    end
+
+    D --> E1
+    D --> E2
+    D --> E3
+    S --> E4
+    S --> E5
+    A --> E6
+    A --> E7
+</div>
+
+<div class="note">
+  <strong>通用规则：</strong>所有业务单据（生产计划、生产单、采购申请、采购订单、委外申请、委外订单、报工单等）均遵循统一的审批状态机：草稿 → 待审批 → 已审批。只有草稿状态可编辑和删除；已审批后方可执行下游业务操作（如转单、派发、入库等）。<br><br>
+  <strong>审批回调机制：</strong>approval.service.ts 中注册了 approvalHandlerRegistry，审批通过后会调用模块特定的回调。当前实现：work_report（报工审批后回调，但实际为空操作）、sales_order（销售订单审批后消耗预测）。其余模块使用 no-op（空操作）回调，审批通过后仅更新状态字段。
+</div>
+
+<!-- ==================== 十、MRP运算决策逻辑 ==================== -->
+<h2 class="page-break">十、MRP运算决策逻辑</h2>
+
+<h3>10.1 action_type 决策规则</h3>
+<div class="mermaid">
+graph TD
+    START([MRP运算]) --> INPUT[输入: 物料编号]
+    INPUT --> GET_INFO[查询 item_master<br/>business_scope + BOM]
+    GET_INFO --> CHECK_SCOPE{检查业务范围}
+
+    CHECK_SCOPE -->|生产 + 采购| DUAL[action_type=生产+采购<br/>双源待决策]
+    CHECK_SCOPE -->|仅生产| PROD[action_type=生产]
+    CHECK_SCOPE -->|仅采购| PUR[action_type=采购]
+    CHECK_SCOPE -->|空/NULL| CHECK_BOM{检查BOM}
+
+    CHECK_BOM -->|有BOM| PROD
+    CHECK_BOM -->|无BOM| PUR
+
+    DUAL --> CREATE_PLAN[创建 production_order]
+    PROD --> CREATE_PLAN
+    PUR --> CREATE_REQ[创建 purchase_req]
+</div>
+
+<h3>10.3 MRP取消运行</h3>
+<div class="mermaid">
+graph TD
+    START([取消MRP运行]) --> CHECK{检查状态}
+    CHECK -->|run_status=未执行| OK[允许取消]
+    CHECK -->|已执行/已完成| ERR[禁止取消]
+
+    OK --> CANCEL[cancelMRPRun]
+    CANCEL --> READ[读取 mrp_run_detail<br/>获取生成的单据列表]
+    READ --> REVERT[级联回退]
+
+    REVERT --> R1[DELETE production_order]
+    REVERT --> R2[DELETE purchase_req]
+    REVERT --> R3[DELETE outsourcing_req]
+    REVERT --> R4[回退 sales_order_detail<br/>production_status=待排产]
+    REVERT --> R5[回退 sales_forecast_detail<br/>status=计划中]
+
+    CANCEL --> UPDATE[UPDATE mrp_run<br/>run_status=已取消]
+
+    ERR --> END_ERR([结束-失败])
+    UPDATE --> END_OK([结束-成功])
+</div>
+
+<div class="note">
+  <strong>取消规则：</strong>仅允许取消 run_status=未执行 的 MRP运行。取消时级联删除该运行生成的所有下游单据（生产单、采购申请、委外申请），并回写销售订单/预测的状态。
+</div>
+
+<h3>10.2 净需求计算公式</h3>
+<div style="background:#f0f5ff;border:1px solid #d6e4ff;border-radius:6px;padding:16px;margin:12px 0;font-family:monospace;font-size:14px;">
+  <div><strong>净需求 = MAX(0, 毛需求 - 总供给 + 安全库存)</strong></div>
+  <div style="margin-top:8px;color:#666;">
+    总供给 = 现存量(on_hand) + 在制量(WIP) + 在途量(PO) + 待执行申请(PR)<br>
+    安全库存 = inventory.safety_stock (优先) 或 item_master.safety_stock_qty
+  </div>
+</div>
+
+<!-- ==================== 十一、数据实体关系图 ==================== -->
+<h2 class="page-break">十一、核心数据实体关系图</h2>
+
+<div class="mermaid">
+erDiagram
+    sales_order ||--o{ sales_order_detail : contains
+    sales_order_detail ||--o| Production_plan : sources
+    sales_forecast ||--o{ sales_forecast_detail : contains
+    sales_forecast_detail ||--o| Production_plan : sources
+
+    Production_plan ||--o{ production_order : generates
+    production_order ||--o{ process_task : generates
+    production_order ||--o{ material_preparation : generates
+    production_order ||--o| outsourcing_req : generates
+    production_order ||--o{ production_inbound_order : inbound
+
+    process_task ||--o{ work_report : reports
+    process_task ||--o| outsourcing_order : outsources
+
+    material_preparation ||--o{ material_preparation_detail : contains
+
+    purchase_req ||--o{ purchase_req_detail : contains
+    purchase_req_detail ||--o| purchase_order : converts
+    purchase_order ||--o{ purchase_order_detail : contains
+    purchase_order ||--o{ stock_in : inbound
+
+    outsourcing_req ||--o{ outsourcing_req_detail : contains
+    outsourcing_req_detail ||--o| outsourcing_order : converts
+    outsourcing_order ||--o{ stock_in : inbound
+
+    item_master ||--o| product_ext : extends
+    item_master ||--o| material_ext : extends
+    item_master ||--o| skeleton_ext : extends
+    item_master ||--o| preform_ext : extends
+</div>
+
+<div style="margin-top:40px;text-align:center;color:#888;font-size:12px;">
+  文档生成时间：2026年3月17日 | 基于系统代码版本自动生成
+</div>
+
+</div>
+
+<script>
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'default',
+  flowchart: { curve: 'basis', padding: 16 },
+  stateDiagram: { curve: 'basis' }
+});
+</script>
+</body>
+</html>

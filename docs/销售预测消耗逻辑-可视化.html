@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>销售预测消耗逻辑流程图</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; background: #f0f2f5; color: #333; padding: 24px; }
+    h1 { text-align: center; font-size: 28px; margin-bottom: 8px; color: #1a1a2e; }
+    .subtitle { text-align: center; color: #666; font-size: 14px; margin-bottom: 32px; }
+    .section { background: #fff; border-radius: 12px; padding: 28px 32px; margin-bottom: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+    .section h2 { font-size: 20px; color: #1a1a2e; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 2px solid #e8e8e8; display: flex; align-items: center; gap: 8px; }
+    .section h2 .icon { font-size: 22px; }
+    .section h3 { font-size: 16px; color: #444; margin: 16px 0 10px; }
+    .mermaid { display: flex; justify-content: center; margin: 16px 0; overflow-x: auto; }
+    .formula-box { background: #f6f8fa; border-left: 4px solid #1890ff; padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 12px 0; font-family: 'Consolas', 'Courier New', monospace; font-size: 15px; line-height: 2; }
+    .info-box { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 8px; padding: 14px 18px; margin: 12px 0; font-size: 14px; line-height: 1.8; }
+    .info-box code { background: #fafafa; border: 1px solid #d9d9d9; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+    th { background: #fafafa; font-weight: 600; text-align: left; padding: 10px 14px; border: 1px solid #e8e8e8; }
+    td { padding: 10px 14px; border: 1px solid #e8e8e8; }
+    tr:hover td { background: #f5f5f5; }
+    .tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+    .tag-blue { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
+    .tag-green { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+    .tag-orange { background: #fff7e6; color: #fa8c16; border: 1px solid #ffd591; }
+    .tag-red { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+    .sql-box { background: #282c34; color: #abb2bf; padding: 16px 20px; border-radius: 8px; font-family: 'Consolas', monospace; font-size: 13px; line-height: 1.7; overflow-x: auto; margin: 12px 0; }
+    .sql-box .keyword { color: #c678dd; }
+    .sql-box .func { color: #61afef; }
+    .sql-box .string { color: #98c379; }
+    .sql-box .param { color: #e06c75; }
+    .example-table th { text-align: center; }
+    .example-table td { text-align: center; }
+    .consumed { color: #52c41a; font-weight: 600; }
+    .partial { color: #fa8c16; font-weight: 600; }
+    .none { color: #999; }
+  </style>
+</head>
+<body>
+
+<h1>销售管理 — 销售预测消耗逻辑流程图</h1>
+<p class="subtitle">基于代码分析生成 · forecast.service.ts + approval.service.ts</p>
+
+<!-- 概述 -->
+<div class="section">
+  <h2><span class="icon">📋</span> 概述</h2>
+  <p style="line-height:1.8;font-size:15px;">
+    销售预测消耗是指：当<strong>销售订单审批通过</strong>时，系统自动将订单数量按<span class="tag tag-blue">贪心就近优先</span>算法分配消耗到匹配的预测明细上；
+    当<strong>订单反审批</strong>时，自动恢复已消耗的预测数量。整个过程由审批回调机制自动触发，无需人工干预。
+  </p>
+</div>
+
+<!-- 核心公式 -->
+<div class="section">
+  <h2><span class="icon">📐</span> 核心公式</h2>
+  <div class="formula-box">
+    消耗数量 = <strong>MIN</strong>(订单行剩余待消耗数量, 预测行剩余可用数量)<br>
+    预测剩余 = forecast_quantity − consumed_quantity<br>
+    消耗状态 = remaining_quantity ≤ 0 ? <span style="color:#52c41a">'已消耗'</span> : <span style="color:#fa8c16">'部分消耗'</span>
+  </div>
+</div>
+
+<!-- 数据模型 -->
+<div class="section">
+  <h2><span class="icon">🗄️</span> ER 数据模型</h2>
+  <div class="mermaid">
+erDiagram
+    SALES_FORECAST {
+        nvarchar forecast_number PK
+        nvarchar customer_number
+        nvarchar customer_name
+        nvarchar approval_status
+    }
+    SALES_FORECAST_DETAIL {
+        int id PK
+        nvarchar forecast_number FK
+        nvarchar item_number
+        decimal forecast_quantity
+        decimal consumed_quantity
+        decimal remaining_quantity
+        nvarchar consumption_status
+        datetime start_date
+        datetime end_date
+    }
+    FORECAST_CONSUMPTION {
+        int id PK
+        int forecast_detail_id FK
+        nvarchar forecast_number
+        nvarchar sales_order_number
+        int sales_order_detail_id
+        nvarchar item_number
+        decimal consumed_quantity
+        datetime consumed_date
+    }
+    SALES_ORDER {
+        nvarchar sales_order_number PK
+        nvarchar customer_number
+        nvarchar approval_status
+    }
+    SALES_ORDER_DETAIL {
+        int id PK
+        nvarchar item_number
+        decimal order_quantity
+        datetime delivery_date
+    }
+
+    SALES_FORECAST ||--o{ SALES_FORECAST_DETAIL : "contains"
+    SALES_FORECAST_DETAIL ||--o{ FORECAST_CONSUMPTION : "consumed_by"
+    SALES_ORDER ||--o{ SALES_ORDER_DETAIL : "contains"
+    SALES_ORDER_DETAIL ||--o{ FORECAST_CONSUMPTION : "triggers"
+  </div>
+</div>
+
+<!-- 触发机制 -->
+<div class="section">
+  <h2><span class="icon">⚡</span> 审批回调触发机制</h2>
+  <div class="mermaid">
+graph LR
+    A["🔖 销售订单审批"] -->|"approval.service.ts"| B{"审批动作"}
+    B -->|"onApprove 审批通过"| C["consumeForecast<br/>OnOrderApproval"]
+    B -->|"onReverse 反审批"| D["recoverForecast<br/>OnOrderReversal"]
+    C --> E["✅ 自动消耗预测"]
+    D --> F["🔄 自动恢复预测"]
+  </div>
+  <div class="info-box">
+    <strong>注册位置：</strong><code>approval.service.ts</code> 第 149 行<br>
+    <code>registerApprovalHandler('sales_order', { onApprove: consumeForecastOnOrderApproval, onReverse: recoverForecastOnOrderReversal })</code>
+  </div>
+</div>
+
+<!-- 消耗流程 -->
+<div class="section">
+  <h2><span class="icon">📉</span> 预测消耗完整流程（订单审批触发）</h2>
+  <div class="mermaid">
+graph TB
+    START["🔖 销售订单审批通过<br/>onApprove 回调"] --> GET_ORDER["1️⃣ 查询订单主表<br/>获取 customer_number"]
+    GET_ORDER --> NO_ORDER{"订单存在?"}
+    NO_ORDER -->|"否"| END_SKIP["⏭️ 跳过，不消耗"]
+    NO_ORDER -->|"是"| GET_DETAILS["2️⃣ 查询订单明细<br/>item_number, order_quantity,<br/>delivery_date"]
+
+    GET_DETAILS --> NO_DETAILS{"有明细行?"}
+    NO_DETAILS -->|"否"| END_SKIP
+    NO_DETAILS -->|"是"| TX["🔒 开启数据库事务"]
+
+    TX --> LOOP_DETAIL["3️⃣ 遍历每行订单明细"]
+    LOOP_DETAIL --> INIT_REMAIN["remainingToConsume =<br/>order_quantity"]
+
+    INIT_REMAIN --> CHECK_REMAIN{"remaining > 0?"}
+    CHECK_REMAIN -->|"否"| NEXT_DETAIL["➡️ 下一行明细"]
+    CHECK_REMAIN -->|"是"| FIND_FORECAST["4️⃣ 查询匹配的预测明细"]
+
+    FIND_FORECAST --> MATCH["匹配条件:<br/>同客户 + 同物料 +<br/>已审批 + remaining > 0"]
+    MATCH --> SORT["排序: 交货日期与预测<br/>中点的绝对天数差 ASC"]
+
+    SORT --> LOOP_FC["5️⃣ 遍历匹配的预测行"]
+    LOOP_FC --> CALC_QTY["consumeQty = MIN(<br/>remainingToConsume,<br/>fc.remaining_quantity)"]
+
+    CALC_QTY --> INSERT_LOG["6️⃣ 写入消耗记录表"]
+    INSERT_LOG --> UPDATE_FC["7️⃣ 更新预测明细:<br/>consumed += consumeQty<br/>remaining -= consumeQty"]
+
+    UPDATE_FC --> CHECK_STATUS{"remaining ≤ 0?"}
+    CHECK_STATUS -->|"是"| STATUS_DONE["状态 = '已消耗' ✅"]
+    CHECK_STATUS -->|"否"| STATUS_PART["状态 = '部分消耗' ⚠️"]
+
+    STATUS_DONE --> DEC_REMAIN["remainingToConsume -= consumeQty"]
+    STATUS_PART --> DEC_REMAIN
+
+    DEC_REMAIN --> MORE_FC{"还有预测行<br/>且 remaining > 0?"}
+    MORE_FC -->|"是"| LOOP_FC
+    MORE_FC -->|"否"| NEXT_DETAIL
+
+    NEXT_DETAIL --> MORE_DETAIL{"还有订单明细?"}
+    MORE_DETAIL -->|"是"| LOOP_DETAIL
+    MORE_DETAIL -->|"否"| COMMIT["✅ 提交事务"]
+    COMMIT --> END_OK["🎉 消耗完成"]
+  </div>
+</div>
+
+<!-- 恢复流程 -->
+<div class="section">
+  <h2><span class="icon">🔄</span> 预测恢复流程（订单反审批触发）</h2>
+  <div class="mermaid">
+graph TB
+    START["🔙 销售订单反审批<br/>onReverse 回调"] --> FIND_LOGS["1️⃣ 查询 forecast_consumption<br/>WHERE sales_order_number = :son"]
+
+    FIND_LOGS --> HAS_LOGS{"有消耗记录?"}
+    HAS_LOGS -->|"否"| END_SKIP["⏭️ 跳过，无需恢复"]
+    HAS_LOGS -->|"是"| TX["🔒 开启数据库事务"]
+
+    TX --> LOOP_REC["2️⃣ 遍历每条消耗记录"]
+    LOOP_REC --> GET_CURRENT["查询预测明细当前值"]
+
+    GET_CURRENT --> CALC_RESTORE["3️⃣ 计算恢复:<br/>newConsumed = MAX(0,<br/>consumed - restoreQty)<br/>newRemaining =<br/>forecast_qty - newConsumed"]
+
+    CALC_RESTORE --> CHECK_STATUS{"newConsumed ≤ 0?"}
+    CHECK_STATUS -->|"是"| STATUS_NONE["状态 = '未消耗' ⭕"]
+    CHECK_STATUS -->|"否"| STATUS_PART["状态 = '部分消耗' ⚠️"]
+
+    STATUS_NONE --> UPDATE_FC["4️⃣ 更新预测明细"]
+    STATUS_PART --> UPDATE_FC
+
+    UPDATE_FC --> NEXT_REC{"还有消耗记录?"}
+    NEXT_REC -->|"是"| LOOP_REC
+    NEXT_REC -->|"否"| DELETE_LOGS["5️⃣ 删除该订单的所有消耗记录"]
+
+    DELETE_LOGS --> COMMIT["✅ 提交事务"]
+    COMMIT --> END_OK["🎉 恢复完成"]
+  </div>
+</div>
+
+<!-- 匹配算法 -->
+<div class="section">
+  <h2><span class="icon">🎯</span> 贪心就近优先匹配算法</h2>
+  <p style="line-height:1.8;margin-bottom:12px;">对每行订单明细，系统查找所有符合条件的预测明细行，按以下规则排序：</p>
+  <table>
+    <tr><th style="width:60px;">优先级</th><th>排序规则</th><th>说明</th></tr>
+    <tr><td>1</td><td>时间接近度</td><td>预测时间窗口中点与订单交货日期的绝对天数差 <strong>ASC</strong></td></tr>
+    <tr><td>2</td><td>开始日期</td><td>相同接近度时，start_date 较早的优先 <strong>ASC</strong></td></tr>
+  </table>
+
+  <div class="sql-box">
+    <span class="keyword">ORDER BY</span> <span class="func">ABS</span>(<span class="func">DATEDIFF</span>(<span class="string">DAY</span>, <span class="param">:delivery_date</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span class="func">DATEADD</span>(<span class="string">DAY</span>, <span class="func">DATEDIFF</span>(<span class="string">DAY</span>, fd.start_date, fd.end_date) / 2, fd.start_date))) <span class="keyword">ASC</span>,<br>
+    &nbsp;&nbsp;fd.start_date <span class="keyword">ASC</span>
+  </div>
+
+  <h3>消耗示例</h3>
+  <table class="example-table">
+    <tr>
+      <th>订单明细</th><th>订单量</th>
+      <th>预测A (剩余30)</th><th>预测B (剩余50)</th><th>预测C (剩余20)</th>
+    </tr>
+    <tr>
+      <td>行1: 物料X, 60件</td><td><strong>60</strong></td>
+      <td><span class="consumed">消耗30 → 已消耗</span></td>
+      <td><span class="partial">消耗30 → 部分消耗</span></td>
+      <td><span class="none">不消耗</span></td>
+    </tr>
+    <tr>
+      <td>行2: 物料X, 25件</td><td><strong>25</strong></td>
+      <td>—</td>
+      <td><span class="consumed">消耗20 → 已消耗</span></td>
+      <td><span class="partial">消耗5 → 部分消耗</span></td>
+    </tr>
+  </table>
+</div>
+
+<!-- 状态流转 -->
+<div class="section">
+  <h2><span class="icon">🔁</span> 消耗状态流转</h2>
+  <div class="mermaid">
+stateDiagram-v2
+    [*] --> 未消耗: 预测创建
+    未消耗 --> 部分消耗: 订单审批消耗部分
+    未消耗 --> 已消耗: 订单审批消耗全部
+    部分消耗 --> 已消耗: 继续被消耗
+    部分消耗 --> 未消耗: 反审批恢复全部
+    已消耗 --> 部分消耗: 反审批恢复部分
+    已消耗 --> 未消耗: 反审批全部恢复
+  </div>
+</div>
+
+<!-- MPS联动 + 数据表 -->
+<div class="section">
+  <div class="two-col">
+    <div>
+      <h2><span class="icon">🔗</span> MPS 联动</h2>
+      <p style="line-height:1.8;margin-bottom:12px;">MPS 计算时使用预测的 <code style="background:#f6f8fa;padding:2px 6px;border-radius:4px;">remaining_quantity</code> 作为预测需求：</p>
+      <div class="sql-box" style="font-size:12px;">
+        <span class="keyword">SELECT</span> fd.item_number,<br>
+        &nbsp;&nbsp;<span class="func">SUM</span>(fd.remaining_quantity) <span class="keyword">AS</span> forecast_demand<br>
+        <span class="keyword">FROM</span> sales_forecast_detail fd<br>
+        <span class="keyword">INNER JOIN</span> sales_forecast f<br>
+        &nbsp;&nbsp;<span class="keyword">ON</span> f.forecast_number = fd.forecast_number<br>
+        <span class="keyword">WHERE</span> f.approval_status = <span class="string">N'已审批'</span><br>
+        &nbsp;&nbsp;<span class="keyword">AND</span> fd.remaining_quantity > 0
+      </div>
+    </div>
+    <div>
+      <h2><span class="icon">📊</span> 涉及数据表</h2>
+      <table>
+        <tr><th>表名</th><th>角色</th></tr>
+        <tr><td><code>sales_forecast</code></td><td>预测主表</td></tr>
+        <tr><td><code>sales_forecast_detail</code></td><td>预测明细</td></tr>
+        <tr><td><code>forecast_consumption</code></td><td>消耗记录</td></tr>
+        <tr><td><code>sales_order</code></td><td>订单主表</td></tr>
+        <tr><td><code>sales_order_detail</code></td><td>订单明细</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 代码位置 -->
+<div class="section">
+  <h2><span class="icon">📍</span> 关键代码位置</h2>
+  <table>
+    <tr><th>环节</th><th>文件</th><th>说明</th></tr>
+    <tr><td>消耗服务</td><td><code>forecast.service.ts</code> L19-99</td><td>consumeForecastOnOrderApproval 贪心就近优先</td></tr>
+    <tr><td>恢复服务</td><td><code>forecast.service.ts</code> L103-141</td><td>recoverForecastOnOrderReversal 逐条恢复</td></tr>
+    <tr><td>审批注册</td><td><code>approval.service.ts</code> L149</td><td>registerApprovalHandler('sales_order', ...)</td></tr>
+    <tr><td>预测创建</td><td><code>forecast.controller.ts</code> L111-145</td><td>初始化 remaining=forecast_qty, status='未消耗'</td></tr>
+    <tr><td>消耗日志</td><td><code>forecast.controller.ts</code> L253-265</td><td>getForecastConsumptionLog 前端查看历史</td></tr>
+    <tr><td>MPS联动</td><td><code>mps.controller.ts</code> L11-32</td><td>使用 remaining_quantity > 0 筛选需求</td></tr>
+  </table>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+    er: { useMaxWidth: true },
+    themeVariables: {
+      primaryColor: '#e6f7ff',
+      primaryBorderColor: '#1890ff',
+      primaryTextColor: '#1a1a2e',
+      lineColor: '#1890ff',
+      secondaryColor: '#f6ffed',
+      tertiaryColor: '#fff7e6'
+    }
+  });
+</script>
+</body>
+</html>

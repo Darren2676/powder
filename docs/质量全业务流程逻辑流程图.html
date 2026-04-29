@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>质量全业务流程逻辑流程图</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  body { font-family: 'Microsoft YaHei', sans-serif; padding: 40px; background: #f5f5f5; }
+  .container { max-width: 1100px; margin: 0 auto; background: #fff; padding: 40px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+  h1 { text-align: center; border-bottom: 2px solid #1890ff; padding-bottom: 16px; margin-bottom: 32px; }
+  h2 { color: #1890ff; margin-top: 40px; border-left: 4px solid #1890ff; padding-left: 12px; }
+  h3 { color: #333; margin-top: 28px; }
+  .mermaid { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 6px; padding: 16px; margin: 16px 0; }
+  .note { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 6px; padding: 12px 16px; margin: 12px 0; font-size: 14px; }
+  .page-break { page-break-before: always; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #d9d9d9; padding: 8px 12px; text-align: left; }
+  th { background: #f0f5ff; font-weight: 600; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 4px; }
+  .badge-blue { background: #e6f7ff; color: #1890ff; }
+  .badge-green { background: #f6ffed; color: #52c41a; }
+  .badge-red { background: #fff1f0; color: #f5222d; }
+  .badge-orange { background: #fff7e6; color: #fa8c16; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>质量全业务流程逻辑流程图</h1>
+
+<!-- ==================== 一、质量业务流程总览 ==================== -->
+<h2>一、质量业务流程总览</h2>
+
+<h3>1.1 质量业务全景图</h3>
+<div class="mermaid">
+graph TB
+    subgraph 基础数据
+        A1[item_master<br/>物料主数据]
+        A2[routing_detail<br/>工艺路线工序]
+        A3[inspection_spec<br/>检验规范]
+        A4[inspection_plan<br/>检验方案]
+        A5[defect_class/defect/defect_reason<br/>缺陷数据]
+    end
+
+    subgraph 来料检验
+        B1[采购入库<br/>stock_in]
+        B2[自动创建检验单<br/>purchase_quality_inspection]
+        B3[检验执行]
+        B4[不合格品处理]
+    end
+
+    subgraph 生产检验
+        C1[报工<br/>work_report]
+        C2[自动创建检验单<br/>production_inspection]
+        C3[检验执行]
+        C4[不合格品处理]
+    end
+
+    A1 -->|来料检验方案/规范| B2
+    A2 -->|工序检验类型+方案+规范| C2
+    A3 -->|质量特性明细| B2
+    A3 -->|质量特性明细| C2
+    A4 -->|检验方法/抽样| B2
+    A4 -->|检验方法/抽样| C2
+    A5 -->|缺陷分类/原因| B3
+    A5 -->|缺陷分类/原因| C3
+
+    B1 --> B2
+    B2 --> B3
+    B3 -->|合格| B_OK[入库完成]
+    B3 -->|不合格| B4
+    B4 --> B_OK
+
+    C1 --> C2
+    C2 --> C3
+    C3 -->|合格| C_OK[生产继续]
+    C3 -->|不合格| C4
+    C4 --> C_OK
+</div>
+
+<div class="note">
+  <strong>业务说明：</strong>质量检验分为来料检验（采购入库时触发）和生产检验（报工时触发）两大主线。基础数据包括检验规范（定义质量特性及标准）、检验方案（定义检验方法和抽样规则）、缺陷数据（定义缺陷分类和原因）。
+</div>
+
+<!-- ==================== 二、基础数据管理 ==================== -->
+<h2 class="page-break">二、基础数据管理</h2>
+
+<h3>2.1 来料检验规范管理</h3>
+<div class="mermaid">
+graph TD
+    START([开始]) --> CREATE[创建来料检验规范<br/>createIncomingInspectSpec]
+    CREATE --> INSERT_H[INSERT incoming_inspect_spec<br/>spec_name + defect_categories]
+    INSERT_H --> INSERT_D[INSERT incoming_inspect_spec_item<br/>质量特性明细]
+
+    INSERT_D --> ITEM[char_name 质量特性<br/>inspect_requirement 检验要求<br/>data_type 数据类型<br/>upper_limit/standard_value/lower_limit 上下限/标准值<br/>default_result 默认结果<br/>is_required 必填项]
+
+    ITEM --> APPROVE[审核<br/>approval_status=已审核]
+    APPROVE --> USE[被采购入库<br/>自动匹配使用]
+
+    INSERT_H --> EDIT[编辑/更新]
+    EDIT --> CHECK{approval_status}
+    CHECK -->|已审核| ERR[禁止编辑<br/>需先撤消审核]
+    CHECK -->|未审核| UPDATE[UPDATE incoming_inspect_spec]
+
+    INSERT_H --> DELETE[删除]
+    DELETE --> CHECK2{approval_status}
+    CHECK2 -->|已审核| ERR2[禁止删除]
+    CHECK2 -->|未审核| DEL_OK[DELETE spec + items]
+</div>
+
+<h3>2.2 生产检验规范管理</h3>
+<div class="mermaid">
+graph TD
+    START([开始]) --> CREATE[创建生产检验规范<br/>createInspectionSpec]
+    CREATE --> INSERT_H[INSERT inspection_spec<br/>spec_name + defect_categories + spec_type]
+    INSERT_H --> INSERT_D[INSERT inspection_spec_item<br/>质量特性明细]
+
+    INSERT_D --> ITEM[char_name 质量特性<br/>char_category 特性分类<br/>inspect_requirement 检验要求<br/>data_type 数据类型<br/>upper_limit/standard_value/lower_limit<br/>single_options/multi_options/qualified_options<br/>default_result + is_required]
+
+    ITEM --> APPROVE[审核<br/>approval_status=已审核]
+    APPROVE --> USE[被报工/工序任务<br/>自动匹配使用]
+
+    INSERT_H --> EDIT[编辑/更新]
+    EDIT --> CHECK{approval_status}
+    CHECK -->|已审核| ERR[禁止编辑<br/>需先撤消审核]
+    CHECK -->|未审核| UPDATE[UPDATE inspection_spec<br/>DELETE items + INSERT items]
+
+    INSERT_H --> DELETE[删除]
+    DELETE --> CHECK2{approval_status}
+    CHECK2 -->|已审核| ERR2[禁止删除]
+    CHECK2 -->|未审核| DEL_OK[DELETE spec + items]
+</div>
+
+<div class="note">
+  <strong>检验规范说明：</strong>检验规范是质量检验的核心基础数据，定义了需要检验的<strong>质量特性</strong>（如尺寸、硬度、外观等）、<strong>检验要求</strong>、<strong>标准值/上下限</strong>、<strong>数据类型</strong>（数值/单选/多选/文本）等。来料检验规范用于采购入库检验，生产检验规范用于生产过程中的工序检验。
+</div>
+
+<h3>2.3 检验方案管理</h3>
+<div class="mermaid">
+graph TD
+    START([开始]) --> CREATE[创建检验方案<br/>createInspectionPlan]
+    CREATE --> INSERT[INSERT inspection_plan]
+    INSERT --> FIELDS[plan_name 方案名称<br/>inspect_type 检验类型<br/>is_full_inspect 是否全检<br/>is_sampling 是否抽检<br/>sampling_trigger 抽检触发方式<br/>sampling_type 抽检类型<br/>sampling_ratio 抽检比例<br/>sampling_quantity 抽检数量<br/>is_first_inspect 是否首检<br/>is_last_inspect 是否末检]
+
+    FIELDS --> APPROVE[审核]
+    APPROVE --> USE[被物料/工序引用]
+
+    INSERT --> EDIT[编辑]
+    EDIT --> CHECK{approval_status}
+    CHECK -->|已审核| ERR[禁止编辑]
+    CHECK -->|未审核| UPDATE[UPDATE]
+
+    INSERT --> DELETE[删除]
+    DELETE --> CHECK2{approval_status}
+    CHECK2 -->|已审核| ERR2[禁止删除]
+    CHECK2 -->|未审核| DEL_OK[DELETE]
+</div>
+
+<div class="note">
+  <strong>检验方案层级结构：</strong>检验方案采用<strong>两层结构</strong>：① <strong>检验类型</strong>（inspect_type：自检/专检）— 决定由谁来执行检验；② <strong>检验方式</strong>（is_full_inspect/is_sampling：全检/抽检）+ <strong>首末检</strong>（is_first_inspect/is_last_inspect）— 决定如何执行检验。自检由操作工执行，专检由质检员执行；抽检时按 sampling_type（比例/固定数量/批次）计算抽样数。来料检验方案以物料编号(plan_name=item_number)为匹配键自动匹配；<strong>生产检验方案由工艺路线工序节点直接引用</strong>（inspect_plan_name）。
+</div>
+
+<h3>2.4 缺陷数据管理</h3>
+<div class="mermaid">
+graph LR
+    subgraph 缺陷体系
+        A[defect_class<br/>缺陷分类] --> B[defect<br/>缺陷名称]
+        B --> C[defect_reason<br/>缺陷原因]
+    end
+
+    subgraph 应用场景
+        D[来料检验单<br/>purchase_quality_inspection<br/>defect_class_name + defect_name + defect_reason_name]
+        E[生产检验单<br/>production_inspection<br/>defect_handling + rework_step_number]
+        F[报工单<br/>work_report<br/>defect_class_number + defect_name]
+    end
+
+    A -.-> D
+    B -.-> D
+    C -.-> D
+    B -.-> F
+</div>
+
+<div class="note">
+  <strong>缺陷数据说明：</strong>缺陷数据是三层结构：缺陷分类 → 缺陷名称 → 缺陷原因。在来料检验中用于记录不合格品的缺陷信息；在生产检验中用于不合格品处理决策；在报工单中用于记录不合格原因。
+</div>
+
+<h3>2.5 工序节点检验配置模型（工艺路线→检验方案关联）</h3>
+<div class="mermaid">
+graph TD
+    subgraph 工艺路线工序节点 routing_detail
+        R1[step_number 工序序号] --> R2[inspect_type 检验类型]
+        R2 --> R2A[无需检]
+        R2 --> R2B[自检]
+        R2 --> R2C[专检]
+        R2B --> R3B[inspect_plan_name 检验方案]
+        R2B --> R4B[inspect_spec_name 检验规范]
+        R2C --> R3C[inspect_plan_name 检验方案]
+        R2C --> R4C[inspect_spec_name 检验规范]
+        R2A --> R5A[无检验关联]
+    end
+
+    subgraph 检验方案 inspection_plan
+        P1[plan_name 方案名称] --> P2[inspect_type 检验类型]
+        P2 --> P2A[自检]
+        P2 --> P2B[专检]
+        P2A --> P3[is_full_inspect 是否全检]
+        P2B --> P3
+        P3 --> P3A[是→全检]
+        P3 --> P3B[否→进入抽检]
+        P3B --> P4[is_sampling 是否抽检]
+        P4 --> P4A[是→按sampling_type计算抽样数]
+        P4 --> P4B[否→非全检非抽检]
+        P4A --> P5[sampling_type 抽检类型]
+        P5 --> P5A[按比例]
+        P5 --> P5B[按固定数量]
+        P5 --> P5C[按批次]
+        P3A --> P6[is_first_inspect 首检]
+        P3A --> P7[is_last_inspect 末检]
+    end
+
+    subgraph 检验规范 inspection_spec
+        S1[spec_name 规范名称] --> S2[inspection_spec_item 质量特性明细]
+    end
+
+    R3B -.->|引用| P1
+    R3C -.->|引用| P1
+    R4B -.->|引用| S1
+    R4C -.->|引用| S1
+</div>
+
+<div class="note">
+  <strong>工序节点检验配置核心设计：</strong><br>
+  ① <strong>检验类型（inspect_type）</strong>：在工艺路线工序节点上统一设定，三选一（无需检/自检/专检），替代原有的 enable_self_inspect + enable_special_inspect 两个独立开关。<br>
+  ② <strong>检验方案引用</strong>：工序节点通过 inspect_plan_name 引用检验方案，方案中的 inspect_type 必须与工序节点的 inspect_type 一致（自检方案只能被自检工序引用），系统在校验时做一致性检查。<br>
+  ③ <strong>检验方式由方案定义</strong>：全检（is_full_inspect=是）或 抽检（is_sampling=是 + sampling_type），由检验方案内部决定，不在工序节点上重复配置。<br>
+  ④ <strong>检验规范引用</strong>：工序节点通过 inspect_spec_name 引用检验规范，报工后自动将规范的质量特性明细复制到检验单中。
+</div>
+
+<!-- ==================== 三、来料检验流程 ==================== -->
+<h2 class="page-break">三、来料检验流程</h2>
+
+<h3>3.1 来料检验触发与创建</h3>
+<div class="mermaid">
+graph TD
+    START([采购入库]) --> STOCK_IN[stock_in<br/>入库单创建/收货]
+    STOCK_IN --> AUTO[createInspectionForStockIn<br/>自动创建检验单]
+
+    AUTO --> MATCH_PLAN[匹配来料检验方案<br/>incoming_inspect_plan<br/>WHERE plan_name = item_number]
+    AUTO --> MATCH_SPEC[匹配来料检验规范<br/>incoming_inspect_spec<br/>WHERE spec_name = item_number]
+
+    MATCH_PLAN --> PLAN_INFO[inspect_method 检验方法<br/>inspector_name 检验员<br/>sampling_method 抽样方法<br/>sampling_quantity 抽样数量]
+    MATCH_SPEC --> SPEC_INFO[spec_name 规范名称]
+
+    AUTO --> INSERT_H[INSERT purchase_quality_inspection<br/>检验单主表]
+    INSERT_H --> FIELDS[inspection_number QI-YYYYMMDD-###<br/>stock_in_number 入库单号<br/>purchase_order_number 采购订单号<br/>supplier_number/name 供应商<br/>item_number/name 物料<br/>received_quantity 收货数量<br/>sample_quantity 抽样数量<br/>inspect_plan_name 检验方案<br/>inspect_spec_name 检验规范<br/>inspect_status=待检验]
+
+    FIELDS --> LOAD_ITEMS[自动加载质量特性明细<br/>incoming_inspect_spec_item<br/>→ purchase_quality_inspection_detail]
+    LOAD_ITEMS --> ITEM_FIELDS[char_name 质量特性<br/>char_category 特性分类<br/>data_type 数据类型<br/>upper_limit/standard_value/lower_limit<br/>actual_value 实测值<br/>is_qualified 是否合格]
+
+    LOAD_ITEMS --> END_OK([检验单创建完成<br/>待检验员执行])
+</div>
+
+<div class="note">
+  <strong>自动创建规则：</strong>采购入库时，系统根据<strong>物料编号</strong>自动匹配来料检验方案（plan_name = item_number）和来料检验规范（spec_name = item_number）。如果匹配到检验规范，自动将其质量特性明细复制到检验单明细表中。抽样数量优先取检验方案中的 sampling_quantity，否则默认为收货数量。
+</div>
+
+<h3>3.2 来料检验执行流程</h3>
+<div class="mermaid">
+graph TD
+    START([检验员执行]) --> GET[获取检验单<br/>getPurchaseInspectionDetail]
+    GET --> HEADER[purchase_quality_inspection<br/>主表信息]
+    GET --> DETAILS[purchase_quality_inspection_detail<br/>质量特性明细行]
+    GET --> OPTIONS[defect_class / defect / defect_reason<br/>下拉选项]
+
+    HEADER --> INPUT[填写检验结果]
+    INPUT --> UPDATE[updatePurchaseInspection<br/>更新检验单]
+    UPDATE --> MAIN[qualified_quantity 合格数量<br/>unqualified_quantity 不合格数量<br/>inspect_result 检验结论<br/>defect_class/name/reason 缺陷信息<br/>remark 备注]
+    UPDATE --> DETAIL_UPDATE[details[]<br/>actual_value 实测值<br/>is_qualified 是否合格<br/>remark 备注]
+
+    MAIN --> COMPLETE[completePurchaseInspection<br/>完成检验]
+    COMPLETE --> CHECK{inspect_result}
+    CHECK -->|合格| PASS[inspect_status=已完成<br/>inspect_result=合格]
+    CHECK -->|不合格| FAIL[inspect_status=已完成<br/>inspect_result=不合格]
+    CHECK -->|让步接收| CONCESSION[inspect_result=让步接收]
+
+    PASS --> WRITE_BACK[回写入库单<br/>stock_in_detail<br/>qualified_quantity + unqualified_quantity]
+    FAIL --> WRITE_BACK
+    CONCESSION --> WRITE_BACK
+
+    WRITE_BACK --> END_OK([检验完成])
+</div>
+
+<div class="note">
+  <strong>检验执行说明：</strong>检验员在检验单中填写每个质量特性的<strong>实测值</strong>和<strong>是否合格</strong>，以及整体的<strong>合格/不合格数量</strong>、<strong>缺陷信息</strong>。完成检验时判定整体结论（合格/不合格/让步接收），并<strong>回写入库单明细</strong>的合格/不合格数量字段。
+</div>
+
+<h3>3.3 来料不合格品处理</h3>
+<div class="mermaid">
+graph TD
+    START([不合格品处理]) --> CHECK{检验单状态}
+    CHECK -->|inspect_status≠已完成| ERR[禁止处理<br/>需先完成检验]
+    CHECK -->|defect_handling已存在| ERR2[禁止重复处理]
+    CHECK -->|已完成且未处理| OK[允许处理]
+
+    OK --> SELECT{选择处理方式}
+    SELECT -->|挑选| A[重新区分合格/不合格<br/>update qualified/unqualified]
+    SELECT -->|拒收| B[拒绝接收<br/>标记入库单拒收]
+    SELECT -->|报废| C[创建报废入库单<br/>stock_in_type=报废入库]
+    SELECT -->|特采| D[让步接收<br/>qualified += handlingQty]
+    SELECT -->|退货| E[关联退货单<br/>return_order_number]
+
+    A --> UPDATE[UPDATE purchase_quality_inspection<br/>defect_handling=挑选]
+    B --> UPDATE
+    C --> UPDATE
+    D --> UPDATE
+    E --> UPDATE
+
+    UPDATE --> WRITE_BACK[回写入库单明细<br/>stock_in_detail<br/>inspect_status=已处理-xxx]
+    WRITE_BACK --> END_OK([处理完成])
+</div>
+
+<table>
+<tr><th>处理方式</th><th>说明</th><th>系统操作</th></tr>
+<tr><td>挑选</td><td>从不合格品中重新挑选出合格品</td><td>更新合格/不合格数量</td></tr>
+<tr><td>拒收</td><td>整批拒收，不允许入库</td><td>标记入库单拒收状态</td></tr>
+<tr><td>报废</td><td>不合格品报废处理</td><td>创建报废入库单（stock_in_type=报废入库）</td></tr>
+<tr><td>特采</td><td>特殊情况下让步接收</td><td>将处理数量从不合格转入合格</td></tr>
+<tr><td>退货</td><td>退回供应商</td><td>关联退货单号</td></tr>
+</table>
+
+<!-- ==================== 四、生产检验流程 ==================== -->
+<h2 class="page-break">四、生产检验与生产过程深度关联方案</h2>
+
+<h3>4.1 生产检验与工序任务状态联动模型</h3>
+<div class="mermaid">
+graph LR
+    subgraph 工序任务双状态模型
+        A[process_task<br/>task_status] --> A1[未开始]
+        A1 --> A2[进行中]
+        A2 --> A3[已完成]
+        A3 --> A4[已关闭]
+    end
+
+    subgraph 检验状态新增
+        B[process_task<br/>inspect_status] --> B1[无需检]
+        B1 --> B2[待检验]
+        B2 --> B3[检验中]
+        B3 --> B4[检验合格]
+        B3 --> B5[检验不合格]
+        B5 --> B6[已处理]
+        B6 --> B4
+    end
+
+    A2 -.->|报工完成| B2
+    A3 -.->|报工完成<br/>启用检验| B2
+    B4 -.->|放行| C[允许下道工序报工]
+    B5 -.->|阻塞| D[禁止下道工序报工]
+    B6 -.->|返修/让步后| C
+</div>
+
+<div class="note">
+  <strong>双状态模型设计：</strong>工序任务原有 <strong>task_status</strong>（未开始→进行中→已完成→已关闭）描述生产执行进度；新增 <strong>inspect_status</strong>（无需检/待检验/检验中/检验合格/检验不合格/已处理）描述质量检验状态。两个状态独立流转，但存在联动规则：报工完成后若启用检验，task_status=已完成 同时 inspect_status=待检验；检验不合格会阻塞下道工序流转。
+</div>
+
+<h3>4.2 生产检验触发与创建（含状态回写）</h3>
+<div class="mermaid">
+graph TD
+    subgraph 工艺路线工序检验配置
+        R1[routing_detail<br/>工序明细] --> R2[inspect_type<br/>检验类型]
+        R2 --> R2A[无需检]
+        R2 --> R2B[自检]
+        R2 --> R2C[专检]
+        R2B --> R3B[inspect_plan_name 检验方案<br/>inspect_spec_name 检验规范]
+        R2C --> R3C[inspect_plan_name 检验方案<br/>inspect_spec_name 检验规范]
+    end
+
+    subgraph 工序任务
+        T1[调度派发<br/>generateProcessTasks] --> T2[process_task<br/>继承检验参数<br/>inspect_status=无需检]
+    end
+
+    subgraph 报工触发
+        W1[报工<br/>createWorkReport] --> W2[syncTaskCompletion<br/>task_status=已完成]
+        W2 --> W3[autoCreateInspections<br/>自动创建检验记录]
+    end
+
+    R3B --> T2
+    R3C --> T2
+    T2 --> W1
+
+    W3 --> CHECK_TYPE{读取工序<br/>inspect_type}
+    CHECK_TYPE -->|无需检| NO_INSPECT[UPDATE process_task<br/>inspect_status=无需检]
+    CHECK_TYPE -->|自检| CREATE_SELF[createInspectionFromWorkReport<br/>inspect_type=自检]
+    CHECK_TYPE -->|专检| CREATE_SPEC[createInspectionFromWorkReport<br/>inspect_type=专检]
+
+    CREATE_SELF --> READ_PLAN[读取检验方案<br/>is_full_inspect/is_sampling<br/>sampling_type/sampling_ratio]
+    CREATE_SPEC --> READ_PLAN
+    READ_PLAN --> CALC[计算检验数量<br/>全检=报工数量<br/>抽检=按规则计算]
+    CALC --> INSERT[INSERT production_inspection]
+    INSERT --> COPY_ITEMS[复制检验规范明细<br/>inspection_spec_item]
+    COPY_ITEMS --> UPDATE_TASK[UPDATE process_task<br/>inspect_status=待检验]
+
+    NO_INSPECT --> END_OK2([无检验<br/>工序直接放行])
+    UPDATE_TASK --> END_OK([检验单创建完成<br/>等待检验员执行])
+</div>
+
+<div class="note">
+  <strong>关键变更：</strong>报工后自动创建检验单时，根据工序的 <strong>inspect_type</strong>（无需检/自检/专检）三选一判定：无需检直接标记 inspect_status="无需检"；自检/专检读取关联的检验方案（is_full_inspect/is_sampling）计算检验数量，创建 production_inspection 后标记 inspect_status="待检验"。检验方案中的 inspect_type 必须与工序节点的 inspect_type 一致，系统做一致性校验。
+</div>
+
+<h3>4.3 生产检验执行与结果回写</h3>
+<div class="mermaid">
+graph TD
+    START([检验员执行]) --> GET[获取检验单<br/>getProductionInspectionDetail]
+    GET --> HEADER[production_inspection<br/>主表信息]
+    GET --> DETAILS[production_inspection_item<br/>质量特性明细行]
+
+    HEADER --> INPUT[填写检验结果]
+    INPUT --> UPDATE[updateProductionInspection<br/>更新检验单]
+    UPDATE --> UPDATE_TASK1[UPDATE process_task<br/>inspect_status=检验中]
+    UPDATE --> MAIN[qualified/unqualified_qty<br/>inspector_name/date<br/>remark]
+    UPDATE --> DETAIL_UPDATE[items[]<br/>actual_value/item_result]
+
+    MAIN --> COMPLETE[completeInspection<br/>完成检验]
+    COMPLETE --> CHECK{unqualified_quantity > 0?}
+
+    CHECK -->|否| PASS[inspection_result=合格]
+    PASS --> TASK_PASS[UPDATE process_task<br/>inspect_status=检验合格]
+    TASK_PASS --> ORDER_CHECK{检查所有工序}
+    ORDER_CHECK -->|全部完成且全部合格| ORDER_DONE[UPDATE production_order<br/>plan_status=已完成]
+    ORDER_CHECK -->|尚有未完/待检工序| ORDER_KEEP[保持 plan_status]
+    ORDER_DONE --> SYNC_SO[syncProductionStatus<br/>sales_order_detail=生产完成]
+
+    CHECK -->|是| FAIL[inspection_result=不合格]
+    FAIL --> TASK_FAIL[UPDATE process_task<br/>inspect_status=检验不合格]
+    TASK_FAIL --> BLOCK[阻塞下道工序报工<br/>inspect_status=检验不合格]
+
+    SYNC_SO --> END_OK([检验合格-生产继续])
+    ORDER_KEEP --> END_OK
+    BLOCK --> END_FAIL([检验不合格-需处理])
+</div>
+
+<div class="note">
+  <strong>检验结果回写规则：</strong><br>
+  ① <strong>检验合格</strong>：process_task.inspect_status=检验合格，下道工序可正常报工；若所有工序均已完成且检验合格，则 production_order.plan_status=已完成，回写销售订单。<br>
+  ② <strong>检验不合格</strong>：process_task.inspect_status=检验不合格，<strong>阻塞下道工序报工</strong>，必须进行不合格品处理。<br>
+  ③ 生产单完成条件从"所有工序 task_status=已完成"增强为"所有工序 task_status=已完成 <strong>且</strong> inspect_status∈{检验合格,无需检,已处理}"。
+</div>
+
+<h3>4.4 检验门控机制（下道工序报工前检查）</h3>
+<div class="mermaid">
+graph TD
+    START([下道工序报工]) --> CHECK_PREV[检查上道工序]
+    CHECK_PREV --> QUERY[SELECT inspect_status<br/>FROM process_task<br/>WHERE step_number = 当前-1]
+
+    QUERY --> GATE{检验门控判断}
+    GATE -->|inspect_status=无需检| PASS[放行<br/>允许报工]
+    GATE -->|inspect_status=检验合格| PASS
+    GATE -->|inspect_status=已处理| PASS
+    GATE -->|inspect_status=待检验| BLOCK1[阻止报工<br/>提示：上道工序待检验]
+    GATE -->|inspect_status=检验中| BLOCK2[阻止报工<br/>提示：上道工序检验中]
+    GATE -->|inspect_status=检验不合格| BLOCK3[阻止报工<br/>提示：上道工序检验不合格<br/>请先进行不合格品处理]
+    GATE -->|inspect_status=NULL| WARN[兼容旧数据<br/>允许报工并记录日志]
+
+    PASS --> CONT[继续正常报工流程]
+    BLOCK1 --> END_BLOCK([报工失败])
+    BLOCK2 --> END_BLOCK
+    BLOCK3 --> END_BLOCK
+    CONT --> END_OK([报工成功])
+</div>
+
+<div class="note">
+  <strong>检验门控规则：</strong>下道工序报工前，系统查询上道工序的 inspect_status。仅当 inspect_status 为 <strong>无需检/检验合格/已处理</strong> 时放行；待检验/检验中/检验不合格 均阻止报工。对于旧数据（inspect_status=NULL），兼容放行但记录日志，便于后续数据治理。
+</div>
+
+<h3>4.5 生产不合格品处理与生产流程回退</h3>
+<div class="mermaid">
+graph TD
+    START([不合格品处理]) --> CHECK{检验单状态}
+    CHECK -->|inspection_result≠不合格| ERR[禁止处理]
+    CHECK -->|defect_handling已存在| ERR2[禁止重复处理]
+    CHECK -->|不合格且未处理| OK[允许处理]
+
+    OK --> SELECT{选择处理方式}
+    SELECT -->|返修| A[指定返修工序号<br/>rework_step_number]
+    SELECT -->|报废| B[创建报废入库单]
+    SELECT -->|让步接收| C[将不合格数量转入合格]
+
+    A --> REWORK_TASK[UPDATE process_task<br/>WHERE step_number=rework_step<br/>planned_quantity += unqualifiedQty]
+    REWORK_TASK --> REWORK_STATUS[UPDATE process_task<br/>task_status=未开始<br/>inspect_status=无需检<br/>completed_quantity=0]
+    REWORK_STATUS --> DEL_WR[DELETE/回退<br/>返修工序后的报工单<br/>及关联检验单]
+    REWORK_STATUS --> ORDER_REVERT[UPDATE production_order<br/>plan_status=生产中]
+    ORDER_REVERT --> SYNC_SO[syncProductionStatus<br/>sales_order_detail=生产中]
+
+    B --> SCRAP[创建 stock_in 报废入库单]
+    SCRAP --> SCRAP_UPDATE[UPDATE production_inspection<br/>defect_handling=报废]
+    SCRAP_UPDATE --> TASK_SCRAP[UPDATE process_task<br/>inspect_status=已处理]
+
+    C --> CONCESSION[UPDATE production_inspection<br/>qualified += concessionQty<br/>unqualified -= concessionQty]
+    CONCESSION --> TASK_CONCESSION[UPDATE process_task<br/>inspect_status=已处理]
+    TASK_CONCESSION --> NEXT_OK[下道工序<br/>允许报工]
+
+    REWORK_STATUS --> UPDATE_A[UPDATE production_inspection<br/>defect_handling=返修]
+    TASK_SCRAP --> NEXT_OK2[下道工序<br/>允许报工]
+    NEXT_OK --> END_OK([处理完成])
+    NEXT_OK2 --> END_OK
+    SYNC_SO --> END_OK
+</div>
+
+<table>
+<tr><th>处理方式</th><th>生产流程影响</th><th>系统操作</th></tr>
+<tr><td>返修</td><td>目标工序回退到"未开始"，清除完成数量和检验状态；生产单从"已完成"回退到"生产中"；销售订单回退到"生产中"</td><td>UPDATE process_task: task_status=未开始, inspect_status=无需检, completed_quantity=0<br>UPDATE production_order: plan_status=生产中<br>DELETE 返修工序后的报工单和检验单</td></tr>
+<tr><td>报废</td><td>不合格品报废入库，当前工序标记为已处理，下道工序可继续</td><td>创建 stock_in_type=报废入库<br>UPDATE process_task: inspect_status=已处理</td></tr>
+<tr><td>让步接收</td><td>不合格品按合格品接收，当前工序标记为已处理，下道工序可继续</td><td>UPDATE production_inspection: qualified/unqualified 调整<br>UPDATE process_task: inspect_status=已处理</td></tr>
+</table>
+
+<div class="note">
+  <strong>返修深度联动：</strong>返修是最复杂的场景，需要：<br>
+  ① 目标工序的 planned_quantity 增加返修数量；<br>
+  ② 目标工序状态回退为"未开始"，清除 completed_quantity 和 inspect_status；<br>
+  ③ 生产单 plan_status 从"已完成"回退为"生产中"；<br>
+  ④ 销售订单 production_status 回退为"生产中"；<br>
+  ⑤ 删除/回退返修工序之后的所有报工单及其关联检验单（避免数据不一致）。
+</div>
+
+<!-- ==================== 五、质量数据实体关系图 ==================== -->
+<h2 class="page-break">五、质量数据实体关系图</h2>
+
+<div class="mermaid">
+erDiagram
+    item_master ||--o| incoming_inspect_plan : "来料检验方案"
+    item_master ||--o| incoming_inspect_spec : "来料检验规范"
+    incoming_inspect_spec ||--o{ incoming_inspect_spec_item : "质量特性明细"
+
+    routing_detail ||--o| inspection_plan : "inspect_type+inspect_plan_name"
+    routing_detail ||--o| inspection_spec : "inspect_spec_name"
+    inspection_spec ||--o{ inspection_spec_item : "质量特性明细"
+
+    stock_in ||--o| purchase_quality_inspection : "自动创建"
+    purchase_quality_inspection ||--o{ purchase_quality_inspection_detail : "检验明细"
+
+    work_report ||--o| production_inspection : "自动创建"
+    process_task ||--o| production_inspection : "关联工序"
+    process_task ||--o| production_inspection : "inspect_status联动"
+    production_inspection ||--o{ production_inspection_item : "检验明细"
+    production_order ||--o{ process_task : "包含工序"
+
+    defect_class ||--o{ defect : "包含"
+    defect ||--o{ defect_reason : "原因"
+</div>
+
+<div class="note">
+  <strong>数据关系说明：</strong><br>
+  • <strong>来料检验</strong>：物料主数据(item_master) → 来料检验方案(incoming_inspect_plan) + 来料检验规范(incoming_inspect_spec) → 质量特性明细(incoming_inspect_spec_item) → 采购入库(stock_in) 时自动创建检验单(purchase_quality_inspection) → 检验明细(purchase_quality_inspection_detail)<br><br>
+  • <strong>生产检验</strong>：工艺路线工序节点(routing_detail) 配置 <strong>inspect_type</strong>（无需检/自检/专检）+ <strong>inspect_plan_name</strong>（引用检验方案）+ <strong>inspect_spec_name</strong>（引用检验规范）→ 检验方案(inspection_plan) 定义检验方式（全检/抽检/首末检）→ 质量特性明细(inspection_spec_item) → 报工(work_report) 时按工序的 inspect_type 和检验方案规则自动创建检验单(production_inspection) → 检验明细(production_inspection_item)<br><br>
+  • <strong>缺陷数据</strong>：缺陷分类(defect_class) → 缺陷(defect) → 缺陷原因(defect_reason)，三层结构供检验单引用。
+</div>
+
+<!-- ==================== 六、质量检验状态流转汇总 ==================== -->
+<h2 class="page-break">六、质量检验状态流转汇总</h2>
+
+<h3>6.1 来料检验单状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 待检验: 采购入库自动创建
+    待检验 --> 检验中: 检验员开始填写
+    检验中 --> 已完成: 完成检验
+    已完成 --> [*]: 合格直接入库
+    已完成 --> 已处理: 不合格品处理
+    已处理 --> [*]: 处理完成
+</div>
+
+<h3>6.2 生产检验单状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 待检: 报工自动创建
+    待检 --> 检验中: 检验员开始填写
+    检验中 --> 已完成: 完成检验
+    已完成 --> [*]: 合格继续生产
+    已完成 --> 已处理: 不合格品处理
+    已处理 --> [*]: 处理完成
+</div>
+
+<h3>6.3 工序任务检验状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 无需检: 工序未启用检验
+    [*] --> 待检验: 报工完成且启用检验
+    待检验 --> 检验中: 检验员开始执行
+    检验中 --> 检验合格: 检验无不合格
+    检验中 --> 检验不合格: 检验有不合格
+    检验不合格 --> 已处理: 返修/报废/让步接收
+    已处理 --> 检验合格: 返修后重新检验合格
+    检验合格 --> [*]: 放行下道工序
+    无需检 --> [*]: 直接放行
+</div>
+
+<h3>6.4 生产检验与生产流程联动状态机</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 生产中: 首道工序报工
+    生产中 --> 待检验: 工序报工完成<br/>启用检验
+    待检验 --> 检验中: 检验员执行
+    检验中 --> 检验合格: 判定合格
+    检验中 --> 检验不合格: 判定不合格
+    检验不合格 --> 返修中: 选择返修
+    检验不合格 --> 已处理: 报废/让步接收
+    返修中 --> 生产中: 目标工序回退<br/>重新报工/检验
+    已处理 --> 待检验: 下道工序报工
+    检验合格 --> 待检验: 下道工序报工完成<br/>启用检验
+    检验合格 --> 已完成: 全部工序完成且合格
+    已完成 --> [*]
+</div>
+
+<h3>6.5 检验结果判定规则</h3>
+<table>
+<tr><th>检验类型</th><th>判定依据</th><th>结果值</th><th>后续动作</th></tr>
+<tr><td>来料检验</td><td>inspect_result 字段</td><td>合格 / 不合格 / 让步接收</td><td>合格→入库；不合格→不合格品处理</td></tr>
+<tr><td>生产检验</td><td>unqualified_quantity > 0</td><td>合格 / 不合格</td><td>合格→继续生产；不合格→返修/报废/让步接收</td></tr>
+</table>
+
+<div style="margin-top:40px;text-align:center;color:#888;font-size:12px;">
+  文档生成时间：2026年4月25日 | 基于系统代码版本自动生成
+</div>
+
+</div>
+
+<script>
+mermaid.initialize({ startOnLoad: true, theme: 'default', flowchart: { useMaxWidth: true, htmlLabels: true } });
+</script>
+</body>
+</html>

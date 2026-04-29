@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>计划管理 — MRP 运算逻辑流程图</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    @media print {
+      body { padding: 0 !important; }
+      .section { break-inside: avoid; box-shadow: none !important; border: 1px solid #e8e8e8 !important; }
+      .no-print { display: none !important; }
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; background: #f0f2f5; color: #333; padding: 24px; }
+    h1 { text-align: center; font-size: 28px; margin-bottom: 6px; color: #1a1a2e; }
+    .subtitle { text-align: center; color: #666; font-size: 13px; margin-bottom: 28px; }
+    .section { background: #fff; border-radius: 12px; padding: 24px 28px; margin-bottom: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+    .section h2 { font-size: 19px; color: #1a1a2e; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; display: flex; align-items: center; gap: 8px; }
+    .section h2 .icon { font-size: 20px; }
+    .section h3 { font-size: 15px; color: #444; margin: 14px 0 8px; }
+    .mermaid { display: flex; justify-content: center; margin: 14px 0; overflow-x: auto; }
+    .formula-box { background: #f6f8fa; border-left: 4px solid #1890ff; padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 10px 0; font-family: 'Consolas', monospace; font-size: 14px; line-height: 2; }
+    .info-box { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 8px; padding: 12px 16px; margin: 10px 0; font-size: 13px; line-height: 1.8; }
+    table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }
+    th { background: #fafafa; font-weight: 600; text-align: left; padding: 8px 12px; border: 1px solid #e8e8e8; }
+    td { padding: 8px 12px; border: 1px solid #e8e8e8; }
+    tr:hover td { background: #f5f5f5; }
+    code { background: #f6f8fa; border: 1px solid #d9d9d9; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+    .tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+    .tag-blue { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
+    .tag-green { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+    .tag-orange { background: #fff7e6; color: #fa8c16; border: 1px solid #ffd591; }
+    .tag-red { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; }
+    .tag-purple { background: #f9f0ff; color: #722ed1; border: 1px solid #d3adf7; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+    .example-table th, .example-table td { text-align: center; }
+    .highlight { color: #1890ff; font-weight: 600; }
+    .zero { color: #52c41a; font-weight: 600; }
+    .warn { color: #fa8c16; font-weight: 600; }
+    .pdf-btn { position: fixed; bottom: 24px; right: 24px; background: #1890ff; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-size: 15px; cursor: pointer; box-shadow: 0 4px 12px rgba(24,144,255,0.4); z-index: 999; }
+    .pdf-btn:hover { background: #096dd9; }
+  </style>
+</head>
+<body>
+
+<button class="pdf-btn no-print" onclick="window.print()">导出 PDF</button>
+
+<h1>计划管理 — MRP 运算逻辑流程图</h1>
+<p class="subtitle">基于代码分析生成 · mrp.controller.ts (1009行) · 广度优先BOM分解引擎</p>
+
+<!-- 一、核心公式 -->
+<div class="section">
+  <h2><span class="icon">📐</span> 一、核心公式</h2>
+  <div class="formula-box">
+    <strong>净需求</strong> = MAX(0, 毛需求 − 可用供应 + 安全库存)<br>
+    <strong>可用供应</strong> = 现有库存 + 在制品数量 + 采购在途 + 采购申请待执行<br>
+    <strong>子件需求量</strong> = 父件净需求 × (BOM子件实际用量 / BOM基准数量)<br>
+    <strong>开始日期</strong> = 完成日期 − 提前期天数
+  </div>
+</div>
+
+<!-- 二、ER 数据模型 -->
+<div class="section">
+  <h2><span class="icon">🗄️</span> 二、ER 数据模型</h2>
+  <div class="mermaid">
+erDiagram
+    mrp_run ||--o{ mrp_run_plan : "1-N"
+    mrp_run ||--o{ mrp_run_detail : "1-N"
+    mrp_run_plan }o--|| Production_plan : "ref"
+    mrp_run_detail }o--|| item_master : "ref"
+    mrp_run_detail }o--o| mfg_bom_header : "ref"
+    mfg_bom_header ||--o{ mfg_bom_detail : "1-N"
+    mrp_run_detail }o--o{ material_inventory : "query"
+    mrp_run_detail }o--o{ production_order : "query"
+    mrp_run_detail }o--o{ purchase_order_detail : "query"
+    mrp_run_detail }o--o{ purchase_req_detail : "query"
+
+    mrp_run {
+        NVARCHAR mrp_run_number PK
+        NVARCHAR run_status
+        INT plan_count
+        INT result_count
+        INT production_order_count
+        INT purchase_req_count
+    }
+    mrp_run_plan {
+        INT id PK
+        NVARCHAR mrp_run_number FK
+        NVARCHAR production_number FK
+        DECIMAL planned_quantity
+    }
+    mrp_run_detail {
+        INT id PK
+        NVARCHAR mrp_run_number FK
+        INT bom_level
+        NVARCHAR item_number
+        NVARCHAR action_type
+        NVARCHAR result_status
+        DECIMAL gross_requirement
+        DECIMAL net_requirement
+        DECIMAL produce_quantity
+        DECIMAL purchase_quantity
+    }
+  </div>
+</div>
+
+<!-- 三、生命周期状态机 -->
+<div class="section">
+  <h2><span class="icon">🔄</span> 三、MRP 运行生命周期状态机</h2>
+  <div class="mermaid">
+stateDiagram-v2
+    [*] --> 选择计划: 用户勾选已审批计划
+    选择计划 --> 已计算: POST /api/mrp/run
+    已计算 --> 已确认: POST /api/mrp/execute
+    已计算 --> 已取消: POST /api/mrp/:id/cancel
+    已取消 --> 已删除: DELETE /api/mrp/:id
+    已确认 --> [*]: 生产单+采购申请已生成
+    已删除 --> [*]: 级联删除全部记录
+  </div>
+  <table>
+    <tr><th style="width:80px;">状态</th><th style="width:120px;">可执行操作</th><th>说明</th></tr>
+    <tr><td><span class="tag tag-blue">已计算</span></td><td>执行 / 取消</td><td>BOM分解完成，等待用户审查双源物料分配</td></tr>
+    <tr><td><span class="tag tag-green">已确认</span></td><td>无（终态）</td><td>已生成生产单和采购申请</td></tr>
+    <tr><td><span class="tag tag-red">已取消</span></td><td>删除</td><td>仅已取消状态可删除</td></tr>
+  </table>
+</div>
+
+<!-- 四、MRP运算核心流程 -->
+<div class="section">
+  <h2><span class="icon">⚙️</span> 四、MRP 运算核心流程（广度优先 BOM 分解）</h2>
+  <div class="mermaid">
+flowchart TB
+    START(["👤 用户选择生产计划"]) --> VALIDATE{"校验计划列表非空?"}
+    VALIDATE -- "空" --> ERR400["❌ 400: 请选择至少一条"]
+    VALIDATE -- "非空" --> QUERY_PLANS["1️⃣ 查询已审批的生产计划"]
+    QUERY_PLANS --> CHECK_PLANS{"找到已审批计划?"}
+    CHECK_PLANS -- "否" --> ERR400B["❌ 400: 未找到"]
+    CHECK_PLANS -- "是" --> GEN_NUM["2️⃣ 生成编号 MRP-YYYYMMDD-NNN"]
+    GEN_NUM --> INSERT_RUN["3️⃣ 创建 mrp_run 头记录"]
+    INSERT_RUN --> INSERT_PLAN["4️⃣ 创建 mrp_run_plan 关联"]
+    INSERT_PLAN --> INIT_QUEUE["5️⃣ 初始化BFS队列 Level=0"]
+
+    INIT_QUEUE --> BFS_LOOP{"队列非空 且 Level≤10?"}
+    BFS_LOOP -- "否" --> UPDATE_COUNT["更新 result_count"]
+    BFS_LOOP -- "是" --> GET_MIN["取最小Level批次"]
+
+    GET_MIN --> IS_L0{"Level == 0?"}
+    IS_L0 -- "是" --> LEVEL0["🏭 成品层: 展开BOM子件"]
+    IS_L0 -- "否" --> LEVEL1["📦 子件层: 归集→净需求→决策→展开"]
+
+    LEVEL0 --> BFS_LOOP
+    LEVEL1 --> BFS_LOOP
+
+    UPDATE_COUNT --> COMMIT["✅ 事务提交"]
+    COMMIT --> RESULT["返回运算统计"]
+  </div>
+</div>
+
+<!-- 五、成品层处理 -->
+<div class="section">
+  <h2><span class="icon">🏭</span> 五、成品层处理流程（Level 0）</h2>
+  <div class="mermaid">
+flowchart TB
+    L0(["Level 0 批次"]) --> COLLECT["提取去重的成品物料编号"]
+    COLLECT --> Q_BOM["批量查制造BOM (启用+已审批)"]
+    Q_BOM --> Q_LEAD["批量查 lead_time_days"]
+    Q_LEAD --> FOR_P["🔁 遍历每个成品"]
+    FOR_P --> HAS_BOM{"有制造BOM?"}
+    HAS_BOM -- "否" --> SKIP["⏭ 跳过"]
+    HAS_BOM -- "是" --> CALC_SD["开始日期 = 完成日期 − 提前期"]
+    CALC_SD --> Q_DETAIL["查询BOM子件明细"]
+    Q_DETAIL --> FOR_D["🔁 遍历子件"]
+    FOR_D --> CALC_CQ["需求 = 计划量 × (actual_qty / base_qty)"]
+    CALC_CQ --> PUSH["子件入队 Level=1"]
+    PUSH --> FOR_D
+    SKIP --> FOR_P
+  </div>
+  <div class="info-box">
+    <strong>关键规则：</strong>成品层 <strong>不做净需求计算</strong>（需求已由 MPS 主计划确定），仅展开 BOM 子件传递到 Level 1。
+  </div>
+</div>
+
+<!-- 六、子件层处理 -->
+<div class="section">
+  <h2><span class="icon">📦</span> 六、子件层处理流程（Level 1+）</h2>
+  <div class="mermaid">
+flowchart TB
+    L1(["Level N 批次"]) --> AGG["需求归集: 按物料合并<br/>数量累加 / 日期取早 / 来源追溯"]
+    AGG --> BATCH["批量查询 6 张表:<br/>item_master / mfg_bom_header<br/>material_inventory / production_order<br/>purchase_order_detail / purchase_req_detail"]
+    BATCH --> FOR_I["🔁 逐物料计算"]
+    FOR_I --> SAFETY["确定安全库存"]
+    SAFETY --> NET["净需求 = MAX(0, 毛需求 − 供应 + 安全库存)"]
+    NET --> ACTION["行动类型决策"]
+    ACTION --> WRITE["写入 mrp_run_detail"]
+    WRITE --> EXPAND{"需展开子件?<br/>有BOM + 净需求>0 + 含'生产'"}
+    EXPAND -- "是" --> BOM_EXP["查BOM子件 → 入队 Level=N+1"]
+    EXPAND -- "否" --> NEXT["下一物料"]
+    BOM_EXP --> NEXT
+    NEXT --> FOR_I
+  </div>
+</div>
+
+<!-- 七、行动类型决策 -->
+<div class="section">
+  <h2><span class="icon">🎯</span> 七、行动类型决策逻辑</h2>
+  <div class="mermaid">
+flowchart TB
+    INPUT(["物料"]) --> READ["读取 business_scope"]
+    READ --> PARSE["拆分逗号分隔<br/>canProduce / canPurchase"]
+    PARSE --> C1{"生产 + 采购?"}
+    C1 -- "是" --> DUAL["🔀 生产+采购 (双源)"]
+    C1 -- "否" --> C2{"仅生产?"}
+    C2 -- "是" --> PROD["🏭 生产"]
+    C2 -- "否" --> C3{"仅采购?"}
+    C3 -- "是" --> PURCH["🛒 采购"]
+    C3 -- "否" --> C4{"有制造BOM?"}
+    C4 -- "是" --> PROD_D["🏭 生产 (有配方)"]
+    C4 -- "否" --> PURCH_D["🛒 采购 (无配方)"]
+  </div>
+  <table>
+    <tr><th style="width:60px;">优先级</th><th>条件</th><th>结果</th></tr>
+    <tr><td>1</td><td>业务范围同时含「生产」和「采购」</td><td><span class="tag tag-purple">生产+采购（双源）</span></td></tr>
+    <tr><td>2</td><td>仅含「生产」</td><td><span class="tag tag-blue">生产</span></td></tr>
+    <tr><td>3</td><td>仅含「采购」</td><td><span class="tag tag-orange">采购</span></td></tr>
+    <tr><td>4</td><td>空/NULL + 有制造BOM</td><td><span class="tag tag-blue">生产</span></td></tr>
+    <tr><td>5</td><td>空/NULL + 无制造BOM</td><td><span class="tag tag-orange">采购</span></td></tr>
+  </table>
+</div>
+
+<!-- 八、净需求计算示例 -->
+<div class="section">
+  <h2><span class="icon">📊</span> 八、净需求计算示例</h2>
+  <h3>8.1 供应数据来源</h3>
+  <table>
+    <tr><th>数据项</th><th>来源表</th><th>SQL 条件</th></tr>
+    <tr><td>现有库存</td><td><code>material_inventory</code></td><td>SUM(quantity) WHERE item_number</td></tr>
+    <tr><td>安全库存</td><td><code>material_inventory</code> / <code>item_master</code></td><td>优先 safety_stock_quantity; fallback safety_stock_qty</td></tr>
+    <tr><td>在制品</td><td><code>production_order</code></td><td>已审批 且 未完成/未关闭</td></tr>
+    <tr><td>采购在途</td><td><code>purchase_order_detail</code></td><td>SUM(order_qty - received_qty) 已审批</td></tr>
+    <tr><td>采购待执行</td><td><code>purchase_req_detail</code></td><td>SUM(request_qty - ordered_qty) 已审批+未执行</td></tr>
+  </table>
+  <h3>8.2 计算对比</h3>
+  <table class="example-table">
+    <tr><th>项目</th><th>物料 A</th><th>物料 B</th></tr>
+    <tr><td>毛需求</td><td>1000</td><td>500</td></tr>
+    <tr><td>现有库存</td><td>200</td><td>300</td></tr>
+    <tr><td>在制品</td><td>300</td><td>200</td></tr>
+    <tr><td>采购在途</td><td>100</td><td>50</td></tr>
+    <tr><td>采购待执行</td><td>50</td><td>0</td></tr>
+    <tr><td><strong>可用供应</strong></td><td class="highlight">650</td><td class="highlight">550</td></tr>
+    <tr><td>安全库存</td><td>100</td><td>0</td></tr>
+    <tr><td><strong>净需求</strong></td><td class="warn">MAX(0, 1000−650+100) = <strong>450</strong></td><td class="zero">MAX(0, 500−550+0) = <strong>0</strong></td></tr>
+  </table>
+  <div class="info-box">物料 B 净需求为 0，<strong>不展开其 BOM 子件</strong>（库存充足）。</div>
+</div>
+
+<!-- 九、MRP执行流程 -->
+<div class="section">
+  <h2><span class="icon">🚀</span> 九、MRP 执行流程（生成生产单 + 采购申请）</h2>
+  <div class="mermaid">
+flowchart TB
+    EX(["POST /api/mrp/execute"]) --> CHK{"状态 == 已计算?"}
+    CHK -- "否" --> ERR["❌ 400: 不允许执行"]
+    CHK -- "是" --> SCAN["扫描双源纯采购父项"]
+    SCAN --> LOOP["🔁 遍历确认项"]
+    LOOP --> IS_CHILD{"父项是纯采购双源?"}
+    IS_CHILD -- "是" --> SKIP["标记'已跳过' qty=0"]
+    IS_CHILD -- "否" --> NET_CHK{"净需求 > 0?"}
+    NET_CHK -- "否" --> SKIP2["标记'已跳过'"]
+    NET_CHK -- "是" --> PROD_CHK{"action含'生产'?"}
+    PROD_CHK -- "是" --> CREATE_PO["生成 production_order<br/>PYYYYMMDDNNN"]
+    PROD_CHK -- "否" --> PURCH_CHK{"action含'采购'?"}
+    CREATE_PO --> PURCH_CHK
+    PURCH_CHK -- "是" --> COLLECT_PR["收集采购明细行"]
+    PURCH_CHK -- "否" --> UPD["更新: 已确认"]
+    COLLECT_PR --> UPD
+    UPD --> LOOP
+    SKIP --> LOOP
+    SKIP2 --> LOOP
+
+    LOOP -- "完成" --> HAS_PR{"有采购明细?"}
+    HAS_PR -- "是" --> GEN_PR["生成采购申请<br/>PR-YYYYMMDD-NNN"]
+    HAS_PR -- "否" --> IMPORT
+    GEN_PR --> IMPORT["导入源计划为成品生产单"]
+    IMPORT --> UPD_RUN["mrp_run → 已确认"]
+    UPD_RUN --> UPD_PLAN["源计划: mrp_status=已分解<br/>plan_status=已加入任务"]
+    UPD_PLAN --> COMMIT["✅ 事务提交"]
+    COMMIT --> RES["返回统计结果"]
+  </div>
+</div>
+
+<!-- 十、双源物料处理 -->
+<div class="section">
+  <h2><span class="icon">🔀</span> 十、双源物料特殊处理</h2>
+  <div class="mermaid">
+flowchart LR
+    DUAL["双源物料 X<br/>action=生产+采购<br/>净需求=450"] --> DECIDE{"用户决策"}
+    DECIDE -- "prodQty=450" --> ALL_PROD["🏭 全部生产"]
+    DECIDE -- "purchQty=450" --> ALL_PURCH["🛒 全部采购"]
+    DECIDE -- "prod=200 purch=250" --> SPLIT["🔀 分配"]
+    ALL_PURCH --> SKIP_KIDS["⏭ 子件全部跳过<br/>不生成任何订单"]
+    ALL_PROD --> EXPAND["子件正常展开<br/>生成生产单"]
+    SPLIT --> EXPAND_SPLIT["子件展开 + 采购申请"]
+  </div>
+  <div class="info-box"><strong>核心规则：</strong>双源物料选择<strong>纯采购</strong>（produce_quantity = 0）时，其所有 BOM 子项自动标记「已跳过」。</div>
+</div>
+
+<!-- 十一、提前期倒推 -->
+<div class="section">
+  <h2><span class="icon">📅</span> 十一、提前期逐层倒推</h2>
+  <div class="mermaid">
+flowchart LR
+    A["🏭 成品 A<br/>完成: 4/30<br/>提前期: 5天<br/>开始: 4/25"] --> B["📦 子件 B<br/>完成: 4/25<br/>提前期: 3天<br/>开始: 4/22"]
+    B --> C["🧱 原材料 C<br/>完成: 4/22<br/>提前期: 7天<br/>开始: 4/15"]
+  </div>
+  <div class="info-box">规则：<strong>子件完成日期 = 父件开始日期</strong>，逐层向前递推。</div>
+</div>
+
+<!-- 十二、BOM展开条件 + 编号规则 -->
+<div class="section">
+  <div class="two-col">
+    <div>
+      <h2><span class="icon">🌳</span> BOM 展开条件</h2>
+      <table>
+        <tr><th>条件</th><th>要求</th><th>不满足时</th></tr>
+        <tr><td>有制造BOM</td><td>启用+已审批</td><td>不展开</td></tr>
+        <tr><td>净需求 > 0</td><td>计算为正值</td><td>不展开</td></tr>
+        <tr><td>行动含「生产」</td><td>生产 或 生产+采购</td><td>不展开</td></tr>
+        <tr><td>层级 ≤ 10</td><td>maxDepth=10</td><td>停止（防递归）</td></tr>
+      </table>
+    </div>
+    <div>
+      <h2><span class="icon">🔢</span> 编号生成规则</h2>
+      <table>
+        <tr><th>类型</th><th>格式</th><th>示例</th></tr>
+        <tr><td>MRP运行</td><td><code>MRP-YYYYMMDD-NNN</code></td><td>MRP-20260423-001</td></tr>
+        <tr><td>生产单</td><td><code>PYYYYMMDDNNN</code></td><td>P20260423001</td></tr>
+        <tr><td>采购申请</td><td><code>PR-YYYYMMDD-NNN</code></td><td>PR-20260423-001</td></tr>
+      </table>
+      <p style="margin-top:8px;font-size:13px;color:#666;">序号取当日最大值 +1，3位补零。</p>
+    </div>
+  </div>
+</div>
+
+<!-- API + 数据表 -->
+<div class="section">
+  <h2><span class="icon">🔌</span> API 接口清单</h2>
+  <table>
+    <tr><th style="width:60px;">方法</th><th>路径</th><th>函数</th><th>说明</th></tr>
+    <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/mrp/plans-for-mrp</code></td><td>getPlansForMrp</td><td>获取可MRP的计划列表</td></tr>
+    <tr><td><span class="tag tag-blue">POST</span></td><td><code>/api/mrp/run</code></td><td>runMRP</td><td>运行MRP计算（核心引擎）</td></tr>
+    <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/mrp</code></td><td>getMRPRuns</td><td>运行记录列表（分页）</td></tr>
+    <tr><td><span class="tag tag-green">GET</span></td><td><code>/api/mrp/:id</code></td><td>getMRPRunDetail</td><td>运行详情（头+计划+明细+统计）</td></tr>
+    <tr><td><span class="tag tag-blue">POST</span></td><td><code>/api/mrp/execute</code></td><td>executeMRP</td><td>确认执行（生成订单）</td></tr>
+    <tr><td><span class="tag tag-blue">POST</span></td><td><code>/api/mrp/:id/cancel</code></td><td>cancelMRPRun</td><td>取消运行（仅已计算可取消）</td></tr>
+    <tr><td><span class="tag tag-red">DEL</span></td><td><code>/api/mrp/:id</code></td><td>deleteMRPRun</td><td>删除运行（仅已取消可删除）</td></tr>
+  </table>
+</div>
+
+<!-- 关键代码位置 -->
+<div class="section">
+  <h2><span class="icon">📍</span> 关键代码位置</h2>
+  <table>
+    <tr><th>功能</th><th>文件</th><th>行号</th></tr>
+    <tr><td>编号生成工具</td><td><code>mrp.controller.ts</code></td><td>L7-70</td></tr>
+    <tr><td><strong>MRP核心引擎</strong></td><td><code>mrp.controller.ts</code></td><td>L126-535</td></tr>
+    <tr><td>├ BFS初始化</td><td></td><td>L186-211</td></tr>
+    <tr><td>├ Level 0 成品层</td><td></td><td>L225-284</td></tr>
+    <tr><td>├ Level 1+ 需求归集</td><td></td><td>L289-319</td></tr>
+    <tr><td>├ 批量查询供应</td><td></td><td>L324-393</td></tr>
+    <tr><td>├ 净需求计算</td><td></td><td>L396-415</td></tr>
+    <tr><td>├ 行动类型决策</td><td></td><td>L418-433</td></tr>
+    <tr><td>└ BOM子件展开</td><td></td><td>L487-510</td></tr>
+    <tr><td><strong>MRP执行（生成订单）</strong></td><td><code>mrp.controller.ts</code></td><td>L624-942</td></tr>
+    <tr><td>├ 双源跳过子项</td><td></td><td>L652-691</td></tr>
+    <tr><td>├ 生成生产单</td><td></td><td>L709-737</td></tr>
+    <tr><td>├ 生成采购申请</td><td></td><td>L776-842</td></tr>
+    <tr><td>└ 源计划状态回写</td><td></td><td>L856-926</td></tr>
+    <tr><td>路由注册</td><td><code>mrp.routes.ts</code></td><td>L16-22</td></tr>
+    <tr><td>SQL建表脚本</td><td><code>mrp_migration.sql</code></td><td>L1-94</td></tr>
+  </table>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+    er: { useMaxWidth: true },
+    themeVariables: {
+      primaryColor: '#e6f7ff',
+      primaryBorderColor: '#1890ff',
+      primaryTextColor: '#1a1a2e',
+      lineColor: '#1890ff',
+      secondaryColor: '#f6ffed',
+      tertiaryColor: '#fff7e6'
+    }
+  });
+</script>
+</body>
+</html>
+

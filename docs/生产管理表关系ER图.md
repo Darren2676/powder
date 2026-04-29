@@ -1,0 +1,171 @@
+# 生产管理模块表关系ER图
+
+```mermaid
+erDiagram
+    production_plan ||--o{ production_order : "生产计划号"
+    production_order ||--o{ process_task : "生产单号"
+    production_order ||--o{ material_preparation : "生产单号"
+    production_order ||--o{ production_inbound_order : "生产单号"
+    production_order ||--o{ production_order_link : "source/target"
+    process_task ||--o{ work_report : "工序任务号"
+    work_report ||--o{ production_inspection : "报工号"
+    production_inspection ||--o{ production_inspection_item : "检验号"
+    material_preparation ||--o{ material_preparation_detail : "备料单号"
+    production_inbound_order ||--o{ production_inbound_order_detail : "入库单号"
+
+    production_plan {
+        string production_number PK "生产计划编号"
+        string item_number "产品编号"
+        string item_name "产品名称"
+        decimal planned_quantity "计划数量"
+        string plan_status "计划状态"
+        string approval_status "审批状态"
+    }
+
+    production_order {
+        string production_order_number PK "生产单编号"
+        string production_number FK "生产计划编号"
+        string item_number "产品编号"
+        string item_name "产品名称"
+        decimal planned_quantity "计划数量"
+        string equipment_number "设备编号"
+        string equipment_name "设备名称"
+        datetime production_date "生产日期"
+        datetime planned_completion_time "计划完成时间"
+        string plan_status "计划状态"
+        string approval_status "审批状态"
+        string inbound_status "入库状态"
+        decimal inbound_quantity "入库数量"
+        datetime baseline_production_date "基准生产日期"
+        datetime baseline_planned_completion_time "基准完成时间"
+    }
+
+    production_order_link {
+        int id PK "自增ID"
+        string source FK "前序生产单号"
+        string target FK "后序生产单号"
+        string type "依赖类型(0=FS,1=SS,2=FF,3=SF)"
+        int lag "间隔天数"
+        datetime created_at "创建时间"
+    }
+
+    process_task {
+        string process_task_number PK "工序任务编号 PT-YYYYMMDD-NNN"
+        string production_order_number FK "生产单编号"
+        string production_number "生产计划编号"
+        string process_route_number "工艺路线编号"
+        int step_number "工序序号"
+        string item_number "产品编号"
+        string item_name "产品名称"
+        string standard_process_number "标准工序编号"
+        string standard_process_name "标准工序名称"
+        string work_center_number "工作中心编号"
+        string work_center_name "工作中心名称"
+        decimal planned_quantity "计划数量"
+        decimal completed_quantity "已完成数量"
+        datetime planned_start_time "计划开始"
+        datetime planned_end_time "计划结束"
+        datetime actual_start_time "实际开始"
+        datetime actual_end_time "实际结束"
+        string task_status "任务状态"
+        string approval_status "审批状态"
+        string inspect_status "检验状态"
+    }
+
+    work_report {
+        string work_report_number PK "报工编号"
+        string process_task_number FK "工序任务号"
+        string production_order_number "生产单编号"
+        int step_number "工序序号"
+        string standard_process_name "工序名称"
+        string item_number "产品编号"
+        string item_name "产品名称"
+        decimal planned_quantity "计划数量"
+        decimal qualified_quantity "合格数量"
+        decimal unqualified_quantity "不合格数量"
+        decimal total_quantity "合计数量"
+        decimal cumulative_quantity "累计数量"
+        string report_date "报工日期"
+        string schedules_id "班次编号"
+        string group_number "班组编号"
+        string operator_number "操作员工号"
+        string actual_start_time "实际开始"
+        string actual_end_time "实际结束"
+        decimal actual_hours "实际工时"
+        string unqualified_reason "不合格原因"
+        string approval_status "审批状态"
+    }
+
+    production_inspection {
+        string inspection_number PK "检验编号"
+        string work_report_number FK "报工编号"
+        string process_task_number "工序任务号"
+        string production_order_number "生产单编号"
+        int step_number "工序序号"
+        string standard_process_name "工序名称"
+        string item_number "产品编号"
+        string item_name "产品名称"
+        string inspect_type "检验类型"
+        decimal total_quantity "检验数量"
+        decimal qualified_quantity "合格数量"
+        decimal unqualified_quantity "不合格数量"
+        string inspection_result "检验结果"
+        string inspector_number "检验员工号"
+        string inspection_date "检验日期"
+        string defect_handling "缺陷处理"
+    }
+
+    production_inspection_item {
+        int id PK "自增ID"
+        string inspection_number FK "检验编号"
+        string inspect_item_name "检验项目名称"
+        string inspect_item_standard "检验标准"
+        decimal qualified_quantity "合格数"
+        decimal unqualified_quantity "不合格数"
+        string inspection_result "单项结果"
+    }
+
+    material_preparation {
+        string preparation_number PK "备料单编号"
+        string production_order_number FK "生产单编号"
+        string item_number "产品编号"
+        string item_name "产品名称"
+        decimal planned_quantity "计划数量"
+        string preparation_status "备料状态"
+        string approval_status "审批状态"
+        datetime creation_date "创建日期"
+    }
+
+    material_preparation_detail {
+        int id PK "自增ID"
+        string preparation_number FK "备料单编号"
+        string material_number "物料编号"
+        string material_name "物料名称"
+        decimal required_quantity "需求数量"
+        decimal prepared_quantity "已备数量"
+        string basic_unit "基本单位"
+        string warehouse_number "仓库编号"
+    }
+
+    production_inbound_order {
+        string inbound_order_number PK "入库单编号"
+        string production_order_number FK "生产单编号"
+        string item_number "产品编号"
+        string item_name "产品名称"
+        decimal total_quantity "入库总数量"
+        string inbound_status "入库状态"
+        string approval_status "审批状态"
+        datetime creation_date "创建日期"
+    }
+
+    production_inbound_order_detail {
+        int id PK "自增ID"
+        string inbound_order_number FK "入库单编号"
+        string batch_number "批次号"
+        string item_number "产品编号"
+        decimal quantity "数量"
+        string warehouse_number "仓库编号"
+        string storage_location "库位"
+        datetime inbound_date "入库日期"
+    }
+```
