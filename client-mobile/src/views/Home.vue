@@ -16,6 +16,17 @@
           <span class="scan-btn__text">扫码报工</span>
         </div>
       </div>
+      
+      <div class="action-grid action-grid--secondary">
+        <div class="scan-btn scan-btn--issue" @click="goOutsourcingIssue">
+          <van-icon name="send-o" class="scan-btn__icon" />
+          <span class="scan-btn__text">委外发料</span>
+        </div>
+        <div class="scan-btn scan-btn--receipt" @click="goOutsourcingReceipt">
+          <van-icon name="revoke" class="scan-btn__icon" />
+          <span class="scan-btn__text">委外收回</span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -47,6 +58,14 @@ const goPrepIssue = () => {
 
 const goScanReport = () => {
   router.push('/scan-report')
+}
+
+const goOutsourcingIssue = () => {
+  router.push('/outsourcing/issue-scan')
+}
+
+const goOutsourcingReceipt = () => {
+  router.push('/outsourcing/receipt-scan')
 }
 </script>
 
@@ -125,6 +144,19 @@ const goScanReport = () => {
 
 .scan-btn--report:active {
   box-shadow: 0 3px 12px rgba(7, 193, 96, 0.3);
+}
+
+.action-grid--secondary {
+  margin-top: 32px;
+}
+
+.scan-btn--receipt {
+  background: linear-gradient(145deg, #7232dd, #5b21b6);
+  box-shadow: 0 6px 24px rgba(114, 50, 221, 0.4);
+}
+
+.scan-btn--receipt:active {
+  box-shadow: 0 3px 12px rgba(114, 50, 221, 0.3);
 }
 
 .scan-btn__icon {

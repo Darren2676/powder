@@ -66,6 +66,18 @@ const routes: RouteRecordRaw[] = [
     name: 'OrderWorkReport',
     component: () => import('@/views/OrderWorkReport.vue'),
     meta: { requiresAuth: true, title: '按工序报工' }
+  },
+  {
+    path: '/outsourcing/issue-scan',
+    name: 'OutsourcingIssueScan',
+    component: () => import('@/views/OutsourcingIssueScan.vue'),
+    meta: { requiresAuth: true, title: '委外发料' }
+  },
+  {
+    path: '/outsourcing/receipt-scan',
+    name: 'OutsourcingReceiptScan',
+    component: () => import('@/views/OutsourcingReceiptScan.vue'),
+    meta: { requiresAuth: true, title: '委外收回' }
   }
 ]
 
