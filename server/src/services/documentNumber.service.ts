@@ -229,3 +229,75 @@ export const generateForecastNumber = async (transaction?: any): Promise<string>
 
   return prefix + String(seq).padStart(3, '0');
 };
+
+// ==================== 委外发料单编号 ====================
+
+export const generateOutsourcingIssueNumber = async (transaction?: any): Promise<string> => {
+  const today = dayjs().format('YYYYMMDD');
+  const prefix = `OMI-${today}-`;
+  const [rows]: any = await sequelize.query(
+    `SELECT TOP 1 issue_number FROM outsourcing_material_issue WHERE issue_number LIKE :prefix ORDER BY issue_number DESC`,
+    { replacements: { prefix: `${prefix}%` }, ...(transaction ? { transaction } : {}) }
+  );
+  let seq = 1;
+  if (rows.length > 0) {
+    const last = rows[0].issue_number as string;
+    const lastSeq = parseInt(last.substring(prefix.length));
+    if (!isNaN(lastSeq)) seq = lastSeq + 1;
+  }
+  return `${prefix}${String(seq).padStart(3, '0')}`;
+};
+
+// ==================== 委外收回单编号 ====================
+
+export const generateOutsourcingReceiptNumber = async (transaction?: any): Promise<string> => {
+  const today = dayjs().format('YYYYMMDD');
+  const prefix = `ORC-${today}-`;
+  const [rows]: any = await sequelize.query(
+    `SELECT TOP 1 receipt_number FROM outsourcing_receipt WHERE receipt_number LIKE :prefix ORDER BY receipt_number DESC`,
+    { replacements: { prefix: `${prefix}%` }, ...(transaction ? { transaction } : {}) }
+  );
+  let seq = 1;
+  if (rows.length > 0) {
+    const last = rows[0].receipt_number as string;
+    const lastSeq = parseInt(last.substring(prefix.length));
+    if (!isNaN(lastSeq)) seq = lastSeq + 1;
+  }
+  return `${prefix}${String(seq).padStart(3, '0')}`;
+};
+
+// ==================== 委外质检单编号 ====================
+
+export const generateOutsourcingInspectionNumber = async (transaction?: any): Promise<string> => {
+  const today = dayjs().format('YYYYMMDD');
+  const prefix = `OQI-${today}-`;
+  const [rows]: any = await sequelize.query(
+    `SELECT TOP 1 inspection_number FROM outsourcing_inspection WHERE inspection_number LIKE :prefix ORDER BY inspection_number DESC`,
+    { replacements: { prefix: `${prefix}%` }, ...(transaction ? { transaction } : {}) }
+  );
+  let seq = 1;
+  if (rows.length > 0) {
+    const last = rows[0].inspection_number as string;
+    const lastSeq = parseInt(last.substring(prefix.length));
+    if (!isNaN(lastSeq)) seq = lastSeq + 1;
+  }
+  return `${prefix}${String(seq).padStart(3, '0')}`;
+};
+
+// ==================== 委外结算单编号 ====================
+
+export const generateOutsourcingSettlementNumber = async (transaction?: any): Promise<string> => {
+  const today = dayjs().format('YYYYMMDD');
+  const prefix = `OST-${today}-`;
+  const [rows]: any = await sequelize.query(
+    `SELECT TOP 1 settlement_number FROM outsourcing_settlement WHERE settlement_number LIKE :prefix ORDER BY settlement_number DESC`,
+    { replacements: { prefix: `${prefix}%` }, ...(transaction ? { transaction } : {}) }
+  );
+  let seq = 1;
+  if (rows.length > 0) {
+    const last = rows[0].settlement_number as string;
+    const lastSeq = parseInt(last.substring(prefix.length));
+    if (!isNaN(lastSeq)) seq = lastSeq + 1;
+  }
+  return `${prefix}${String(seq).padStart(3, '0')}`;
+};
