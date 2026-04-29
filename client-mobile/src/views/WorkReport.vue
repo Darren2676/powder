@@ -227,7 +227,7 @@ import { ref, computed, onMounted, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast, showDialog } from 'vant'
 import { getProcessTasks } from '@/api/processTask'
-import { createWorkReport, getSchedules, getTeams, getEmployees, getDefectClasses, getDefects } from '@/api/workReport'
+import { createWorkReport, getSchedules, getGroups, getEmployees, getDefectClasses, getDefects } from '@/api/workReport'
 import dayjs from 'dayjs'
 
 const route = useRoute()
@@ -267,8 +267,8 @@ const form = reactive({
   report_date: today.format('YYYY-MM-DD'),
   schedules_id: '',
   schedules_name: '',
-  team_number: '',
-  team_name: '',
+  group_number: '',
+  group_name: '',
   operator_number: '',
   operator_name: '',
   defect_class_number: '',
@@ -377,9 +377,9 @@ const onScheduleConfirm = ({ selectedOptions }: any) => {
     form.schedules_name = opt.text
     // 尝试填充班组
     const sch = scheduleMap.value[opt.value]
-    if (sch?.team_number) {
-      form.team_number = sch.team_number
-      form.team_name = sch.team_name || ''
+    if (sch?.group_number) {
+      form.group_number = sch.group_number
+      form.group_name = sch.group_name || ''
     }
   }
   showSchedulePicker.value = false
@@ -489,8 +489,8 @@ const handleSubmit = async () => {
       report_date: form.report_date,
       schedules_id: form.schedules_id,
       schedules_name: form.schedules_name,
-      team_number: form.team_number,
-      team_name: form.team_name,
+      group_number: form.group_number,
+      group_name: form.group_name,
       operator_number: form.operator_number,
       operator_name: form.operator_name,
       defect_class_number: form.defect_class_number,

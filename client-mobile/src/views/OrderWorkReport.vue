@@ -117,7 +117,7 @@
           </div>
 
           <!-- 底部操作栏 -->
-          <div class="bottom-action" v-if="currentTask.can_report">
+          <div class="bottom-action" v-if="currentTask.task_status !== '已完成' && currentTask.task_status !== '已关闭'">
             <van-button
               type="primary"
               block
@@ -376,8 +376,8 @@ const form = reactive({
   report_date: today.format('YYYY-MM-DD'),
   schedules_id: '',
   schedules_name: '',
-  team_number: '',
-  team_name: '',
+  group_number: '',
+  group_name: '',
   operator_number: '',
   operator_name: '',
   defect_class_number: '',
@@ -390,8 +390,7 @@ const form = reactive({
 
 // 计算属性
 const activeStepIndex = computed(() => {
-  const idx = tasks.value.findIndex(t => t.can_report)
-  return idx >= 0 ? idx : tasks.value.findIndex(t => t.task_status !== '已完成')
+  return tasks.value.findIndex(t => t.task_status !== '已完成' && t.task_status !== '已关闭')
 })
 
 const completedTaskCount = computed(() => {
@@ -459,14 +458,9 @@ const loadOrderTasks = async () => {
     if (res.success) {
       orderInfo.value = res.data.order
       tasks.value = res.data.tasks || []
-      // 初始定位到第一个可报工的工序
-      const firstCanReport = tasks.value.findIndex(t => t.can_report)
-      if (firstCanReport >= 0) {
-        viewStepIndex.value = firstCanReport
-      } else {
-        const firstNotDone = tasks.value.findIndex(t => t.task_status !== '已完成')
-        viewStepIndex.value = firstNotDone >= 0 ? firstNotDone : 0
-      }
+      // 初始定位到第一个未完成且未关闭的工序
+      const firstNotDone = tasks.value.findIndex(t => t.task_status !== '已完成' && t.task_status !== '已关闭')
+      viewStepIndex.value = firstNotDone >= 0 ? firstNotDone : 0
     } else {
       showToast({ message: res.message || '加载失败', type: 'fail' })
     }
@@ -546,8 +540,8 @@ const onScheduleConfirm = ({ selectedOptions }: any) => {
     // 尝试匹配班组
     const raw = schedulesRaw.value.find((s: any) => (s.schedules_id || s.id) === opt.value)
     if (raw) {
-      form.team_number = raw.team_number || ''
-      form.team_name = raw.team_name || ''
+      form.group_number = raw.group_number || ''
+      form.group_name = raw.group_name || ''
     }
   }
   showSchedulePicker.value = false
@@ -657,8 +651,8 @@ const handleSubmitReport = async () => {
       report_date: form.report_date,
       schedules_id: form.schedules_id,
       schedules_name: form.schedules_name,
-      team_number: form.team_number,
-      team_name: form.team_name,
+      group_number: form.group_number,
+      group_name: form.group_name,
       operator_number: form.operator_number,
       operator_name: form.operator_name,
       defect_class_number: form.defect_class_number,

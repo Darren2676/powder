@@ -41,6 +41,10 @@ const goScanPrep = () => {
   router.push('/process-prep')
 }
 
+const goPrepIssue = () => {
+  router.push('/process-prep')
+}
+
 const goScanReport = () => {
   router.push('/scan-report')
 }
@@ -104,6 +108,14 @@ const goScanReport = () => {
 .scan-btn:active {
   transform: scale(0.94);
   box-shadow: 0 3px 12px rgba(25, 137, 250, 0.3);
+}
+
+.scan-btn--issue {
+  background: linear-gradient(145deg, #ff6b35, #e85d04);
+  box-shadow: 0 6px 24px rgba(255, 107, 53, 0.4);
+}
+.scan-btn--issue:active {
+  box-shadow: 0 3px 12px rgba(255, 107, 53, 0.3);
 }
 
 .scan-btn--report {

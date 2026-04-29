@@ -24,8 +24,8 @@ export function quickReport(data: {
   report_date: string
   schedules_id?: string
   schedules_name?: string
-  team_number?: string
-  team_name?: string
+  group_number?: string
+  group_name?: string
   operator_number?: string
   operator_name?: string
   actual_start_time?: string
@@ -42,8 +42,8 @@ export function getSchedules() {
 }
 
 /** 获取班组列表 */
-export function getTeams() {
-  return request.get('/teams')
+export function getGroups() {
+  return request.get('/groups')
 }
 
 /** 获取员工列表 */
