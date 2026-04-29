@@ -71,7 +71,34 @@ const taskStatusColors: Record<string, string> = {
   '已关闭': 'error'
 }
 
+const emptyForm = () => ({
+  production_order_number: '',
+  production_number: '',
+  process_route_number: '',
+  step_number: null,
+  item_number: '',
+  item_name: '',
+  specifications: '',
+  basic_unit: '',
+  planned_quantity: 0,
+  standard_process_number: '',
+  standard_process_name: '',
+  work_center_number: '',
+  work_center_name: '',
+  process_material_input_number: '',
+  process_material_input_quantity: '',
+  process_material_input_unit: '',
+  material_wastage_rate: '',
+  excess_reporting_ratio: '',
+  ingredient_addition_method: '',
+  planned_start_time: null,
+  planned_end_time: null,
+  remark: ''
+})
 
+const handleStatusChange = () => {
+  fetchData()
+}
 
 const defaultDataColumns: any[] = [
   { title: '工序任务编号', dataIndex: 'process_task_number', key: 'process_task_number', width: 160, resizable: true },

@@ -106,7 +106,13 @@
           </a-col>
           <a-col :span="8">
             <a-form-item label="预计回货日期">
-              <a-input v-model:value="toOrderForm.expected_return_date" placeholder="YYYY/MM/DD" />
+              <a-date-picker
+                v-model:value="toOrderForm.expected_return_date"
+                format="YYYY/MM/DD"
+                valueFormat="YYYY/MM/DD"
+                placeholder="请选择日期"
+                style="width: 100%"
+              />
             </a-form-item>
           </a-col>
         </a-row>

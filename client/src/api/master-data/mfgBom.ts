@@ -30,3 +30,12 @@ export const checkMfgBomHasBom = (materialNumbers: string) => request.get('/mfg-
 
 // Import from BOM
 export const importFromBom = (data: { bom_number: string }) => request.post('/mfg-boms/import-from-bom', data)
+
+// Mould BOM Mapping
+export const getMouldBomMappings = (params?: any) => request.get('/mfg-boms/mould-mappings', { params })
+export const createMouldBomMapping = (data: any) => request.post('/mfg-boms/mould-mappings', data)
+export const updateMouldBomMapping = (id: number, data: any) => request.put(`/mfg-boms/mould-mappings/${id}`, data)
+export const deleteMouldBomMapping = (id: number) => request.delete(`/mfg-boms/mould-mappings/${id}`)
+export const getMouldBomByItemAndMould = (itemNumber: string, mouldNumber: string) => request.get('/mfg-boms/mould-mappings/find', { params: { item_number: itemNumber, mould_number: mouldNumber } })
+export const approveMouldBomMapping = (id: number) => request.post(`/mfg-boms/mould-mappings/${id}/approve`)
+export const withdrawMouldBomMapping = (id: number) => request.post(`/mfg-boms/mould-mappings/${id}/withdraw`)

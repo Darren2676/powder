@@ -1,19 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onActivated, watch } from 'vue'
+import { ref, onMounted, onUnmounted, onActivated, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
-import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
-import { CustomChart } from 'echarts/charts'
-import {
-  TitleComponent,
-  TooltipComponent,
-  GridComponent,
-  DataZoomComponent,
-  LegendComponent
-} from 'echarts/components'
-import { getGanttData } from '@/api/production/order'
+import { gantt } from 'dhtmlx-gantt'
+import 'dhtmlx-gantt/codebase/dhtmlxgantt.css'
+import { getGanttData, updateGanttTask } from '@/api/production/order'
+import { getEquipments } from '@/api/equipment/equipment'
 import { getSchedules } from '@/api/master-data/schedule'
 import dayjs from 'dayjs'
 import {
@@ -26,51 +18,35 @@ import {
   FullscreenExitOutlined
 } from '@ant-design/icons-vue'
 
-use([
-  CanvasRenderer,
-  CustomChart,
-  TitleComponent,
-  TooltipComponent,
-  GridComponent,
-  DataZoomComponent,
-  LegendComponent
-])
-
-interface GanttTask {
-  production_order_number: string
-  production_number: string
-  item_number: string
-  item_name: string
-  specifications: string
-  planned_quantity: number
-  mould_number: string
-  actual_cavity_count: string
-  actual_hole_count: string
-  actual_daily_output: string
-  production_date: string
-  schedule_id: string
-  planned_completion_time: string
-  plan_status: string
-}
-
-interface EquipmentGroup {
-  equipment_number: string
-  equipment_name: string
-  tasks: GanttTask[]
-}
-
-const loading = ref(false)
-const equipments = ref<EquipmentGroup[]>([])
-const scheduleList = ref<any[]>([])
-const ganttChartRef = ref<any>(null)
-const isFullscreen = ref(false)
 const route = useRoute()
+const loading = ref(false)
+const isFullscreen = ref(false)
+const ganttContainer = ref<HTMLDivElement | null>(null)
 
 // 日期范围控制
 const dateRange = ref<[any, any]>([
-  dayjs().startOf('week'),
-  dayjs().endOf('week').add(1, 'week')
+  dayjs().startOf('month'),
+  dayjs().endOf('month')
 ])
+
+// 筛选条件
+const filterEquipment = ref<string | undefined>(undefined)
+const filterItemNumber = ref('')
+
+// 数据
+const scheduleList = ref<any[]>([])
+const equipmentList = ref<any[]>([])
+const ganttData = ref<any[]>([])
+
+// 编辑弹窗
+const editModalVisible = ref(false)
+const editModalLoading = ref(false)
+const editForm = ref<any>({})
+
+// 事件 ID 记录（用于卸载时清理）
+let dblClickEventId: any = null
+let beforeDragEventId: any = null
+let afterDragEventId: any = null
 
 const statusColorMap: Record<string, string> = {
   '未开始': '#d9d9d9',
@@ -88,28 +64,24 @@ const statusList = [
   { label: '已完成', color: '#8c8c8c' }
 ]
 
+// 统计信息
+const stats = computed(() => {
+  const totalTasks = ganttData.value.length
+  const statusCount: Record<string, number> = {}
+  ganttData.value.forEach((t: any) => {
+    statusCount[t.plan_status] = (statusCount[t.plan_status] || 0) + 1
+  })
+  return { totalTasks, statusCount }
+})
+
+// 获取班次名称
 const getScheduleName = (scheduleId: string | null) => {
   if (!scheduleId) return ''
   const schedule = scheduleList.value.find((s: any) => s.schedules_id === scheduleId)
   return schedule ? (schedule.schedules_name || scheduleId) : scheduleId
 }
 
-const fetchData = async () => {
-  loading.value = true
-  try {
-    const startDate = dayjs(dateRange.value[0]).format('YYYY-MM-DD')
-    const endDate = dayjs(dateRange.value[1]).format('YYYY-MM-DD')
-    const res = await getGanttData({ startDate, endDate })
-    if (res.success) {
-      equipments.value = res.data.equipments || []
-    }
-  } catch {
-    message.error('获取甘特图数据失败')
-  } finally {
-    loading.value = false
-  }
-}
-
+// 加载班次列表
 const loadSchedules = async () => {
   try {
     const res = await getSchedules({ page: 1, limit: 100 })
@@ -119,7 +91,50 @@ const loadSchedules = async () => {
   } catch { /* ignore */ }
 }
 
-// 快速切换日期范围
+// 加载设备列表
+const loadEquipments = async () => {
+  try {
+    const res = await getEquipments({ page: 1, limit: 1000 })
+    if (res.success) {
+      equipmentList.value = res.data.items || []
+    }
+  } catch { /* ignore */ }
+}
+
+// 获取甘特图数据
+const fetchData = async () => {
+  loading.value = true
+  try {
+    const startDate = dayjs(dateRange.value[0]).format('YYYY-MM-DD')
+    const endDate = dayjs(dateRange.value[1]).format('YYYY-MM-DD')
+    const res = await getGanttData({
+      startDate,
+      endDate,
+      equipmentNumber: filterEquipment.value,
+      search: filterItemNumber.value || undefined
+    })
+    if (res.success) {
+      ganttData.value = res.data.data || []
+      gantt.clearAll()
+      if (ganttData.value.length === 0) {
+        gantt.message({ text: '当前筛选条件下暂无数据', expire: 3000 })
+      } else {
+        gantt.parse({ data: ganttData.value, links: [] })
+        // 强制重绘：容器可能从隐藏变为显示，需重新计算尺寸
+        setTimeout(() => {
+          gantt.setSizes()
+          gantt.render()
+        }, 100)
+      }
+    }
+  } catch {
+    message.error('获取甘特图数据失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+// 日期范围操作
 const goThisWeek = () => {
   dateRange.value = [dayjs().startOf('week'), dayjs().endOf('week')]
   fetchData()
@@ -155,279 +170,209 @@ const toggleFullscreen = () => {
   isFullscreen.value = !isFullscreen.value
 }
 
-// 构建ECharts甘特图配置
-const chartOption = computed(() => {
-  if (equipments.value.length === 0) return {}
-
-  // 收集所有班次ID
-  const allScheduleIds = new Set<string>()
-  equipments.value.forEach(e => {
-    e.tasks.forEach(t => {
-      if (t.schedule_id) allScheduleIds.add(t.schedule_id)
-    })
-  })
-  // 排序班次（确保顺序一致）
-  const scheduleIds = Array.from(allScheduleIds).sort()
-  // 如果没有班次数据，用空字符串作为默认
-  if (scheduleIds.length === 0) scheduleIds.push('')
-
-  // Y轴: 设备 + 班次 组合，只保留有实际任务的组合
-  interface YRow { label: string; equipIndex: number; scheduleId: string; isFirstOfEquip: boolean; equipName: string; shiftLabel: string }
-  const yRows: YRow[] = []
-  equipments.value.forEach((e, eIdx) => {
-    const equipLabel = e.equipment_name || e.equipment_number
-    // 只取该设备实际用到的班次
-    const usedIds = new Set<string>()
-    e.tasks.forEach(t => usedIds.add(t.schedule_id || ''))
-    const sortedUsedIds = Array.from(usedIds).sort()
-
-    sortedUsedIds.forEach((sid, sIdx) => {
-      const shiftLabel = sid ? getScheduleName(sid) : '未分配'
-      const isFirst = sIdx === 0
-      const label = isFirst
-        ? (sortedUsedIds.length > 1 ? `${equipLabel}  ${shiftLabel}` : equipLabel)
-        : `  ${shiftLabel}`
-      yRows.push({ label, equipIndex: eIdx, scheduleId: sid, isFirstOfEquip: isFirst, equipName: equipLabel, shiftLabel })
-    })
-  })
-  const reversedRows = [...yRows].reverse()
-  const yCategories = reversedRows.map(r => r.label)
-
-  // 计算设备分组分隔线位置
-  const equipSeparatorLines: any[] = []
-  for (let i = 1; i < reversedRows.length; i++) {
-    if (reversedRows[i].equipIndex !== reversedRows[i - 1].equipIndex) {
-      equipSeparatorLines.push({
-        yAxis: i - 0.5,
-        lineStyle: { color: '#d9d9d9', width: 1, type: 'solid' }
-      })
-    }
+// 打开编辑弹窗
+const openEditModal = (task: any) => {
+  editForm.value = {
+    production_order_number: task.production_order_number,
+    item_number: task.item_number,
+    planned_quantity: task.planned_quantity,
+    equipment_number: task.owner || task.equipment_number,
+    schedule_id: task.schedule_id
   }
+  editModalVisible.value = true
+}
 
-  // X轴: 日期范围
-  const start = dayjs(dateRange.value[0])
-  const end = dayjs(dateRange.value[1])
-  const startTs = start.valueOf()
-  const endTs = end.add(1, 'day').valueOf()
+// 保存编辑
+const handleEditSave = async () => {
+  editModalLoading.value = true
+  try {
+    const eq = equipmentList.value.find((e: any) => e.equipment_number === editForm.value.equipment_number)
+    const res = await updateGanttTask(editForm.value.production_order_number, {
+      planned_quantity: editForm.value.planned_quantity,
+      equipment_number: editForm.value.equipment_number || null,
+      equipment_name: eq?.equipment_name || null,
+      schedule_id: editForm.value.schedule_id || null
+    } as any)
+    if (res.success) {
+      message.success('更新成功')
+      editModalVisible.value = false
+      await fetchData()
+    } else {
+      message.error(res.message || '更新失败')
+    }
+  } catch {
+    message.error('更新失败')
+  } finally {
+    editModalLoading.value = false
+  }
+}
 
-  // 构建数据
-  const data: any[] = []
+// 初始化甘特图
+const initGantt = () => {
+  if (!ganttContainer.value) return
 
-  reversedRows.forEach((row, yIndex) => {
-    const equip = equipments.value[row.equipIndex]
-    equip.tasks.forEach(task => {
-      if (!task.production_date) return
-      // 仅匹配当前班次行
-      const taskSchedule = task.schedule_id || ''
-      if (taskSchedule !== row.scheduleId) return
+  gantt.config.date_format = '%Y-%m-%d'
+  gantt.config.row_height = 36
+  gantt.config.bar_height = 24
+  gantt.config.readonly = false
+  gantt.config.drag_resize = true
+  gantt.config.drag_move = true
+  gantt.config.drag_progress = false
+  gantt.config.drag_links = false
+  gantt.config.select_task = false
 
-      const taskDate = dayjs(task.production_date)
-      const taskStart = taskDate.startOf('day').valueOf()
-      const taskEnd = taskDate.endOf('day').valueOf()
+  // 时间刻度
+  gantt.config.scale_height = 50
+  gantt.config.subscales = [
+    { unit: 'day', step: 1, date: '%m-%d' }
+  ]
+  gantt.config.date_scale = '%Y年%m月'
 
-      const color = statusColorMap[task.plan_status] || '#1890ff'
-      const scheduleName = getScheduleName(task.schedule_id)
+  // 列配置
+  gantt.config.columns = [
+    { name: 'text', label: '产品信息', tree: true, width: 180, resize: true },
+    {
+      name: 'owner',
+      label: '设备',
+      align: 'center',
+      width: 120,
+      resize: true,
+      template: (task: any) => task.equipment_name || task.owner || '-'
+    },
+    { name: 'start_date', label: '生产日期', align: 'center', width: 90, resize: true },
+    { name: 'end_date', label: '完成日期', align: 'center', width: 90, resize: true },
+    { name: 'planned_quantity', label: '计划数量', align: 'center', width: 80, resize: true },
+    { name: 'plan_status', label: '状态', align: 'center', width: 70, resize: true }
+  ]
 
-      data.push({
-        value: [yIndex, taskStart, taskEnd],
-        itemStyle: { color },
-        task: {
-          ...task,
-          scheduleName
-        }
-      })
-    })
-  })
+  const dateToStr = gantt.date.date_to_str('%Y-%m-%d')
 
-  const chartHeight = Math.max(yCategories.length * 32, 200)
-
-  return {
-    tooltip: {
-      trigger: 'item',
-      confine: false,
-      appendTo: () => document.body,
-      backgroundColor: 'rgba(255, 255, 255, 0.96)',
-      borderColor: '#e8e8e8',
-      borderWidth: 1,
-      padding: [12, 16],
-      extraCssText: 'z-index: 99999; box-shadow: 0 4px 12px rgba(0,0,0,0.15); max-width: 360px;',
-      textStyle: { color: '#333', fontSize: 13 },
-      formatter: (params: any) => {
-        const t = params.data?.task
-        if (!t) return ''
-        const cavity = Number(t.actual_cavity_count) || 0
-        const hole = Number(t.actual_hole_count) || 0
-        const dailyOutput = (cavity > 0 && hole > 0) ? cavity * hole : (t.actual_daily_output || '-')
-        return `
-          <div style="font-weight:600;margin-bottom:8px;font-size:14px;color:#1890ff">${t.production_order_number}</div>
-          <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px">
-            <span style="color:#999">产品</span><span>${t.item_name || '-'}${t.specifications ? ' (' + t.specifications + ')' : ''}</span>
-            <span style="color:#999">计划数量</span><span>${t.planned_quantity || '-'}</span>
-            <span style="color:#999">模具</span><span>${t.mould_number || '-'}</span>
-            <span style="color:#999">模腔/模穴</span><span>${t.actual_cavity_count || '-'} / ${t.actual_hole_count || '-'}</span>
-            <span style="color:#999">实际班产</span><span>${dailyOutput}</span>
-            <span style="color:#999">生产日期</span><span>${t.production_date ? dayjs(t.production_date).format('YYYY-MM-DD') : '-'}</span>
-            <span style="color:#999">班次</span><span>${t.scheduleName || '-'}</span>
-            <span style="color:#999">状态</span><span style="color:${statusColorMap[t.plan_status] || '#333'};font-weight:500">${t.plan_status}</span>
+  // Tooltip 自定义
+  gantt.templates.tooltip_text = (start: Date, end: Date, task: any) => {
+    const cavity = Number(task.actual_cavity_count) || 0
+    const hole = Number(task.actual_hole_count) || 0
+    const dailyOutput = (cavity > 0 && hole > 0) ? cavity * hole : (task.actual_daily_output || '-')
+    const scheduleName = getScheduleName(task.schedule_id)
+    let html = `
+      <div style="font-weight:600;margin-bottom:8px;font-size:14px;color:#1890ff">${task.production_order_number}</div>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px">
+        <span style="color:#999">产品</span><span>${task.item_name || '-'}${task.specifications ? ' (' + task.specifications + ')' : ''}</span>
+        <span style="color:#999">产品编号</span><span>${task.item_number || '-'}</span>
+        <span style="color:#999">计划数量</span><span>${task.planned_quantity || '-'}</span>
+        <span style="color:#999">模具</span><span>${task.mould_number || '-'}</span>
+        <span style="color:#999">模腔/模穴</span><span>${task.actual_cavity_count || '-'} / ${task.actual_hole_count || '-'}</span>
+        <span style="color:#999">实际班产</span><span>${dailyOutput}</span>
+        <span style="color:#999">生产日期</span><span>${task.start_date ? dayjs(task.start_date).format('YYYY-MM-DD') : '-'}</span>
+        <span style="color:#999">班次</span><span>${scheduleName || '-'}</span>
+        <span style="color:#999">状态</span><span style="color:${statusColorMap[task.plan_status] || '#333'};font-weight:500">${task.plan_status}</span>
+      </div>
+    `
+    // Baseline 信息
+    if (task.baseline_start_date && task.baseline_end_date) {
+      const hasDeviation = task.baseline_start_date !== dateToStr(start) || task.baseline_end_date !== dateToStr(end)
+      if (hasDeviation) {
+        html += `
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee">
+            <div style="font-weight:600;color:#faad14;font-size:13px;margin-bottom:4px">排期偏差</div>
+            <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px;color:#666">
+              <span>原始开始</span><span>${task.baseline_start_date}</span>
+              <span>原始结束</span><span>${task.baseline_end_date}</span>
+            </div>
+          </div>
+        `
+      } else {
+        html += `
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee;font-size:12px;color:#8c8c8c">
+            原始计划：${task.baseline_start_date} ~ ${task.baseline_end_date}（无偏差）
           </div>
         `
       }
-    },
-    grid: {
-      left: 140,
-      right: 40,
-      top: 20,
-      bottom: 60,
-      containLabel: false
-    },
-    xAxis: {
-      type: 'time',
-      min: startTs,
-      max: endTs,
-      axisLabel: {
-        formatter: (val: number) => dayjs(val).format('MM-DD'),
-        fontSize: 12,
-        color: '#666'
-      },
-      axisTick: { alignWithLabel: true },
-      splitLine: {
-        show: true,
-        lineStyle: { color: '#f0f0f0', type: 'dashed' }
-      },
-      axisLine: { lineStyle: { color: '#d9d9d9' } }
-    },
-    yAxis: {
-      type: 'category',
-      data: yCategories,
-      axisLabel: {
-        fontSize: 12,
-        width: 130,
-        overflow: 'truncate',
-        formatter: (value: string) => {
-          // 班次子行（以空格开头）用灰色，设备行用黑色粗体
-          if (value.startsWith('  ')) {
-            return `{shift|${value.trim()}}`
-          }
-          return `{equip|${value}}`
-        },
-        rich: {
-          equip: { fontSize: 12, fontWeight: 'bold', color: '#262626', width: 130, align: 'right' },
-          shift: { fontSize: 11, color: '#8c8c8c', width: 130, align: 'right' }
-        }
-      },
-      axisTick: { show: false },
-      axisLine: { lineStyle: { color: '#d9d9d9' } },
-      splitLine: {
-        show: true,
-        interval: (index: number) => {
-          // 在设备分组之间显示实线分隔
-          const row = reversedRows[index]
-          return row ? row.isFirstOfEquip : false
-        },
-        lineStyle: { color: '#e8e8e8' }
-      }
-    },
-    dataZoom: [
-      {
-        type: 'slider',
-        xAxisIndex: 0,
-        bottom: 10,
-        height: 24,
-        borderColor: '#d9d9d9',
-        backgroundColor: '#fafafa',
-        fillerColor: 'rgba(24, 144, 255, 0.15)',
-        handleStyle: { color: '#1890ff' },
-        textStyle: { fontSize: 11 },
-        labelFormatter: (val: string) => dayjs(val).format('MM-DD')
-      }
-    ],
-    series: [
-      {
-        type: 'custom',
-        renderItem: (params: any, api: any) => {
-          const yIndex = api.value(0)
-          const start = api.coord([api.value(1), yIndex])
-          const end = api.coord([api.value(2), yIndex])
-          const height = api.size([0, 1])[1] * 0.6
-
-          const rectShape = {
-            x: start[0],
-            y: start[1] - height / 2,
-            width: Math.max(end[0] - start[0], 8),
-            height: height
-          }
-
-          return {
-            type: 'group',
-            children: [
-              {
-                type: 'rect',
-                shape: { ...rectShape, r: 4 },
-                style: {
-                  fill: api.visual('color'),
-                  opacity: 0.85
-                },
-                emphasis: {
-                  style: { opacity: 1, shadowBlur: 8, shadowColor: 'rgba(0,0,0,0.15)' }
-                }
-              },
-              {
-                type: 'text',
-                style: {
-                  x: rectShape.x + rectShape.width / 2,
-                  y: rectShape.y + rectShape.height / 2,
-                  text: rectShape.width > 50 ? params.dataIndex < data.length ? (data[params.dataIndex]?.task?.item_number || '') : '' : '',
-                  fill: '#fff',
-                  fontSize: 10,
-                  fontWeight: 500,
-                  align: 'center',
-                  verticalAlign: 'middle',
-                  truncate: { outerWidth: rectShape.width - 8 }
-                }
-              }
-            ]
-          }
-        },
-        data: data,
-        encode: {
-          x: [1, 2],
-          y: 0
-        }
-      }
-    ],
-    _chartHeight: chartHeight
+    }
+    return html
   }
-})
 
-const chartHeight = computed(() => {
-  const opt = chartOption.value as any
-  return opt._chartHeight ? `${opt._chartHeight}px` : '400px'
-})
+  // Baseline 偏差可视化：橙色虚线边框
+  gantt.templates.task_class = (start: Date, end: Date, task: any) => {
+    if (task.baseline_start_date && task.baseline_end_date) {
+      const s = dateToStr(start)
+      const e = dateToStr(end)
+      if (task.baseline_start_date !== s || task.baseline_end_date !== e) {
+        return 'gantt-task-has-baseline'
+      }
+    }
+    return ''
+  }
 
-// 统计信息
-const stats = computed(() => {
-  const totalEquipments = equipments.value.length
-  const totalTasks = equipments.value.reduce((sum, e) => sum + e.tasks.length, 0)
-  const statusCount: Record<string, number> = {}
-  equipments.value.forEach(e => {
-    e.tasks.forEach(t => {
-      statusCount[t.plan_status] = (statusCount[t.plan_status] || 0) + 1
-    })
+  // 双击编辑
+  dblClickEventId = gantt.attachEvent('onTaskDblClick', (id: string | number) => {
+    const task = gantt.getTask(id)
+    const allowedStatuses = ['未开始', '已派发']
+    if (!allowedStatuses.includes(task.plan_status)) {
+      message.warning(`当前状态为"${task.plan_status}"，仅"未开始"或"已派发"状态的任务可编辑`)
+      return false
+    }
+    openEditModal(task)
+    return false
   })
-  return { totalEquipments, totalTasks, statusCount }
-})
+
+  // 拖拽前校验状态
+  beforeDragEventId = gantt.attachEvent('onBeforeTaskDrag', (id: string | number, mode: string) => {
+    if (mode === 'resize' || mode === 'move' || mode === 'progress') {
+      const task = gantt.getTask(id)
+      const allowedStatuses = ['未开始', '已派发']
+      if (!allowedStatuses.includes(task.plan_status)) {
+        message.warning(`当前状态为"${task.plan_status}"，仅"未开始"或"已派发"状态的任务可调整排期`)
+        return false
+      }
+    }
+    return true
+  })
+
+  // 拖拽后保存
+  afterDragEventId = gantt.attachEvent('onAfterTaskDrag', (id: string | number, mode: string) => {
+    if (mode === 'resize' || mode === 'move') {
+      const task = gantt.getTask(id)
+      // 异步保存，不阻塞 UI
+      updateGanttTask(task.production_order_number, {
+        production_date: task.start_date ? dayjs(task.start_date).format('YYYY-MM-DD') : undefined,
+        planned_completion_time: task.end_date ? dayjs(task.end_date).format('YYYY-MM-DD') : undefined,
+        equipment_number: task.owner || undefined,
+        schedule_id: task.schedule_id || undefined
+      } as any).then((res: any) => {
+        if (res.success) {
+          message.success('排期调整已保存')
+        } else {
+          message.error(res.message || '排期调整失败')
+          fetchData()
+        }
+      }).catch(() => {
+        message.error('排期调整失败')
+        fetchData()
+      })
+    }
+  })
+
+  gantt.init(ganttContainer.value)
+}
 
 onMounted(async () => {
   await loadSchedules()
+  await loadEquipments()
+  initGantt()
   await fetchData()
 })
 
-// 路由激活时自动刷新数据（确保从其他页面切换回来时获取最新数据）
+onUnmounted(() => {
+  if (dblClickEventId) gantt.detachEvent(dblClickEventId)
+  if (beforeDragEventId) gantt.detachEvent(beforeDragEventId)
+  if (afterDragEventId) gantt.detachEvent(afterDragEventId)
+  gantt.clearAll()
+})
+
 onActivated(async () => {
   await fetchData()
 })
 
-// 监听路由变化，防止组件复用时数据不刷新
 watch(() => route.path, (newPath) => {
   if (newPath === '/gantt') {
     fetchData()
@@ -443,11 +388,34 @@ watch(() => route.path, (newPath) => {
         <BarChartOutlined style="font-size: 20px; color: #1890ff" />
         <span class="toolbar-title">生产排产甘特图</span>
         <a-divider type="vertical" />
-        <span class="toolbar-stat">{{ stats.totalEquipments }} 台设备</span>
-        <a-divider type="vertical" />
         <span class="toolbar-stat">{{ stats.totalTasks }} 个任务</span>
       </div>
       <div class="toolbar-right">
+        <a-select
+          v-model:value="filterEquipment"
+          size="small"
+          style="width: 140px"
+          placeholder="选择设备"
+          allow-clear
+          @change="fetchData"
+        >
+          <a-select-option
+            v-for="eq in equipmentList"
+            :key="eq.equipment_number"
+            :value="eq.equipment_name || eq.equipment_number"
+          >
+            {{ eq.equipment_name || eq.equipment_number }}
+          </a-select-option>
+        </a-select>
+        <a-input-search
+          v-model:value="filterItemNumber"
+          size="small"
+          style="width: 160px"
+          placeholder="物料编号"
+          allow-clear
+          @search="fetchData"
+        />
+        <a-divider type="vertical" />
         <a-button size="small" @click="goPrev"><LeftOutlined /></a-button>
         <a-button size="small" @click="goThisWeek">本周</a-button>
         <a-button size="small" @click="goThisMonth">本月</a-button>
@@ -475,20 +443,21 @@ watch(() => route.path, (newPath) => {
         <span class="legend-label">{{ s.label }}</span>
         <span class="legend-count">{{ stats.statusCount[s.label] || 0 }}</span>
       </div>
+      <div class="legend-item">
+        <span class="legend-outline"></span>
+        <span class="legend-label">有排期偏差</span>
+      </div>
     </div>
 
     <!-- 甘特图主体 -->
-    <div class="gantt-chart-wrapper" v-if="!loading && equipments.length > 0">
-      <v-chart
-        ref="ganttChartRef"
-        :option="chartOption"
-        :style="{ width: '100%', height: chartHeight }"
-        autoresize
-      />
-    </div>
+    <div
+      class="gantt-chart-container"
+      ref="ganttContainer"
+      v-show="!loading && ganttData.length > 0"
+    ></div>
 
     <!-- 空状态 -->
-    <div class="gantt-empty" v-else-if="!loading && equipments.length === 0">
+    <div class="gantt-empty" v-if="!loading && ganttData.length === 0">
       <a-empty description="当前日期范围内没有排产数据">
         <template #image>
           <CalendarOutlined style="font-size: 64px; color: #d9d9d9" />
@@ -501,6 +470,64 @@ watch(() => route.path, (newPath) => {
     <div class="gantt-loading" v-if="loading">
       <a-spin size="large" tip="加载排产数据中..." />
     </div>
+
+    <!-- 编辑弹窗 -->
+    <a-modal
+      v-model:open="editModalVisible"
+      title="编辑任务信息"
+      :confirm-loading="editModalLoading"
+      @ok="handleEditSave"
+      width="480px"
+    >
+      <a-form layout="vertical" style="margin-top: 16px">
+        <a-form-item label="生产单号">
+          <span style="color: #8c8c8c">{{ editForm.production_order_number }}</span>
+        </a-form-item>
+        <a-form-item label="产品编号">
+          <span style="color: #8c8c8c">{{ editForm.item_number }}</span>
+        </a-form-item>
+        <a-form-item label="计划数量">
+          <a-input-number
+            v-model:value="editForm.planned_quantity"
+            :min="0"
+            style="width: 100%"
+            placeholder="请输入计划数量"
+          />
+        </a-form-item>
+        <a-form-item label="设备">
+          <a-select
+            v-model:value="editForm.equipment_number"
+            style="width: 100%"
+            placeholder="请选择设备"
+            allow-clear
+          >
+            <a-select-option
+              v-for="eq in equipmentList"
+              :key="eq.equipment_number"
+              :value="eq.equipment_number"
+            >
+              {{ eq.equipment_name || eq.equipment_number }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="班次">
+          <a-select
+            v-model:value="editForm.schedule_id"
+            style="width: 100%"
+            placeholder="请选择班次"
+            allow-clear
+          >
+            <a-select-option
+              v-for="sc in scheduleList"
+              :key="sc.schedules_id"
+              :value="sc.schedules_id"
+            >
+              {{ sc.schedules_name || sc.schedules_id }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -520,6 +547,8 @@ watch(() => route.path, (newPath) => {
   z-index: 1000;
   border-radius: 0;
   overflow-y: auto;
+  padding: 20px;
+  background: #fff;
 }
 
 .gantt-toolbar {
@@ -557,6 +586,7 @@ watch(() => route.path, (newPath) => {
   padding: 10px 16px;
   background: #fafafa;
   border-radius: 6px;
+  flex-wrap: wrap;
 }
 .legend-item {
   display: flex;
@@ -569,6 +599,12 @@ watch(() => route.path, (newPath) => {
   height: 12px;
   border-radius: 3px;
 }
+.legend-outline {
+  width: 14px;
+  height: 14px;
+  border: 2px dashed #faad14;
+  border-radius: 3px;
+}
 .legend-label {
   color: #595959;
 }
@@ -578,10 +614,13 @@ watch(() => route.path, (newPath) => {
   font-size: 14px;
 }
 
-.gantt-chart-wrapper {
+.gantt-chart-container {
+  width: 100%;
+  height: calc(100vh - 280px);
+  min-height: 400px;
   border: 1px solid #f0f0f0;
   border-radius: 6px;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .gantt-empty {
@@ -597,15 +636,16 @@ watch(() => route.path, (newPath) => {
   align-items: center;
   min-height: 400px;
 }
-</style>
 
-<!-- 全局样式：确保ECharts tooltip在最顶层 -->
-<style>
-body > div[class*="echarts"],
-body > div[style*="position: absolute"] {
-  z-index: 99999 !important;
+/* Baseline 偏差：橙色虚线边框 */
+:deep(.gantt_task_line.gantt-task-has-baseline) {
+  outline: 2px dashed #faad14;
+  outline-offset: 2px;
 }
-div[class*="echarts"] > div:last-child {
-  z-index: 99999 !important;
+:deep(.gantt_grid_scale) {
+  background-color: #fafafa;
+}
+:deep(.gantt_grid_data) {
+  background-color: #fff;
 }
 </style>

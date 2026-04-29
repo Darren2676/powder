@@ -2,8 +2,7 @@
 import { ref, reactive, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, DownloadOutlined, CalculatorOutlined, SettingOutlined, SearchOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
-import { calculateMPS, getSalesOrdersForMpsImport, importToPlan } from '@/api/planning/mps'
-import { importFromSalesOrder } from '@/api/planning/plan'
+import { calculateMPS, getDemandSources, importFromDemandSources, importToPlan } from '@/api/planning/mps'
 import { getCustomers } from '@/api/master-data/customer'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -32,10 +31,14 @@ const defaultDataColumns: any[] = [
   { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 130, resizable: true },
   { title: '单位', dataIndex: 'basic_unit', key: 'basic_unit', width: 60, resizable: true },
   { title: '预测需求', dataIndex: 'forecast_demand', key: 'forecast_demand', width: 100, align: 'right' as const, resizable: true },
+  { title: '原始订单', dataIndex: 'total_order_quantity', key: 'total_order_quantity', width: 100, align: 'right' as const, resizable: true },
+  { title: '已发数量', dataIndex: 'total_shipped_quantity', key: 'total_shipped_quantity', width: 100, align: 'right' as const, resizable: true },
+  { title: '退货数量', dataIndex: 'total_refunded_quantity', key: 'total_refunded_quantity', width: 100, align: 'right' as const, resizable: true },
   { title: '订单需求', dataIndex: 'order_demand', key: 'order_demand', width: 100, align: 'right' as const, resizable: true },
   { title: '毛需求', dataIndex: 'gross_demand', key: 'gross_demand', width: 100, align: 'right' as const, resizable: true },
   { title: '库存现有', dataIndex: 'on_hand', key: 'on_hand', width: 100, align: 'right' as const, resizable: true },
-  { title: '在途数量', dataIndex: 'in_transit', key: 'in_transit', width: 100, align: 'right' as const, resizable: true },
+  { title: '采购在途', dataIndex: 'in_transit', key: 'in_transit', width: 100, align: 'right' as const, resizable: true },
+  { title: '生产在途', dataIndex: 'production_in_transit', key: 'production_in_transit', width: 100, align: 'right' as const, resizable: true },
   { title: '安全库存', dataIndex: 'safety_stock', key: 'safety_stock', width: 100, align: 'right' as const, resizable: true },
 ]
 
@@ -44,7 +47,10 @@ const {
   openColumnSetting, moveColumnUp, moveColumnDown, saveColumnSetting, resetColumnSetting,
   loadColumnPreference, handleResizeColumn
 } = useColumnPreference('mps_report', defaultDataColumns, {
-  fixedLeft: [{ title: '物料编号', key: 'item_number', dataIndex: 'item_number', width: 130, fixed: 'left' as const, resizable: true }],
+  fixedLeft: [
+    { title: '行号', key: 'row_number', dataIndex: 'row_number', width: 60, align: 'center' as const, fixed: 'left' as const, resizable: true },
+    { title: '物料编号', key: 'item_number', dataIndex: 'item_number', width: 130, fixed: 'left' as const, resizable: true }
+  ],
   fixedRight: [{ title: '净需求', key: 'net_demand', dataIndex: 'net_demand', width: 110, align: 'right' as const, fixed: 'right' as const, resizable: true }]
 })
 
@@ -77,7 +83,7 @@ const handleCalculate = async () => {
 
     const res: any = await calculateMPS(params)
     if (res?.success) {
-      dataSource.value = res.data?.items || []
+      dataSource.value = (res.data?.items || []).map((item: any, index: number) => ({ ...item, row_number: index + 1 }))
       summaryInfo.total_items = res.data?.summary?.total_items || 0
       summaryInfo.items_need_production = res.data?.summary?.items_need_production || 0
       selectedRowKeys.value = []
@@ -92,21 +98,24 @@ const handleCalculate = async () => {
 
 // ==================== MPS 结果导入生产计划 ====================
 const handleMpsImport = () => {
-  const selected = dataSource.value.filter(d =>
-    selectedRowKeys.value.includes(d.item_number) && d.net_demand > 0
-  )
-  if (!selected.length) return
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先选择一条物料'); return
+  }
+  const selected = dataSource.value.find(d => d.item_number === selectedRowKeys.value[0])
+  if (!selected || selected.net_demand <= 0) {
+    message.warning('请先选择一条净需求大于0的物料'); return
+  }
 
   Modal.confirm({
     title: '确认导入生产计划',
     icon: createVNode(ExclamationCircleOutlined),
-    content: `将为选中的 ${selected.length} 种物料创建生产计划，并更新对应预测明细状态为【计划中】，是否继续？`,
+    content: `将为选中的物料【${selected.item_number}】创建生产计划，并更新对应预测明细状态为【计划中】，是否继续？`,
     okText: '确认',
     cancelText: '取消',
     onOk: async () => {
       mpsImportLoading.value = true
       try {
-        const res: any = await importToPlan({ items: selected })
+        const res: any = await importToPlan({ items: [selected] })
         if (res?.success) {
           message.success(res.message || `成功导入 ${res.data?.imported || 0} 条生产计划`)
           selectedRowKeys.value = []
@@ -121,7 +130,7 @@ const handleMpsImport = () => {
   })
 }
 
-// ==================== 从销售订单导入 ====================
+// ==================== 从销售订单/预测导入 ====================
 const soImportVisible = ref(false)
 const soImportLoading = ref(false)
 const soImportSubmitLoading = ref(false)
@@ -130,24 +139,26 @@ const soImportData = ref<any[]>([])
 const soImportSelectedKeys = ref<number[]>([])
 
 const soImportColumns = [
-  { title: '销售订单号', dataIndex: 'sales_order_number', width: 160, fixed: 'left' as const },
-  { title: '行号', dataIndex: 'line_number', width: 60, fixed: 'left' as const },
+  { title: '来源类型', dataIndex: 'source_type_name', key: 'source_type_name', width: 90, fixed: 'left' as const },
+  { title: '源单号', dataIndex: 'source_number', key: 'source_number', width: 160, fixed: 'left' as const },
+  { title: '行号', dataIndex: 'line_number', width: 60 },
   { title: '客户名称', dataIndex: 'customer_name', width: 130 },
   { title: '产品编号', dataIndex: 'item_number', width: 120 },
   { title: '产品名称', dataIndex: 'item_name', width: 140, ellipsis: true },
   { title: '规格', dataIndex: 'specifications', width: 100, ellipsis: true },
   { title: '单位', dataIndex: 'basic_unit', width: 55 },
-  { title: '订单数量', dataIndex: 'order_quantity', width: 90, align: 'right' as const },
-  { title: '已发数量', dataIndex: 'shipped_quantity', width: 90, align: 'right' as const },
-  { title: '未发数量', dataIndex: 'unshipped_quantity', key: 'unshipped_quantity', width: 90, align: 'right' as const },
-  { title: '交货日期', dataIndex: 'delivery_date', key: 'delivery_date', width: 100 },
-  { title: '状态', dataIndex: 'status', key: 'status', width: 80 },
+  { title: '数量', dataIndex: 'quantity', key: 'quantity', width: 90, align: 'right' as const },
+  { title: '已发货数量', dataIndex: 'shipped_quantity', key: 'shipped_quantity', width: 90, align: 'right' as const },
+  { title: '剩余数量', dataIndex: 'remaining_quantity', key: 'remaining_quantity', width: 90, align: 'right' as const },
+  { title: '交货/结束日期', dataIndex: 'delivery_date', key: 'delivery_date', width: 110 },
   { title: '发货状态', dataIndex: 'shipping_status', key: 'shipping_status', width: 90 },
   { title: '生产状态', dataIndex: 'production_status', key: 'production_status', width: 90 },
-  { title: '退货状态', dataIndex: 'return_status', key: 'return_status', width: 90 }
 ]
 
 const handleSoImportOpen = async () => {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先选择MPS结果表格中的一行'); return
+  }
   soImportVisible.value = true
   soImportSelectedKeys.value = []
   soImportSearch.value = ''
@@ -157,12 +168,27 @@ const handleSoImportOpen = async () => {
 const fetchSoImportData = async () => {
   soImportLoading.value = true
   try {
-    const res: any = await getSalesOrdersForMpsImport({ search: soImportSearch.value })
+    const itemNumber = dataSource.value.find(d => d.item_number === selectedRowKeys.value[0])?.item_number
+    if (!itemNumber) {
+      message.error('未找到选中的物料')
+      return
+    }
+    const res: any = await getDemandSources(itemNumber)
     if (res?.success) {
-      soImportData.value = res.data || []
+      let data = res.data || []
+      if (soImportSearch.value) {
+        const s = soImportSearch.value.toLowerCase()
+        data = data.filter((d: any) =>
+          (d.source_number || '').toLowerCase().includes(s) ||
+          (d.customer_name || '').toLowerCase().includes(s) ||
+          (d.item_number || '').toLowerCase().includes(s) ||
+          (d.item_name || '').toLowerCase().includes(s)
+        )
+      }
+      soImportData.value = data
     }
   } catch {
-    message.error('获取销售订单数据失败')
+    message.error('获取需求来源数据失败')
   } finally {
     soImportLoading.value = false
   }
@@ -170,29 +196,13 @@ const fetchSoImportData = async () => {
 
 const handleSoImportSubmit = async () => {
   if (soImportSelectedKeys.value.length === 0) {
-    message.warning('请先选择需要导入的销售订单明细'); return
+    message.warning('请先选择需要导入的记录'); return
   }
   const selected = soImportData.value.filter(d => soImportSelectedKeys.value.includes(d.detail_id))
 
   soImportSubmitLoading.value = true
   try {
-    const res: any = await importFromSalesOrder({
-      items: selected.map(d => ({
-        detail_id: d.detail_id,
-        sales_order_number: d.sales_order_number,
-        line_number: d.line_number,
-        item_number: d.item_number,
-        item_name: d.item_name,
-        specifications: d.specifications,
-        basic_unit: d.basic_unit,
-        product_drawing_number: d.product_drawing_number,
-        rubber_compound_number: d.rubber_compound_number,
-        batch_production_quota: d.batch_production_quota,
-        order_quantity: d.order_quantity,
-        delivery_date: d.delivery_date,
-        header_delivery_date: d.header_delivery_date
-      }))
-    })
+    const res: any = await importFromDemandSources({ items: selected })
     if (res?.success) {
       message.success(res.message || `成功导入 ${res.data?.imported || 0} 条生产计划`)
       soImportVisible.value = false
@@ -262,9 +272,9 @@ const getProductionStatusColor = (s: string) => {
         :value-style="{ color: summaryInfo.items_need_production > 0 ? '#f5222d' : '#52c41a' }" />
       <div style="flex: 1"></div>
       <a-button type="primary" @click="handleMpsImport" :loading="mpsImportLoading" :disabled="selectedRowKeys.length === 0">
-        <DownloadOutlined />导入生产计划 ({{ selectedRowKeys.length }})
+        <DownloadOutlined />导入生产计划
       </a-button>
-      <a-button type="primary" @click="handleSoImportOpen">
+      <a-button type="primary" @click="handleSoImportOpen" :disabled="selectedRowKeys.length === 0">
         <DownloadOutlined />从销售订单导入
       </a-button>
     </div>
@@ -273,7 +283,7 @@ const getProductionStatusColor = (s: string) => {
     <a-table
       :columns="columns" :data-source="dataSource" :loading="loading"
       :pagination="false" :row-key="(r: any) => r.item_number"
-      :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: (keys: string[]) => { selectedRowKeys = keys }, getCheckboxProps: (record: any) => ({ disabled: record.net_demand <= 0 }) }"
+      :row-selection="{ type: 'radio', selectedRowKeys: selectedRowKeys, onChange: (keys: string[]) => { selectedRowKeys = keys }, getCheckboxProps: (record: any) => ({ disabled: record.net_demand <= 0 }) }"
       :scroll="{ x: 1200, y: 600 }" size="small" bordered
     >
       <template #bodyCell="{ column, text }">
@@ -298,10 +308,10 @@ const getProductionStatusColor = (s: string) => {
       </div>
     </div>
 
-    <!-- 从销售订单导入弹窗 -->
+    <!-- 从销售订单/预测导入弹窗 -->
     <a-modal
       v-model:open="soImportVisible"
-      title="从销售订单导入到生产计划"
+      title="从需求来源导入到生产计划"
       width="1400px"
       :bodyStyle="{ maxHeight: '70vh', overflowY: 'auto' }"
       @ok="handleSoImportSubmit"
@@ -310,7 +320,7 @@ const getProductionStatusColor = (s: string) => {
       :okButtonProps="{ disabled: soImportSelectedKeys.length === 0 }"
     >
       <a-alert
-        message="说明：显示所有未完成发货（未申请/未发货/部分发货）且已审批的销售订单明细。选择导入后，系统将自动创建生产计划，并将对应销售订单状态更新为【生产中】。"
+        message="说明：显示当前选中物料的销售订单（未完成发货）和销售预测（未开始）混合列表。选择导入后，系统将自动创建生产计划，并回写对应源单状态。"
         type="info"
         show-icon
         style="margin-bottom: 12px"

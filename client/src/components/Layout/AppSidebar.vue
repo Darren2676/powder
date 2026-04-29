@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '@/store/auth';
 import { useMenuStore } from '@/store/menu';
@@ -125,6 +125,9 @@ const keyToRoute: Record<string, string> = {
   'return-orders': '/return-orders',
   'return-order-details': '/return-order-details',
   'sales-report': '/sales-report',
+  'shipping-warning': '/shipping-warning',
+  'overdue-shipping': '/overdue-shipping',
+  'shipping-by-order-summary': '/shipping-by-order-summary',
   'sales-prices': '/sales-prices',
   'mps-report': '/mps-report',
   'plans': '/plans',
@@ -293,6 +296,44 @@ const handleOpenChange = (keys: string[]) => {
   openKeys.value = keys;
 };
 
+// ============ 右键菜单 ============
+const contextMenu = ref({ visible: false, x: 0, y: 0, key: '', route: '' })
+
+const resolveRoute = (key: string): string => {
+  if (key === 'dashboard') return '/'
+  if (key === 'my-tasks') return '/my-tasks'
+  const findRoute = (items: MenuItem[]): string | null => {
+    for (const item of items) {
+      if (item.key === key && item.route) return item.route
+      if (item.children) {
+        const r = findRoute(item.children)
+        if (r) return r
+      }
+    }
+    return null
+  }
+  return findRoute(menuStore.menuTree) || keyToRoute[key] || '/' + key
+}
+
+const handleContextMenu = (e: MouseEvent, key: string) => {
+  const routePath = resolveRoute(key)
+  if (!routePath) return
+  e.preventDefault()
+  e.stopPropagation()
+  contextMenu.value = { visible: true, x: e.clientX, y: e.clientY, key, route: routePath }
+}
+
+const openInNewTab = () => {
+  const path = contextMenu.value.route
+  if (path) window.open(path, '_blank')
+  contextMenu.value.visible = false
+}
+
+const closeContextMenu = () => {
+  contextMenu.value.visible = false
+}
+// ====================================
+
 const handleMenuClick = ({ key }: { key: string }) => {
   let targetRoute: string | null = null;
 
@@ -347,14 +388,31 @@ const handleMenuClick = ({ key }: { key: string }) => {
     @click="handleMenuClick"
     style="height: 100%; border-right: none;"
   >
-    <!-- Dashboard -->
-    <a-menu-item key="dashboard">
+    <!-- 右键菜单浮层 -->
+  <teleport to="body">
+    <div
+      v-if="contextMenu.visible"
+      class="sidebar-context-mask"
+      @click="closeContextMenu"
+      @contextmenu.prevent="closeContextMenu"
+    />
+    <ul
+      v-if="contextMenu.visible"
+      class="sidebar-context-menu"
+      :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }"
+    >
+      <li @click="openInNewTab">在新标签页中打开</li>
+    </ul>
+  </teleport>
+
+  <!-- Dashboard -->
+    <a-menu-item key="dashboard" @contextmenu="(e: MouseEvent) => handleContextMenu(e, 'dashboard')">
       <DashboardOutlined />
       <span>仪表板</span>
     </a-menu-item>
 
     <!-- 我的待办 -->
-    <a-menu-item key="my-tasks">
+    <a-menu-item key="my-tasks" @contextmenu="(e: MouseEvent) => handleContextMenu(e, 'my-tasks')">
       <FileDoneOutlined />
       <span>我的待办</span>
     </a-menu-item>
@@ -374,20 +432,32 @@ const handleMenuClick = ({ key }: { key: string }) => {
             </template>
             <template #title>{{ child.name }}</template>
 
-            <a-menu-item v-for="grandChild in child.children" :key="grandChild.key">
+            <a-menu-item
+              v-for="grandChild in child.children"
+              :key="grandChild.key"
+              @contextmenu="(e: MouseEvent) => handleContextMenu(e, grandChild.key)"
+            >
               <component :is="getIcon(grandChild.icon)" v-if="getIcon(grandChild.icon)" />
               <span>{{ grandChild.name }}</span>
             </a-menu-item>
           </a-sub-menu>
 
-          <a-menu-item v-else :key="child.key">
+          <a-menu-item
+            v-else
+            :key="child.key"
+            @contextmenu="(e: MouseEvent) => handleContextMenu(e, child.key)"
+          >
             <component :is="getIcon(child.icon)" v-if="getIcon(child.icon)" />
             <span>{{ child.name }}</span>
           </a-menu-item>
         </template>
       </a-sub-menu>
 
-      <a-menu-item v-else :key="menu.key">
+      <a-menu-item
+        v-else
+        :key="menu.key"
+        @contextmenu="(e: MouseEvent) => handleContextMenu(e, menu.key)"
+      >
         <component :is="getIcon(menu.icon)" v-if="getIcon(menu.icon)" />
         <span>{{ menu.name }}</span>
       </a-menu-item>
@@ -396,4 +466,36 @@ const handleMenuClick = ({ key }: { key: string }) => {
 </template>
 
 <style scoped>
+.sidebar-context-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+}
+
+.sidebar-context-menu {
+  position: fixed;
+  z-index: 9999;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  padding: 4px 0;
+  margin: 0;
+  list-style: none;
+  min-width: 160px;
+}
+
+.sidebar-context-menu li {
+  padding: 8px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #333;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.sidebar-context-menu li:hover {
+  background: #f5f5f5;
+  color: #1677ff;
+}
 </style>

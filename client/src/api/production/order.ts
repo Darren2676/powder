@@ -36,8 +36,12 @@ export function dispatchOrders(items: Array<any>) {
   return request.post('/orders/dispatch', { items })
 }
 
-export function getGanttData(params?: { startDate?: string; endDate?: string }) {
+export function getGanttData(params?: { startDate?: string; endDate?: string; equipmentNumber?: string; search?: string }) {
   return request.get('/orders/gantt', { params })
+}
+
+export function updateGanttTask(orderNumber: string, data: { production_date?: string; planned_completion_time?: string; equipment_number?: string; schedule_id?: string }) {
+  return request.put(`/orders/${encodeURIComponent(orderNumber)}/gantt-drag`, data)
 }
 
 export function getPrintData(productionOrderNumbers: string[]) {
@@ -51,3 +55,4 @@ export function dispatchAndGenerate(items: Array<any>) {
 export function dispatchPrecheck(itemNumbers: string[]) {
   return request.post('/orders/dispatch-precheck', { item_numbers: itemNumbers })
 }
+

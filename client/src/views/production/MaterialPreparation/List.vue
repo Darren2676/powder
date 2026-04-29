@@ -61,8 +61,8 @@ interface PreparationDetail {
 
 
 
-const prepStatusFilter = ref('')
-const approvalFilter = ref('')
+const prepStatusFilter = ref<string | undefined>(undefined)
+const approvalFilter = ref<string | undefined>(undefined)
 const { loading, dataSource, searchText, selectedRowKeys, pagination, fetchData: fetchList, handleTableChange, handleSearch, handleReset } = useTableList(getMaterialPreparations)
 
 // Override fetchData to pass extra filters
@@ -125,6 +125,44 @@ const handleDelete = (record: MaterialPreparation) => {
       } catch { message.error('删除失败') }
     }
   })
+}
+
+// ==================== More Actions ====================
+const handleMoreAction = async (key: string, record: MaterialPreparation) => {
+  const id = record.preparation_number
+  if (key === 'view') {
+    handleViewDetails(record)
+  } else if (key === 'delete') {
+    if (record.approval_status !== '草稿') return
+    handleDelete(record)
+  } else if (key === 'history') {
+    approvalLogRecordId.value = id
+    approvalLogVisible.value = true
+  } else if (key === 'submit') {
+    Modal.confirm({
+      title: '提交审核', icon: createVNode(ExclamationCircleOutlined),
+      content: '确定要提交审核吗？提交后将不可编辑。', okText: '确认', cancelText: '取消',
+      onOk: async () => { try { await submitForApproval('material_preparation', id); message.success('提交审核成功'); fetchData() } catch { message.error('提交审核失败') } }
+    })
+  } else if (key === 'approve') {
+    Modal.confirm({
+      title: '审核通过', icon: createVNode(ExclamationCircleOutlined),
+      content: '确定审核通过吗？', okText: '通过', cancelText: '取消',
+      onOk: async () => { try { await approveRecord('material_preparation', id); message.success('审核通过'); fetchData() } catch { message.error('审核失败') } }
+    })
+  } else if (key === 'withdraw') {
+    Modal.confirm({
+      title: '撤回提交', icon: createVNode(ExclamationCircleOutlined),
+      content: '确定要撤回审核提交吗？', okText: '撤回', cancelText: '取消',
+      onOk: async () => { try { await withdrawApproval('material_preparation', id); message.success('撤回成功'); fetchData() } catch { message.error('撤回失败') } }
+    })
+  } else if (key === 'reverse') {
+    Modal.confirm({
+      title: '反审退回', icon: createVNode(ExclamationCircleOutlined),
+      content: '确定要执行反审吗？记录将退回草稿状态，可重新编辑。', okText: '确认反审', okType: 'danger', cancelText: '取消',
+      onOk: async () => { try { await reverseApproval('material_preparation', id); message.success('反审成功，已退回草稿'); fetchData() } catch { message.error('反审失败') } }
+    })
+  }
 }
 
 // ==================== 导入导出 ====================
@@ -335,26 +373,29 @@ const handleBatchAction = (action: string) => {
 
 <template>
   <div class="material-preparation-page">
-    <a-card title="生产单备料清单" :bordered="false">
+    <a-card :bordered="false" class="mp-card">
+      <template #title>
+        <span class="mp-card-title">生产单备料清单</span>
+      </template>
       <template #extra>
-        <a-space>
+        <div class="mp-toolbar">
           <a-input-search
             v-model:value="searchText"
-            placeholder="搜索备料单编号/生产单编号/产品"
-            style="width: 300px"
+            placeholder="搜索备料单/生产单/产品"
+            style="width: 260px"
             allow-clear
             @search="handleSearch"
             @pressEnter="handleSearch"
           />
-          <a-select v-model:value="prepStatusFilter" placeholder="备料状态" allow-clear style="width: 120px" @change="handleSearch">
-            <a-select-option value="">全部</a-select-option>
+          <span class="mp-label">备料状态：</span>
+          <a-select v-model:value="prepStatusFilter" placeholder="全部" allow-clear style="width: 110px" @change="handleSearch">
             <a-select-option value="未领料">未领料</a-select-option>
             <a-select-option value="部分领料">部分领料</a-select-option>
             <a-select-option value="已领料">已领料</a-select-option>
             <a-select-option value="已关闭">已关闭</a-select-option>
           </a-select>
-          <a-select v-model:value="approvalFilter" placeholder="审批状态" allow-clear style="width: 120px" @change="handleSearch">
-            <a-select-option value="">全部</a-select-option>
+          <span class="mp-label">审批状态：</span>
+          <a-select v-model:value="approvalFilter" placeholder="全部" allow-clear style="width: 110px" @change="handleSearch">
             <a-select-option value="草稿">草稿</a-select-option>
             <a-select-option value="待审批">待审批</a-select-option>
             <a-select-option value="已审批">已审批</a-select-option>
@@ -372,12 +413,11 @@ const handleBatchAction = (action: string) => {
             导入
           </a-button>
           <input ref="fileInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleFileChange" />
-          <a-button type="primary" @click="handleOpenOrderModal">
-            <template #icon><InboxOutlined /></template>
-            从生产单备料
+          <a-button @click="openColumnSetting">
+            <template #icon><SettingOutlined /></template>
+            列设置
           </a-button>
-          <a-tooltip title="列设置"><a-button @click="openColumnSetting"><SettingOutlined /></a-button></a-tooltip>
-        </a-space>
+        </div>
       </template>
 
       <a-table
@@ -594,5 +634,44 @@ const handleBatchAction = (action: string) => {
 <style scoped>
 .material-preparation-page {
   padding: 0;
+}
+/* 头部标题与工具栏紧凑显示，避免换行 */
+:deep(.mp-card .ant-card-head) {
+  padding: 0 12px;
+  min-height: 44px;
+}
+:deep(.mp-card .ant-card-head-wrapper) {
+  flex-wrap: nowrap;
+}
+:deep(.mp-card .ant-card-head-title) {
+  padding: 10px 0;
+  flex-shrink: 0;
+}
+:deep(.mp-card .ant-card-extra) {
+  padding: 8px 0;
+  margin-left: 12px;
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+}
+.mp-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mp-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+.mp-toolbar :deep(.ant-btn) {
+  padding: 0 10px;
+}
+.mp-label {
+  color: #666;
+  font-size: 12px;
+  white-space: nowrap;
+  margin-left: 4px;
 }
 </style>

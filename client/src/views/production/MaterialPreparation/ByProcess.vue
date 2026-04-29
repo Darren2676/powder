@@ -459,10 +459,6 @@ const handleBatchAction = (action: string) => {
             导入
           </a-button>
           <input ref="fileInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleFileChange" />
-          <a-button type="primary" @click="handleOpenOrderModal">
-            <template #icon><PartitionOutlined /></template>
-            从生产单备料
-          </a-button>
           <a-tooltip title="列设置"><a-button @click="openColumnSetting"><SettingOutlined /></a-button></a-tooltip>
         </a-space>
       </template>

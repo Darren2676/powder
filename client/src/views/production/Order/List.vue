@@ -6,12 +6,14 @@ import { getOrders, createOrder, updateOrder, deleteOrder, exportOrders, importO
 import { getItems } from '@/api/master-data/itemMaster'
 import { getEquipments } from '@/api/equipment/equipment'
 import { getMoulds } from '@/api/equipment/mould'
+import { getMouldBomByItemAndMould } from '@/api/master-data/mfgBom'
 import { getPlans } from '@/api/planning/plan'
 import { getSchedules } from '@/api/master-data/schedule'
 import { useAuthStore } from '@/store/auth'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
+
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval, batchSubmitForApproval, batchApproveRecords, batchWithdrawApproval, batchReverseApproval } from '@/api/system/approval'
 import dayjs from 'dayjs'
@@ -88,7 +90,36 @@ const rowSelection = computed(() => ({
   onChange: (keys: string[]) => { selectedRowKeys.value = keys }
 }))
 
-const { loading, dataSource, searchText, pagination, selectedRowKeys, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getOrders)
+const { loading, dataSource, searchText, pagination, selectedRowKeys, fetchData } = useTableList(getOrders)
+
+const getFilterParams = () => ({
+  status: activeStatus.value || undefined,
+  approval_status: approvalFilter.value || undefined
+})
+
+const handleSearch = () => {
+  pagination.current = 1
+  fetchData(getFilterParams())
+}
+
+const handleReset = () => {
+  searchText.value = ''
+  approvalFilter.value = ''
+  activeStatus.value = ''
+  pagination.current = 1
+  fetchData(getFilterParams())
+}
+
+const handleStatusChange = () => {
+  pagination.current = 1
+  fetchData(getFilterParams())
+}
+
+const handleTableChange = (pag: any) => {
+  pagination.current = pag.current
+  pagination.pageSize = pag.pageSize
+  fetchData(getFilterParams())
+}
 
 const emptyForm = (): Order => ({
   production_order_number: '',
@@ -546,7 +577,7 @@ const handleImportFromPlan = async () => {
 
 onMounted(async () => {
   await loadColumnPreference()
-  fetchData()
+  fetchData(getFilterParams())
   // 加载班次列表用于列表显示
   try {
     const res = await getSchedules({ limit: 100 })
@@ -933,7 +964,7 @@ const dispatchRowMouldAutoOptions = computed(() =>
     label: m.item_number + ' - ' + (m.item_name || '')
   }))
 )
-const handleDispatchRowMouldSelect = (value: string, row: DispatchRow) => {
+const handleDispatchRowMouldSelect = async (value: string, row: DispatchRow) => {
   const md = dispatchRowMouldOptions.value.find((m: any) => m.item_number === value)
   if (md) {
     row.mould_number = md.item_number
@@ -942,6 +973,14 @@ const handleDispatchRowMouldSelect = (value: string, row: DispatchRow) => {
     row.actual_cavity_count = md.actual_operation_frequency || ''
     row.actual_hole_count = md.actual_cavities_number || ''
     row.actual_daily_output = md.actual_production_number || ''
+
+    // 查询该模具是否关联了专属BOM
+    try {
+      const res = await getMouldBomByItemAndMould(row.item_number, md.item_number)
+      if (res.success && res.data?.mapping) {
+        message.info(`该模具关联了专属制造BOM【${res.data.mapping.mfg_bom_name || res.data.mapping.mfg_bom_number}】，派发后将自动进行模具MRP重算`)
+      }
+    } catch { /* 查询失败不阻断 */ }
   }
 }
 const handleDispatchRowMouldChange = (value: string, row: DispatchRow) => {
@@ -1183,7 +1222,43 @@ const handleDispatchBatchApply = () => {
 const dispatchResultVisible = ref(false)
 const dispatchResultData = ref<any>(null)
 
+// 执行实际派发
+const doExecuteDispatch = async (items: any[]) => {
+  dispatchLoading.value = true
+  try {
+    const res = await dispatchAndGenerate(items)
+    if (res.success) {
+      message.success(res.message || '派发成功')
+      dispatchModalVisible.value = false
+      selectedRowKeys.value = []
+      dispatchResultData.value = res.data
+      dispatchResultVisible.value = true
+      fetchData()
+    } else {
+      message.error(res.message || '派发失败')
+    }
+  } catch (err: any) {
+    const conflicts = err?.response?.data?.conflicts
+    if (conflicts && Array.isArray(conflicts) && conflicts.length > 0) {
+      Modal.error({
+        title: '排产冲突，派发失败',
+        width: 520,
+        content: createVNode('div', {}, [
+          createVNode('p', { style: 'margin-bottom:8px;color:#ff4d4f;font-weight:600' }, '以下资源在相同日期和班次已有排产记录：'),
+          ...conflicts.map((c: string) => createVNode('p', { style: 'margin:4px 0;padding-left:12px;border-left:3px solid #ff4d4f' }, c))
+        ])
+      })
+    } else {
+      message.error('派发操作失败')
+    }
+  } finally {
+    dispatchLoading.value = false
+  }
+}
+
 const handleDispatchSubmit = () => {
+  message.info('正在检查派发条件...')
+  console.log('[handleDispatchSubmit] dispatchRows:', dispatchRows.value.map((r: any) => ({ orderNo: r.production_order_number, itemNo: r.item_number, mouldNo: r.mould_number })))
   // -------- 前端预检：本批次内排产冲突检查 --------
   const localConflicts: string[] = []
 
@@ -1231,57 +1306,29 @@ const handleDispatchSubmit = () => {
     return
   }
 
+  // 直接派发
   Modal.confirm({
     title: '确定派发',
     icon: createVNode(ExclamationCircleOutlined),
     content: `将派发 ${dispatchRows.value.length} 条生产调度单，同时自动生成工序任务和备料单。`,
     okText: `确定派发 (${dispatchRows.value.length}条)`,
     cancelText: '取消',
-    onOk: async () => {
-      dispatchLoading.value = true
-      try {
-        const items = dispatchRows.value.map(r => ({
-          production_order_number: r.production_order_number,
-          equipment_number: r.equipment_number,
-          equipment_name: r.equipment_name,
-          mould_number: r.mould_number,
-          formed_part_specifications: r.formed_part_specifications,
-          formed_part_unit_consumption: r.formed_part_unit_consumption,
-          actual_cavity_count: r.actual_cavity_count,
-          actual_hole_count: r.actual_hole_count,
-          actual_daily_output: r.actual_daily_output,
-          production_date: r.production_date,
-          schedule_id: r.schedule_id
-        }))
-        const res = await dispatchAndGenerate(items)
-        if (res.success) {
-          message.success(res.message || '派发成功')
-          dispatchModalVisible.value = false
-          selectedRowKeys.value = []
-          dispatchResultData.value = res.data
-          dispatchResultVisible.value = true
-          fetchData()
-        } else {
-          message.error(res.message || '派发失败')
-        }
-      } catch (err: any) {
-        // 处理后端返回的排产冲突详情（HTTP 400/409）
-        const conflicts = err?.response?.data?.conflicts
-        if (conflicts && Array.isArray(conflicts) && conflicts.length > 0) {
-          Modal.error({
-            title: '排产冲突，派发失败',
-            width: 520,
-            content: createVNode('div', {}, [
-              createVNode('p', { style: 'margin-bottom:8px;color:#ff4d4f;font-weight:600' }, '以下资源在相同日期和班次已有排产记录：'),
-              ...conflicts.map((c: string) => createVNode('p', { style: 'margin:4px 0;padding-left:12px;border-left:3px solid #ff4d4f' }, c))
-            ])
-          })
-        } else {
-          message.error('派发操作失败')
-        }
-      } finally {
-        dispatchLoading.value = false
-      }
+    onOk: () => {
+      message.info('开始执行派发...')
+      const items = dispatchRows.value.map(r => ({
+        production_order_number: r.production_order_number,
+        equipment_number: r.equipment_number,
+        equipment_name: r.equipment_name,
+        mould_number: r.mould_number,
+        formed_part_specifications: r.formed_part_specifications,
+        formed_part_unit_consumption: r.formed_part_unit_consumption,
+        actual_cavity_count: r.actual_cavity_count,
+        actual_hole_count: r.actual_hole_count,
+        actual_daily_output: r.actual_daily_output,
+        production_date: r.production_date,
+        schedule_id: r.schedule_id
+      }))
+      return doExecuteDispatch(items)
     }
   })
 }
@@ -2002,6 +2049,7 @@ const handleDispatchSubmit = () => {
           <a-statistic title="成功派发" :value="dispatchResultData.dispatch?.count || 0" suffix="条" :value-style="{ color: '#52c41a', fontSize: '20px' }" />
           <a-statistic title="工序任务" :value="dispatchResultData.processTasks?.totalGenerated || 0" suffix="条" :value-style="{ color: '#1890ff', fontSize: '20px' }" />
           <a-statistic title="备料单" :value="dispatchResultData.materialPreparations?.totalGenerated || 0" suffix="份" :value-style="{ color: '#722ed1', fontSize: '20px' }" />
+          <a-statistic v-if="dispatchResultData.semiProductOrders?.totalGenerated > 0" title="预成型件生产单" :value="dispatchResultData.semiProductOrders?.totalGenerated || 0" suffix="份" :value-style="{ color: '#fa8c16', fontSize: '20px' }" />
           <a-statistic v-if="dispatchResultData.errors?.length > 0" title="跳过" :value="dispatchResultData.errors?.length || 0" suffix="条" :value-style="{ color: '#ff4d4f', fontSize: '20px' }" />
         </div>
         <a-collapse v-if="dispatchResultData.processTasks?.details?.length > 0" :bordered="false" style="background: #fafafa;">
@@ -2015,6 +2063,9 @@ const handleDispatchSubmit = () => {
                   <template v-if="dispatchResultData.materialPreparations?.details?.[idx]">
                     | 备料明细: {{ dispatchResultData.materialPreparations.details[idx].materialsGenerated }}项
                   </template>
+                  <template v-if="dispatchResultData.semiProductOrders?.details?.[idx]?.semiOrders?.length > 0">
+                    | <span style="color: #fa8c16;">预成型件: {{ dispatchResultData.semiProductOrders.details[idx].semiOrders.length }}份</span>
+                  </template>
                 </span>
               </span>
             </template>
@@ -2026,6 +2077,16 @@ const handleDispatchSubmit = () => {
                   <strong>备料单:</strong> {{ dispatchResultData.materialPreparations.details[idx].prepSkipped }}
                 </p>
                 <p v-else><strong>备料单:</strong> 成功生成备料单，含 {{ dispatchResultData.materialPreparations.details[idx].materialsGenerated }} 项物料</p>
+              </template>
+              <template v-if="dispatchResultData.semiProductOrders?.details?.[idx]?.semiOrders?.length > 0">
+                <div style="margin-top: 8px; padding: 8px; background: #fff7e6; border-radius: 4px;">
+                  <p style="color: #fa8c16; margin-bottom: 4px;"><strong>预成型件生产单（模具MRP重算生成）：</strong></p>
+                  <ul style="margin: 0; padding-left: 16px;">
+                    <li v-for="(spo, sIdx) in dispatchResultData.semiProductOrders.details[idx].semiOrders" :key="sIdx">
+                      {{ spo.semiProductOrderNumber }} — {{ spo.itemNumber }} {{ spo.itemName }}（数量: {{ spo.plannedQuantity }}）
+                    </li>
+                  </ul>
+                </div>
               </template>
             </div>
           </a-collapse-panel>

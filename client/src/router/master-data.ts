@@ -22,6 +22,7 @@ const BomList = () => import('@/views/master-data/Bom/List.vue');
 const BomTreeViewer = () => import('@/views/master-data/Bom/TreeViewer.vue');
 const MfgBomList = () => import('@/views/master-data/MfgBom/List.vue');
 const MfgBomTreeViewer = () => import('@/views/master-data/MfgBom/TreeViewer.vue');
+const MouldMapping = () => import('@/views/master-data/MfgBom/MouldMapping.vue');
 const UnitList = () => import('@/views/master-data/Unit/List.vue');
 const StorageLocationList = () => import('@/views/master-data/StorageLocation/List.vue');
 const ItemMasterList = () => import('@/views/master-data/ItemMaster/List.vue');
@@ -49,6 +50,7 @@ export const masterDataRoutes: RouteRecordRaw[] = [
   { path: 'bom-tree', name: 'BomTreeViewer', component: BomTreeViewer, meta: {"title":"BOM结构树"} },
   { path: 'mfg-boms', name: 'MfgBomList', component: MfgBomList, meta: {"title":"制造BOM管理"} },
   { path: 'mfg-bom-tree', name: 'MfgBomTreeViewer', component: MfgBomTreeViewer, meta: {"title":"制造BOM结构"} },
+  { path: 'mould-bom-mapping', name: 'MouldMapping', component: MouldMapping, meta: {"title":"模具BOM映射"} },
   { path: 'units', name: 'UnitList', component: UnitList, meta: {"title":"单位管理"} },
   { path: 'storage-locations', name: 'StorageLocationList', component: StorageLocationList, meta: {"title":"库位管理"} },
   { path: 'item-masters', name: 'ItemMasterList', component: ItemMasterList, meta: {"title":"物料主数据管理"} },

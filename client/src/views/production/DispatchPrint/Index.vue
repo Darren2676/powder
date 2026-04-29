@@ -421,13 +421,26 @@ const triggerDetailPrint = () => {
     const isLast = pageIdx === items.length - 1
     const orderNum = order.production_order_number || ''
     const qrDataUrl = qrCodeMap.value[orderNum] || ''
+    const itemType = item.item_type || '成品'
+    const ext = item.ext_fields || {}
+
+    // 根据物料类型确定标题
+    const titleMap: Record<string, string> = {
+      '成品': '生产调度单',
+      '原材料': '胶料生产调度单',
+      '骨架': '骨架生产调度单',
+      '预成型件': '预成型件生产调度单',
+      '半成品': '半成品生产调度单',
+      '包材': '包材生产调度单'
+    }
+    const pageTitle = titleMap[itemType] || '生产调度单'
 
     // --- 页面头部（含二维码） ---
     const headerHtml = `
       <div class="page-header-area">
         <div class="header-left-space"></div>
         <div class="header-center">
-          <div class="page-title">生产调度单</div>
+          <div class="page-title">${pageTitle}</div>
           <div class="page-subtitle">睿信橡胶密封件MES系统</div>
         </div>
         <div class="header-qr">
@@ -436,76 +449,123 @@ const triggerDetailPrint = () => {
       </div>
       <div class="page-meta">
         <span>生产单号: ${orderNum}</span>
+        <span>物料类型: ${itemType}</span>
         <span>第 ${pageIdx + 1} 页 / 共 ${items.length} 页</span>
         <span>打印时间: ${dayjs().format('YYYY-MM-DD HH:mm')}</span>
       </div>
     `
 
-    // --- 第一栏：基本信息（修复班产） ---
+    // --- 第一栏：基本信息（根据物料类型显示不同字段） ---
+    let infoRowsHtml = ''
+    // 通用行1：单号/计划编号/日期
+    infoRowsHtml += `<tr>
+      <td class="info-label">生产单编号</td><td class="info-value">${orderNum}</td>
+      <td class="info-label">生产计划编号</td><td class="info-value">${order.production_number || ''}</td>
+      <td class="info-label">生产日期</td><td class="info-value">${formatDate(order.production_date)}</td>
+    </tr>`
+    // 通用行2：编号/名称/规格
+    infoRowsHtml += `<tr>
+      <td class="info-label">产品编号</td><td class="info-value">${order.item_number || ''}</td>
+      <td class="info-label">产品名称</td><td class="info-value">${order.item_name || ''}</td>
+      <td class="info-label">规格</td><td class="info-value">${order.specifications || ''}</td>
+    </tr>`
+    // 通用行3：单位/数量/班次
+    infoRowsHtml += `<tr>
+      <td class="info-label">单位</td><td class="info-value">${order.basic_unit || ''}</td>
+      <td class="info-label">计划数量</td><td class="info-value">${order.planned_quantity ?? ''}</td>
+      <td class="info-label">班次</td><td class="info-value">${scheduleName}</td>
+    </tr>`
+
+    // 根据物料类型显示差异化字段
+    if (itemType === '成品') {
+      infoRowsHtml += `<tr>
+        <td class="info-label">设备名称</td><td class="info-value">${order.equipment_name || order.equipment_number || ''}</td>
+        <td class="info-label">设备编号</td><td class="info-value">${order.equipment_number || ''}</td>
+        <td class="info-label">胶料编号</td><td class="info-value">${order.rubber_compound_number || ''}</td>
+      </tr>`
+      infoRowsHtml += `<tr>
+        <td class="info-label">模具编号</td><td class="info-value">${order.mould_number || ''}</td>
+        <td class="info-label">成型件规格</td><td class="info-value">${order.formed_part_specifications || ''}</td>
+        <td class="info-label">成型件单耗</td><td class="info-value">${order.formed_part_unit_consumption || ''}</td>
+      </tr>`
+      infoRowsHtml += `<tr>
+        <td class="info-label">实际模腔</td><td class="info-value">${order.actual_cavity_count || ''}</td>
+        <td class="info-label">实际模穴</td><td class="info-value">${order.actual_hole_count || ''}</td>
+        <td class="info-label">实际班产</td><td class="info-value highlight">${calcDailyOutput(order)}</td>
+      </tr>`
+      infoRowsHtml += `<tr>
+        <td class="info-label">产品图号</td><td class="info-value">${ext.product_drawing_number || order.product_drawing_number || ''}</td>
+        <td class="info-label">班产定额</td><td class="info-value">${ext.batch_production_quota || order.batch_production_quota || ''}</td>
+        <td class="info-label">标准合格率</td><td class="info-value">${ext.standard_pass_rate || ''}</td>
+      </tr>`
+    } else if (itemType === '原材料') {
+      infoRowsHtml += `<tr>
+        <td class="info-label">供应商编号</td><td class="info-value">${ext.supplier_number || ''}</td>
+        <td class="info-label">供应商名称</td><td class="info-value">${ext.supplier_name || ''}</td>
+        <td class="info-label">设备编号</td><td class="info-value">${order.equipment_number || ''}</td>
+      </tr>`
+      infoRowsHtml += `<tr>
+        <td class="info-label">实际班产</td><td class="info-value highlight">${calcDailyOutput(order)}</td>
+        <td class="info-label">状态</td><td class="info-value">${order.plan_status || ''}</td>
+        <td class="info-label">-</td><td class="info-value">-</td>
+      </tr>`
+    } else if (itemType === '骨架') {
+      infoRowsHtml += `<tr>
+        <td class="info-label">设备名称</td><td class="info-value">${order.equipment_name || order.equipment_number || ''}</td>
+        <td class="info-label">设备编号</td><td class="info-value">${order.equipment_number || ''}</td>
+        <td class="info-label">状态</td><td class="info-value">${order.plan_status || ''}</td>
+      </tr>`
+      infoRowsHtml += `<tr>
+        <td class="info-label">产品图号</td><td class="info-value">${ext.product_drawing_number || order.product_drawing_number || ''}</td>
+        <td class="info-label">标准合格率</td><td class="info-value">${ext.standard_pass_rate || ''}</td>
+        <td class="info-label">实际班产</td><td class="info-value highlight">${calcDailyOutput(order)}</td>
+      </tr>`
+    } else if (itemType === '预成型件') {
+      infoRowsHtml += `<tr>
+        <td class="info-label">设备名称</td><td class="info-value">${order.equipment_name || order.equipment_number || ''}</td>
+        <td class="info-label">设备编号</td><td class="info-value">${order.equipment_number || ''}</td>
+        <td class="info-label">胶料编号</td><td class="info-value">${ext.rubber_compound_number || order.rubber_compound_number || ''}</td>
+      </tr>`
+      infoRowsHtml += `<tr>
+        <td class="info-label">成型件单耗</td><td class="info-value">${ext.formed_part_materia_consumption || ''}</td>
+        <td class="info-label">标准合格率</td><td class="info-value">${ext.standard_pass_rate || ''}</td>
+        <td class="info-label">实际班产</td><td class="info-value highlight">${calcDailyOutput(order)}</td>
+      </tr>`
+    } else if (itemType === '半成品') {
+      infoRowsHtml += `<tr>
+        <td class="info-label">设备名称</td><td class="info-value">${order.equipment_name || order.equipment_number || ''}</td>
+        <td class="info-label">设备编号</td><td class="info-value">${order.equipment_number || ''}</td>
+        <td class="info-label">来源BOM</td><td class="info-value">${ext.source_bom_number || ''}</td>
+      </tr>`
+      infoRowsHtml += `<tr>
+        <td class="info-label">实际班产</td><td class="info-value highlight">${calcDailyOutput(order)}</td>
+        <td class="info-label">状态</td><td class="info-value">${order.plan_status || ''}</td>
+        <td class="info-label">-</td><td class="info-value">-</td>
+      </tr>`
+    } else if (itemType === '包材') {
+      infoRowsHtml += `<tr>
+        <td class="info-label">设备名称</td><td class="info-value">${order.equipment_name || order.equipment_number || ''}</td>
+        <td class="info-label">设备编号</td><td class="info-value">${order.equipment_number || ''}</td>
+        <td class="info-label">包材备注</td><td class="info-value">${ext.packaging_remark || ''}</td>
+      </tr>`
+      infoRowsHtml += `<tr>
+        <td class="info-label">实际班产</td><td class="info-value highlight">${calcDailyOutput(order)}</td>
+        <td class="info-label">状态</td><td class="info-value">${order.plan_status || ''}</td>
+        <td class="info-label">-</td><td class="info-value">-</td>
+      </tr>`
+    }
+
+    // 备注行（所有类型通用）
+    infoRowsHtml += `<tr>
+      <td class="info-label">备注</td>
+      <td class="info-value" colspan="5">${order.remark || ''}</td>
+    </tr>`
+
     const infoHtml = `
       <div class="section">
         <div class="section-title">一、生产单基本信息</div>
         <table class="info-table">
-          <tr>
-            <td class="info-label">生产单编号</td>
-            <td class="info-value">${orderNum}</td>
-            <td class="info-label">生产计划编号</td>
-            <td class="info-value">${order.production_number || ''}</td>
-            <td class="info-label">生产日期</td>
-            <td class="info-value">${formatDate(order.production_date)}</td>
-          </tr>
-          <tr>
-            <td class="info-label">产品编号</td>
-            <td class="info-value">${order.item_number || ''}</td>
-            <td class="info-label">产品名称</td>
-            <td class="info-value">${order.item_name || ''}</td>
-            <td class="info-label">规格</td>
-            <td class="info-value">${order.specifications || ''}</td>
-          </tr>
-          <tr>
-            <td class="info-label">单位</td>
-            <td class="info-value">${order.basic_unit || ''}</td>
-            <td class="info-label">计划数量</td>
-            <td class="info-value">${order.planned_quantity ?? ''}</td>
-            <td class="info-label">班次</td>
-            <td class="info-value">${scheduleName}</td>
-          </tr>
-          <tr>
-            <td class="info-label">设备名称</td>
-            <td class="info-value">${order.equipment_name || order.equipment_number || ''}</td>
-            <td class="info-label">设备编号</td>
-            <td class="info-value">${order.equipment_number || ''}</td>
-            <td class="info-label">胶料编号</td>
-            <td class="info-value">${order.rubber_compound_number || ''}</td>
-          </tr>
-          <tr>
-            <td class="info-label">模具编号</td>
-            <td class="info-value">${order.mould_number || ''}</td>
-            <td class="info-label">成型件规格</td>
-            <td class="info-value">${order.formed_part_specifications || ''}</td>
-            <td class="info-label">成型件单耗</td>
-            <td class="info-value">${order.formed_part_unit_consumption || ''}</td>
-          </tr>
-          <tr>
-            <td class="info-label">实际模腔</td>
-            <td class="info-value">${order.actual_cavity_count || ''}</td>
-            <td class="info-label">实际模穴</td>
-            <td class="info-value">${order.actual_hole_count || ''}</td>
-            <td class="info-label">实际班产</td>
-            <td class="info-value highlight">${calcDailyOutput(order)}</td>
-          </tr>
-          <tr>
-            <td class="info-label">产品图号</td>
-            <td class="info-value">${order.product_drawing_number || ''}</td>
-            <td class="info-label">班产定额</td>
-            <td class="info-value">${order.batch_production_quota || ''}</td>
-            <td class="info-label">状态</td>
-            <td class="info-value">${order.plan_status || ''}</td>
-          </tr>
-          <tr>
-            <td class="info-label">备注</td>
-            <td class="info-value" colspan="5">${order.remark || ''}</td>
-          </tr>
+          ${infoRowsHtml}
         </table>
       </div>
     `
@@ -526,13 +586,12 @@ const triggerDetailPrint = () => {
           + '<td class="text-right">' + fmtQty(m.issued_quantity) + '</td>'
           + '<td class="blank-cell"></td>'
           + '<td>' + (m.work_center_name || '') + '</td>'
-          + '<td>' + (m.supply_type || '') + '</td>'
           + '<td>' + (m.default_warehouse || '') + '</td>'
           + '<td class="text-left">' + (m.remark || '') + '</td>'
           + '</tr>'
       })
     } else {
-      materialsBodyHtml = '<tr><td colspan="14" class="empty-note">暂无备料数据</td></tr>'
+      materialsBodyHtml = '<tr><td colspan="13" class="empty-note">暂无备料数据</td></tr>'
     }
     const materialsHtml = `
       <div class="section">
@@ -542,7 +601,7 @@ const triggerDetailPrint = () => {
             <tr>
               <th style="width:30px">序号</th>
               <th style="width:90px">物料编号</th>
-              <th>物料名称</th>
+              <th style="width:140px">物料名称</th>
               <th style="width:45px">类型</th>
               <th style="width:35px">单位</th>
               <th style="width:55px">BOM用量</th>
@@ -551,7 +610,6 @@ const triggerDetailPrint = () => {
               <th style="width:55px">已领量</th>
               <th style="width:60px">实发量</th>
               <th style="width:70px">工作中心</th>
-              <th style="width:50px">供应方式</th>
               <th style="width:55px">仓库</th>
               <th style="width:60px">备注</th>
             </tr>

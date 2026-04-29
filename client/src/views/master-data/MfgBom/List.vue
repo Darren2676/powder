@@ -941,14 +941,8 @@ onMounted(async () => {
           <SearchOutlined :style="{ color: columnFilters[column.key] ? '#1890ff' : undefined }" />
         </template>
       </a-table>
-        </a-tab-pane>
 
         <!-- ========== Tab 2: 物料明细 ========== -->
-        <a-tab-pane key="detail">
-          <template #tab>
-            <span>物料明细</span>
-            <span v-if="selectedHeaderKey" style="margin-left: 8px; font-size: 12px; color: #888;">{{ selectedHeaderKey }}</span>
-          </template>
           <div v-if="!selectedHeaderKey" style="text-align: center; padding: 40px 0; color: #aaa;">
             <a-empty description="请在「制造BOM管理（主表）」中点击一行以查看明细" />
           </div>
@@ -1082,8 +1076,6 @@ onMounted(async () => {
         </template>
       </a-table>
           </template>
-        </a-tab-pane>
-      </a-tabs>
     </a-card>
 
     <!-- ========== Header Create Modal ========== -->

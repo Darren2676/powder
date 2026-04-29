@@ -1,10 +1,11 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, reactive, onMounted, createVNode, watch, computed, nextTick } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import {
   ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined,
   DownloadOutlined, UploadOutlined, PlusOutlined, HistoryOutlined,
-  UnorderedListOutlined, ApartmentOutlined, DownOutlined
+  UnorderedListOutlined, ApartmentOutlined, DownOutlined, PaperClipOutlined,
+  SettingOutlined
 } from '@ant-design/icons-vue'
 import {
   getRoutingHeaders, getRoutingHeaderDetail, createRoutingHeader, updateRoutingHeader, deleteRoutingHeader,
@@ -15,14 +16,19 @@ import { getProcedures } from '@/api/master-data/procedure'
 import { getWorkCenters } from '@/api/master-data/workCenter'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getWarehouses } from '@/api/master-data/warehouse'
+import { getBomHeaders } from '@/api/master-data/bom'
 import { getInspectionPlans } from '@/api/quality/inspectionPlan'
 import { getInspectionSpecs } from '@/api/quality/inspectionSpec'
+import { getEmployees } from '@/api/master-data/employee'
 import { useAuthStore } from '@/store/auth'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval } from '@/api/system/approval'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
 import { CONDITION_STATUS } from '@/constants/statuses'
 import { generateExportFilename } from '@/utils/exportFilename'
+import { uploadFile } from '@/api/upload'
+import { useColumnPreference } from '@/composables/useColumnPreference'
+import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 
 defineOptions({ name: 'RoutingMasterList' })
 
@@ -34,6 +40,8 @@ interface RoutingHeader {
   item_name: string
   production_automatic_inventory_entry_rules: string
   condition: string
+  bom_number: string
+  is_primary: string
   creation_date: string
   creation_man: string
   approval_status: string
@@ -58,12 +66,14 @@ interface RoutingDetail {
   default_repository: string
   operator: string
   is_outsourced: boolean
-  enable_self_inspect: boolean
-  enable_special_inspect: boolean
-  self_inspect_plan_name: string
-  special_inspect_plan_name: string
-  self_inspect_spec_name: string
-  special_inspect_spec_name: string
+  inspect_type: string
+  inspect_plan_name: string
+  inspect_spec_name: string
+  inspector_number: string
+  inspector_name: string
+  attachment_info: string
+  technical_requirement: string
+  remark: string
   materials?: MaterialItem[]
 }
 interface MaterialItem {
@@ -74,6 +84,7 @@ interface MaterialItem {
   quantity: number
   unit: string
   wastage_rate: number
+  is_backflush: boolean
   remark: string
 }
 
@@ -84,6 +95,8 @@ const emptyHeader = (): RoutingHeader => ({
   item_name: '',
   production_automatic_inventory_entry_rules: 'Y',
   condition: CONDITION_STATUS.ENABLED,
+  bom_number: '',
+  is_primary: '否',
   creation_date: '',
   creation_man: '',
   approval_status: '草稿'
@@ -108,12 +121,14 @@ const emptyDetail = (): RoutingDetail => ({
   default_repository: '',
   operator: '',
   is_outsourced: false,
-  enable_self_inspect: false,
-  enable_special_inspect: false,
-  self_inspect_plan_name: '',
-  special_inspect_plan_name: '',
-  self_inspect_spec_name: '',
-  special_inspect_spec_name: ''
+  inspect_type: '无需检',
+  inspect_plan_name: '',
+  inspect_spec_name: '',
+  inspector_number: '',
+  inspector_name: '',
+  attachment_info: '',
+  technical_requirement: '',
+  remark: ''
 })
 
 // ==================== Header State ====================
@@ -131,6 +146,8 @@ const headerEditVisible = ref(false)
 const headerCreateVisible = ref(false)
 const headerEditForm = reactive<RoutingHeader>(emptyHeader())
 const headerCreateForm = reactive<RoutingHeader>(emptyHeader())
+const headerEditSubmitting = ref(false)
+const headerCreateSubmitting = ref(false)
 const fileInputRef = ref<HTMLInputElement>()
 
 // ==================== Detail State ====================
@@ -166,17 +183,69 @@ const workCenterList = ref<any[]>([])
 const workCenterOptions = ref<{ label: string; value: string }[]>([])
 const productList = ref<any[]>([])
 const productOptions = ref<{ label: string; value: string }[]>([])
+const bomList = ref<any[]>([])
+const bomOptions = ref<{ label: string; value: string }[]>([])
 const warehouseList = ref<any[]>([])
 const warehouseOptions = ref<{ label: string; value: string }[]>([])
+const inspectionPlanList = ref<any[]>([])
 const inspectionPlanOptions = ref<{ label: string; value: string }[]>([])
 const inspectionSpecOptions = ref<{ label: string; value: string }[]>([])
+const employeeList = ref<any[]>([])
+const employeeOptions = ref<{ label: string; value: string }[]>([])
+
+const getFilteredPlanOptions = (inspectType: string) => {
+  if (!inspectType || inspectType === '无需检') return []
+  return inspectionPlanList.value
+    .filter((p: any) => p.inspect_type === inspectType)
+    .map((p: any) => ({ label: p.plan_name, value: p.plan_name }))
+}
 
 // ==================== 物料子表 State ====================
 const allItemList = ref<any[]>([])
 const allItemOptions = ref<{ label: string; value: string }[]>([])
 const createMaterials = ref<MaterialItem[]>([])
 const editMaterials = ref<MaterialItem[]>([])
-const emptyMaterial = (): MaterialItem => ({ material_number: '', material_name: '', quantity: 0, unit: '', wastage_rate: 0, remark: '' })
+const createFileList = ref<any[]>([])
+const isCreateUploading = computed(() => createFileList.value.some((f: any) => f.status === 'uploading'))
+const editFileList = ref<any[]>([])
+const isEditUploading = computed(() => editFileList.value.some((f: any) => f.status === 'uploading'))
+const attachmentPreviewVisible = ref(false)
+const attachmentPreviewList = ref<any[]>([])
+const emptyMaterial = (): MaterialItem => ({ material_number: '', material_name: '', quantity: 0, unit: '', wastage_rate: 0, is_backflush: false, remark: '' })
+const openAttachmentPreview = (json: string) => {
+  try { attachmentPreviewList.value = JSON.parse(json || '[]') }
+  catch { attachmentPreviewList.value = [] }
+  attachmentPreviewVisible.value = true
+}
+
+const parseAttachmentInfo = (json: string): any[] => {
+  try {
+    const arr = JSON.parse(json || '[]')
+    return arr.map((f: any, idx: number) => ({ uid: `-${idx}`, name: f.name || f.originalName || '附件', status: 'done', url: f.url, ...f }))
+  } catch { return [] }
+}
+const stringifyAttachmentInfo = (fileList: any[]): string => {
+  const arr = fileList
+    .filter((f: any) => f.status === 'done' || (f.url || f.response?.data?.url))
+    .map((f: any) => ({ name: f.name, url: f.url || f.response?.data?.url, originalName: f.response?.data?.originalName || f.name, size: f.size || f.response?.data?.size, mimetype: f.type || f.response?.data?.mimetype }))
+  return JSON.stringify(arr)
+}
+const handleUpload = async ({ file, onSuccess, onError }: any) => {
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await uploadFile(formData)
+    if (res.success) {
+      file.url = res.data?.url
+      onSuccess(res)
+    } else {
+      onError(new Error(res.message || '上传失败'))
+    }
+  } catch (e: any) {
+    onError(e)
+    message.error('上传失败')
+  }
+}
 
 const fetchAllItems = async () => {
   try {
@@ -217,6 +286,14 @@ const fetchProducts = async () => {
     productOptions.value = list.map((p: any) => ({ label: `${p.item_number} - ${p.item_name}`, value: p.item_number }))
   } catch {}
 }
+const fetchBomHeaders = async () => {
+  try {
+    const res = await getBomHeaders({ page: 1, limit: 9999 })
+    const list = res.data.items || []
+    bomList.value = list
+    bomOptions.value = list.map((b: any) => ({ label: b.bom_number, value: b.bom_number }))
+  } catch {}
+}
 const fetchWarehouses = async () => {
   try {
     const res = await getWarehouses({ page: 1, limit: 9999 })
@@ -229,7 +306,8 @@ const fetchInspectionPlans = async () => {
   try {
     const res = await getInspectionPlans({ page: 1, limit: 9999 })
     const list = res.data.items || []
-    inspectionPlanOptions.value = list.map((p: any) => ({ label: `${p.plan_name}`, value: p.plan_name }))
+    inspectionPlanList.value = list
+    inspectionPlanOptions.value = list.map((p: any) => ({ label: `${p.plan_name} (${p.inspect_type})`, value: p.plan_name }))
   } catch {}
 }
 const fetchInspectionSpecs = async () => {
@@ -237,6 +315,14 @@ const fetchInspectionSpecs = async () => {
     const res = await getInspectionSpecs({ page: 1, limit: 9999 })
     const list = res.data.items || []
     inspectionSpecOptions.value = list.map((s: any) => ({ label: `${s.spec_name}`, value: s.spec_name }))
+  } catch {}
+}
+const fetchEmployees = async () => {
+  try {
+    const res = await getEmployees({ page: 1, limit: 9999 })
+    const list = res.data.items || []
+    employeeList.value = list
+    employeeOptions.value = list.map((e: any) => ({ label: `${e.employee_number} - ${e.employee_name}`, value: e.employee_number }))
   } catch {}
 }
 
@@ -266,44 +352,92 @@ const handleDetailWorkCenterChange = (form: RoutingDetail, val: string) => {
 const handleDetailWarehouseChange = (form: RoutingDetail, val: string) => {
   form.default_repository = val
 }
+const handleInspectorChange = (form: RoutingDetail, val: string) => {
+  form.inspector_number = val
+  const found = employeeList.value.find((e: any) => e.employee_number === val)
+  form.inspector_name = found ? found.employee_name : ''
+}
 
 // ==================== Header Columns ====================
-const headerColumns = [
-  { title: '行号', key: 'rowIndex', width: 60 },
-  { title: '选择', key: 'radioSelect', width: 60 },
-  { title: '工艺路线编号', dataIndex: 'process_route_number', key: 'process_route_number', width: 140 },
-  { title: '工艺路线名称', dataIndex: 'process_route_name', key: 'process_route_name', width: 140 },
-  { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 120 },
-  { title: '产品名称', dataIndex: 'item_name', key: 'item_name', width: 120 },
-  { title: '生产自动入库规则', dataIndex: 'production_automatic_inventory_entry_rules', key: 'production_automatic_inventory_entry_rules', width: 150 },
-  { title: '状态', dataIndex: 'condition', key: 'condition', width: 80 },
-  { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 100 },
-  { title: '创建日期', dataIndex: 'creation_date', key: 'creation_date', width: 150 },
-  { title: '创建人', dataIndex: 'creation_man', key: 'creation_man', width: 100 },
-  { title: '操作', key: 'action', width: 80, fixed: 'right' as const }
+const defaultDataColumns: any[] = [
+  { title: '工艺路线编号', dataIndex: 'process_route_number', key: 'process_route_number', width: 140, resizable: true },
+  { title: '工艺路线名称', dataIndex: 'process_route_name', key: 'process_route_name', width: 140, resizable: true },
+  { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 120, resizable: true },
+  { title: '产品名称', dataIndex: 'item_name', key: 'item_name', width: 120, resizable: true },
+  { title: '物料清单', dataIndex: 'bom_number', key: 'bom_number', width: 140, resizable: true },
+  { title: '主工艺路线', dataIndex: 'is_primary', key: 'is_primary', width: 100, resizable: true },
+  { title: '生产自动入库规则', dataIndex: 'production_automatic_inventory_entry_rules', key: 'production_automatic_inventory_entry_rules', width: 150, resizable: true },
+  { title: '状态', dataIndex: 'condition', key: 'condition', width: 80, resizable: true },
+  { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 100, resizable: true },
+  { title: '创建日期', dataIndex: 'creation_date', key: 'creation_date', width: 150, resizable: true },
+  { title: '创建人', dataIndex: 'creation_man', key: 'creation_man', width: 100, resizable: true }
 ]
 
+const {
+  columns: headerColumns,
+  columnSettingVisible,
+  columnSettingList,
+  columnSettingSaving,
+  openColumnSetting,
+  moveColumnUp,
+  moveColumnDown,
+  saveColumnSetting,
+  resetColumnSetting,
+  loadColumnPreference,
+  handleResizeColumn
+} = useColumnPreference('routing_master_list', defaultDataColumns, {
+  fixedLeft: [
+    { title: '行号', key: 'rowIndex', width: 60, fixed: 'left' as const },
+    { title: '选择', key: 'radioSelect', width: 60, fixed: 'left' as const }
+  ],
+  fixedRight: [
+    { title: '操作', key: 'action', width: 80, fixed: 'right' as const }
+  ]
+})
+
 // ==================== Detail Columns ====================
-const detailColumns = [
-  { title: '行号', key: 'rowIndex', width: 60 },
-  { title: '工序序号', dataIndex: 'step_number', key: 'step_number', width: 80 },
-  { title: '标准工序编号', dataIndex: 'standard_process_number', key: 'standard_process_number', width: 130 },
-  { title: '标准工序名称', dataIndex: 'standard_process_name', key: 'standard_process_name', width: 130 },
-  { title: '后置工序编号', dataIndex: 'post_processing_sequence_number', key: 'post_processing_sequence_number', width: 120 },
-  { title: '后置工序名称', dataIndex: 'post_processing_sequence_name', key: 'post_processing_sequence_name', width: 120 },
-  { title: '工作中心编号', dataIndex: 'work_center_number', key: 'work_center_number', width: 130 },
-  { title: '工作中心名称', dataIndex: 'work_center_name', key: 'work_center_name', width: 130 },
-  { title: '超额报工比例', dataIndex: 'excess_reporting_ratio', key: 'excess_reporting_ratio', width: 120 },
-  { title: '配料方式', dataIndex: 'ingredient_addition_method', key: 'ingredient_addition_method', width: 100 },
-  { title: '投入物料', key: 'materials_summary', width: 200 },
-  { title: '倒冲', dataIndex: 'flowing_backward', key: 'flowing_backward', width: 80 },
-  { title: '默认仓库', dataIndex: 'default_repository', key: 'default_repository', width: 100 },
-  { title: '操作员', dataIndex: 'operator', key: 'operator', width: 100 },
-  { title: '委外', dataIndex: 'is_outsourced', key: 'is_outsourced', width: 70 },
-  { title: '自检', key: 'enable_self_inspect', width: 70 },
-  { title: '专检', key: 'enable_special_inspect', width: 70 },
-  { title: '操作', key: 'action', width: 150, fixed: 'right' as const }
+const defaultDetailDataColumns: any[] = [
+  { title: '工序序号', dataIndex: 'step_number', key: 'step_number', width: 80, resizable: true },
+  { title: '标准工序编号', dataIndex: 'standard_process_number', key: 'standard_process_number', width: 130, resizable: true },
+  { title: '标准工序名称', dataIndex: 'standard_process_name', key: 'standard_process_name', width: 130, resizable: true },
+  { title: '后置工序编号', dataIndex: 'post_processing_sequence_number', key: 'post_processing_sequence_number', width: 120, resizable: true },
+  { title: '后置工序名称', dataIndex: 'post_processing_sequence_name', key: 'post_processing_sequence_name', width: 120, resizable: true },
+  { title: '工作中心编号', dataIndex: 'work_center_number', key: 'work_center_number', width: 130, resizable: true },
+  { title: '工作中心名称', dataIndex: 'work_center_name', key: 'work_center_name', width: 130, resizable: true },
+  { title: '超额报工比例', dataIndex: 'excess_reporting_ratio', key: 'excess_reporting_ratio', width: 120, resizable: true },
+  { title: '配料方式', dataIndex: 'ingredient_addition_method', key: 'ingredient_addition_method', width: 100, resizable: true },
+  { title: '投入物料', key: 'materials_summary', width: 200, resizable: true },
+  { title: '倒冲', dataIndex: 'flowing_backward', key: 'flowing_backward', width: 80, resizable: true },
+  { title: '默认仓库', dataIndex: 'default_repository', key: 'default_repository', width: 100, resizable: true },
+  { title: '操作员', dataIndex: 'operator', key: 'operator', width: 100, resizable: true },
+  { title: '委外', dataIndex: 'is_outsourced', key: 'is_outsourced', width: 70, resizable: true },
+  { title: '检验类型', dataIndex: 'inspect_type', key: 'inspect_type', width: 90, resizable: true },
+  { title: '检验人', dataIndex: 'inspector_name', key: 'inspector_name', width: 100, resizable: true },
+  { title: '技术要求', dataIndex: 'technical_requirement', key: 'technical_requirement', width: 120, resizable: true },
+  { title: '备注', dataIndex: 'remark', key: 'remark', width: 120, resizable: true },
+  { title: '附件信息', dataIndex: 'attachment_info', key: 'attachment_info', width: 120, resizable: true }
 ]
+
+const {
+  columns: detailColumns,
+  columnSettingVisible: detailColumnSettingVisible,
+  columnSettingList: detailColumnSettingList,
+  columnSettingSaving: detailColumnSettingSaving,
+  openColumnSetting: openDetailColumnSetting,
+  moveColumnUp: moveDetailColumnUp,
+  moveColumnDown: moveDetailColumnDown,
+  saveColumnSetting: saveDetailColumnSetting,
+  resetColumnSetting: resetDetailColumnSetting,
+  loadColumnPreference: loadDetailColumnPreference,
+  handleResizeColumn: handleResizeDetailColumn
+} = useColumnPreference('routing_master_detail_list', defaultDetailDataColumns, {
+  fixedLeft: [
+    { title: '行号', key: 'rowIndex', width: 60, fixed: 'left' as const }
+  ],
+  fixedRight: [
+    { title: '操作', key: 'action', width: 150, fixed: 'right' as const }
+  ]
+})
 
 // ==================== Detail Modal Columns ====================
 const detailModalColumns = [
@@ -317,7 +451,11 @@ const detailModalColumns = [
   { title: '超额报工', dataIndex: 'excess_reporting_ratio', key: 'excess_reporting_ratio', width: 90 },
   { title: '倒冲', dataIndex: 'flowing_backward', key: 'flowing_backward', width: 60 },
   { title: '默认仓库', dataIndex: 'default_repository', key: 'default_repository', width: 100 },
-  { title: '操作员', dataIndex: 'operator', key: 'operator', width: 80 }
+  { title: '操作员', dataIndex: 'operator', key: 'operator', width: 80 },
+  { title: '检验人', dataIndex: 'inspector_name', key: 'inspector_name', width: 100 },
+  { title: '技术要求', dataIndex: 'technical_requirement', key: 'technical_requirement', width: 120 },
+  { title: '备注', dataIndex: 'remark', key: 'remark', width: 120 },
+  { title: '附件信息', dataIndex: 'attachment_info', key: 'attachment_info', width: 120 }
 ]
 
 // ==================== Header CRUD ====================
@@ -356,7 +494,20 @@ const handleHeaderDetail = async (record: RoutingHeader) => {
 }
 
 const handleHeaderEdit = (record: RoutingHeader) => {
-  Object.assign(headerEditForm, { ...emptyHeader(), ...record })
+  console.log('[handleHeaderEdit] record:', JSON.stringify(record))
+  // 显式逐字段赋值，避免 Object.assign 在热更新后可能导致的属性丢失
+  headerEditForm.process_route_number = record.process_route_number
+  headerEditForm.process_route_name = record.process_route_name || ''
+  headerEditForm.item_number = record.item_number || ''
+  headerEditForm.item_name = record.item_name || ''
+  headerEditForm.production_automatic_inventory_entry_rules = record.production_automatic_inventory_entry_rules || 'Y'
+  headerEditForm.condition = record.condition || CONDITION_STATUS.ENABLED
+  headerEditForm.bom_number = record.bom_number || ''
+  headerEditForm.is_primary = record.is_primary || '否'
+  headerEditForm.creation_date = record.creation_date || ''
+  headerEditForm.creation_man = record.creation_man || ''
+  headerEditForm.approval_status = record.approval_status || '草稿'
+  console.log('[handleHeaderEdit] 赋值后 headerEditForm:', JSON.stringify(headerEditForm))
   headerEditVisible.value = true
 }
 const handleHeaderDelete = (record: RoutingHeader) => {
@@ -416,18 +567,40 @@ const handleMoreAction = async (key: string, record: RoutingHeader) => {
   }
 }
 const handleHeaderEditOk = async () => {
+  if (headerEditSubmitting.value) return
+  console.log('[handleHeaderEditOk] process_route_number:', headerEditForm.process_route_number, '表单:', JSON.stringify(headerEditForm))
+  if (!headerEditForm.process_route_number) { message.warning('工艺路线编号不能为空'); return }
+  headerEditSubmitting.value = true
   try {
-    await updateRoutingHeader(headerEditForm.process_route_number!, headerEditForm)
+    const res: any = await updateRoutingHeader(headerEditForm.process_route_number, headerEditForm)
+    if (res && res.success === false) {
+      message.error(res.message || '更新失败')
+      return
+    }
     message.success('更新成功'); headerEditVisible.value = false; fetchHeaders()
-  } catch { message.error('更新失败') }
+  } catch (err: any) {
+    message.error(err?.response?.data?.message || err?.message || '更新失败')
+  } finally {
+    headerEditSubmitting.value = false
+  }
 }
 const handleHeaderCreateOk = async () => {
+  if (headerCreateSubmitting.value) return
   if (!headerCreateForm.process_route_number) { message.warning('请输入工艺路线编号'); return }
+  headerCreateSubmitting.value = true
   try {
-    await createRoutingHeader(headerCreateForm)
+    const res: any = await createRoutingHeader(headerCreateForm)
+    if (res && res.success === false) {
+      message.error(res.message || '创建失败')
+      return
+    }
     message.success('创建成功'); headerCreateVisible.value = false
     Object.assign(headerCreateForm, emptyHeader()); fetchHeaders()
-  } catch { message.error('创建失败') }
+  } catch (err: any) {
+    message.error(err?.response?.data?.message || err?.message || '创建失败')
+  } finally {
+    headerCreateSubmitting.value = false
+  }
 }
 
 // ==================== Header Row Click ====================
@@ -458,6 +631,7 @@ const handleDetailEdit = (record: RoutingDetail) => {
   editMaterials.value = (record.materials && record.materials.length > 0)
     ? record.materials.map(m => ({ ...m }))
     : [emptyMaterial()]
+  editFileList.value = parseAttachmentInfo(record.attachment_info)
   detailEditVisible.value = true
 }
 const handleDetailDelete = (record: RoutingDetail) => {
@@ -472,6 +646,7 @@ const handleDetailDelete = (record: RoutingDetail) => {
 }
 const handleDetailEditOk = async () => {
   try {
+    detailEditForm.attachment_info = stringifyAttachmentInfo(editFileList.value)
     const payload = { ...detailEditForm, materials: editMaterials.value.filter(m => m.material_number) }
     await updateRoutingDetail(detailEditForm.id!, payload)
     message.success('更新成功'); detailEditVisible.value = false; fetchDetails()
@@ -480,10 +655,11 @@ const handleDetailEditOk = async () => {
 const handleDetailCreateOk = async () => {
   if (!selectedHeaderKey.value) { message.warning('请先选择工艺路线'); return }
   try {
+    detailCreateForm.attachment_info = stringifyAttachmentInfo(createFileList.value)
     const payload = { ...detailCreateForm, materials: createMaterials.value.filter(m => m.material_number) }
     await addRoutingDetail(selectedHeaderKey.value, payload)
     message.success('新增工序成功'); detailCreateVisible.value = false
-    Object.assign(detailCreateForm, emptyDetail()); createMaterials.value = []; fetchDetails()
+    Object.assign(detailCreateForm, emptyDetail()); createMaterials.value = []; createFileList.value = []; fetchDetails()
   } catch { message.error('新增工序失败') }
 }
 const openDetailCreate = () => {
@@ -491,6 +667,7 @@ const openDetailCreate = () => {
   Object.assign(detailCreateForm, emptyDetail())
   detailCreateForm.operator = authStore.user?.username || ''
   createMaterials.value = [emptyMaterial()]
+  createFileList.value = []
   detailCreateVisible.value = true
 }
 
@@ -516,14 +693,18 @@ const handleFileChange = async (event: Event) => {
 
 // ==================== Lifecycle ====================
 onMounted(() => {
+  loadColumnPreference()
+  loadDetailColumnPreference()
   fetchHeaders()
   fetchProcedures()
   fetchWorkCenters()
   fetchProducts()
+  fetchBomHeaders()
   fetchWarehouses()
   fetchAllItems()
   fetchInspectionPlans()
   fetchInspectionSpecs()
+  fetchEmployees()
 })
 </script>
 
@@ -554,6 +735,7 @@ onMounted(() => {
               </a-dropdown>
               <a-button @click="handleImportClick"><template #icon><UploadOutlined /></template>导入</a-button>
               <a-button type="primary" @click="headerCreateVisible = true"><template #icon><PlusOutlined /></template>新建</a-button>
+              <a-button @click="openColumnSetting"><template #icon><SettingOutlined /></template>列设置</a-button>
               <input ref="fileInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleFileChange" />
             </a-space>
           </div>
@@ -561,10 +743,11 @@ onMounted(() => {
             :columns="headerColumns" :data-source="headerData" :loading="headerLoading"
             :row-key="(record: RoutingHeader) => record.process_route_number!"
             :pagination="headerPagination"
-            :scroll="{ x: 1200 }"
+            :scroll="{ x: 'max-content' }"
             :custom-row="headerCustomRow"
             :row-class-name="(record: RoutingHeader) => selectedHeaderKey === record.process_route_number ? 'selected-row' : ''"
             @change="handleHeaderTableChange"
+            @resizeColumn="handleResizeColumn"
           >
             <template #bodyCell="{ column, index }">
               <template v-if="column.key === 'rowIndex'">{{ (headerPagination.current - 1) * headerPagination.pageSize + index + 1 }}</template>
@@ -623,6 +806,7 @@ onMounted(() => {
                   <a-radio-button value="flow"><ApartmentOutlined /> 流程图</a-radio-button>
                 </a-radio-group>
                 <a-button type="primary" :disabled="isDetailReadonly" @click="openDetailCreate"><template #icon><PlusOutlined /></template>新增工序</a-button>
+                <a-button @click="openDetailColumnSetting"><template #icon><SettingOutlined /></template>列设置</a-button>
               </a-space>
             </div>
 
@@ -632,14 +816,15 @@ onMounted(() => {
               :columns="detailColumns" :data-source="detailData" :loading="detailLoading"
               :row-key="(record: RoutingDetail) => record.id!"
               :pagination="false"
-              :scroll="{ x: 1800 }"
+              :scroll="{ x: 'max-content' }"
+              @resizeColumn="handleResizeDetailColumn"
             >
               <template #bodyCell="{ column, index }">
                 <template v-if="column.key === 'rowIndex'">{{ index + 1 }}</template>
                 <template v-else-if="column.key === 'materials_summary'">
                   <template v-if="detailData[index].materials && detailData[index].materials.length > 0">
                     <div v-for="(mat, mi) in detailData[index].materials" :key="mi" style="line-height: 1.6; font-size: 12px;">
-                      {{ mat.material_number }} x{{ mat.quantity }}{{ mat.unit }}
+                      {{ mat.material_number }} x{{ mat.quantity }}{{ mat.unit }}<a-tag v-if="mat.is_backflush" color="orange" style="margin-left:4px;font-size:11px;">倒冲</a-tag>
                     </div>
                   </template>
                   <span v-else style="color: #ccc;">-</span>
@@ -647,11 +832,17 @@ onMounted(() => {
                 <template v-else-if="column.key === 'is_outsourced'">
                   <a-tag :color="detailData[index].is_outsourced ? 'orange' : 'default'">{{ detailData[index].is_outsourced ? '是' : '否' }}</a-tag>
                 </template>
-                <template v-else-if="column.key === 'enable_self_inspect'">
-                  <a-tag :color="detailData[index].enable_self_inspect ? 'blue' : 'default'">{{ detailData[index].enable_self_inspect ? '开' : '关' }}</a-tag>
+                <template v-else-if="column.key === 'inspect_type'">
+                  <a-tag v-if="detailData[index].inspect_type === '自检'" color="blue">自检</a-tag>
+                  <a-tag v-else-if="detailData[index].inspect_type === '专检'" color="green">专检</a-tag>
+                  <a-tag v-else-if="detailData[index].inspect_type === '无需检'" color="default">无需检</a-tag>
+                  <span v-else>-</span>
                 </template>
-                <template v-else-if="column.key === 'enable_special_inspect'">
-                  <a-tag :color="detailData[index].enable_special_inspect ? 'green' : 'default'">{{ detailData[index].enable_special_inspect ? '开' : '关' }}</a-tag>
+                <template v-else-if="column.key === 'attachment_info'">
+                  <a-button v-if="detailData[index].attachment_info" type="link" size="small" @click="openAttachmentPreview(detailData[index].attachment_info)">
+                    <template #icon><PaperClipOutlined /></template>查看附件 ({{ JSON.parse(detailData[index].attachment_info || '[]').length }})
+                  </a-button>
+                  <span v-else style="color: #ccc;">-</span>
                 </template>
                 <template v-else-if="column.key === 'action'">
                   <a-space>
@@ -677,9 +868,9 @@ onMounted(() => {
                           <div class="flow-node-title">{{ step.standard_process_name || step.standard_process_number }}</div>
                           <div class="flow-node-sub">{{ step.work_center_name || step.work_center_number || '-' }}</div>
                           <div v-if="step.ingredient_addition_method" class="flow-node-tag">{{ step.ingredient_addition_method }}</div>
-                          <div v-if="step.enable_self_inspect || step.enable_special_inspect" class="flow-node-inspect">
-                            <span v-if="step.enable_self_inspect" class="inspect-badge inspect-self">自检</span>
-                            <span v-if="step.enable_special_inspect" class="inspect-badge inspect-special">专检</span>
+                          <div v-if="step.inspect_type && step.inspect_type !== '无需检'" class="flow-node-inspect">
+                            <span v-if="step.inspect_type === '自检'" class="inspect-badge inspect-self">自检</span>
+                            <span v-else-if="step.inspect_type === '专检'" class="inspect-badge inspect-special">专检</span>
                           </div>
                         </div>
                       </div>
@@ -715,6 +906,19 @@ onMounted(() => {
           <a-col :span="12"><a-form-item label="产品名称"><a-input v-model:value="headerCreateForm.item_name" disabled /></a-form-item></a-col>
         </a-row>
         <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="物料清单">
+              <a-select v-model:value="headerCreateForm.bom_number" show-search allow-clear placeholder="请选择物料清单"
+                :options="bomOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="主工艺路线">
+              <a-checkbox :checked="headerCreateForm.is_primary === '是'" @update:checked="(val: boolean) => headerCreateForm.is_primary = val ? '是' : '否'" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="16">
           <a-col :span="12"><a-form-item label="生产自动入库规则"><a-select v-model:value="headerCreateForm.production_automatic_inventory_entry_rules"><a-select-option value="Y">Y</a-select-option><a-select-option value="N">N</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="12">
             <a-form-item label="状态"><a-select v-model:value="headerCreateForm.condition" placeholder="请选择"><a-select-option :value="CONDITION_STATUS.ENABLED">启用</a-select-option><a-select-option :value="CONDITION_STATUS.DISABLED">禁用</a-select-option></a-select></a-form-item>
@@ -741,6 +945,19 @@ onMounted(() => {
           <a-col :span="12"><a-form-item label="产品名称"><a-input v-model:value="headerEditForm.item_name" disabled /></a-form-item></a-col>
         </a-row>
         <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="物料清单">
+              <a-select v-model:value="headerEditForm.bom_number" show-search allow-clear placeholder="请选择物料清单"
+                :options="bomOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="主工艺路线">
+              <a-checkbox :checked="headerEditForm.is_primary === '是'" @update:checked="(val: boolean) => headerEditForm.is_primary = val ? '是' : '否'" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="16">
           <a-col :span="12"><a-form-item label="生产自动入库规则"><a-select v-model:value="headerEditForm.production_automatic_inventory_entry_rules"><a-select-option value="Y">Y</a-select-option><a-select-option value="N">N</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="12">
             <a-form-item label="状态"><a-select v-model:value="headerEditForm.condition" placeholder="请选择"><a-select-option :value="CONDITION_STATUS.ENABLED">启用</a-select-option><a-select-option :value="CONDITION_STATUS.DISABLED">禁用</a-select-option></a-select></a-form-item>
@@ -754,7 +971,7 @@ onMounted(() => {
     </a-modal>
 
     <!-- ========== Detail Create Modal ========== -->
-    <a-modal v-model:open="detailCreateVisible" title="新增工序" @ok="handleDetailCreateOk" okText="确认" cancelText="取消" width="1000px">
+    <a-modal v-model:open="detailCreateVisible" title="新增工序" @ok="handleDetailCreateOk" okText="确认" cancelText="取消" width="1000px" :ok-button-props="{ disabled: isCreateUploading }">
       <a-form :label-col="{ span: 8 }" :wrapper-col="{ span: 14 }">
         <a-row :gutter="16">
           <a-col :span="12"><a-form-item label="工序序号"><a-input-number v-model:value="detailCreateForm.step_number" :min="0" :step="10" style="width: 100%" placeholder="留空自动生成" /></a-form-item></a-col>
@@ -823,34 +1040,58 @@ onMounted(() => {
         </a-row>
         <a-divider orientation="left" style="margin: 12px 0 8px;">检验配置</a-divider>
         <a-row :gutter="16">
-          <a-col :span="12"><a-form-item label="启用自检"><a-switch v-model:checked="detailCreateForm.enable_self_inspect" checked-children="开" un-checked-children="关" /></a-form-item></a-col>
-          <a-col :span="12"><a-form-item label="启用专检"><a-switch v-model:checked="detailCreateForm.enable_special_inspect" checked-children="开" un-checked-children="关" /></a-form-item></a-col>
-        </a-row>
-        <a-row :gutter="16" v-if="detailCreateForm.enable_self_inspect">
           <a-col :span="12">
-            <a-form-item label="自检方案">
-              <a-select v-model:value="detailCreateForm.self_inspect_plan_name" show-search allow-clear placeholder="请选择检验方案"
-                :options="inspectionPlanOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())" />
+            <a-form-item label="检验类型">
+              <a-select v-model:value="detailCreateForm.inspect_type" placeholder="请选择">
+                <a-select-option value="无需检">无需检</a-select-option>
+                <a-select-option value="自检">自检</a-select-option>
+                <a-select-option value="专检">专检</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="16" v-if="detailCreateForm.inspect_type === '专检'">
+          <a-col :span="12">
+            <a-form-item label="检验人">
+              <a-select v-model:value="detailCreateForm.inspector_number" show-search allow-clear placeholder="请选择检验人"
+                :options="employeeOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())"
+                @change="(val: string) => handleInspectorChange(detailCreateForm, val)" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="16" v-if="detailCreateForm.inspect_type && detailCreateForm.inspect_type !== '无需检'">
+          <a-col :span="12">
+            <a-form-item label="检验方案">
+              <a-select v-model:value="detailCreateForm.inspect_plan_name" show-search allow-clear placeholder="请选择检验方案"
+                :options="getFilteredPlanOptions(detailCreateForm.inspect_type)" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="自检规范">
-              <a-select v-model:value="detailCreateForm.self_inspect_spec_name" show-search allow-clear placeholder="请选择检验规范"
+            <a-form-item label="检验规范">
+              <a-select v-model:value="detailCreateForm.inspect_spec_name" show-search allow-clear placeholder="请选择检验规范"
                 :options="inspectionSpecOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())" />
             </a-form-item>
           </a-col>
         </a-row>
-        <a-row :gutter="16" v-if="detailCreateForm.enable_special_inspect">
+        <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item label="专检方案">
-              <a-select v-model:value="detailCreateForm.special_inspect_plan_name" show-search allow-clear placeholder="请选择检验方案"
-                :options="inspectionPlanOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())" />
+            <a-form-item label="附件信息">
+              <a-upload v-model:fileList="createFileList" :customRequest="handleUpload" :maxCount="5" accept=".jpg,.jpeg,.png,.pdf">
+                <a-button><UploadOutlined /> 上传附件</a-button>
+              </a-upload>
+              <div v-if="isCreateUploading" style="color: #faad14; font-size: 12px; margin-top: 4px;">文件上传中，请等待上传完成后再保存...</div>
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="技术要求">
+              <a-textarea v-model:value="detailCreateForm.technical_requirement" :rows="2" placeholder="请输入技术要求" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="专检规范">
-              <a-select v-model:value="detailCreateForm.special_inspect_spec_name" show-search allow-clear placeholder="请选择检验规范"
-                :options="inspectionSpecOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())" />
+            <a-form-item label="备注">
+              <a-textarea v-model:value="detailCreateForm.remark" :rows="2" placeholder="请输入备注" />
             </a-form-item>
           </a-col>
         </a-row>
@@ -888,6 +1129,11 @@ onMounted(() => {
               <a-input-number v-model:value="createMaterials[index].wastage_rate" :min="0" :precision="4" style="width: 100%" />
             </template>
           </a-table-column>
+          <a-table-column title="倒冲" :width="70">
+            <template #default="{ index }">
+              <a-checkbox v-model:checked="createMaterials[index].is_backflush" />
+            </template>
+          </a-table-column>
           <a-table-column title="备注" :width="120">
             <template #default="{ index }">
               <a-input v-model:value="createMaterials[index].remark" style="width: 100%" />
@@ -903,7 +1149,7 @@ onMounted(() => {
     </a-modal>
 
     <!-- ========== Detail Edit Modal ========== -->
-    <a-modal v-model:open="detailEditVisible" title="编辑工序" @ok="handleDetailEditOk" okText="确认" cancelText="取消" width="1000px">
+    <a-modal v-model:open="detailEditVisible" title="编辑工序" @ok="handleDetailEditOk" okText="确认" cancelText="取消" width="1000px" :ok-button-props="{ disabled: isEditUploading }">
       <a-form :label-col="{ span: 8 }" :wrapper-col="{ span: 14 }">
         <a-row :gutter="16">
           <a-col :span="12"><a-form-item label="工序序号"><a-input-number v-model:value="detailEditForm.step_number" :min="0" :step="10" style="width: 100%" /></a-form-item></a-col>
@@ -972,34 +1218,58 @@ onMounted(() => {
         </a-row>
         <a-divider orientation="left" style="margin: 12px 0 8px;">检验配置</a-divider>
         <a-row :gutter="16">
-          <a-col :span="12"><a-form-item label="启用自检"><a-switch v-model:checked="detailEditForm.enable_self_inspect" checked-children="开" un-checked-children="关" /></a-form-item></a-col>
-          <a-col :span="12"><a-form-item label="启用专检"><a-switch v-model:checked="detailEditForm.enable_special_inspect" checked-children="开" un-checked-children="关" /></a-form-item></a-col>
-        </a-row>
-        <a-row :gutter="16" v-if="detailEditForm.enable_self_inspect">
           <a-col :span="12">
-            <a-form-item label="自检方案">
-              <a-select v-model:value="detailEditForm.self_inspect_plan_name" show-search allow-clear placeholder="请选择检验方案"
-                :options="inspectionPlanOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())" />
+            <a-form-item label="检验类型">
+              <a-select v-model:value="detailEditForm.inspect_type" placeholder="请选择">
+                <a-select-option value="无需检">无需检</a-select-option>
+                <a-select-option value="自检">自检</a-select-option>
+                <a-select-option value="专检">专检</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="16" v-if="detailEditForm.inspect_type === '专检'">
+          <a-col :span="12">
+            <a-form-item label="检验人">
+              <a-select v-model:value="detailEditForm.inspector_number" show-search allow-clear placeholder="请选择检验人"
+                :options="employeeOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())"
+                @change="(val: string) => handleInspectorChange(detailEditForm, val)" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="16" v-if="detailEditForm.inspect_type && detailEditForm.inspect_type !== '无需检'">
+          <a-col :span="12">
+            <a-form-item label="检验方案">
+              <a-select v-model:value="detailEditForm.inspect_plan_name" show-search allow-clear placeholder="请选择检验方案"
+                :options="getFilteredPlanOptions(detailEditForm.inspect_type)" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="自检规范">
-              <a-select v-model:value="detailEditForm.self_inspect_spec_name" show-search allow-clear placeholder="请选择检验规范"
+            <a-form-item label="检验规范">
+              <a-select v-model:value="detailEditForm.inspect_spec_name" show-search allow-clear placeholder="请选择检验规范"
                 :options="inspectionSpecOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())" />
             </a-form-item>
           </a-col>
         </a-row>
-        <a-row :gutter="16" v-if="detailEditForm.enable_special_inspect">
+        <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item label="专检方案">
-              <a-select v-model:value="detailEditForm.special_inspect_plan_name" show-search allow-clear placeholder="请选择检验方案"
-                :options="inspectionPlanOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())" />
+            <a-form-item label="附件信息">
+              <a-upload v-model:fileList="editFileList" :customRequest="handleUpload" :maxCount="5" accept=".jpg,.jpeg,.png,.pdf">
+                <a-button><UploadOutlined /> 上传附件</a-button>
+              </a-upload>
+              <div v-if="isEditUploading" style="color: #faad14; font-size: 12px; margin-top: 4px;">文件上传中，请等待上传完成后再保存...</div>
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="技术要求">
+              <a-textarea v-model:value="detailEditForm.technical_requirement" :rows="2" placeholder="请输入技术要求" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="专检规范">
-              <a-select v-model:value="detailEditForm.special_inspect_spec_name" show-search allow-clear placeholder="请选择检验规范"
-                :options="inspectionSpecOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())" />
+            <a-form-item label="备注">
+              <a-textarea v-model:value="detailEditForm.remark" :rows="2" placeholder="请输入备注" />
             </a-form-item>
           </a-col>
         </a-row>
@@ -1037,6 +1307,11 @@ onMounted(() => {
               <a-input-number v-model:value="editMaterials[index].wastage_rate" :min="0" :precision="4" style="width: 100%" />
             </template>
           </a-table-column>
+          <a-table-column title="倒冲" :width="70">
+            <template #default="{ index }">
+              <a-checkbox v-model:checked="editMaterials[index].is_backflush" />
+            </template>
+          </a-table-column>
           <a-table-column title="备注" :width="120">
             <template #default="{ index }">
               <a-input v-model:value="editMaterials[index].remark" style="width: 100%" />
@@ -1062,6 +1337,8 @@ onMounted(() => {
               <a-descriptions-item label="工艺路线名称">{{ headerDetailRecord.process_route_name }}</a-descriptions-item>
               <a-descriptions-item label="产品编号">{{ headerDetailRecord.item_number }}</a-descriptions-item>
               <a-descriptions-item label="产品名称">{{ headerDetailRecord.item_name }}</a-descriptions-item>
+              <a-descriptions-item label="物料清单">{{ headerDetailRecord.bom_number || '-' }}</a-descriptions-item>
+              <a-descriptions-item label="主工艺路线"><a-tag :color="headerDetailRecord.is_primary === '是' ? 'blue' : 'default'">{{ headerDetailRecord.is_primary === '是' ? '是' : '否' }}</a-tag></a-descriptions-item>
               <a-descriptions-item label="生产自动入库规则" :span="2">{{ headerDetailRecord.production_automatic_inventory_entry_rules || '-' }}</a-descriptions-item>
               <a-descriptions-item label="状态"><a-tag :color="headerDetailRecord.condition === CONDITION_STATUS.ENABLED ? 'green' : 'red'">{{ headerDetailRecord.condition }}</a-tag></a-descriptions-item>
               <a-descriptions-item label="审批状态"><ApprovalStatusTag :status="headerDetailRecord.approval_status" /></a-descriptions-item>
@@ -1093,9 +1370,15 @@ onMounted(() => {
                 <template v-else-if="column.key === 'modal_materials_summary'">
                   <template v-if="record.materials && record.materials.length > 0">
                     <div v-for="(mat, mi) in record.materials" :key="mi" style="line-height: 1.6; font-size: 12px;">
-                      {{ mat.material_number }}{{ mat.material_name ? ` (${mat.material_name})` : '' }} x{{ mat.quantity }}{{ mat.unit }}<span v-if="mat.wastage_rate" style="color: #999;"> 损耗{{ mat.wastage_rate }}</span>
+                      {{ mat.material_number }}{{ mat.material_name ? ` (${mat.material_name})` : '' }} x{{ mat.quantity }}{{ mat.unit }}<span v-if="mat.wastage_rate" style="color: #999;"> 损耗{{ mat.wastage_rate }}</span><a-tag v-if="mat.is_backflush" color="orange" style="margin-left:4px;font-size:11px;">倒冲</a-tag>
                     </div>
                   </template>
+                  <span v-else style="color: #ccc;">-</span>
+                </template>
+                <template v-else-if="column.key === 'attachment_info'">
+                  <a-button v-if="record.attachment_info" type="link" size="small" @click="openAttachmentPreview(record.attachment_info)">
+                    <template #icon><PaperClipOutlined /></template>查看附件 ({{ JSON.parse(record.attachment_info || '[]').length }})
+                  </a-button>
                   <span v-else style="color: #ccc;">-</span>
                 </template>
               </template>
@@ -1130,6 +1413,46 @@ onMounted(() => {
 
     <!-- ========== Approval Log Modal ========== -->
     <ApprovalLogModal v-model:open="approvalLogVisible" module="routing_header" :record-id="approvalLogRecordId" />
+
+    <!-- ========== Attachment Preview Modal ========== -->
+    <a-modal v-model:open="attachmentPreviewVisible" title="附件预览" :footer="null" width="600px">
+      <a-empty v-if="attachmentPreviewList.length === 0" description="暂无附件" />
+      <a-list v-else :data-source="attachmentPreviewList" bordered>
+        <template #renderItem="{ item }">
+          <a-list-item>
+            <a :href="item.url" target="_blank" style="display: flex; align-items: center; gap: 8px;">
+              <PaperClipOutlined />
+              <span>{{ item.name || item.originalName || '附件' }}</span>
+              <a-tag v-if="item.mimetype" size="small">{{ item.mimetype }}</a-tag>
+            </a>
+          </a-list-item>
+        </template>
+      </a-list>
+    </a-modal>
+
+    <!-- ========== Column Setting Drawer (Header) ========== -->
+    <ColumnSettingDrawer
+      :open="columnSettingVisible"
+      :settingList="columnSettingList"
+      :saving="columnSettingSaving"
+      @update:open="columnSettingVisible = $event"
+      @moveUp="moveColumnUp"
+      @moveDown="moveColumnDown"
+      @save="saveColumnSetting"
+      @reset="resetColumnSetting"
+    />
+
+    <!-- ========== Column Setting Drawer (Detail) ========== -->
+    <ColumnSettingDrawer
+      :open="detailColumnSettingVisible"
+      :settingList="detailColumnSettingList"
+      :saving="detailColumnSettingSaving"
+      @update:open="detailColumnSettingVisible = $event"
+      @moveUp="moveDetailColumnUp"
+      @moveDown="moveDetailColumnDown"
+      @save="saveDetailColumnSetting"
+      @reset="resetDetailColumnSetting"
+    />
   </div>
 </template>
 

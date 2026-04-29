@@ -11,3 +11,11 @@ export function importToPlan(data: { items: any[] }) {
 export function getSalesOrdersForMpsImport(params?: { search?: string }) {
   return request.get('/mps/sales-orders-for-import', { params })
 }
+
+export function getDemandSources(item_number: string) {
+  return request.get('/mps/demand-sources', { params: { item_number } })
+}
+
+export function importFromDemandSources(data: { items: any[] }) {
+  return request.post('/mps/import-from-demand-sources', data)
+}
