@@ -178,12 +178,94 @@ export const deletePlan = async (req: Request, res: Response, next: NextFunction
   try {
     const { id } = req.params;
     // 审批状态校验：只有草稿状态可以删除
-    const [chk]: any = await sequelize.query(`SELECT approval_status FROM Production_plan WHERE production_number = :id`, { replacements: { id } });
-    if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return; }
-    await sequelize.query(`DELETE FROM Production_plan WHERE production_number = :id`, {
-      replacements: { id }
-    });
-    res.json(success(null, '删除计划成功'));
+    const [chk]: any = await sequelize.query(
+      `SELECT approval_status, source_order_number, source_line_number, item_number FROM Production_plan WHERE production_number = :id`,
+      { replacements: { id } }
+    );
+    if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) {
+      res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' });
+      return;
+    }
+
+    const transaction = await sequelize.transaction();
+    try {
+      const plan = chk[0] || {};
+      const sourceOrderNumber = plan.source_order_number || '';
+      const sourceLineNumber = plan.source_line_number;
+      const itemNumber = plan.item_number || '';
+
+      // 删除计划
+      await sequelize.query(`DELETE FROM Production_plan WHERE production_number = :id`, {
+        replacements: { id },
+        transaction
+      });
+
+      // ==================== 回写关联状态 ====================
+      if (sourceOrderNumber && sourceOrderNumber !== 'MPS' && sourceLineNumber != null) {
+        // 判断是销售订单还是销售预测
+        const [soCheck]: any = await sequelize.query(
+          `SELECT 1 FROM sales_order WHERE sales_order_number = :son`,
+          { replacements: { son: sourceOrderNumber }, transaction }
+        );
+
+        if (soCheck.length > 0) {
+          // 来源是销售订单：检查是否还有其他计划关联该明细行
+          const [otherPlans]: any = await sequelize.query(
+            `SELECT 1 FROM Production_plan WHERE source_order_number = :son AND source_line_number = :ln AND production_number != :pn`,
+            { replacements: { son: sourceOrderNumber, ln: sourceLineNumber, pn: id }, transaction }
+          );
+
+          if (otherPlans.length === 0) {
+            // 无其他计划，回退销售订单明细状态
+            await sequelize.query(
+              `UPDATE sales_order_detail
+               SET production_status = N'未加入计划',
+                   status = CASE WHEN shipping_status = N'未申请' THEN N'未开始' ELSE status END
+               WHERE sales_order_number = :son AND line_number = :ln`,
+              { replacements: { son: sourceOrderNumber, ln: sourceLineNumber }, transaction }
+            );
+          }
+        } else {
+          // 来源是销售预测：检查是否还有其他计划关联该明细行
+          const [otherPlans]: any = await sequelize.query(
+            `SELECT 1 FROM Production_plan WHERE source_order_number = :fn AND source_line_number = :ln AND production_number != :pn`,
+            { replacements: { fn: sourceOrderNumber, ln: sourceLineNumber, pn: id }, transaction }
+          );
+
+          if (otherPlans.length === 0) {
+            // 无其他计划，回退预测明细状态
+            await sequelize.query(
+              `UPDATE sales_forecast_detail
+               SET status = N'未开始'
+               WHERE forecast_number = :fn AND line_number = :ln AND status = N'计划中'`,
+              { replacements: { fn: sourceOrderNumber, ln: sourceLineNumber }, transaction }
+            );
+          }
+        }
+      } else if (sourceOrderNumber === 'MPS' && itemNumber) {
+        // MPS来源：检查该物料下是否还有其他计划
+        const [otherPlans]: any = await sequelize.query(
+          `SELECT 1 FROM Production_plan WHERE item_number = :item AND production_number != :pn`,
+          { replacements: { item: itemNumber, pn: id }, transaction }
+        );
+
+        if (otherPlans.length === 0) {
+          // 无其他计划，回退该物料下预测明细状态
+          await sequelize.query(
+            `UPDATE sales_forecast_detail
+             SET status = N'未开始'
+             WHERE item_number = :item AND status = N'计划中'`,
+            { replacements: { item: itemNumber }, transaction }
+          );
+        }
+      }
+
+      await transaction.commit();
+      res.json(success(null, '删除计划成功'));
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
+    }
   } catch (err) {
     next(err);
   }

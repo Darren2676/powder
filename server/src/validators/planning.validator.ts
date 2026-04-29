@@ -2,12 +2,12 @@ import { validateBody } from './index';
 
 // 创建生产计划
 export const validateCreatePlan = validateBody([
-  { field: 'plan_number', label: '计划编号', required: true, maxLength: 50 },
+  { field: 'item_number', label: '产品编号', required: true, maxLength: 100 },
 ]);
 
 // 更新生产计划
 export const validateUpdatePlan = validateBody([
-  { field: 'plan_number', label: '计划编号', required: true, maxLength: 50 },
+  { field: 'item_number', label: '产品编号', required: true, maxLength: 100 },
 ]);
 
 // 创建主生产计划

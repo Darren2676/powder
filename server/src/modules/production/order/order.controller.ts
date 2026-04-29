@@ -201,6 +201,16 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
       }
     });
 
+    // Baseline：首次设置生产日期时，同步记录原始计划日期
+    if (b.production_date) {
+      await sequelize.query(`
+        UPDATE production_order
+        SET baseline_production_date = COALESCE(baseline_production_date, production_date),
+            baseline_planned_completion_time = COALESCE(baseline_planned_completion_time, planned_completion_time)
+        WHERE production_order_number = :id AND baseline_production_date IS NULL
+      `, { replacements: { id } });
+    }
+
     res.json(success(null, '更新生产单成功'));
   } catch (err) {
     next(err);
@@ -493,12 +503,12 @@ export const getOrderOverview = async (req: Request, res: Response, next: NextFu
   }
 };
 
-// ==================== 甘特图数据 ====================
+// ==================== 甘特图数据（dhtmlxGantt 标准格式）====================
 export const getGanttData = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, equipmentNumber, search } = req.query;
 
-    let where = `WHERE equipment_number IS NOT NULL AND equipment_number != '' AND production_date IS NOT NULL`;
+    let where = `WHERE RTRIM(LTRIM(equipment_number)) != '' AND production_date IS NOT NULL`;
     const replacements: any = {};
 
     if (startDate) {
@@ -508,6 +518,14 @@ export const getGanttData = async (req: Request, res: Response, next: NextFuncti
     if (endDate) {
       where += ` AND production_date <= :endDate`;
       replacements.endDate = endDate;
+    }
+    if (equipmentNumber) {
+      where += ` AND (RTRIM(LTRIM(equipment_number)) = RTRIM(LTRIM(:equipmentNumber)) OR RTRIM(LTRIM(equipment_name)) = RTRIM(LTRIM(:equipmentNumber)))`;
+      replacements.equipmentNumber = equipmentNumber;
+    }
+    if (search) {
+      where += ` AND (item_number LIKE :search OR item_name LIKE :search OR production_order_number LIKE :search)`;
+      replacements.search = `%${search}%`;
     }
 
     const sql = `
@@ -525,6 +543,8 @@ export const getGanttData = async (req: Request, res: Response, next: NextFuncti
         actual_hole_count,
         actual_daily_output,
         production_date,
+        baseline_production_date,
+        baseline_planned_completion_time,
         schedule_id,
         planned_completion_time,
         plan_status
@@ -535,18 +555,48 @@ export const getGanttData = async (req: Request, res: Response, next: NextFuncti
 
     const [rows]: any = await sequelize.query(sql, { replacements });
 
-    // 按设备分组
-    const equipmentMap: Record<string, any> = {};
+    const data: any[] = [];
     for (const row of rows) {
-      const key = row.equipment_number;
-      if (!equipmentMap[key]) {
-        equipmentMap[key] = {
-          equipment_number: row.equipment_number,
-          equipment_name: row.equipment_name || row.equipment_number,
-          tasks: []
-        };
-      }
-      equipmentMap[key].tasks.push({
+      const startDateObj = new Date(row.production_date);
+      const dailyOutput = Number(row.actual_daily_output) || 0;
+      const plannedQty = Number(row.planned_quantity) || 0;
+      const duration = (dailyOutput > 0 && plannedQty > 0)
+        ? Math.max(1, Math.ceil(plannedQty / dailyOutput))
+        : 1;
+
+      const endDateObj = new Date(startDateObj);
+      endDateObj.setDate(endDateObj.getDate() + duration);
+
+      // Baseline 日期计算（兼容旧数据：无 baseline 时使用当前 production_date）
+      const baselineStart = row.baseline_production_date
+        ? new Date(row.baseline_production_date)
+        : new Date(row.production_date);
+      const baselineEnd = new Date(baselineStart);
+      baselineEnd.setDate(baselineEnd.getDate() + duration);
+
+      const progress = 0; // completed_quantity 列暂不存在，默认进度为0
+
+      const statusColorMap: Record<string, string> = {
+        '未开始': '#d9d9d9',
+        '已派发': '#1890ff',
+        '已备料': '#faad14',
+        '生产中': '#52c41a',
+        '已完成': '#8c8c8c'
+      };
+
+      data.push({
+        id: row.production_order_number,
+        text: `${row.item_number || row.item_name || ''} (${row.production_order_number})`,
+        start_date: startDateObj.toISOString().split('T')[0],
+        end_date: endDateObj.toISOString().split('T')[0],
+        duration,
+        progress,
+        owner: row.equipment_number,
+        color: statusColorMap[row.plan_status] || '#1890ff',
+        // Baseline 字段
+        baseline_start_date: baselineStart.toISOString().split('T')[0],
+        baseline_end_date: baselineEnd.toISOString().split('T')[0],
+        // 扩展字段
         production_order_number: row.production_order_number,
         production_number: row.production_number,
         item_number: row.item_number,
@@ -557,16 +607,81 @@ export const getGanttData = async (req: Request, res: Response, next: NextFuncti
         actual_cavity_count: row.actual_cavity_count,
         actual_hole_count: row.actual_hole_count,
         actual_daily_output: row.actual_daily_output,
-        production_date: row.production_date,
         schedule_id: row.schedule_id,
         planned_completion_time: row.planned_completion_time,
-        plan_status: row.plan_status
+        plan_status: row.plan_status,
+        equipment_name: row.equipment_name
       });
     }
 
-    const equipments = Object.values(equipmentMap);
+    res.json(success({ data, links: [] }, '获取甘特图数据成功'));
+  } catch (err) {
+    next(err);
+  }
+};
 
-    res.json(success({ equipments }, '获取甘特图数据成功'));
+// ==================== 甘特图拖拽更新 ====================
+export const updateGanttTask = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { production_date, planned_completion_time, equipment_number, equipment_name, schedule_id, planned_quantity } = req.body;
+
+    // 校验任务状态
+    const [rows]: any = await sequelize.query(
+      `SELECT plan_status FROM production_order WHERE production_order_number = :id`,
+      { replacements: { id } }
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ success: false, message: '生产单不存在' });
+      return;
+    }
+
+    const status = rows[0].plan_status;
+    const allowedStatuses = ['未开始', '已派发'];
+    if (!allowedStatuses.includes(status)) {
+      res.status(403).json({ success: false, message: `当前状态为"${status}"，仅"未开始"或"已派发"状态的任务可调整排期` });
+      return;
+    }
+
+    const setClause: string[] = [];
+    const replacements: any = { id };
+
+    if (production_date) {
+      setClause.push('production_date = :production_date');
+      replacements.production_date = production_date;
+    }
+    if (planned_completion_time) {
+      setClause.push('planned_completion_time = :planned_completion_time');
+      replacements.planned_completion_time = planned_completion_time;
+    }
+    if (equipment_number !== undefined) {
+      setClause.push('equipment_number = :equipment_number');
+      replacements.equipment_number = equipment_number || null;
+    }
+    if (equipment_name !== undefined) {
+      setClause.push('equipment_name = :equipment_name');
+      replacements.equipment_name = equipment_name || null;
+    }
+    if (schedule_id !== undefined) {
+      setClause.push('schedule_id = :schedule_id');
+      replacements.schedule_id = schedule_id || null;
+    }
+    if (planned_quantity !== undefined) {
+      setClause.push('planned_quantity = :planned_quantity');
+      replacements.planned_quantity = planned_quantity;
+    }
+
+    if (setClause.length === 0) {
+      res.status(400).json({ success: false, message: '没有需要更新的字段' });
+      return;
+    }
+
+    await sequelize.query(
+      `UPDATE production_order SET ${setClause.join(', ')} WHERE production_order_number = :id`,
+      { replacements }
+    );
+
+    res.json(success(null, '排期调整已保存'));
   } catch (err) {
     next(err);
   }
@@ -586,19 +701,44 @@ export const getPrintData = async (req: Request, res: Response, next: NextFuncti
     const results: any[] = [];
 
     for (const orderNum of production_order_numbers) {
-      // 1. 查询生产单基本信息
+      // 1. 查询生产单基本信息（JOIN item_master 获取 item_type）
       const [orders]: any = await sequelize.query(
-        `SELECT production_order_number, production_number, item_number, item_name, basic_unit,
-          specifications, product_drawing_number, rubber_compound_number, batch_production_quota,
-          planned_quantity, equipment_number, equipment_name, mould_number,
-          formed_part_specifications, formed_part_unit_consumption,
-          actual_cavity_count, actual_hole_count, actual_daily_output,
-          production_date, schedule_id, planned_completion_time, plan_status, remark
-        FROM production_order WHERE production_order_number = :orderNum`,
+        `SELECT po.production_order_number, po.production_number, po.item_number, po.item_name, po.basic_unit,
+          po.specifications, po.product_drawing_number, po.rubber_compound_number, po.batch_production_quota,
+          po.planned_quantity, po.equipment_number, po.equipment_name, po.mould_number,
+          po.formed_part_specifications, po.formed_part_unit_consumption,
+          po.actual_cavity_count, po.actual_hole_count, po.actual_daily_output,
+          po.production_date, po.schedule_id, po.planned_completion_time, po.plan_status, po.remark,
+          im.item_type
+        FROM production_order po
+        LEFT JOIN item_master im ON po.item_number = im.item_number
+        WHERE po.production_order_number = :orderNum`,
         { replacements: { orderNum } }
       );
       if (!orders.length) continue;
       const order = orders[0];
+      const itemType = order.item_type || '成品';
+
+      // 1.1 根据 item_type 动态 JOIN 扩展表获取扩展字段
+      let extFields: any = {};
+      const extTableMap: Record<string, string> = {
+        '成品': 'product_ext',
+        '原材料': 'material_ext',
+        '半成品': 'semi_product_ext',
+        '包材': 'packaging_ext',
+        '骨架': 'skeleton_ext',
+        '预成型件': 'preform_ext'
+      };
+      const extTable = extTableMap[itemType];
+      if (extTable) {
+        const [extRows]: any = await sequelize.query(
+          `SELECT * FROM ${extTable} WHERE item_number = :itemNumber`,
+          { replacements: { itemNumber: order.item_number } }
+        );
+        if (extRows.length > 0) {
+          extFields = extRows[0];
+        }
+      }
 
       // 2. 查询备料明细（通过JOIN关联所有备料单，确保获取完整物料列表）
       const [materials]: any = await sequelize.query(
@@ -630,7 +770,7 @@ export const getPrintData = async (req: Request, res: Response, next: NextFuncti
         { replacements: { orderNum } }
       );
 
-      results.push({ order, materials, tasks });
+      results.push({ order, materials, tasks, item_type: itemType, ext_fields: extFields });
     }
 
     res.json(success({ items: results }, '获取打印数据成功'));
@@ -750,21 +890,40 @@ export const dispatchPrecheck = async (req: Request, res: Response, next: NextFu
     const result: Record<string, { routing_exists: boolean; routing_approved: boolean; routing_number: string; approval_status: string }> = {};
 
     for (const itemNum of uniqueItems) {
-      const [rows]: any = await sequelize.query(
+      // 第一步：按真实派发规则查询——优先已审批的主工艺路线
+      const [approvedRows]: any = await sequelize.query(
+        `SELECT TOP 1 process_route_number, approval_status
+         FROM routing_header
+         WHERE item_number = :item_number AND condition = N'启用' AND approval_status = N'已审批'
+         ORDER BY CASE WHEN is_primary = N'是' THEN 0 ELSE 1 END, creation_date DESC`,
+        { replacements: { item_number: itemNum } }
+      );
+      if (approvedRows.length > 0) {
+        result[itemNum] = {
+          routing_exists: true,
+          routing_approved: true,
+          routing_number: approvedRows[0].process_route_number,
+          approval_status: approvedRows[0].approval_status || '已审批'
+        };
+        continue;
+      }
+
+      // 第二步：没有已审批路线时，再查任意状态的最新路线，用于向前端展示实际审批状态
+      const [anyRows]: any = await sequelize.query(
         `SELECT TOP 1 process_route_number, approval_status
          FROM routing_header
          WHERE item_number = :item_number AND condition = N'启用'
-         ORDER BY creation_date DESC`,
+         ORDER BY CASE WHEN is_primary = N'是' THEN 0 ELSE 1 END, creation_date DESC`,
         { replacements: { item_number: itemNum } }
       );
-      if (rows.length === 0) {
+      if (anyRows.length === 0) {
         result[itemNum] = { routing_exists: false, routing_approved: false, routing_number: '', approval_status: '' };
       } else {
         result[itemNum] = {
           routing_exists: true,
-          routing_approved: rows[0].approval_status === '已审批',
-          routing_number: rows[0].process_route_number,
-          approval_status: rows[0].approval_status || ''
+          routing_approved: false,
+          routing_number: anyRows[0].process_route_number,
+          approval_status: anyRows[0].approval_status || ''
         };
       }
     }

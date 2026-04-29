@@ -10,6 +10,9 @@ vi.mock('@/utils/response.util', () => ({
 vi.mock('@/utils/excel.util', () => ({
   exportToExcel: vi.fn(),
 }));
+vi.mock('@/services/salesOrderSync.service', () => ({
+  syncProductionStatus: vi.fn().mockResolvedValue(undefined),
+}));
 
 import {
   getProductionInspections,
@@ -217,29 +220,38 @@ describe('productionInspection.controller', () => {
   describe('completeInspection', () => {
     it('should judge 不合格 when unqualified > 0', async () => {
       queryFn
-        .mockResolvedValueOnce([[{ inspection_number: 'QI-001', status: '检验中', qualified_quantity: 3, unqualified_quantity: 2, total_quantity: 5 }]])
+        .mockResolvedValueOnce([[{ inspection_number: 'QI-001', status: '检验中', qualified_quantity: 3, unqualified_quantity: 2, total_quantity: 5, process_task_number: 'PT-001' }]])
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([]);
       const res = mockRes();
       await completeInspection(mockReq({ params: { id: 'QI-001' } }), res, vi.fn());
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         data: { inspection_result: '不合格' },
       }));
+      const inspectStatusCall = queryFn.mock.calls.find((c: any) => (c[0] as string).includes('UPDATE process_task') && (c[0] as string).includes('inspect_status'));
+      expect(inspectStatusCall).toBeDefined();
+      expect(inspectStatusCall![1].replacements.inspectStatus).toBe('检验不合格');
     });
 
     it('should judge 合格 when unqualified = 0', async () => {
       queryFn
-        .mockResolvedValueOnce([[{ inspection_number: 'QI-001', status: '检验中', qualified_quantity: 5, unqualified_quantity: 0, total_quantity: 5 }]])
+        .mockResolvedValueOnce([[{ inspection_number: 'QI-001', status: '检验中', qualified_quantity: 5, unqualified_quantity: 0, total_quantity: 5, process_task_number: 'PT-001' }]])
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([]);
       const res = mockRes();
       await completeInspection(mockReq({ params: { id: 'QI-001' } }), res, vi.fn());
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         data: { inspection_result: '合格' },
       }));
+      const inspectStatusCall = queryFn.mock.calls.find((c: any) => (c[0] as string).includes('UPDATE process_task') && (c[0] as string).includes('inspect_status'));
+      expect(inspectStatusCall).toBeDefined();
+      expect(inspectStatusCall![1].replacements.inspectStatus).toBe('检验合格');
     });
 
     it('should judge 合格 when both quantities are 0 (boundary: unfilled)', async () => {
       queryFn
-        .mockResolvedValueOnce([[{ inspection_number: 'QI-001', status: '检验中', qualified_quantity: 0, unqualified_quantity: 0, total_quantity: 100 }]])
+        .mockResolvedValueOnce([[{ inspection_number: 'QI-001', status: '检验中', qualified_quantity: 0, unqualified_quantity: 0, total_quantity: 100, process_task_number: 'PT-001' }]])
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([]);
       const res = mockRes();
       await completeInspection(mockReq({ params: { id: 'QI-001' } }), res, vi.fn());
@@ -247,11 +259,15 @@ describe('productionInspection.controller', () => {
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         data: { inspection_result: '合格' },
       }));
+      const inspectStatusCall = queryFn.mock.calls.find((c: any) => (c[0] as string).includes('UPDATE process_task') && (c[0] as string).includes('inspect_status'));
+      expect(inspectStatusCall).toBeDefined();
+      expect(inspectStatusCall![1].replacements.inspectStatus).toBe('检验合格');
     });
 
     it('should handle null quantities gracefully (parseFloat fallback)', async () => {
       queryFn
-        .mockResolvedValueOnce([[{ inspection_number: 'QI-001', status: '检验中', qualified_quantity: null, unqualified_quantity: null, total_quantity: null }]])
+        .mockResolvedValueOnce([[{ inspection_number: 'QI-001', status: '检验中', qualified_quantity: null, unqualified_quantity: null, total_quantity: null, process_task_number: 'PT-001' }]])
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce([]);
       const res = mockRes();
       await completeInspection(mockReq({ params: { id: 'QI-001' } }), res, vi.fn());
@@ -259,6 +275,9 @@ describe('productionInspection.controller', () => {
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
         data: { inspection_result: '合格' },
       }));
+      const inspectStatusCall = queryFn.mock.calls.find((c: any) => (c[0] as string).includes('UPDATE process_task') && (c[0] as string).includes('inspect_status'));
+      expect(inspectStatusCall).toBeDefined();
+      expect(inspectStatusCall![1].replacements.inspectStatus).toBe('检验合格');
     });
 
     it('should return 404 when not found', async () => {
@@ -286,12 +305,14 @@ describe('productionInspection.controller', () => {
     };
 
     // ── 返修 ──
-    it('should handle 返修 and update target step quantity', async () => {
+    it('should handle 返修 and update target step quantity and inspect_status', async () => {
       const tx = mockTx();
       queryFn.mockResolvedValueOnce([[baseRecord]]);
       transactionFn.mockResolvedValueOnce(tx);
-      queryFn.mockResolvedValueOnce([]);  // UPDATE process_task
+      queryFn.mockResolvedValueOnce([]);  // UPDATE process_task planned_quantity
       queryFn.mockResolvedValueOnce([]);  // UPDATE production_inspection
+      queryFn.mockResolvedValueOnce([]);  // UPDATE process_task task_status/inspect_status
+      queryFn.mockResolvedValueOnce([]);  // UPDATE production_order plan_status
 
       const req = mockReq({
         params: { id: 'QI-001' },
@@ -300,11 +321,19 @@ describe('productionInspection.controller', () => {
       const res = mockRes();
       await defectHandling(req, res, vi.fn());
 
-      // query calls after transaction: update process_task + update production_inspection
+      // query calls after transaction: update process_task planned_qty + update production_inspection + update process_task status + update production_order
       expect(queryFn).toHaveBeenCalledWith(
         expect.stringContaining('UPDATE process_task'),
         expect.objectContaining({ replacements: expect.objectContaining({ qty: 2, step: 10 }) })
       );
+      const statusRollbackCall = queryFn.mock.calls.find((c: any) =>
+        (c[0] as string).includes('task_status = N\'未开始\'') && (c[0] as string).includes('inspect_status = N\'无需检\'')
+      );
+      expect(statusRollbackCall).toBeDefined();
+      const orderRollbackCall = queryFn.mock.calls.find((c: any) =>
+        (c[0] as string).includes('UPDATE production_order') && (c[0] as string).includes('plan_status = N\'生产中\'')
+      );
+      expect(orderRollbackCall).toBeDefined();
       expect(tx.commit).toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ message: '不合格品处理完成：返修' }));
     });
@@ -322,8 +351,22 @@ describe('productionInspection.controller', () => {
       expect(tx.rollback).toHaveBeenCalled();
     });
 
+    it('should rollback 返修 transaction and call next on internal error', async () => {
+      const tx = mockTx();
+      queryFn.mockResolvedValueOnce([[baseRecord]]);
+      transactionFn.mockResolvedValueOnce(tx);
+      queryFn.mockResolvedValueOnce([]);  // UPDATE process_task planned_quantity
+      const err = new Error('DB crash');
+      queryFn.mockRejectedValueOnce(err);
+
+      const next = vi.fn();
+      await defectHandling(mockReq({ params: { id: 'QI-001' }, body: { defect_handling: '返修', rework_step_number: 10 } }), mockRes(), next);
+      expect(tx.rollback).toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(err);
+    });
+
     // ── 报废 ──
-    it('should handle 报废 and create stock_in records', async () => {
+    it('should handle 报废 and create stock_in records and set inspect_status', async () => {
       const tx = mockTx();
       queryFn.mockResolvedValueOnce([[baseRecord]]);          // select record
       transactionFn.mockResolvedValueOnce(tx);
@@ -331,7 +374,8 @@ describe('productionInspection.controller', () => {
         .mockResolvedValueOnce([[{ max_num: null }]])          // stock_in number gen
         .mockResolvedValueOnce([])                             // insert stock_in
         .mockResolvedValueOnce([])                             // insert stock_in_detail
-        .mockResolvedValueOnce([]);                            // update production_inspection
+        .mockResolvedValueOnce([])                             // update production_inspection
+        .mockResolvedValueOnce([]);                            // update process_task inspect_status
 
       const req = mockReq({ params: { id: 'QI-001' }, body: { defect_handling: '报废' } });
       const res = mockRes();
@@ -347,6 +391,12 @@ describe('productionInspection.controller', () => {
       expect(detailCall).toBeDefined();
       expect(detailCall![1].replacements.item_number).toBe('110103');
 
+      // Verify inspect_status write-back
+      const inspectStatusCall = queryFn.mock.calls.find((c: any) =>
+        (c[0] as string).includes('UPDATE process_task') && (c[0] as string).includes('inspect_status = N\'已处理\'')
+      );
+      expect(inspectStatusCall).toBeDefined();
+
       expect(tx.commit).toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ message: '不合格品处理完成：报废' }));
     });
@@ -357,7 +407,7 @@ describe('productionInspection.controller', () => {
       transactionFn.mockResolvedValueOnce(tx);
       queryFn
         .mockResolvedValueOnce([[{ max_num: 'SI-20260423-005' }]])  // existing max
-        .mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+        .mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
       const req = mockReq({ params: { id: 'QI-001' }, body: { defect_handling: '报废' } });
       const res = mockRes();
@@ -368,11 +418,12 @@ describe('productionInspection.controller', () => {
     });
 
     // ── 让步接收 ──
-    it('should handle 让步接收 and adjust quantities', async () => {
+    it('should handle 让步接收 and adjust quantities and set inspect_status', async () => {
       const tx = mockTx();
       queryFn.mockResolvedValueOnce([[baseRecord]]);
       transactionFn.mockResolvedValueOnce(tx);
-      queryFn.mockResolvedValueOnce([]);
+      queryFn.mockResolvedValueOnce([]);  // UPDATE production_inspection
+      queryFn.mockResolvedValueOnce([]);  // UPDATE process_task inspect_status
 
       const req = mockReq({
         params: { id: 'QI-001' },
@@ -385,6 +436,10 @@ describe('productionInspection.controller', () => {
         expect.stringContaining('让步接收'),
         expect.objectContaining({ replacements: expect.objectContaining({ concessionQty: 1 }) })
       );
+      const inspectStatusCall = queryFn.mock.calls.find((c: any) =>
+        (c[0] as string).includes('UPDATE process_task') && (c[0] as string).includes('inspect_status = N\'已处理\'')
+      );
+      expect(inspectStatusCall).toBeDefined();
       expect(tx.commit).toHaveBeenCalled();
     });
 
@@ -392,7 +447,8 @@ describe('productionInspection.controller', () => {
       const tx = mockTx();
       queryFn.mockResolvedValueOnce([[baseRecord]]);
       transactionFn.mockResolvedValueOnce(tx);
-      queryFn.mockResolvedValueOnce([]);
+      queryFn.mockResolvedValueOnce([]);  // UPDATE production_inspection
+      queryFn.mockResolvedValueOnce([]);  // UPDATE process_task inspect_status
 
       const req = mockReq({ params: { id: 'QI-001' }, body: { defect_handling: '让步接收' } });
       const res = mockRes();
@@ -408,7 +464,8 @@ describe('productionInspection.controller', () => {
       const tx = mockTx();
       queryFn.mockResolvedValueOnce([[baseRecord]]);  // unqualified_quantity = 2
       transactionFn.mockResolvedValueOnce(tx);
-      queryFn.mockResolvedValueOnce([]);
+      queryFn.mockResolvedValueOnce([]);  // UPDATE production_inspection
+      queryFn.mockResolvedValueOnce([]);  // UPDATE process_task inspect_status
 
       const req = mockReq({
         params: { id: 'QI-001' },

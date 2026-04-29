@@ -13,6 +13,9 @@ vi.mock('@/services/linesideMovement.service', () => ({
   logWorkReportLinesideMovement: vi.fn().mockResolvedValue(undefined),
   logWorkReportReverseLinesideMovement: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock('@/services/salesOrderSync.service', () => ({
+  syncProductionStatus: vi.fn().mockResolvedValue(undefined),
+}));
 
 import { syncTaskCompletion } from '@/services/workReport.service';
 import sequelize from '@/config/database';
@@ -47,14 +50,18 @@ describe('syncTaskCompletion', () => {
       .mockResolvedValueOnce([[{ task_status: '进行中', completed_quantity: '100', planned_quantity: '100' }]]) // SELECT task
       .mockResolvedValueOnce([[], 1]) // UPDATE status
       .mockResolvedValueOnce([[{ production_order_number: 'P-001' }]]) // SELECT order
-      .mockResolvedValueOnce([[], 1]) // UPDATE plan_status
-      .mockResolvedValueOnce([[{ cnt: 0 }]]) // SELECT pending
+      .mockResolvedValueOnce([[], 1]) // UPDATE plan_status 已备料→生产中
+      .mockResolvedValueOnce([[{ cnt: 0 }]]) // SELECT pendingTasks
+      .mockResolvedValueOnce([[{ cnt: 0 }]]) // SELECT pendingInspect
       .mockResolvedValueOnce([[], 1]); // UPDATE plan_status to 已完成
 
     await syncTaskCompletion('PT-001', 50);
 
     // Should have the status update to 已完成
     expect(hasSqlContaining("task_status = N'已完成'")).toBe(true);
+    // Should check inspect_status in pendingInspect query
+    const inspectQuery = getSqlCalls().find(sql => sql.includes('inspect_status') && sql.includes('NOT IN'));
+    expect(inspectQuery).toBeDefined();
   });
 
   it('should set status to 进行中 when 0 < completed < planned and status is 未开始', async () => {
@@ -64,7 +71,8 @@ describe('syncTaskCompletion', () => {
       .mockResolvedValueOnce([[], 1])
       .mockResolvedValueOnce([[{ production_order_number: 'P-001' }]])
       .mockResolvedValueOnce([[], 1])
-      .mockResolvedValueOnce([[{ cnt: 1 }]]);
+      .mockResolvedValueOnce([[{ cnt: 1 }]])
+      .mockResolvedValueOnce([[{ cnt: 0 }]]);
 
     await syncTaskCompletion('PT-001', 50);
 
@@ -77,7 +85,8 @@ describe('syncTaskCompletion', () => {
       .mockResolvedValueOnce([[{ task_status: '进行中', completed_quantity: '0', planned_quantity: '100' }]])
       .mockResolvedValueOnce([[], 1])
       .mockResolvedValueOnce([[{ production_order_number: 'P-001' }]])
-      .mockResolvedValueOnce([[{ cnt: 1 }]]);
+      .mockResolvedValueOnce([[{ cnt: 1 }]])
+      .mockResolvedValueOnce([[{ cnt: 0 }]]);
 
     await syncTaskCompletion('PT-001', -50);
 
@@ -90,7 +99,8 @@ describe('syncTaskCompletion', () => {
       .mockResolvedValueOnce([[{ task_status: '进行中', completed_quantity: '50', planned_quantity: '100' }]]) // SELECT
       .mockResolvedValueOnce([[{ production_order_number: 'P-001' }]]) // SELECT order (plan_status flow)
       .mockResolvedValueOnce([[], 1]) // UPDATE plan_status
-      .mockResolvedValueOnce([[{ cnt: 1 }]]); // SELECT pending
+      .mockResolvedValueOnce([[{ cnt: 1 }]]) // SELECT pendingTasks
+      .mockResolvedValueOnce([[{ cnt: 0 }]]); // SELECT pendingInspect
 
     await syncTaskCompletion('PT-001', 50);
 
@@ -106,7 +116,8 @@ describe('syncTaskCompletion', () => {
       .mockResolvedValueOnce([[], 1])
       .mockResolvedValueOnce([[{ task_status: '已关闭', completed_quantity: '0', planned_quantity: '100' }]])
       .mockResolvedValueOnce([[{ production_order_number: 'P-001' }]])
-      .mockResolvedValueOnce([[{ cnt: 1 }]]);
+      .mockResolvedValueOnce([[{ cnt: 1 }]])
+      .mockResolvedValueOnce([[{ cnt: 0 }]]);
 
     await syncTaskCompletion('PT-001', -100);
 
@@ -123,7 +134,8 @@ describe('syncTaskCompletion', () => {
       .mockResolvedValueOnce([[{ task_status: '进行中', completed_quantity: '50', planned_quantity: '100' }]])
       .mockResolvedValueOnce([[{ production_order_number: 'P-001' }]])
       .mockResolvedValueOnce([[], 1])
-      .mockResolvedValueOnce([[{ cnt: 1 }]]);
+      .mockResolvedValueOnce([[{ cnt: 1 }]])
+      .mockResolvedValueOnce([[{ cnt: 0 }]]);
 
     await syncTaskCompletion('PT-001', 50, mockTx);
 
@@ -146,5 +158,26 @@ describe('syncTaskCompletion', () => {
     // Should NOT make any UPDATE on task_status or any production_order queries
     expect(hasSqlContaining("SET task_status")).toBe(false);
     expect(hasSqlContaining('production_order')).toBe(false);
+  });
+
+  it('should NOT mark order 已完成 when pending inspect tasks exist', async () => {
+    queryFn
+      .mockResolvedValueOnce([[], 1]) // UPDATE qty
+      .mockResolvedValueOnce([[{ task_status: '进行中', completed_quantity: '100', planned_quantity: '100' }]]) // SELECT task
+      .mockResolvedValueOnce([[], 1]) // UPDATE status to 已完成
+      .mockResolvedValueOnce([[{ production_order_number: 'P-001' }]]) // SELECT order
+      .mockResolvedValueOnce([[], 1]) // UPDATE plan_status 已备料→生产中
+      .mockResolvedValueOnce([[{ cnt: 0 }]]) // SELECT pendingTasks = 0
+      .mockResolvedValueOnce([[{ cnt: 2 }]]); // SELECT pendingInspect = 2 (有工序待检验)
+
+    await syncTaskCompletion('PT-001', 50);
+
+    // task_status 应该更新为 已完成
+    expect(hasSqlContaining("task_status = N'已完成'")).toBe(true);
+    // 但生产单不应该标记为 已完成
+    const orderCompleteCalls = getSqlCalls().filter(sql =>
+      sql.includes('UPDATE production_order') && sql.includes("plan_status = N'已完成'")
+    );
+    expect(orderCompleteCalls).toHaveLength(0);
   });
 });

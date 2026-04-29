@@ -229,15 +229,15 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
 
           const { placeholders: itemPH, replacements: itemRepl } = buildInClause(itemNumbers, 'bom');
           const [bomHeaders]: any = await sequelize.query(`
-            SELECT mfg_bom_number, item_number, base_quantity
-            FROM mfg_bom_header
+            SELECT bom_number, item_number, base_quantity
+            FROM bom_header
             WHERE item_number IN (${itemPH}) AND [condition] = N'启用' AND approval_status = N'已审批'
           `, { replacements: itemRepl, transaction });
 
-          const bomMap: Record<string, { mfg_bom_number: string; base_quantity: number }> = {};
+          const bomMap: Record<string, { bom_number: string; base_quantity: number }> = {};
           for (const bh of bomHeaders) {
             if (!bomMap[bh.item_number]) {
-              bomMap[bh.item_number] = { mfg_bom_number: bh.mfg_bom_number, base_quantity: parseFloat(bh.base_quantity) || 1 };
+              bomMap[bh.item_number] = { bom_number: bh.bom_number, base_quantity: parseFloat(bh.base_quantity) || 1 };
             }
           }
 
@@ -259,8 +259,8 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
 
             // 查子件
             const [details]: any = await sequelize.query(
-              `SELECT * FROM mfg_bom_detail WHERE mfg_bom_number = :bomNum ORDER BY line_number`,
-              { replacements: { bomNum: bom.mfg_bom_number }, transaction }
+              `SELECT * FROM bom_detail WHERE bom_number = :bomNum ORDER BY line_number`,
+              { replacements: { bomNum: bom.bom_number }, transaction }
             );
 
             for (const d of details) {
@@ -277,7 +277,7 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
                 level: 1,
                 source_plan: entry.source_plan,
                 parent_item: entry.item_number,
-                bom_path: `${entry.bom_path} > ${bom.mfg_bom_number}`
+                bom_path: `${entry.bom_path} > ${bom.bom_number}`
               });
             }
           }
@@ -332,17 +332,17 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
         const itemInfoMap: Record<string, any> = {};
         for (const r of itemMasterRows) { itemInfoMap[r.item_number] = r; }
 
-        // 批量查制造BOM
+        // 批量查设计BOM
         const [bomHeaders]: any = await sequelize.query(`
-          SELECT mfg_bom_number, item_number, base_quantity
-          FROM mfg_bom_header
+          SELECT bom_number, item_number, base_quantity
+          FROM bom_header
           WHERE item_number IN (${imPH}) AND [condition] = N'启用' AND approval_status = N'已审批'
         `, { replacements: imRepl, transaction });
 
-        const bomMap: Record<string, { mfg_bom_number: string; base_quantity: number }> = {};
+        const bomMap: Record<string, { bom_number: string; base_quantity: number }> = {};
         for (const bh of bomHeaders) {
           if (!bomMap[bh.item_number]) {
-            bomMap[bh.item_number] = { mfg_bom_number: bh.mfg_bom_number, base_quantity: parseFloat(bh.base_quantity) || 1 };
+            bomMap[bh.item_number] = { bom_number: bh.bom_number, base_quantity: parseFloat(bh.base_quantity) || 1 };
           }
         }
 
@@ -462,7 +462,7 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
               basic_unit: info.basic_unit || demand.basic_unit || '',
               item_type: info.item_type || '',
               business_scope: businessScope,
-              mfg_bom_number: bom?.mfg_bom_number || null,
+              mfg_bom_number: bom?.bom_number || null,
               gross_requirement: grossReq,
               on_hand_inventory: inv.on_hand,
               wip_quantity: wip,
@@ -486,8 +486,8 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
           // 展开子件BOM (仅当 action_type 包含生产 且 有BOM 且 净需求>0)
           if (hasBom && netReq > 0 && (actionType === '生产' || actionType === '生产+采购')) {
             const [details]: any = await sequelize.query(
-              `SELECT * FROM mfg_bom_detail WHERE mfg_bom_number = :bomNum ORDER BY line_number`,
-              { replacements: { bomNum: bom!.mfg_bom_number }, transaction }
+              `SELECT * FROM bom_detail WHERE bom_number = :bomNum ORDER BY line_number`,
+              { replacements: { bomNum: bom!.bom_number }, transaction }
             );
 
             for (const d of details) {
@@ -504,7 +504,7 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
                 level: minLevel + 1,
                 source_plan: [...demand.source_plans].join(','),
                 parent_item: itemNum,
-                bom_path: `${demand.bom_paths[0]} > ${bom!.mfg_bom_number}`
+                bom_path: `${demand.bom_paths[0]} > ${bom!.bom_number}`
               });
             }
           }
@@ -712,11 +712,11 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
             INSERT INTO production_order (
               production_order_number, production_number, item_number, item_name, basic_unit, specifications,
               product_drawing_number, rubber_compound_number, batch_production_quota,
-              planned_quantity, planned_completion_time, plan_status, remark, approval_status
+              planned_quantity, planned_completion_time, plan_status, remark, approval_status, is_semi_product
             ) VALUES (
               :production_order_number, :production_number, :item_number, :item_name, :basic_unit, :specifications,
               '', '', '',
-              :planned_quantity, :planned_completion_time, N'未开始', :remark, N'草稿'
+              :planned_quantity, :planned_completion_time, N'未开始', :remark, N'草稿', :is_semi_product
             )
           `, {
             replacements: {
@@ -728,7 +728,8 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
               specifications: detail.specifications || '',
               planned_quantity: prodQty,
               planned_completion_time: detail.planned_due_date || null,
-              remark: `MRP自动生成 (${mrp_run_number})`
+              remark: `MRP自动生成 (${mrp_run_number})`,
+              is_semi_product: detail.item_type === "半成品" ? 1 : 0
             },
             transaction
           });
@@ -801,7 +802,7 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
             requester: creation_man,
             source_number: mrp_run_number,
             production_number: productionNumbers,
-            remark: `MRP自动生成 (${mrp_run_number})`,
+            remark: 'MRP自动生成 (' + mrp_run_number + ')',
             creation_date: creationDate,
             creation_man: creation_man
           },

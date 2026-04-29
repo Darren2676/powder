@@ -11,6 +11,7 @@ import departmentRoutes from './department/department.routes';
 import approvalRoutes from './approval/approval.routes';
 import workflowRoutes from './workflow/workflow.routes';
 import workflow_runtimeRoutes from './workflow/workflow-runtime.routes';
+import sseRoutes from './sse/sse.routes';
 
 const router = Router();
 
@@ -25,5 +26,6 @@ router.use('/departments', departmentRoutes);
 router.use('/approval', approvalRoutes);
 router.use('/workflows', workflowRoutes);
 router.use('/workflow-runtime', workflow_runtimeRoutes);
+router.use('/sse', sseRoutes);
 
 export default router;

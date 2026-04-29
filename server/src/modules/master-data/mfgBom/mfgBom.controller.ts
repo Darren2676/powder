@@ -830,3 +830,145 @@ export const getMfgBomFlatten = async (req: Request, res: Response, next: NextFu
     res.json(success({ items: flatList }, '获取制造BOM用量汇总成功'));
   } catch (err) { next(err); }
 };
+
+// ==================== 模具BOM映射 CRUD ====================
+
+export const getMouldBomMappings = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const item_number = (req.query.item_number as string) || '';
+    const mould_number = (req.query.mould_number as string) || '';
+
+    const conditions: string[] = [];
+    const replacements: any = {};
+    if (item_number) { conditions.push('m.item_number LIKE :item_number'); replacements.item_number = `%${item_number}%`; }
+    if (mould_number) { conditions.push('m.mould_number LIKE :mould_number'); replacements.mould_number = `%${mould_number}%`; }
+    const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM mfg_bom_mould_mapping m ${whereClause}`, { replacements });
+    const total = countResult[0].total;
+    const offset = (page - 1) * limit;
+    let items: any[] = [];
+    try {
+      const startRow = offset + 1;
+      const endRow = offset + limit;
+      const [result]: any = await sequelize.query(
+        `WITH Numbered AS (
+           SELECT m.id, m.item_number, m.mould_number, m.mfg_bom_number, m.is_default, m.approval_status, m.creation_date,
+                  h.mfg_bom_name, i.item_name, md.item_name as mould_name,
+                  ROW_NUMBER() OVER (ORDER BY m.item_number, m.mould_number) AS RowNum
+           FROM mfg_bom_mould_mapping m
+           LEFT JOIN mfg_bom_header h ON m.mfg_bom_number = h.mfg_bom_number
+           LEFT JOIN item_master i ON m.item_number = i.item_number
+           LEFT JOIN mould md ON m.mould_number = md.item_number
+           ${whereClause}
+         )
+         SELECT id, item_number, mould_number, mfg_bom_number, is_default, approval_status, creation_date, mfg_bom_name, item_name, mould_name
+         FROM Numbered
+         WHERE RowNum BETWEEN :startRow AND :endRow`,
+        { replacements: { ...replacements, startRow, endRow } }
+      );
+      items = result || [];
+    } catch (queryErr: any) {
+      console.error('模具BOM映射查询错误:', queryErr?.parent?.message || queryErr?.message || queryErr);
+      items = [];
+    }
+    res.json(success({ items, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } }, '获取模具BOM映射列表成功'));
+  } catch (err) { next(err); }
+};
+
+export const createMouldBomMapping = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { item_number, mould_number, mfg_bom_number, is_default } = req.body;
+    if (!item_number || !mould_number || !mfg_bom_number) {
+      res.status(400).json({ success: false, message: '产品编号、模具编号和制造BOM编号不能为空' });
+      return;
+    }
+    await sequelize.query(
+      `INSERT INTO mfg_bom_mould_mapping (item_number, mould_number, mfg_bom_number, is_default, approval_status) VALUES (:item_number, :mould_number, :mfg_bom_number, :is_default, '未审核')`,
+      { replacements: { item_number, mould_number, mfg_bom_number, is_default: is_default ? 1 : 0 } }
+    );
+    res.json(success(null, '创建模具BOM映射成功'));
+  } catch (err: any) {
+    const errMsg = err?.parent?.message || err?.original?.message || err?.message || '';
+    if (errMsg.includes('unique') || errMsg.includes('duplicate') || errMsg.includes('UNIQUE') || errMsg.includes('Duplicate') || errMsg.includes('idx_bom_mould_unique')) {
+      res.status(409).json({ success: false, message: '数据已存在：该产品与模具的组合映射已存在' });
+      return;
+    }
+    next(err);
+  }
+};
+
+export const updateMouldBomMapping = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { item_number, mould_number, mfg_bom_number, is_default } = req.body;
+    const [rows]: any = await sequelize.query(
+      `SELECT approval_status FROM mfg_bom_mould_mapping WHERE id = :id`,
+      { replacements: { id } }
+    );
+    if (rows.length && rows[0].approval_status === '已审核') {
+      res.status(403).json({ success: false, message: '已审核记录不能修改' });
+      return;
+    }
+    await sequelize.query(
+      `UPDATE mfg_bom_mould_mapping SET item_number = :item_number, mould_number = :mould_number, mfg_bom_number = :mfg_bom_number, is_default = :is_default WHERE id = :id`,
+      { replacements: { id, item_number, mould_number, mfg_bom_number, is_default: is_default ? 1 : 0 } }
+    );
+    res.json(success(null, '更新模具BOM映射成功'));
+  } catch (err) { next(err); }
+};
+
+export const deleteMouldBomMapping = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const [rows]: any = await sequelize.query(
+      `SELECT approval_status FROM mfg_bom_mould_mapping WHERE id = :id`,
+      { replacements: { id } }
+    );
+    if (rows.length && rows[0].approval_status === '已审核') {
+      res.status(403).json({ success: false, message: '已审核记录不能删除' });
+      return;
+    }
+    await sequelize.query(`DELETE FROM mfg_bom_mould_mapping WHERE id = :id`, { replacements: { id } });
+    res.json(success(null, '删除模具BOM映射成功'));
+  } catch (err) { next(err); }
+};
+
+export const approveMouldBomMapping = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    await sequelize.query(
+      `UPDATE mfg_bom_mould_mapping SET approval_status = '已审核' WHERE id = :id`,
+      { replacements: { id } }
+    );
+    res.json(success(null, '审核成功'));
+  } catch (err) { next(err); }
+};
+
+export const withdrawMouldBomMapping = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    await sequelize.query(
+      `UPDATE mfg_bom_mould_mapping SET approval_status = '未审核' WHERE id = :id`,
+      { replacements: { id } }
+    );
+    res.json(success(null, '撤销审核成功'));
+  } catch (err) { next(err); }
+};
+
+export const getMouldBomByItemAndMould = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { item_number, mould_number } = req.query;
+    if (!item_number || !mould_number) {
+      res.status(400).json({ success: false, message: '产品编号和模具编号不能为空' });
+      return;
+    }
+    const [rows]: any = await sequelize.query(
+      `SELECT m.*, h.mfg_bom_name FROM mfg_bom_mould_mapping m LEFT JOIN mfg_bom_header h ON m.mfg_bom_number = h.mfg_bom_number WHERE m.item_number = :item_number AND m.mould_number = :mould_number`,
+      { replacements: { item_number, mould_number } }
+    );
+    res.json(success({ mapping: rows[0] || null }, '查询模具BOM映射成功'));
+  } catch (err) { next(err); }
+};

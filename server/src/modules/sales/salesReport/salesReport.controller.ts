@@ -201,6 +201,105 @@ export const getReturnReasonDistribution = async (req: Request, res: Response, n
   } catch (err) { next(err); }
 };
 
+// ==================== 发货预警（未来N天） ====================
+export const getShippingWarning = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { page = 1, limit = 20, search = '', days = 3 } = req.query;
+    const pageNum = Number(page);
+    const pageSize = Number(limit);
+    const offset = (pageNum - 1) * pageSize;
+    const offsetEnd = offset + pageSize;
+    const parsed = Number(days);
+    const dayCount = Number.isFinite(parsed) ? parsed : 3;
+
+    let searchClause = '';
+    const replacements: any = { days: dayCount, offset, offsetEnd };
+
+    if (search) {
+      searchClause = ` AND (so.sales_order_number LIKE :search OR so.customer_name LIKE :search OR sod.item_number LIKE :search OR sod.item_name LIKE :search)`;
+      replacements.search = `%${search}%`;
+    }
+
+    const isOverdue = dayCount === -1;
+
+    const baseWhere = `
+      sod.status NOT IN (N'已完成', N'已取消')
+      AND sod.shipping_status NOT IN (N'全部发货', N'超额发货')
+      AND sod.promised_delivery_date IS NOT NULL
+      AND so.approval_status = N'已审批'
+      ${isOverdue
+        ? `AND CAST(sod.promised_delivery_date AS DATE) < CAST(GETDATE() AS DATE)`
+        : `AND CAST(sod.promised_delivery_date AS DATE) >= CAST(GETDATE() AS DATE)
+           AND CAST(sod.promised_delivery_date AS DATE) <= DATEADD(day, :days, CAST(GETDATE() AS DATE))`
+      }
+      ${searchClause}
+    `;
+
+    // KPI: 按模式返回不同统计维度
+    let kpi: any;
+    if (isOverdue) {
+      const [kpiRows]: any = await sequelize.query(`
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN DATEDIFF(day, CAST(sod.promised_delivery_date AS DATE), CAST(GETDATE() AS DATE)) = 0 THEN 1 ELSE 0 END) as today_count,
+          SUM(CASE WHEN DATEDIFF(day, CAST(sod.promised_delivery_date AS DATE), CAST(GETDATE() AS DATE)) = 1 THEN 1 ELSE 0 END) as overdue_1d,
+          SUM(CASE WHEN DATEDIFF(day, CAST(sod.promised_delivery_date AS DATE), CAST(GETDATE() AS DATE)) BETWEEN 2 AND 3 THEN 1 ELSE 0 END) as overdue_2_3d,
+          SUM(CASE WHEN DATEDIFF(day, CAST(sod.promised_delivery_date AS DATE), CAST(GETDATE() AS DATE)) > 3 THEN 1 ELSE 0 END) as overdue_3d_plus
+        FROM sales_order_detail sod
+        INNER JOIN sales_order so ON so.sales_order_number = sod.sales_order_number
+        WHERE ${baseWhere}
+      `, { replacements });
+      kpi = {
+        total: Number(kpiRows[0]?.total) || 0,
+        todayCount: Number(kpiRows[0]?.today_count) || 0,
+        tomorrowCount: Number(kpiRows[0]?.overdue_1d) || 0,
+        dayAfterCount: Number(kpiRows[0]?.overdue_2_3d) || 0,
+        overdue3dPlus: Number(kpiRows[0]?.overdue_3d_plus) || 0
+      };
+    } else {
+      const [kpiRows]: any = await sequelize.query(`
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN CAST(sod.promised_delivery_date AS DATE) = CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END) as today_count,
+          SUM(CASE WHEN CAST(sod.promised_delivery_date AS DATE) = DATEADD(day, 1, CAST(GETDATE() AS DATE)) THEN 1 ELSE 0 END) as tomorrow_count,
+          SUM(CASE WHEN CAST(sod.promised_delivery_date AS DATE) = DATEADD(day, 2, CAST(GETDATE() AS DATE)) THEN 1 ELSE 0 END) as day_after_count
+        FROM sales_order_detail sod
+        INNER JOIN sales_order so ON so.sales_order_number = sod.sales_order_number
+        WHERE ${baseWhere}
+      `, { replacements });
+      kpi = {
+        total: Number(kpiRows[0]?.total) || 0,
+        todayCount: Number(kpiRows[0]?.today_count) || 0,
+        tomorrowCount: Number(kpiRows[0]?.tomorrow_count) || 0,
+        dayAfterCount: Number(kpiRows[0]?.day_after_count) || 0
+      };
+    }
+
+    // 分页查询
+    const [items]: any = await sequelize.query(`
+      SELECT * FROM (
+        SELECT
+          so.sales_order_number, so.customer_number, so.customer_name, so.head_of_sales, so.order_date,
+          sod.id as detail_id, sod.line_number, sod.item_number, sod.item_name,
+          sod.specifications, sod.basic_unit, sod.order_quantity,
+          ISNULL(sod.shipped_quantity, 0) as shipped_quantity,
+          sod.order_quantity - ISNULL(sod.shipped_quantity, 0) as pending_quantity,
+          sod.shipping_status, sod.production_status, sod.status,
+          sod.promised_delivery_date,
+          DATEDIFF(day, CAST(GETDATE() AS DATE), CAST(sod.promised_delivery_date AS DATE)) as remaining_days,
+          ROW_NUMBER() OVER (ORDER BY sod.promised_delivery_date ASC, so.sales_order_number, sod.line_number) AS _row_num
+        FROM sales_order_detail sod
+        INNER JOIN sales_order so ON so.sales_order_number = sod.sales_order_number
+        WHERE ${baseWhere}
+      ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
+    `, { replacements });
+
+    const cleanItems = items.map((r: any) => { const { _row_num, ...rest } = r; return rest; });
+
+    res.json(success({ items: cleanItems, total: kpi.total, page: pageNum, limit: pageSize, kpi }));
+  } catch (err) { next(err); }
+};
+
 // ==================== 销售订单明细汇总 ====================
 export const getOrderSummary = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -275,6 +374,87 @@ export const getOrderSummary = async (req: Request, res: Response, next: NextFun
         ) returned_sub
         WHERE (ISNULL(shipped_sub.shipped_qty, 0) > 0 OR ISNULL(returned_sub.returned_qty, 0) > 0)
         ${searchClause}
+      ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
+    `, { replacements });
+
+    res.json(success({ items, total, page: pageNum, limit: pageSize }));
+  } catch (err) { next(err); }
+};
+
+// ==================== 销售发货按订单汇总表 ====================
+export const getShippingByOrderSummary = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { page = 1, limit = 20, search = '', start_date, end_date } = req.query;
+    const pageNum = Number(page);
+    const pageSize = Number(limit);
+    const offset = (pageNum - 1) * pageSize;
+    const offsetEnd = offset + pageSize;
+
+    let searchClause = '';
+    let dateClause = '';
+    const replacements: any = { offset, offsetEnd };
+
+    if (search) {
+      searchClause = ` AND (so.sales_order_number LIKE :search OR so.customer_name LIKE :search OR sod.item_number LIKE :search OR sod.item_name LIKE :search)`;
+      replacements.search = `%${search}%`;
+    }
+
+    if (start_date && end_date) {
+      dateClause = ` AND so.order_date >= :start_date AND so.order_date < DATEADD(day, 1, CAST(:end_date AS DATE))`;
+      replacements.start_date = start_date;
+      replacements.end_date = end_date;
+    }
+
+    // 计算总数
+    const [countResult]: any = await sequelize.query(`
+      SELECT COUNT(*) as total
+      FROM sales_order so
+      INNER JOIN sales_order_detail sod ON sod.sales_order_number = so.sales_order_number
+      WHERE so.approval_status = N'已审批'
+        AND sod.status NOT IN (N'已取消')
+        ${dateClause}
+        ${searchClause}
+    `, { replacements });
+
+    const total = Number(countResult[0]?.total) || 0;
+
+    // 分页查询
+    const [items]: any = await sequelize.query(`
+      SELECT * FROM (
+        SELECT
+          so.sales_order_number,
+          so.customer_name,
+          so.order_date,
+          sod.line_number,
+          sod.item_number,
+          sod.item_name,
+          sod.specifications,
+          sod.basic_unit,
+          sod.order_quantity,
+          ISNULL(shipped_sub.shipped_qty, 0) as shipped_qty,
+          ISNULL(returned_sub.returned_qty, 0) as returned_qty,
+          ISNULL(shipped_sub.shipped_qty, 0) - ISNULL(returned_sub.returned_qty, 0) as net_shipped_qty,
+          CASE WHEN sod.order_quantity = 0 THEN 0 ELSE CAST(ISNULL(shipped_sub.shipped_qty, 0) * 100.0 / sod.order_quantity AS DECIMAL(10,2)) END as ship_rate,
+          CASE WHEN ISNULL(shipped_sub.shipped_qty, 0) = 0 THEN 0 ELSE CAST(ISNULL(returned_sub.returned_qty, 0) * 100.0 / shipped_sub.shipped_qty AS DECIMAL(10,2)) END as return_rate,
+          ROW_NUMBER() OVER (ORDER BY so.order_date DESC, so.sales_order_number, sod.line_number) AS _row_num
+        FROM sales_order so
+        INNER JOIN sales_order_detail sod ON sod.sales_order_number = so.sales_order_number
+        OUTER APPLY (
+          SELECT SUM(sd.quantity) as shipped_qty
+          FROM shipping_order_detail sd
+          INNER JOIN shipping_order sh ON sh.shipping_order_number = sd.shipping_order_number
+          WHERE sd.sales_detail_id = sod.id
+        ) shipped_sub
+        OUTER APPLY (
+          SELECT SUM(rd.return_quantity) as returned_qty
+          FROM return_order_detail rd
+          INNER JOIN return_order ro ON ro.return_order_number = rd.return_order_number
+          WHERE rd.sales_detail_id = sod.id AND ro.status != N'已驳回'
+        ) returned_sub
+        WHERE so.approval_status = N'已审批'
+          AND sod.status NOT IN (N'已取消')
+          ${dateClause}
+          ${searchClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
 

@@ -152,11 +152,11 @@ async function migrate() {
         // 销售
         { name: '销售订单', code: 'sales-orders', parent_code: 'sales', menu_key: 'sales-orders', route: '/sales-orders', sort: 1 },
         { name: '销售预测', code: 'forecasts', parent_code: 'sales', menu_key: 'forecasts', route: '/forecasts', sort: 2 },
-        { name: '待发运', code: 'pending-shipments', parent_code: 'sales', menu_key: 'pending-shipments', route: '/pending-shipments', sort: 3 },
-        { name: '发货申请', code: 'shipping-requests', parent_code: 'sales', menu_key: 'shipping-requests', route: '/shipping-requests', sort: 4 },
+        { name: '待发货列表', code: 'pending-shipments', parent_code: 'order-management', menu_key: 'pending-shipments', route: '/pending-shipments', sort: 4 },
+        { name: '发货申请', code: 'shipping-requests', parent_code: 'sales', menu_key: 'shipping-requests', route: '/shipping-requests', sort: 5 },
         { name: '发货单', code: 'shipping-orders', parent_code: 'sales', menu_key: 'shipping-orders-list', route: '/shipping-orders-list', sort: 5 },
         { name: '退货单', code: 'return-orders', parent_code: 'sales', menu_key: 'return-orders', route: '/return-orders', sort: 6 },
-        { name: '销售报表', code: 'sales-report', parent_code: 'sales', menu_key: 'sales-report', route: '/sales-report', sort: 7 },
+        { name: '销售退货报表', code: 'sales-report', parent_code: 'sales', menu_key: 'sales-report', route: '/sales-report', sort: 7 },
         // 生产计划
         { name: 'MPS报表', code: 'mps-report', parent_code: 'planning', menu_key: 'mps-report', route: '/mps-report', sort: 1 },
         { name: '生产计划', code: 'plans', parent_code: 'planning', menu_key: 'plans', route: '/plans', sort: 2 },
@@ -199,7 +199,7 @@ async function migrate() {
         { name: 'OEE分析', code: 'equipment-oee', parent_code: 'equipment', menu_key: 'equipment-oee', route: '/equipment-oee', sort: 6 },
         // 主数据管理
         { name: '物料主数据', code: 'item-masters', parent_code: 'master-data', menu_key: 'item-masters', route: '/item-masters', sort: 1 },
-        { name: 'BOM管理', code: 'boms', parent_code: 'master-data', menu_key: 'boms', route: '/boms', sort: 2 },
+        { name: '设计BOM', code: 'boms', parent_code: 'master-data', menu_key: 'boms', route: '/boms', sort: 2 },
         { name: '工序管理', code: 'procedures', parent_code: 'master-data', menu_key: 'procedures', route: '/procedures', sort: 3 },
         { name: '工作中心', code: 'work-centers', parent_code: 'master-data', menu_key: 'work-centers', route: '/work-centers', sort: 4 },
         { name: '工艺路线', code: 'routing-masters', parent_code: 'master-data', menu_key: 'routing-masters', route: '/routing-masters', sort: 5 },

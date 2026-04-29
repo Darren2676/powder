@@ -6,7 +6,9 @@ import {
   getCustomerRanking,
   getProductRanking,
   getReturnReasonDistribution,
-  getOrderSummary
+  getOrderSummary,
+  getShippingWarning,
+  getShippingByOrderSummary
 } from './salesReport.controller';
 
 const router = Router();
@@ -17,5 +19,7 @@ router.get('/customer-ranking', authenticate, getCustomerRanking);
 router.get('/product-ranking', authenticate, getProductRanking);
 router.get('/return-reason', authenticate, getReturnReasonDistribution);
 router.get('/order-summary', authenticate, getOrderSummary);
+router.get('/shipping-warning', authenticate, getShippingWarning);
+router.get('/shipping-by-order-summary', authenticate, getShippingByOrderSummary);
 
 export default router;

@@ -8,10 +8,10 @@ import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { BusinessError } from '@/shared/errors/BusinessError';
 import { generateFromOrderCore } from '@/services/orderDispatch.service';
 
-const selectCols = 'process_task_number, production_order_number, production_number, process_route_number, step_number, item_number, item_name, specifications, basic_unit, planned_quantity, completed_quantity, standard_process_number, standard_process_name, work_center_number, work_center_name, process_material_input_number, process_material_input_quantity, process_material_input_unit, material_wastage_rate, excess_reporting_ratio, ingredient_addition_method, planned_start_time, planned_end_time, actual_start_time, actual_end_time, task_status, approval_status, remark, creation_date, creation_man';
+const selectCols = 'process_task_number, production_order_number, production_number, process_route_number, step_number, item_number, item_name, specifications, basic_unit, planned_quantity, completed_quantity, standard_process_number, standard_process_name, work_center_number, work_center_name, process_material_input_number, process_material_input_quantity, process_material_input_unit, material_wastage_rate, excess_reporting_ratio, ingredient_addition_method, planned_start_time, planned_end_time, actual_start_time, actual_end_time, task_status, inspect_status, inspect_type, inspect_plan_name, inspect_spec_name, inspector_number, inspector_name, attachment_info, technical_requirement, approval_status, remark, creation_date, creation_man';
 
-const exportFields = ['process_task_number', 'production_order_number', 'production_number', 'step_number', 'standard_process_number', 'standard_process_name', 'item_number', 'item_name', 'specifications', 'basic_unit', 'planned_quantity', 'completed_quantity', 'work_center_number', 'work_center_name', 'task_status', 'approval_status', 'remark'];
-const exportHeaders = ['工序任务编号', '生产单编号', '生产计划编号', '工序序号', '标准工序编号', '标准工序名称', '产品编号', '产品名称', '规格', '单位', '计划数量', '已完成数量', '工作中心编号', '工作中心名称', '任务状态', '审批状态', '备注'];
+const exportFields = ['process_task_number', 'production_order_number', 'production_number', 'step_number', 'standard_process_number', 'standard_process_name', 'item_number', 'item_name', 'specifications', 'basic_unit', 'planned_quantity', 'completed_quantity', 'work_center_number', 'work_center_name', 'task_status', 'inspect_status', 'inspect_type', 'inspect_plan_name', 'inspect_spec_name', 'inspector_number', 'inspector_name', 'attachment_info', 'technical_requirement', 'approval_status', 'remark'];
+const exportHeaders = ['工序任务编号', '生产单编号', '生产计划编号', '工序序号', '标准工序编号', '标准工序名称', '产品编号', '产品名称', '规格', '单位', '计划数量', '已完成数量', '工作中心编号', '工作中心名称', '任务状态', '检验状态', '检验类型', '检验方案', '检验规范', '检验人编号', '检验人', '附件信息', '技术要求', '审批状态', '备注'];
 
 // 获取列表
 export const getProcessTasks = async (req: Request, res: Response, next: NextFunction) => {
@@ -83,8 +83,8 @@ export const createProcessTask = async (req: Request, res: Response, next: NextF
     const now = dayjs().format('YYYY/MM/DD HH:mm');
 
     await sequelize.query(`
-      INSERT INTO process_task (process_task_number, production_order_number, production_number, process_route_number, step_number, item_number, item_name, specifications, basic_unit, planned_quantity, completed_quantity, standard_process_number, standard_process_name, work_center_number, work_center_name, process_material_input_number, process_material_input_quantity, process_material_input_unit, material_wastage_rate, excess_reporting_ratio, ingredient_addition_method, planned_start_time, planned_end_time, task_status, approval_status, remark, creation_date, creation_man, operator)
-      VALUES (:process_task_number, :production_order_number, :production_number, :process_route_number, :step_number, :item_number, :item_name, :specifications, :basic_unit, :planned_quantity, 0, :standard_process_number, :standard_process_name, :work_center_number, :work_center_name, :process_material_input_number, :process_material_input_quantity, :process_material_input_unit, :material_wastage_rate, :excess_reporting_ratio, :ingredient_addition_method, :planned_start_time, :planned_end_time, N'未开始', N'草稿', :remark, :creation_date, :creation_man, :operator)
+      INSERT INTO process_task (process_task_number, production_order_number, production_number, process_route_number, step_number, item_number, item_name, specifications, basic_unit, planned_quantity, completed_quantity, standard_process_number, standard_process_name, work_center_number, work_center_name, process_material_input_number, process_material_input_quantity, process_material_input_unit, material_wastage_rate, excess_reporting_ratio, ingredient_addition_method, planned_start_time, planned_end_time, inspector_number, inspector_name, attachment_info, technical_requirement, task_status, approval_status, remark, creation_date, creation_man, operator)
+      VALUES (:process_task_number, :production_order_number, :production_number, :process_route_number, :step_number, :item_number, :item_name, :specifications, :basic_unit, :planned_quantity, 0, :standard_process_number, :standard_process_name, :work_center_number, :work_center_name, :process_material_input_number, :process_material_input_quantity, :process_material_input_unit, :material_wastage_rate, :excess_reporting_ratio, :ingredient_addition_method, :planned_start_time, :planned_end_time, :inspector_number, :inspector_name, :attachment_info, :technical_requirement, N'未开始', N'草稿', :remark, :creation_date, :creation_man, :operator)
     `, {
       replacements: {
         process_task_number,
@@ -109,6 +109,10 @@ export const createProcessTask = async (req: Request, res: Response, next: NextF
         ingredient_addition_method: b.ingredient_addition_method || '',
         planned_start_time: b.planned_start_time || null,
         planned_end_time: b.planned_end_time || null,
+        inspector_number: b.inspector_number || '',
+        inspector_name: b.inspector_name || '',
+        attachment_info: b.attachment_info || '',
+        technical_requirement: b.technical_requirement || '',
         remark: b.remark || '',
         creation_date: now,
         creation_man: user?.username || '',
@@ -152,6 +156,10 @@ export const updateProcessTask = async (req: Request, res: Response, next: NextF
         ingredient_addition_method = :ingredient_addition_method,
         planned_start_time = :planned_start_time,
         planned_end_time = :planned_end_time,
+        inspector_number = :inspector_number,
+        inspector_name = :inspector_name,
+        attachment_info = :attachment_info,
+        technical_requirement = :technical_requirement,
         remark = :remark
       WHERE process_task_number = :id
     `, {
@@ -178,6 +186,10 @@ export const updateProcessTask = async (req: Request, res: Response, next: NextF
         ingredient_addition_method: b.ingredient_addition_method || '',
         planned_start_time: b.planned_start_time || null,
         planned_end_time: b.planned_end_time || null,
+        inspector_number: b.inspector_number || '',
+        inspector_name: b.inspector_name || '',
+        attachment_info: b.attachment_info || '',
+        technical_requirement: b.technical_requirement || '',
         remark: b.remark || ''
       }
     });
@@ -259,8 +271,8 @@ export const importProcessTasks = async (req: Request, res: Response, next: Next
         );
         if (existing[0].cnt > 0) continue; // skip duplicates
         await sequelize.query(`
-          INSERT INTO process_task (process_task_number, production_order_number, production_number, step_number, standard_process_number, standard_process_name, item_number, item_name, specifications, basic_unit, planned_quantity, completed_quantity, work_center_number, work_center_name, task_status, approval_status, remark, operator)
-          VALUES (:process_task_number, :production_order_number, :production_number, :step_number, :standard_process_number, :standard_process_name, :item_number, :item_name, :specifications, :basic_unit, :planned_quantity, 0, :work_center_number, :work_center_name, :task_status, :approval_status, :remark, :operator)
+          INSERT INTO process_task (process_task_number, production_order_number, production_number, step_number, standard_process_number, standard_process_name, item_number, item_name, specifications, basic_unit, planned_quantity, completed_quantity, work_center_number, work_center_name, inspector_number, inspector_name, attachment_info, technical_requirement, task_status, approval_status, remark, operator)
+          VALUES (:process_task_number, :production_order_number, :production_number, :step_number, :standard_process_number, :standard_process_name, :item_number, :item_name, :specifications, :basic_unit, :planned_quantity, 0, :work_center_number, :work_center_name, :inspector_number, :inspector_name, :attachment_info, :technical_requirement, :task_status, :approval_status, :remark, :operator)
         `, { replacements: { ...item, planned_quantity: item.planned_quantity || 0, task_status: item.task_status || '未开始', approval_status: item.approval_status || ORDER_STATUS.DRAFT, operator: item.operator || '' } });
         imported++;
       } catch (e) {}

@@ -21,6 +21,7 @@ async function migrate() {
       // 生产子菜单
       { name: '备料管理', code: 'normal-preparation', parent_code: 'production', menu_key: 'normal-preparation', icon: 'InboxOutlined', sort: 2 },
       { name: '在制管理', code: 'wip-management', parent_code: 'production', menu_key: 'wip-management', icon: 'SwapOutlined', sort: 3 },
+      { name: '报工管理', code: 'report-management', parent_code: 'production', menu_key: 'report-management', icon: 'FileDoneOutlined', sort: 4 },
       // 仓储子菜单
       { name: '成品仓', code: 'finished-goods-management', parent_code: 'warehouse', menu_key: 'finished-goods-management', icon: 'ContainerOutlined', sort: 1 },
       { name: '原料仓', code: 'material-warehouse-management', parent_code: 'warehouse', menu_key: 'material-warehouse-management', icon: 'ImportOutlined', sort: 2 },
@@ -86,12 +87,14 @@ async function migrate() {
       { name: '发货单明细', code: 'shipping-order-details', parent_code: 'detail-management', menu_key: 'shipping-order-details', route: '/shipping-order-details', sort: 2 },
       { name: '退货单明细', code: 'return-order-details', parent_code: 'detail-management', menu_key: 'return-order-details', route: '/return-order-details', sort: 3 },
       { name: '销售预测明细', code: 'forecast-details', parent_code: 'detail-management', menu_key: 'forecast-details', route: '/forecast-details', sort: 4 },
+      // 报表统计 (report-statistics)
+      { name: '发货预警', code: 'shipping-warning', parent_code: 'report-statistics', menu_key: 'shipping-warning', route: '/shipping-warning', sort: 2 },
       // MRP管理 (mrp-management)
       { name: 'MRP运算历史', code: 'mrp-history', parent_code: 'mrp-management', menu_key: 'mrp-history', route: '/mrp-history', sort: 1 },
       // 备料管理 (normal-preparation)
-      { name: '按工序备料', code: 'material-preparation-by-process', parent_code: 'normal-preparation', menu_key: 'material-preparation-by-process', route: '/material-preparation-by-process', sort: 2 },
-      { name: '生产备料', code: 'material-issue-page', parent_code: 'normal-preparation', menu_key: 'material-issue', route: '/material-issue', sort: 3 },
-      { name: '按工序领料', code: 'material-issue-by-process', parent_code: 'normal-preparation', menu_key: 'material-issue-by-process', route: '/material-issue-by-process', sort: 4 },
+      { name: '按工序备料请单', code: 'material-preparation-by-process', parent_code: 'normal-preparation', menu_key: 'material-preparation-by-process', route: '/material-preparation-by-process', sort: 2 },
+            // 注：原有 'material-issue-page' 重复菜单已移除，使用已存在的 permission_code='material-issue' 作为"按生产单备料"唯一菜单项（见下方 moves）
+            { name: '按工序备料', code: 'material-issue-by-process', parent_code: 'normal-preparation', menu_key: 'material-issue-by-process', route: '/material-issue-by-process', sort: 4 },
       // 在制管理 (wip-management)
       { name: 'WIP按生产单', code: 'wip-by-order', parent_code: 'wip-management', menu_key: 'wip-by-order', route: '/wip-by-order', sort: 1 },
       { name: 'WIP按工作中心', code: 'wip-by-work-center', parent_code: 'wip-management', menu_key: 'wip-by-work-center', route: '/wip-by-work-center', sort: 2 },
@@ -197,15 +200,22 @@ async function migrate() {
       // sales > order-management
       { code: 'sales-orders', new_parent_code: 'order-management', new_sort: 1 },
       { code: 'forecasts', new_parent_code: 'order-management', new_sort: 3 },
-      { code: 'shipping-requests', new_parent_code: 'order-management', new_sort: 4 },
-      { code: 'shipping-orders', new_parent_code: 'order-management', new_sort: 5 },
-      { code: 'return-orders', new_parent_code: 'order-management', new_sort: 6 },
+      { code: 'forecast-details', new_parent_code: 'order-management', new_sort: 4 },
+      { code: 'pending-shipments', new_parent_code: 'order-management', new_sort: 5 },
+      { code: 'shipping-requests', new_parent_code: 'order-management', new_sort: 6 },
+      { code: 'shipping-orders', new_parent_code: 'order-management', new_sort: 7 },
+      { code: 'return-orders', new_parent_code: 'order-management', new_sort: 8 },
       // sales > report-statistics
       { code: 'sales-report', new_parent_code: 'report-statistics', new_sort: 1 },
+      { code: 'shipping-warning', new_parent_code: 'report-statistics', new_sort: 2 },
       // production > normal-preparation
       { code: 'material-preparations', new_parent_code: 'normal-preparation', new_sort: 1 },
       // production > wip-management (existing material-issue)
       { code: 'material-issue', new_parent_code: 'normal-preparation', new_sort: 3 },
+      // production > report-management (报工管理)
+      { code: 'process-tasks', new_parent_code: 'report-management', new_sort: 1 },
+      { code: 'continuous-report', new_parent_code: 'report-management', new_sort: 2 },
+      { code: 'work-reports', new_parent_code: 'report-management', new_sort: 3 },
       // planning > mrp-management
       { code: 'mrp', new_parent_code: 'mrp-management', new_sort: 1 },
       // warehouse > finished-goods-management
@@ -229,7 +239,7 @@ async function migrate() {
       // quality > xhy-dev
       { code: 'batch-trace', new_parent_code: 'xhy-dev', new_sort: 7 },
       // finance: 只保留会计期间 (sales-prices和purchase-prices移走)
-      { code: 'sales-prices', new_parent_code: 'order-management', new_sort: 7 },
+      { code: 'sales-prices', new_parent_code: 'order-management', new_sort: 9 },
     ];
 
     for (const m of moves) {

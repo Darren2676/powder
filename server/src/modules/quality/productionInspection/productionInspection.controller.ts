@@ -178,6 +178,13 @@ export const completeInspection = async (req: Request, res: Response, next: Next
       }
     });
 
+    // 回写工序任务检验状态
+    const inspectStatus = result === '合格' ? '检验合格' : '检验不合格';
+    await sequelize.query(
+      `UPDATE process_task SET inspect_status = :inspectStatus WHERE process_task_number = :taskNo`,
+      { replacements: { inspectStatus, taskNo: record.process_task_number } }
+    );
+
     res.json(success({ inspection_result: result }, `检验完成，判定结果：${result}`));
   } catch (err) { next(err); }
 };
@@ -215,6 +222,21 @@ export const defectHandling = async (req: Request, res: Response, next: NextFunc
         await sequelize.query(`
           UPDATE production_inspection SET defect_handling = N'返修', rework_step_number = :reworkStep WHERE inspection_number = :id
         `, { replacements: { id, reworkStep }, transaction });
+
+        // 返修：目标工序状态回退
+        await sequelize.query(`
+          UPDATE process_task SET task_status = N'未开始', inspect_status = N'无需检', completed_quantity = 0
+          WHERE production_order_number = :orderNo AND step_number = :step
+        `, { replacements: { orderNo: record.production_order_number, step: reworkStep }, transaction });
+
+        // 返修：生产单回退为生产中
+        await sequelize.query(
+          `UPDATE production_order SET plan_status = N'生产中' WHERE production_order_number = :orderNo AND plan_status = N'已完成'`,
+          { replacements: { orderNo: record.production_order_number }, transaction }
+        );
+        // 回写销售订单
+        const { syncProductionStatus } = await import('@/services/salesOrderSync.service');
+        await syncProductionStatus(record.production_order_number, '生产中', transaction);
 
       } else if (handling === '报废') {
         const scrapType = b.scrap_type || '批量';
@@ -278,6 +300,12 @@ export const defectHandling = async (req: Request, res: Response, next: NextFunc
           UPDATE production_inspection SET defect_handling = N'报废', scrap_type = :scrapType, scrap_quantity = :scrapQty WHERE inspection_number = :id
         `, { replacements: { id, scrapType, scrapQty }, transaction });
 
+        // 报废：当前工序标记为已处理
+        await sequelize.query(
+          `UPDATE process_task SET inspect_status = N'已处理' WHERE process_task_number = :taskNo`,
+          { replacements: { taskNo: record.process_task_number }, transaction }
+        );
+
       } else if (handling === '让步接收') {
         const concessionQty = b.concession_quantity != null ? Number(b.concession_quantity) : unqualifiedQty;
 
@@ -290,6 +318,12 @@ export const defectHandling = async (req: Request, res: Response, next: NextFunc
             unqualified_quantity = CASE WHEN unqualified_quantity - :concessionQty < 0 THEN 0 ELSE unqualified_quantity - :concessionQty END
           WHERE inspection_number = :id
         `, { replacements: { id, concessionQty }, transaction });
+
+        // 让步接收：当前工序标记为已处理
+        await sequelize.query(
+          `UPDATE process_task SET inspect_status = N'已处理' WHERE process_task_number = :taskNo`,
+          { replacements: { taskNo: record.process_task_number }, transaction }
+        );
 
       } else {
         await transaction.rollback();

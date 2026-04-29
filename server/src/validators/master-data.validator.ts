@@ -171,12 +171,12 @@ export const validateUpdateMfgBom = validateBody([
 
 // 创建工艺路线
 export const validateCreateRoutingMaster = validateBody([
-  { field: 'routing_number', label: '工艺路线编号', required: true, maxLength: 50 },
+  { field: 'process_route_number', label: '工艺路线编号', required: true, maxLength: 50 },
 ]);
 
 // 更新工艺路线
 export const validateUpdateRoutingMaster = validateBody([
-  { field: 'routing_number', label: '工艺路线编号', required: true, maxLength: 50 },
+  { field: 'process_route_number', label: '工艺路线编号', required: true, maxLength: 50 },
 ]);
 
 // 创建客户物料对照

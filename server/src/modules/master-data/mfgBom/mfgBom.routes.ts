@@ -19,11 +19,27 @@ import {
   checkMfgBomHasBom,
   getMfgBomTree,
   getMfgBomFlatten,
-  importFromBom
+  importFromBom,
+  getMouldBomMappings,
+  createMouldBomMapping,
+  updateMouldBomMapping,
+  deleteMouldBomMapping,
+  getMouldBomByItemAndMould,
+  approveMouldBomMapping,
+  withdrawMouldBomMapping
 } from './mfgBom.controller';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
+
+// 模具BOM映射 (必须放在 /:id 通配路由之前)
+router.get('/mould-mappings', authenticate, getMouldBomMappings);
+router.post('/mould-mappings', authenticate, createMouldBomMapping);
+router.put('/mould-mappings/:id', authenticate, updateMouldBomMapping);
+router.delete('/mould-mappings/:id', authenticate, deleteMouldBomMapping);
+router.post('/mould-mappings/:id/approve', authenticate, approveMouldBomMapping);
+router.post('/mould-mappings/:id/withdraw', authenticate, withdrawMouldBomMapping);
+router.get('/mould-mappings/find', authenticate, getMouldBomByItemAndMould);
 
 // Header CRUD
 router.get('/', authenticate, getMfgBomHeaders);

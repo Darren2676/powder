@@ -12,11 +12,11 @@ async function fix() {
     console.log('Deleted duplicate: material-issue-page');
   }
 
-  // 2. 将原 material-issue 名称改为 生产备料（与路由对应）
+  // 2. 将原 material-issue 名称改为 按生产单备料（与路由对应）
   await sequelize.query(
-    `UPDATE permission SET permission_name = N'生产备料' WHERE permission_code = 'material-issue'`,
+    `UPDATE permission SET permission_name = N'按生产单备料' WHERE permission_code = 'material-issue'`,
   );
-  console.log('Renamed material-issue to 生产备料');
+  console.log('Renamed material-issue to 按生产单备料');
 
   // 3. 修复权限菜单管理的乱码
   await sequelize.query(
