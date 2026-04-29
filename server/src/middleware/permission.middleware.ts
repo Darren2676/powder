@@ -1,5 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import sequelize from '../config/database';
+import { createLogger } from '@/config/logger';
+
+const log = createLogger('permission');
 
 /**
  * 基于权限码的中间件
@@ -49,7 +52,7 @@ export const requirePermission = (permissionCode: string) => {
         message: '没有权限访问此资源'
       });
     } catch (err) {
-      console.error('Permission check error:', err);
+      log.error({ err, permissionCode, userId: req.user?.id }, 'Permission check error');
       return res.status(500).json({
         success: false,
         message: '权限校验异常'
@@ -106,7 +109,7 @@ export const requireMenuKey = (menuKey: string) => {
         message: '没有权限访问此页面'
       });
     } catch (err) {
-      console.error('MenuKey check error:', err);
+      log.error({ err, menuKey, userId: req.user?.id }, 'MenuKey check error');
       return res.status(500).json({
         success: false,
         message: '权限校验异常'
@@ -165,7 +168,7 @@ export const requireOperation = (pageCode: string, action: string) => {
         message: `没有${action === 'view' ? '查看' : action === 'create' ? '新增' : action === 'edit' ? '编辑' : action === 'delete' ? '删除' : action === 'approve' ? '审批' : action === 'export' ? '导出' : action === 'import' ? '导入' : action}权限`
       });
     } catch (err) {
-      console.error('Operation check error:', err);
+      log.error({ err, pageCode, action, userId: req.user?.id }, 'Operation check error');
       return res.status(500).json({
         success: false,
         message: '权限校验异常'

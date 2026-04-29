@@ -1,7 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
+import { createLogger } from '@/config/logger';
+
+const log = createLogger('error');
 
 export const errorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
-  console.error('错误:', err);
+  log.error({
+    err,
+    requestId: req.requestId,
+    method: req.method,
+    path: req.path,
+    userId: req.user?.id,
+  }, `未处理异常: ${err.message}`);
 
   if (err.name === 'SequelizeValidationError') {
     return res.status(400).json({

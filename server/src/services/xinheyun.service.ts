@@ -1,5 +1,8 @@
 import axios from 'axios';
 import type { AxiosInstance } from 'axios';
+import { createLogger } from '@/config/logger';
+
+const log = createLogger('xinheyun');
 
 /**
  * 新核云开放平台 API 服务
@@ -58,7 +61,7 @@ export async function getAccessToken(): Promise<string> {
     // accessTokenExpireIn 为秒数
     tokenExpireAt = now + (entity.accessTokenExpireIn || 7200) * 1000;
 
-    console.log(`[新核云] Token 获取成功, 有效期 ${entity.accessTokenExpireIn}s`);
+    log.info({ expiresIn: entity.accessTokenExpireIn }, 'Token获取成功');
     return cachedToken;
   } catch (err: any) {
     cachedToken = '';
@@ -182,7 +185,7 @@ export async function fetchAllInspectRecords(
 
   while (true) {
     batchIndex++;
-    console.log(`[新核云] 分批查询检验记录 - 第${batchIndex}批, boundaryIds=${JSON.stringify(boundaryIds).slice(0, 100)}`);
+    log.debug({ batchIndex, boundaryIds: boundaryIds.slice(0, 5) }, '分批查询检验记录');
 
     const result = await searchAfterInspectRecords({
       conditions,
@@ -194,7 +197,7 @@ export async function fetchAllInspectRecords(
     const list = entity.list || [];
 
     if (list.length === 0) {
-      console.log(`[新核云] 第${batchIndex}批返回0条，查询完毕`);
+      log.debug({ batchIndex }, '检验记录返回0条，查询完毕');
       break;
     }
 
@@ -204,22 +207,22 @@ export async function fetchAllInspectRecords(
       await onBatch(list, batchIndex, allRecords.length);
     }
 
-    console.log(`[新核云] 第${batchIndex}批获取 ${list.length} 条，累计 ${allRecords.length}`);
+    log.debug({ batchIndex, count: list.length, total: allRecords.length }, '检验记录批次获取');
 
     // 更新游标
     boundaryIds = entity.boundaryIds || [];
 
     // 终止条件：达到上限 / 无更多游标 / 返回数量小于请求数量（最后一批）
     if (allRecords.length >= maxRecords) {
-      console.log(`[新核云] 已达到最大获取上限 ${maxRecords} 条`);
+      log.info({ maxRecords }, '已达最大获取上限');
       break;
     }
     if (boundaryIds.length === 0 || boundaryIds.every(id => !id)) {
-      console.log(`[新核云] boundaryIds 为空，查询完毕`);
+      log.debug('boundaryIds为空，查询完毕');
       break;
     }
     if (list.length < effectiveBatchSize) {
-      console.log(`[新核云] 返回数量(${list.length})小于请求数量(${effectiveBatchSize})，查询完毕`);
+      log.debug({ returned: list.length, requested: effectiveBatchSize }, '返回数量小于请求数量，查询完毕');
       break;
     }
 
@@ -359,7 +362,7 @@ export async function fetchAllInspectLines(
 
   while (true) {
     batchIndex++;
-    console.log(`[新核云] 分批查询检验明细行 - 第${batchIndex}批`);
+    log.debug({ batchIndex }, '分批查询检验明细行');
 
     const result = await searchAfterInspectLines({
       conditions,
@@ -371,7 +374,7 @@ export async function fetchAllInspectLines(
     const list = entity.list || [];
 
     if (list.length === 0) {
-      console.log(`[新核云] 第${batchIndex}批返回0条，查询完毕`);
+      log.debug({ batchIndex }, '检验明细行返回0条，查询完毕');
       break;
     }
 
@@ -381,20 +384,20 @@ export async function fetchAllInspectLines(
       await onBatch(list, batchIndex, allRecords.length);
     }
 
-    console.log(`[新核云] 第${batchIndex}批获取 ${list.length} 条，累计 ${allRecords.length}`);
+    log.debug({ batchIndex, count: list.length, total: allRecords.length }, '检验明细行批次获取');
 
     boundaryIds = entity.boundaryIds || [];
 
     if (allRecords.length >= maxRecords) {
-      console.log(`[新核云] 已达到最大获取上限 ${maxRecords} 条`);
+      log.info({ maxRecords }, '明细行已达最大获取上限');
       break;
     }
     if (boundaryIds.length === 0 || boundaryIds.every((id: string) => !id)) {
-      console.log(`[新核云] boundaryIds 为空，查询完毕`);
+      log.debug('明细行boundaryIds为空，查询完毕');
       break;
     }
     if (list.length < effectiveBatchSize) {
-      console.log(`[新核云] 返回数量(${list.length})小于请求数量(${effectiveBatchSize})，查询完毕`);
+      log.debug({ returned: list.length, requested: effectiveBatchSize }, '明细行返回数量小于请求数量，查询完毕');
       break;
     }
 

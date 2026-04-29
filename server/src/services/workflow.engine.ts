@@ -8,6 +8,9 @@ import { Transaction } from 'sequelize'
 import { executeModuleHook } from './workflow.hooks'
 import { withTransaction } from '@/shared/db/withTransaction'
 import { BusinessError } from '@/shared/errors/BusinessError'
+import { createLogger } from '@/config/logger'
+
+const log = createLogger('workflow')
 
 // Module configuration - same pattern as approval.controller.ts
 export const moduleConfig: Record<string, { tableName: string; primaryKey: string; displayName: string }> = {
@@ -211,7 +214,7 @@ export function evaluateCondition(expression: string | null, businessData: Recor
   }
 
   if (!field || !operator) {
-    console.warn(`Invalid condition expression: ${expression}`)
+    log.warn({ expression }, 'Invalid condition expression');
     return true // Invalid expression = pass through
   }
 
@@ -345,7 +348,7 @@ export async function startWorkflow(
     if (error instanceof BusinessError) {
       return { instanceId: 0, success: false, message: error.message }
     }
-    console.error('startWorkflow error:', error)
+    log.error({ error }, 'startWorkflow error');
     return { instanceId: 0, success: false, message: error.message || '启动流程失败' }
   }
 }
@@ -406,7 +409,7 @@ export async function advanceWorkflow(
     }
 
     if (!nextEdge) {
-      console.warn(`No matching edge found from node ${fromNodeId}`)
+      log.warn({ fromNodeId }, 'No matching edge found');
       return
     }
 
@@ -442,7 +445,7 @@ export async function advanceWorkflow(
         break
 
       default:
-        console.warn(`Unknown node type: ${nextNodeType}`)
+        log.warn({ nextNodeType }, 'Unknown node type');
     }
 
     if (ownTransaction) {
@@ -488,7 +491,7 @@ export async function createTasksForNode(
 
   if (handlers.length === 0) {
     // No handlers - auto-advance
-    console.warn(`No handlers for node ${nodeId}, auto-advancing`)
+    log.warn({ nodeId }, 'No handlers, auto-advancing');
     await sequelize.query(`
       INSERT INTO workflow_history (instance_id, node_id, node_name, action, operator_id, operator_name, remark, created_at)
       VALUES (:instanceId, :nodeId, :nodeName, N'auto_complete', 0, N'System', N'无处理人，自动跳过', GETDATE())
@@ -657,7 +660,7 @@ export async function processTask(
     if (error instanceof BusinessError) {
       return { success: false, message: error.message }
     }
-    console.error('processTask error:', error)
+    log.error({ error }, 'processTask error');
     return { success: false, message: error.message || '处理失败' }
   }
 }
@@ -811,7 +814,7 @@ async function completeWorkflow(
       await executeModuleHook(instance.module, 'onRejected', instance.record_id)
     }
   } catch (error) {
-    console.error('Module hook execution failed:', error)
+    log.error({ error }, 'Module hook execution failed')
     // Don't fail the transaction for hook errors
   }
 }
@@ -888,7 +891,7 @@ export async function withdrawWorkflow(
     if (error instanceof BusinessError) {
       return { success: false, message: error.message }
     }
-    console.error('withdrawWorkflow error:', error)
+    log.error({ error }, 'withdrawWorkflow error');
     return { success: false, message: error.message || '撤回失败' }
   }
 }
@@ -1016,7 +1019,7 @@ async function returnToStart(
   try {
     await executeModuleHook(instance.module, 'onRejected', instance.record_id)
   } catch (error) {
-    console.error('Module hook execution failed:', error)
+    log.error({ error, module: instance.module }, 'Module hook execution failed (withdraw)')
   }
 }
 

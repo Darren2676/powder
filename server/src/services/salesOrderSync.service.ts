@@ -4,6 +4,9 @@
  * 以及 sales_order.order_status 的自动汇总
  */
 import sequelize from '@/config/database';
+import { createLogger } from '@/config/logger';
+
+const log = createLogger('salesOrderSync');
 
 // ==================== 1. 退货状态同步 ====================
 export const syncReturnStatus = async (detailId: number, transaction: any): Promise<void> => {
@@ -86,7 +89,7 @@ export const syncProductionStatus = async (
       { replacements: { status: newStatus, son: source_order_number, ln: source_line_number }, ...txOpt }
     );
   } catch (e) {
-    console.log('[syncProductionStatus] 跳过:', (e as Error).message);
+    log.warn({ error: (e as Error).message }, 'syncProductionStatus跳过');
   }
 };
 
@@ -168,6 +171,6 @@ export const syncOrderHeaderStatus = async (salesOrderNumber: string, transactio
       );
     }
   } catch (e) {
-    console.log('[syncOrderHeaderStatus] 跳过:', (e as Error).message);
+    log.warn({ error: (e as Error).message }, 'syncOrderHeaderStatus跳过');
   }
 };

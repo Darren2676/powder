@@ -12,6 +12,7 @@ import qualityRoutes from '../modules/quality';
 import financeRoutes from '../modules/finance';
 import integrationRoutes from '../modules/integration';
 import equipmentRoutes from '../modules/equipment';
+import uploadRoutes from '../modules/common/upload.routes';
 
 const router = Router();
 
@@ -26,5 +27,6 @@ router.use(qualityRoutes);
 router.use(financeRoutes);
 router.use(integrationRoutes);
 router.use(equipmentRoutes);
+router.use(uploadRoutes);
 
 export default router;

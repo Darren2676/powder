@@ -4,6 +4,9 @@
  */
 import sequelize from '@/config/database'
 import { generateLinesideTxnNumber } from './documentNumber.service'
+import { createLogger } from '@/config/logger'
+
+const log = createLogger('linesideMovement')
 
 // ==================== 线边物流记录 ====================
 
@@ -135,7 +138,7 @@ export const logWorkReportLinesideMovement = async (
       }, transaction);
     }
   } catch (err) {
-    console.error('[WIP] logWorkReportLinesideMovement error:', err);
+    log.error({ err }, 'logWorkReportLinesideMovement error');
   }
 };
 
@@ -212,6 +215,6 @@ export const logWorkReportReverseLinesideMovement = async (
       }, transaction);
     }
   } catch (err) {
-    console.error('[WIP] logWorkReportReverseLinesideMovement error:', err);
+    log.error({ err }, 'logWorkReportReverseLinesideMovement error');
   }
 };

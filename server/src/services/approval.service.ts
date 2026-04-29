@@ -11,6 +11,9 @@ import { hasActiveWorkflow, startWorkflow } from '@/services/workflow.engine';
 import { onWorkReportApproved, onWorkReportReversed } from '@/services/workReport.service';
 import { consumeForecastOnOrderApproval, recoverForecastOnOrderReversal } from '@/services/forecast.service';
 import { withTransaction } from '@/shared/db/withTransaction';
+import { createLogger } from '@/config/logger';
+
+const log = createLogger('approval');
 
 // ==================== Module Registry ====================
 const moduleConfig: Record<string, { tableName: string; primaryKey: string; displayName: string }> = {
@@ -109,7 +112,7 @@ export const dispatchApprovalCallback = async (
 
   // Module not registered — log for discoverability
   if (!handlers) {
-    console.log(`[ApprovalCallback] Module '${module}' has no registered handlers (action=${action}, record=${recordId})`);
+    log.debug({ module, action, recordId }, 'Module has no registered handlers');
     return;
   }
 
@@ -124,10 +127,10 @@ export const dispatchApprovalCallback = async (
     await callback(recordId);
     const elapsed = Date.now() - startTime;
     if (elapsed > 100) {
-      console.warn(`[ApprovalCallback] Slow callback: ${module}.${action} took ${elapsed}ms for record ${recordId}`);
+      log.warn({ module, action, recordId, elapsed }, 'Slow callback');
     }
   } catch (e) {
-    console.error(`[ApprovalCallback] FAILED: ${module}.${action} for record ${recordId}:`, e);
+    log.error({ module, action, recordId, e }, 'Callback failed');
   }
 };
 
@@ -448,7 +451,7 @@ export const batchSubmitCore = async (params: {
           { replacements: { user_id: mgr.id, title: `${config.displayName}批量待审批`, content: `${username} 批量提交了 ${results.succeeded.length} 条${config.displayName}的审批申请` } }
         );
       }
-    } catch (e) { console.error('批量提交通知失败:', e); }
+    } catch (e) { log.error({ error: e }, '批量提交通知失败'); }
   }
 
   return results;
