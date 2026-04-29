@@ -1,0 +1,332 @@
+import { Request, Response, NextFunction } from 'express';
+import sequelize from '../../../config/database';
+import { success } from '../../../utils/response.util';
+import { exportToExcel } from '../../../utils/excel.util';
+import { generateOutsourcingIssueNumber } from '@/services/documentNumber.service';
+import dayjs from 'dayjs';
+import { ORDER_STATUS } from '@/shared/constants/statuses';
+
+// Re-export from service for backward compatibility
+export { generateOutsourcingIssueNumber } from '@/services/documentNumber.service';
+
+// ==================== 列表 ====================
+export const getOutsourcingIssues = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const search = (req.query.search as string) || '';
+    const status = (req.query.status as string) || '';
+
+    const conditions: string[] = [];
+    const replacements: any = {};
+
+    if (search) {
+      conditions.push(`(omi.issue_number LIKE :search OR omi.outsourcing_order_number LIKE :search OR omid.item_number LIKE :search OR omid.item_name LIKE :search)`);
+      replacements.search = `%${search}%`;
+    }
+    if (status) { conditions.push(`omi.status = :status`); replacements.status = status; }
+
+    const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM outsourcing_material_issue omi LEFT JOIN outsourcing_material_issue_detail omid ON omi.issue_number = omid.issue_number ${whereClause}`, { replacements });
+    const total = countResult[0].total;
+    const offset = (page - 1) * limit;
+
+    const [items]: any = await sequelize.query(
+      `SELECT * FROM (SELECT omi.*, ROW_NUMBER() OVER (ORDER BY omi.creation_date DESC, omi.issue_number DESC) AS _row_num FROM outsourcing_material_issue omi ${whereClause}) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd`,
+      { replacements: { ...replacements, offset, offsetEnd: offset + limit } }
+    );
+    const cleanItems = items.map((item: any) => { const { _row_num, ...rest } = item; return rest; });
+
+    res.json(success({ items: cleanItems, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } }, '获取委外发料单列表成功'));
+  } catch (err) { next(err); }
+};
+
+// ==================== 详情（含明细） ====================
+export const getOutsourcingIssueDetail = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const [rows]: any = await sequelize.query(`SELECT * FROM outsourcing_material_issue WHERE issue_number = :id`, { replacements: { id } });
+    if (!rows.length) { res.status(404).json({ success: false, message: '委外发料单不存在' }); return; }
+
+    const [details]: any = await sequelize.query(
+      `SELECT * FROM outsourcing_material_issue_detail WHERE issue_number = :id ORDER BY line_number`,
+      { replacements: { id } }
+    );
+
+    res.json(success({ ...rows[0], details }, '获取委外发料单详情成功'));
+  } catch (err) { next(err); }
+};
+
+// ==================== 创建 ====================
+export const createOutsourcingIssue = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const b = req.body;
+    if (!b.outsourcing_order_number) { res.status(400).json({ success: false, message: '委外订单号不能为空' }); return; }
+
+    // 校验委外订单状态
+    const [orderCheck]: any = await sequelize.query(
+      `SELECT approval_status, order_status, planned_quantity FROM outsourcing_order WHERE outsourcing_order_number = :id`,
+      { replacements: { id: b.outsourcing_order_number } }
+    );
+    if (!orderCheck.length) { res.status(404).json({ success: false, message: '委外订单不存在' }); return; }
+    if (orderCheck[0].approval_status !== '已审批') { res.status(403).json({ success: false, message: '委外订单未审批，不能发料' }); return; }
+
+    const now = dayjs().format('YYYY/MM/DD HH:mm');
+    const username = (req as any).user?.username || '';
+
+    const transaction = await sequelize.transaction();
+    try {
+      const issueNumber = await generateOutsourcingIssueNumber(transaction);
+
+      await sequelize.query(`
+        INSERT INTO outsourcing_material_issue (
+          issue_number, outsourcing_order_number, issue_date,
+          warehouse_number, warehouse_name, handler,
+          status, remark, creation_date, creation_man
+        ) VALUES (
+          :issueNumber, :outsourcing_order_number, :issue_date,
+          :warehouse_number, :warehouse_name, :handler,
+          N'草稿', :remark, :creation_date, :creation_man
+        )
+      `, {
+        replacements: {
+          issueNumber,
+          outsourcing_order_number: b.outsourcing_order_number,
+          issue_date: b.issue_date || now.split(' ')[0],
+          warehouse_number: b.warehouse_number || '',
+          warehouse_name: b.warehouse_name || '',
+          handler: b.handler || '',
+          remark: b.remark || '',
+          creation_date: now,
+          creation_man: username
+        },
+        transaction
+      });
+
+      // 插入明细行
+      const details = b.details || [];
+      for (let i = 0; i < details.length; i++) {
+        const d = details[i];
+        await sequelize.query(`
+          INSERT INTO outsourcing_material_issue_detail (
+            issue_number, line_number, item_number, item_name,
+            specifications, batch_number, issued_quantity, unit, remark
+          ) VALUES (
+            :issueNumber, :line_number, :item_number, :item_name,
+            :specifications, :batch_number, :issued_quantity, :unit, :remark
+          )
+        `, {
+          replacements: {
+            issueNumber,
+            line_number: (i + 1) * 10,
+            item_number: d.item_number || '',
+            item_name: d.item_name || '',
+            specifications: d.specifications || '',
+            batch_number: d.batch_number || '',
+            issued_quantity: d.issued_quantity || 0,
+            unit: d.unit || '',
+            remark: d.remark || ''
+          },
+          transaction
+        });
+      }
+
+      await transaction.commit();
+      res.json(success({ issue_number: issueNumber }, '创建委外发料单成功'));
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
+    }
+  } catch (err) { next(err); }
+};
+
+// ==================== 更新 ====================
+export const updateOutsourcingIssue = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const b = req.body;
+
+    const [check]: any = await sequelize.query(`SELECT status FROM outsourcing_material_issue WHERE issue_number = :id`, { replacements: { id } });
+    if (!check.length) { res.status(404).json({ success: false, message: '委外发料单不存在' }); return; }
+    if (check[0].status !== '草稿') { res.status(403).json({ success: false, message: '非草稿状态不允许编辑' }); return; }
+
+    const transaction = await sequelize.transaction();
+    try {
+      await sequelize.query(`
+        UPDATE outsourcing_material_issue SET
+          issue_date = :issue_date, warehouse_number = :warehouse_number, warehouse_name = :warehouse_name,
+          handler = :handler, remark = :remark
+        WHERE issue_number = :id
+      `, {
+        replacements: {
+          id,
+          issue_date: b.issue_date,
+          warehouse_number: b.warehouse_number,
+          warehouse_name: b.warehouse_name,
+          handler: b.handler,
+          remark: b.remark || ''
+        },
+        transaction
+      });
+
+      // 重写明细行
+      await sequelize.query(`DELETE FROM outsourcing_material_issue_detail WHERE issue_number = :id`, { replacements: { id }, transaction });
+
+      const details = b.details || [];
+      for (let i = 0; i < details.length; i++) {
+        const d = details[i];
+        await sequelize.query(`
+          INSERT INTO outsourcing_material_issue_detail (
+            issue_number, line_number, item_number, item_name,
+            specifications, batch_number, issued_quantity, unit, remark
+          ) VALUES (
+            :issueNumber, :line_number, :item_number, :item_name,
+            :specifications, :batch_number, :issued_quantity, :unit, :remark
+          )
+        `, {
+          replacements: {
+            issueNumber: id,
+            line_number: (i + 1) * 10,
+            item_number: d.item_number || '',
+            item_name: d.item_name || '',
+            specifications: d.specifications || '',
+            batch_number: d.batch_number || '',
+            issued_quantity: d.issued_quantity || 0,
+            unit: d.unit || '',
+            remark: d.remark || ''
+          },
+          transaction
+        });
+      }
+
+      await transaction.commit();
+      res.json(success(null, '更新委外发料单成功'));
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
+    }
+  } catch (err) { next(err); }
+};
+
+// ==================== 删除 ====================
+export const deleteOutsourcingIssue = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const [check]: any = await sequelize.query(`SELECT status FROM outsourcing_material_issue WHERE issue_number = :id`, { replacements: { id } });
+    if (!check.length) { res.status(404).json({ success: false, message: '委外发料单不存在' }); return; }
+    if (check[0].status !== '草稿') { res.status(403).json({ success: false, message: '非草稿状态不允许删除' }); return; }
+
+    const transaction = await sequelize.transaction();
+    try {
+      await sequelize.query(`DELETE FROM outsourcing_material_issue_detail WHERE issue_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM outsourcing_material_issue WHERE issue_number = :id`, { replacements: { id }, transaction });
+      await transaction.commit();
+      res.json(success(null, '删除委外发料单成功'));
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
+    }
+  } catch (err) { next(err); }
+};
+
+// ==================== 审核 ====================
+export const approveIssue = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const [check]: any = await sequelize.query(`SELECT status FROM outsourcing_material_issue WHERE issue_number = :id`, { replacements: { id } });
+    if (!check.length) { res.status(404).json({ success: false, message: '委外发料单不存在' }); return; }
+    if (check[0].status !== '草稿') { res.status(403).json({ success: false, message: '只能审核草稿状态的发料单' }); return; }
+
+    await sequelize.query(`UPDATE outsourcing_material_issue SET status = N'已审核' WHERE issue_number = :id`, { replacements: { id } });
+    res.json(success(null, '审核成功'));
+  } catch (err) { next(err); }
+};
+
+// ==================== 确认发料（扣减库存） ====================
+export const confirmIssue = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    
+    const [check]: any = await sequelize.query(`SELECT * FROM outsourcing_material_issue WHERE issue_number = :id`, { replacements: { id } });
+    if (!check.length) { res.status(404).json({ success: false, message: '委外发料单不存在' }); return; }
+    if (check[0].status !== '已审核') { res.status(403).json({ success: false, message: '只能确认已审核的发料单' }); return; }
+
+    const [details]: any = await sequelize.query(`SELECT * FROM outsourcing_material_issue_detail WHERE issue_number = :id`, { replacements: { id } });
+
+    const transaction = await sequelize.transaction();
+    try {
+      // 扣减库存
+      for (const d of details) {
+        await sequelize.query(`
+          UPDATE inventory 
+          SET quantity = quantity - :issued_qty,
+              last_update_date = GETDATE()
+          WHERE warehouse_number = :warehouse 
+            AND item_number = :item_number
+            AND batch_number = :batch_number
+        `, {
+          replacements: {
+            issued_qty: d.issued_quantity,
+            warehouse: check[0].warehouse_number,
+            item_number: d.item_number,
+            batch_number: d.batch_number || ''
+          },
+          transaction
+        });
+      }
+
+      // 更新发料单状态
+      await sequelize.query(`UPDATE outsourcing_material_issue SET status = N'已发料' WHERE issue_number = :id`, { replacements: { id }, transaction });
+
+      // 更新委外订单发料状态
+      const [orderCheck]: any = await sequelize.query(
+        `SELECT issued_quantity, planned_quantity FROM outsourcing_order WHERE outsourcing_order_number = :orderNumber`,
+        { replacements: { orderNumber: check[0].outsourcing_order_number } }
+      );
+      
+      if (orderCheck.length) {
+        const newIssuedQty = parseFloat(orderCheck[0].issued_quantity || 0) + details.reduce((sum: number, d: any) => sum + parseFloat(d.issued_quantity || 0), 0);
+        const plannedQty = parseFloat(orderCheck[0].planned_quantity || 0);
+        const issueStatus = newIssuedQty >= plannedQty ? '已发料' : '部分发料';
+        
+        await sequelize.query(`
+          UPDATE outsourcing_order 
+          SET issued_quantity = :issuedQty, issue_status = :issueStatus
+          WHERE outsourcing_order_number = :orderNumber
+        `, {
+          replacements: {
+            issuedQty: newIssuedQty,
+            issueStatus,
+            orderNumber: check[0].outsourcing_order_number
+          },
+          transaction
+        });
+      }
+
+      await transaction.commit();
+      res.json(success(null, '发料确认成功，库存已扣减'));
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
+    }
+  } catch (err) { next(err); }
+};
+
+// ==================== 导出 ====================
+const exportFields = ['issue_number', 'outsourcing_order_number', 'issue_date', 'warehouse_name', 'handler', 'status', 'remark', 'creation_date', 'creation_man'];
+const exportHeaderLabels = ['发料单号', '委外订单号', '发料日期', '发料仓库', '经办人', '状态', '备注', '创建日期', '创建人'];
+
+export const exportOutsourcingIssues = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const search = (req.query.search as string) || '';
+    let whereClause = '';
+    const replacements: any = {};
+    if (search) {
+      whereClause = `WHERE omi.issue_number LIKE :search OR omi.outsourcing_order_number LIKE :search`;
+      replacements.search = `%${search}%`;
+    }
+    const [items]: any = await sequelize.query(`SELECT omi.* FROM outsourcing_material_issue omi ${whereClause} ORDER BY omi.creation_date DESC`, { replacements });
+    const format = (req.query.format as string) === 'xls' ? 'xls' : 'xlsx';
+    exportToExcel(items, exportFields, exportHeaderLabels, 'outsourcing_material_issues', res, format);
+  } catch (err) { next(err); }
+};

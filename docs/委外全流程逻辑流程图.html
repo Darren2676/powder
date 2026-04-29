@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>委外全流程逻辑流程图 - 睿信橡胶密封件MES系统</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+  .page { max-width: 1200px; margin: 0 auto; padding: 32px; background: #fff; min-height: 100vh; }
+  h1 { text-align: center; font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 20px; color: #1a1a2e; margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  .intro { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; padding: 16px; margin-bottom: 24px; font-size: 14px; }
+  .mermaid { text-align: center; margin: 16px 0; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>委外全流程逻辑流程图</h1>
+<div class="subtitle">睿信橡胶密封件MES系统 | 委外管理完整业务链路</div>
+
+<div class="intro">
+  <strong>文档说明：</strong>本文档完整展示了委外管理的全流程，包括委外申请、委外订单、委外发料、委外收回、委外质检、委外结算等核心环节。支持工序委外、产品委外、劳务委外三种模式。
+</div>
+
+<!-- ==================== 一、委外全流程总览 ==================== -->
+<h2>一、委外全流程总览</h2>
+<div class="mermaid">
+graph TB
+    subgraph 需求来源
+        PO[生产单]
+        PT[工序任务]
+    end
+
+    subgraph 委外申请
+        OR[委外申请<br/>outsourcing_req]
+        ORD[申请明细<br/>outsourcing_req_detail]
+    end
+
+    subgraph 委外订单
+        OO[委外订单<br/>outsourcing_order]
+    end
+
+    subgraph 委外执行
+        OMI[委外发料<br/>outsourcing_material_issue]
+        ORC[委外收回<br/>outsourcing_receipt]
+        OQC[委外质检<br/>outsourcing_inspection]
+    end
+
+    subgraph 委外结算
+        OS[委外结算<br/>outsourcing_settlement]
+    end
+
+    subgraph 库存管理
+        INV[库存更新]
+    end
+
+    PO -->|工序委外| PT
+    PT -->|创建| OR
+    OR -->|包含| ORD
+    ORD -->|转单| OO
+    OO -->|审批后| OMI
+    OMI -->|发料确认| INV
+    OO -->|供应商加工| ORC
+    ORC -->|审核| OQC
+    OQC -->|合格| OS
+    OQC -->|不合格| ND[不合格品处理]
+    OS -->|付款| FIN[财务系统]
+    ORC -->|入库| INV
+</div>
+
+<div class="note">
+  <strong>说明：</strong>委外流程从生产单的工序任务开始，经过申请、订单、发料、收回、质检，最终完成结算。全流程与库存系统联动。
+</div>
+
+<!-- ==================== 二、委外订单状态流转 ==================== -->
+<h2>二、委外订单状态流转</h2>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 草稿: 创建订单
+    草稿 --> 待发出: 审批通过
+    草稿 --> 草稿: 审批不通过
+    待发出 --> 已发出: 发料确认
+    已发出 --> 部分收回: 第一批收回
+    部分收回 --> 已收回: 全部收回完成
+    已发出 --> 质检中: 收回审核
+    部分收回 --> 质检中: 收回审核
+    质检中 --> 合格: 检验通过
+    质检中 --> 不合格: 检验不通过
+    合格 --> 已收回: 入库完成
+    不合格 --> 不合格处理: 返工/报废/退货
+    已收回 --> 部分结算: 第一批结算
+    部分结算 --> 已完成: 全部结算完成
+    待发出 --> 已取消: 取消订单
+    已发出 --> 已取消: 取消订单
+    已完成 --> [*]
+    已取消 --> [*]
+</div>
+
+<div class="note">
+  <strong>状态说明：</strong>委外订单经历草稿→待发出→已发出→收回→质检→结算的完整生命周期。支持部分收回和部分结算。
+</div>
+
+<!-- ==================== 三、委外发料流程 ==================== -->
+<h2>三、委外发料流程</h2>
+<div class="mermaid">
+graph LR
+    A[委外订单已审批] --> B[创建发料单]
+    B --> C[选择发料仓库]
+    C --> D[填写发料明细]
+    D --> E[提交发料单]
+    E --> F{发料单审核}
+    F -->|通过| G[发料确认]
+    F -->|不通过| H[返回修改]
+    G --> I[扣减线边仓库存]
+    I --> J[更新订单发料状态]
+    J --> K{发料完成?}
+    K -->|是| L[订单状态:已发料]
+    K -->|否| M[订单状态:部分发料]
+</div>
+
+<table>
+  <tr><th>步骤</th><th>操作</th><th>关键逻辑</th></tr>
+  <tr><td>1</td><td>创建发料单</td><td>从委外订单自动带出物料信息</td></tr>
+  <tr><td>2</td><td>填写发料明细</td><td>支持分批分次发料</td></tr>
+  <tr><td>3</td><td>发料审核</td><td>确保发料数量不超过计划数量</td></tr>
+  <tr><td>4</td><td>发料确认</td><td>扣减线边仓库存，使用事务保证一致性</td></tr>
+  <tr><td>5</td><td>状态回写</td><td>更新委外订单的 issued_quantity 和 issue_status</td></tr>
+</table>
+
+<!-- ==================== 四、委外收回与质检流程 ==================== -->
+<h2>四、委外收回与质检流程</h2>
+<div class="mermaid">
+graph TB
+    subgraph 收回流程
+        A[供应商加工完成] --> B[创建收回单]
+        B --> C[填写收回数量]
+        C --> D[提交收回单]
+        D --> E[收回单审核]
+    end
+
+    subgraph 质检流程
+        E --> F[自动创建质检单]
+        F --> G[检验员检验]
+        G --> H{检验结果}
+        H -->|合格| I[记录合格数量]
+        H -->|不合格| J[记录不合格数量]
+        H -->|让步接收| K[特殊标记]
+    end
+
+    subgraph 入库处理
+        I --> L[合格品入库]
+        J --> M[不合格品处理]
+        K --> L
+        M --> N[返工]
+        M --> O[报废]
+        M --> P[退货]
+        L --> Q[增加成品仓库存]
+    end
+
+    subgraph 状态更新
+        Q --> R[更新订单收回状态]
+        R --> S[更新订单质检状态]
+    end
+</div>
+
+<div class="note">
+  <strong>关键逻辑：</strong>
+  <ul>
+    <li>收回单审核完成后，自动创建质检单</li>
+    <li>质检合格后才能入库，增加库存</li>
+    <li>不合格品需要记录处理方式（返工/报废/退货）</li>
+    <li>质检结果影响后续结算数量</li>
+  </ul>
+</div>
+
+<!-- ==================== 五、委外结算流程 ==================== -->
+<h2>五、委外结算流程</h2>
+<div class="mermaid">
+graph LR
+    A[委外订单已收回] --> B{质检合格?}
+    B -->|是| C[创建结算单]
+    B -->|否| D[不计费]
+    C --> E[自动计算金额<br/>合格数量 × 单价]
+    E --> F[计算税额]
+    F --> G[生成含税金额]
+    G --> H[提交结算单]
+    H --> I[结算审核]
+    I --> J[登记付款]
+    J --> K{全部付款?}
+    K -->|是| L[订单状态:已结算]
+    K -->|否| M[订单状态:部分结算]
+</div>
+
+<table>
+  <tr><th>计算项</th><th>公式</th><th>说明</th></tr>
+  <tr><td>总金额</td><td>合格数量 × 单价</td><td>仅合格品计费</td></tr>
+  <tr><td>税额</td><td>总金额 × 税率</td><td>根据供应商税率</td></tr>
+  <tr><td>含税金额</td><td>总金额 + 税额</td><td>实际应付金额</td></tr>
+  <tr><td>已付金额</td><td>累计付款金额</td><td>支持分批付款</td></tr>
+</table>
+
+<!-- ==================== 六、委外数据实体关系 ==================== -->
+<h2>六、委外数据实体关系</h2>
+<div class="mermaid">
+erDiagram
+    outsourcing_req ||--o{ outsourcing_req_detail : contains
+    outsourcing_order ||--o{ outsourcing_material_issue : "1对多"
+    outsourcing_order ||--o{ outsourcing_receipt : "1对多"
+    outsourcing_order ||--o{ outsourcing_settlement : "1对多"
+    outsourcing_receipt ||--o{ outsourcing_receipt_detail : contains
+    outsourcing_receipt ||--|| outsourcing_inspection : "1对1"
+    outsourcing_material_issue ||--o{ outsourcing_material_issue_detail : contains
+
+    outsourcing_req {
+        string outsourcing_req_number PK
+        string production_order_number
+        string item_number
+        decimal planned_quantity
+        string approval_status
+        string order_status
+    }
+
+    outsourcing_order {
+        string outsourcing_order_number PK
+        string outsourcing_req_number FK
+        string process_task_number
+        string supplier_number
+        decimal planned_quantity
+        decimal issued_quantity
+        decimal received_quantity
+        decimal qualified_quantity
+        string issue_status
+        string receipt_status
+        string settlement_status
+    }
+
+    outsourcing_material_issue {
+        string issue_number PK
+        string outsourcing_order_number FK
+        date issue_date
+        string warehouse_number
+        string status
+    }
+
+    outsourcing_receipt {
+        string receipt_number PK
+        string outsourcing_order_number FK
+        date receipt_date
+        string warehouse_number
+        string inspection_status
+        string status
+    }
+
+    outsourcing_inspection {
+        string inspection_number PK
+        string receipt_number FK
+        string outsourcing_order_number FK
+        string inspection_result
+        decimal qualified_quantity
+        decimal unqualified_quantity
+    }
+
+    outsourcing_settlement {
+        string settlement_number PK
+        string outsourcing_order_number FK
+        decimal settlement_quantity
+        decimal unit_price
+        decimal total_amount
+        string payment_status
+    }
+</div>
+
+<!-- ==================== 七、三种委外模式对比 ==================== -->
+<h2>七、三种委外模式对比</h2>
+<table>
+  <tr>
+    <th>维度</th>
+    <th>工序委外</th>
+    <th>产品委外</th>
+    <th>劳务委外</th>
+  </tr>
+  <tr>
+    <td>委外对象</td>
+    <td>具体工序（如硫化、喷涂）</td>
+    <td>完整产品（如模具）</td>
+    <td>劳务服务</td>
+  </tr>
+  <tr>
+    <td>来源</td>
+    <td>生产单的工序任务</td>
+    <td>生产单整体</td>
+    <td>独立创建</td>
+  </tr>
+  <tr>
+    <td>发料</td>
+    <td>需要（原材料）</td>
+    <td>需要（BOM材料）</td>
+    <td>不需要</td>
+  </tr>
+  <tr>
+    <td>收回</td>
+    <td>半成品</td>
+    <td>成品</td>
+    <td>加工结果</td>
+  </tr>
+  <tr>
+    <td>结算依据</td>
+    <td>工序数量</td>
+    <td>产品数量</td>
+    <td>工时/计件</td>
+  </tr>
+  <tr>
+    <td>库存影响</td>
+    <td>扣减原材料，增加半成品</td>
+    <td>扣减BOM材料，增加成品</td>
+    <td>仅增加成品</td>
+  </tr>
+</table>
+
+<!-- ==================== 八、关键业务规则 ==================== -->
+<h2>八、关键业务规则</h2>
+
+<h3>8.1 发料规则</h3>
+<div class="note">
+  <ul>
+    <li>发料数量不能超过委外订单的计划数量</li>
+    <li>支持分批分次发料</li>
+    <li>发料确认后自动扣减线边仓库存</li>
+    <li>必须使用事务保证库存扣减的一致性</li>
+  </ul>
+</div>
+
+<h3>8.2 收回规则</h3>
+<div class="note">
+  <ul>
+    <li>收回数量不能超过发料数量（考虑合理损耗率）</li>
+    <li>支持分批收回</li>
+    <li>收回后自动触发质检流程</li>
+    <li>质检合格后才能入库</li>
+  </ul>
+</div>
+
+<h3>8.3 质检规则</h3>
+<div class="note">
+  <ul>
+    <li>收回单审核完成后自动创建质检单</li>
+    <li>质检结果：合格/不合格/让步接收</li>
+    <li>不合格品必须记录缺陷原因和处理方式</li>
+    <li>只有合格品才能计入结算数量</li>
+  </ul>
+</div>
+
+<h3>8.4 结算规则</h3>
+<div class="note">
+  <ul>
+    <li>结算数量 = 合格数量（不合格不计费）</li>
+    <li>支持按合同单价自动计算金额</li>
+    <li>支持分批付款</li>
+    <li>付款完成后更新订单结算状态</li>
+  </ul>
+</div>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true
+    },
+    state: {
+      useMaxWidth: true
+    },
+    er: {
+      useMaxWidth: true
+    }
+  });
+</script>
+</body>
+</html>
