@@ -4,7 +4,11 @@ import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
 import dayjs from 'dayjs';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
-import { generateOutsourcingOrderNumber } from '@/services/documentNumber.service';
+import { generateOutsourcingOrderNumber, generateOutsourcingIssueNumber, generateOutsourcingReceiptNumber } from '@/services/documentNumber.service';
+import { registerApprovalHandler } from '@/services/approval.service';
+import { createLogger } from '@/config/logger';
+
+const log = createLogger('outsourcingOrder');
 
 // Re-export from service for backward compatibility
 export { generateOutsourcingOrderNumber } from '@/services/documentNumber.service';
@@ -193,7 +197,7 @@ export const sendOut = async (req: Request, res: Response, next: NextFunction) =
   } catch (err) { next(err); }
 };
 
-// ==================== 收货确认 ====================
+// ==================== 收货确认（仅记录回收数量，不更新order_status和completed_quantity） ====================
 export const confirmReceipt = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
@@ -215,24 +219,20 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
     const transaction = await sequelize.transaction();
     try {
       const newReceived = (parseFloat(order.received_quantity) || 0) + recvQty;
-      const plannedQty = parseFloat(order.planned_quantity) || 0;
-      const newStatus = newReceived >= plannedQty ? '已完成' : '部分收回';
       const now = dayjs().format('YYYY/MM/DD');
 
-      // 更新委外订单
+      // 仅更新委外订单的received_quantity，不改order_status和completed_quantity
+      // order_status 和 completed_quantity 在质检合格回收入库时才更新
       await sequelize.query(
-        `UPDATE outsourcing_order SET received_quantity = :newReceived, order_status = :newStatus, actual_return_date = :actualDate WHERE outsourcing_order_number = :id`,
-        { replacements: { id, newReceived, newStatus, actualDate: now }, transaction }
+        `UPDATE outsourcing_order SET received_quantity = :newReceived, actual_return_date = :actualDate WHERE outsourcing_order_number = :id`,
+        { replacements: { id, newReceived, actualDate: now }, transaction }
       );
 
-      // 回写工序任务 completed_quantity
-      await sequelize.query(
-        `UPDATE process_task SET completed_quantity = ISNULL(completed_quantity, 0) + :recvQty, task_status = CASE WHEN ISNULL(completed_quantity, 0) + :recvQty2 >= planned_quantity THEN N'已完成' ELSE N'进行中' END WHERE process_task_number = :ptn`,
-        { replacements: { recvQty, recvQty2: recvQty, ptn: order.process_task_number }, transaction }
-      );
+      // 注意：不回写 process_task.completed_quantity
+      // completed_quantity 在质检合格后、回收入库时才更新
 
       await transaction.commit();
-      res.json(success({ received_quantity: newReceived, order_status: newStatus }, '收货确认成功'));
+      res.json(success({ received_quantity: newReceived }, '收货确认成功'));
     } catch (e) {
       await transaction.rollback();
       throw e;
@@ -271,3 +271,190 @@ export const exportOutsourcingOrders = async (req: Request, res: Response, next:
     exportToExcel(items, exportFields, exportHeaderLabels, 'outsourcing_orders', res, format);
   } catch (err) { next(err); }
 };
+
+// ==================== 委外订单审批回调：自动生成备料出库申请和委外回收申请 ====================
+const onOutsourcingOrderApproved = async (recordId: string): Promise<void> => {
+  try {
+    const orderNumber = recordId;
+    // 查询委外订单
+    const [orders]: any = await sequelize.query(
+      `SELECT * FROM outsourcing_order WHERE outsourcing_order_number = :orderNumber`,
+      { replacements: { orderNumber } }
+    );
+    if (!orders.length) { log.error({ orderNumber }, '审批回调：委外订单不存在'); return; }
+    const order = orders[0];
+
+    // 查询工序任务信息
+    const [tasks]: any = await sequelize.query(
+      `SELECT pt.*, wc.warehouse_number AS wc_warehouse_number, wc.warehouse_name AS wc_warehouse_name FROM process_task pt LEFT JOIN work_center wc ON pt.work_center_number = wc.work_center_number WHERE pt.process_task_number = :ptn`,
+      { replacements: { ptn: order.process_task_number } }
+    );
+    if (!tasks.length) { log.error({ orderNumber, ptn: order.process_task_number }, '审批回调：工序任务不存在'); return; }
+    const task = tasks[0];
+
+    // 查询下一道工序
+    const [nextSteps]: any = await sequelize.query(
+      `SELECT pt.*, wc.warehouse_number AS wc_warehouse_number, wc.warehouse_name AS wc_warehouse_name FROM process_task pt LEFT JOIN work_center wc ON pt.work_center_number = wc.work_center_number WHERE pt.production_order_number = :orderNo AND pt.step_number > :step ORDER BY pt.step_number ASC`,
+      { replacements: { orderNo: order.production_order_number, step: order.step_number || task.step_number } }
+    );
+    const nextStep = nextSteps.length > 0 ? nextSteps[0] : null;
+
+    // 查询待检仓（WH_TYPE='待检仓' 或 warehouse_number LIKE 'INSP%'）
+    const [inspWh]: any = await sequelize.query(
+      `SELECT TOP 1 warehouse_number, warehouse_name FROM warehouse WHERE warehouse_type = N'待检仓' OR warehouse_number LIKE 'INSP%' ORDER BY warehouse_number`
+    );
+    const inspectionWarehouse = inspWh.length > 0 ? inspWh[0] : { warehouse_number: 'INSP_WH', warehouse_name: '待检仓' };
+
+    // 查询制造BOM获取物料清单
+    const [bomItems]: any = await sequelize.query(
+      `SELECT bd.material_number, im.item_name, im.specifications, bd.standard_quantity, im.unit
+       FROM mfg_bom_detail bd
+       INNER JOIN mfg_bom_header bh ON bd.mfg_bom_number = bh.mfg_bom_number
+       LEFT JOIN item_master im ON bd.material_number = im.item_number
+       WHERE bh.item_number = :item_number AND bh.[condition] = N'启用' AND bh.approval_status = N'已审批'`,
+      { replacements: { item_number: order.item_number || '' } }
+    );
+
+    const now = dayjs().format('YYYY/MM/DD HH:mm');
+    const username = 'system';
+
+    const transaction = await sequelize.transaction();
+    try {
+      // ====== 自动创建备料出库申请 ======
+      const issueNumber = await generateOutsourcingIssueNumber(transaction);
+      const issueWarehouseNumber = task.wc_warehouse_number || '';
+      const issueWarehouseName = task.wc_warehouse_name || '';
+
+      await sequelize.query(`
+        INSERT INTO outsourcing_material_issue (
+          issue_number, outsourcing_order_number, issue_date,
+          warehouse_number, warehouse_name, handler,
+          doc_type, work_center_number, work_center_name, step_number,
+          production_order_number, process_task_number,
+          status, remark, creation_date, creation_man
+        ) VALUES (
+          :issueNumber, :ooNumber, :issue_date,
+          :warehouse_number, :warehouse_name, '',
+          N'issue', :wc_number, :wc_name, :step_number,
+          :production_order_number, :process_task_number,
+          N'待确认', N'委外订单审批自动生成', :creation_date, :creation_man
+        )
+      `, {
+        replacements: {
+          issueNumber, ooNumber: orderNumber,
+          issue_date: now.split(' ')[0],
+          warehouse_number: issueWarehouseNumber,
+          warehouse_name: issueWarehouseName,
+          wc_number: task.work_center_number || '',
+          wc_name: task.work_center_name || '',
+          step_number: task.step_number || 0,
+          production_order_number: order.production_order_number || '',
+          process_task_number: order.process_task_number || '',
+          creation_date: now, creation_man: username
+        },
+        transaction
+      });
+
+      // 插入备料出库明细（从BOM填充）
+      for (let bi = 0; bi < bomItems.length; bi++) {
+        const bomItem = bomItems[bi];
+        await sequelize.query(`
+          INSERT INTO outsourcing_material_issue_detail (
+            issue_number, line_number, item_number, item_name,
+            specifications, batch_number, issued_quantity, unit, remark
+          ) VALUES (
+            :issueNumber, :line_number, :item_number, :item_name,
+            :specifications, '', :issued_quantity, :unit, ''
+          )
+        `, {
+          replacements: {
+            issueNumber,
+            line_number: (bi + 1) * 10,
+            item_number: bomItem.material_number || '',
+            item_name: bomItem.item_name || '',
+            specifications: bomItem.specifications || '',
+            issued_quantity: (parseFloat(bomItem.standard_quantity) || 0) * (parseFloat(order.planned_quantity) || 0),
+            unit: bomItem.unit || ''
+          },
+          transaction
+        });
+      }
+
+      // ====== 自动创建委外回收申请 ======
+      const receiptNumber = await generateOutsourcingReceiptNumber(transaction);
+
+      await sequelize.query(`
+        INSERT INTO outsourcing_receipt (
+          receipt_number, outsourcing_order_number, receipt_date,
+          warehouse_number, warehouse_name, handler,
+          doc_type,
+          inspection_warehouse_number, inspection_warehouse_name,
+          next_step_warehouse_number, next_step_warehouse_name,
+          next_step_number, next_work_center_number, next_work_center_name,
+          inspection_status, status, remark, creation_date, creation_man
+        ) VALUES (
+          :receiptNumber, :ooNumber, :receipt_date,
+          :warehouse_number, :warehouse_name, '',
+          N'receipt',
+          :insp_wh_number, :insp_wh_name,
+          :next_wh_number, :next_wh_name,
+          :next_step_number, :next_wc_number, :next_wc_name,
+          N'待检验', N'待确认', N'委外订单审批自动生成', :creation_date, :creation_man
+        )
+      `, {
+        replacements: {
+          receiptNumber, ooNumber: orderNumber,
+          receipt_date: now.split(' ')[0],
+          warehouse_number: inspectionWarehouse.warehouse_number,
+          warehouse_name: inspectionWarehouse.warehouse_name,
+          insp_wh_number: inspectionWarehouse.warehouse_number,
+          insp_wh_name: inspectionWarehouse.warehouse_name,
+          next_wh_number: nextStep?.wc_warehouse_number || '',
+          next_wh_name: nextStep?.wc_warehouse_name || '',
+          next_step_number: nextStep?.step_number || 0,
+          next_wc_number: nextStep?.work_center_number || '',
+          next_wc_name: nextStep?.work_center_name || '',
+          creation_date: now, creation_man: username
+        },
+        transaction
+      });
+
+      // 插入回收明细（产品本身）
+      await sequelize.query(`
+        INSERT INTO outsourcing_receipt_detail (
+          receipt_number, line_number, item_number, item_name,
+          specifications, receipt_quantity, qualified_quantity, unqualified_quantity, unit, remark
+        ) VALUES (
+          :receiptNumber, 10, :item_number, :item_name,
+          :specifications, :receipt_quantity, 0, 0, :unit, ''
+        )
+      `, {
+        replacements: {
+          receiptNumber,
+          item_number: order.item_number || '',
+          item_name: order.item_name || '',
+          specifications: order.specifications || '',
+          receipt_quantity: order.planned_quantity || 0,
+          unit: order.basic_unit || ''
+        },
+        transaction
+      });
+
+      await transaction.commit();
+      log.info({ orderNumber }, '审批回调：自动生成备料出库申请和委外回收申请成功');
+    } catch (e) {
+      await transaction.rollback();
+      log.error({ orderNumber, err: e }, '审批回调：自动生成单据失败');
+    }
+  } catch (err) {
+    log.error({ recordId, err }, '审批回调：外层异常');
+  }
+};
+
+// 注册审批回调
+registerApprovalHandler('outsourcing_order', {
+  onApprove: onOutsourcingOrderApproved,
+  onReverse: async (_recordId: string) => {
+    // 反审时暂不自动清理已生成的单据，需人工处理
+  }
+});

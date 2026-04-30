@@ -20,6 +20,9 @@ router.delete('/:id', controller.deleteOutsourcingIssue);
 router.post('/:id/approve', controller.approveIssue);
 router.post('/:id/confirm', controller.confirmIssue);
 
+// 追加发料（分批发料）
+router.post('/append', controller.appendIssue);
+
 // 导出
 router.get('/export', controller.exportOutsourcingIssues);
 

@@ -13,6 +13,9 @@ const WorkReportList = () => import('@/views/production/WorkReport/List.vue');
 const ContinuousReport = () => import('@/views/production/WorkReport/ContinuousReport.vue');
 const OutsourcingReqList = () => import('@/views/production/OutsourcingReq/List.vue');
 const OutsourcingOrderList = () => import('@/views/production/OutsourcingOrder/List.vue');
+const OutsourcingIssueList = () => import('@/views/production/OutsourcingIssue/List.vue');
+const OutsourcingReceiptList = () => import('@/views/production/OutsourcingReceipt/List.vue');
+const OutsourcingInspectionList = () => import('@/views/production/OutsourcingInspection/List.vue');
 const WipByOrder = () => import('@/views/production/WIP/ByOrder.vue');
 const WipByWorkCenter = () => import('@/views/production/WIP/ByWorkCenter.vue');
 const WipLinesideTransactions = () => import('@/views/production/WIP/LinesideTransactions.vue');
@@ -30,6 +33,9 @@ export const productionRoutes: RouteRecordRaw[] = [
   { path: 'continuous-report', name: 'ContinuousReport', component: ContinuousReport, meta: {"title":"连续报工"} },
   { path: 'outsourcing-reqs', name: 'OutsourcingReqList', component: OutsourcingReqList, meta: {"title":"工序委外申请"} },
   { path: 'outsourcing-orders', name: 'OutsourcingOrderList', component: OutsourcingOrderList, meta: {"title":"工序委外管理"} },
+  { path: 'outsourcing-issue', name: 'OutsourcingIssueList', component: OutsourcingIssueList, meta: {"title":"委外发料"} },
+  { path: 'outsourcing-receipt', name: 'OutsourcingReceiptList', component: OutsourcingReceiptList, meta: {"title":"委外回收"} },
+  { path: 'outsourcing-inspection', name: 'OutsourcingInspectionList', component: OutsourcingInspectionList, meta: {"title":"委外质检"} },
   { path: 'wip-by-order', name: 'WipByOrder', component: WipByOrder, meta: {"title":"WIP报告(按生产单)"} },
   { path: 'wip-by-work-center', name: 'WipByWorkCenter', component: WipByWorkCenter, meta: {"title":"WIP报告(按工作中心)"} },
   { path: 'wip-lineside-transactions', name: 'WipLinesideTransactions', component: WipLinesideTransactions, meta: {"title":"线边仓流水"} },

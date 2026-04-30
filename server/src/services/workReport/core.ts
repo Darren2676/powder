@@ -86,6 +86,26 @@ export const createWorkReport = async (params: {
       }
     }
 
+    // === 委外工序阻断校验 ===
+    // 上一道工序如果是委外工序，必须等委外回收入库完成后才能报工
+    if (task.production_order_number) {
+      const [prevOutsourcingRows]: any = await sequelize.query(`
+        SELECT pt.process_task_number, pt.step_number, pt.process_type,
+               oo.outsourcing_order_number, oo.order_status
+        FROM process_task pt
+        LEFT JOIN outsourcing_order oo ON pt.process_task_number = oo.process_task_number
+        WHERE pt.production_order_number = :orderNo
+          AND pt.step_number = :currentStep - 1
+      `, { replacements: { orderNo: task.production_order_number, currentStep: task.step_number }, transaction });
+
+      if (prevOutsourcingRows.length && prevOutsourcingRows[0].process_type === '外协') {
+        const ooStatus = prevOutsourcingRows[0].order_status;
+        if (ooStatus !== '已完成') {
+          throw new BusinessError(403, `上一道工序「${prevOutsourcingRows[0].step_number}」为委外工序，委外订单状态为"${ooStatus}"，需等待委外回收入库完成后方可报工`);
+        }
+      }
+    }
+
     // 超额校验
     const excessRatio = parseFloat(task.excess_reporting_ratio) || 0;
     let actualDaily = 0;
@@ -301,6 +321,25 @@ export const quickReport = async (params: {
         const issuedCount = parseInt(matGateRows[0]?.issued_count) || 0;
         if (matCount > 0 && issuedCount === 0) {
           throw new BusinessError(400, `工序 ${task.step_number} - ${task.standard_process_name || ''} 有 ${matCount} 种物料尚未领料，请先完成该工序的备料`);
+        }
+      }
+    }
+
+    // === 委外工序阻断校验（快速报工） ===
+    if (task.production_order_number) {
+      const [prevOutsourcingRows]: any = await sequelize.query(`
+        SELECT pt.process_task_number, pt.step_number, pt.process_type,
+               oo.outsourcing_order_number, oo.order_status
+        FROM process_task pt
+        LEFT JOIN outsourcing_order oo ON pt.process_task_number = oo.process_task_number
+        WHERE pt.production_order_number = :orderNo
+          AND pt.step_number = :currentStep - 1
+      `, { replacements: { orderNo: task.production_order_number, currentStep: task.step_number }, transaction });
+
+      if (prevOutsourcingRows.length && prevOutsourcingRows[0].process_type === '外协') {
+        const ooStatus = prevOutsourcingRows[0].order_status;
+        if (ooStatus !== '已完成') {
+          throw new BusinessError(403, `上一道工序「${prevOutsourcingRows[0].step_number}」为委外工序，委外订单状态为"${ooStatus}"，需等待委外回收入库完成后方可报工`);
         }
       }
     }

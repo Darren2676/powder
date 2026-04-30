@@ -78,6 +78,12 @@ const routes: RouteRecordRaw[] = [
     name: 'OutsourcingReceiptScan',
     component: () => import('@/views/OutsourcingReceiptScan.vue'),
     meta: { requiresAuth: true, title: '委外收回' }
+  },
+  {
+    path: '/inspection',
+    name: 'MobileInspection',
+    component: () => import('@/views/MobileInspection.vue'),
+    meta: { requiresAuth: true, title: '移动质检' }
   }
 ]
 

@@ -301,3 +301,21 @@ export const generateOutsourcingSettlementNumber = async (transaction?: any): Pr
   }
   return `${prefix}${String(seq).padStart(3, '0')}`;
 };
+
+// ==================== 委外回收入库单编号 ====================
+
+export const generateOutsourcingReturnStockinNumber = async (transaction?: any): Promise<string> => {
+  const today = dayjs().format('YYYYMMDD');
+  const prefix = `ORS-${today}-`;
+  const [rows]: any = await sequelize.query(
+    `SELECT TOP 1 stockin_number FROM outsourcing_return_stockin WHERE stockin_number LIKE :prefix ORDER BY stockin_number DESC`,
+    { replacements: { prefix: `${prefix}%` }, ...(transaction ? { transaction } : {}) }
+  );
+  let seq = 1;
+  if (rows.length > 0) {
+    const last = rows[0].stockin_number as string;
+    const lastSeq = parseInt(last.substring(prefix.length));
+    if (!isNaN(lastSeq)) seq = lastSeq + 1;
+  }
+  return `${prefix}${String(seq).padStart(3, '0')}`;
+};

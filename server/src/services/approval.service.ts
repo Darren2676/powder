@@ -168,7 +168,7 @@ registerApprovalHandler('return_order', { onApprove: noopCallback('return_order'
 registerApprovalHandler('mfg_bom_header', { onApprove: noopCallback('mfg_bom_header', 'onApprove'), onReverse: noopCallback('mfg_bom_header', 'onReverse') });
 registerApprovalHandler('purchase_price_list', { onApprove: noopCallback('purchase_price_list', 'onApprove'), onReverse: noopCallback('purchase_price_list', 'onReverse') });
 registerApprovalHandler('sales_price_list', { onApprove: noopCallback('sales_price_list', 'onApprove'), onReverse: noopCallback('sales_price_list', 'onReverse') });
-registerApprovalHandler('outsourcing_order', { onApprove: noopCallback('outsourcing_order', 'onApprove'), onReverse: noopCallback('outsourcing_order', 'onReverse') });
+registerApprovalHandler('outsourcing_order', { onApprove: noopCallback('outsourcing_order', 'onApprove'), onReverse: noopCallback('outsourcing_order', 'onReverse') }); // replaced by real handler in outsourcingOrder.controller.ts
 registerApprovalHandler('outsourcing_req', { onApprove: noopCallback('outsourcing_req', 'onApprove'), onReverse: noopCallback('outsourcing_req', 'onReverse') });
 registerApprovalHandler('piece_rate_price', { onApprove: noopCallback('piece_rate_price', 'onApprove'), onReverse: noopCallback('piece_rate_price', 'onReverse') });
 

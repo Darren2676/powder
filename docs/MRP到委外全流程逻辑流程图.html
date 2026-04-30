@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MRP到委外全流程逻辑流程图 - 睿信橡胶密封件MES系统</title>
+<script src="node_modules/mermaid/dist/mermaid.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+  .page { max-width: 1300px; margin: 0 auto; padding: 32px; background: #fff; min-height: 100vh; }
+  h1 { text-align: center; font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 20px; color: #1a1a2e; margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 16px; color: #1a1a2e; margin: 20px 0 10px; }
+  .intro { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; padding: 16px; margin-bottom: 24px; font-size: 14px; }
+  .mermaid { text-align: center; margin: 16px 0; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  .note ul { margin: 4px 0 0 18px; }
+  .note li { margin: 2px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  .update-badge { display: inline-block; background: #ff4d4f; color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 3px; margin-left: 8px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>MRP到委外全流程逻辑流程图</h1>
+<div class="subtitle">睿信橡胶密封件MES系统 | 从生产计划到委外结算的完整业务链路 | 2026-04-29 来料检验分流版</div>
+
+<div class="intro">
+  <strong>文档说明：</strong>本文档展示从MRP运算到委外结算的完整业务链路。<span class="update-badge">重构</span> 核心变更：委外订单审批后自动生成"待确认"单据（非已审核），全程使用material体系操作库存，新增待检仓→回收入库单环节，质检合格后才更新completed_quantity和order_status，增加报工阻断校验。<span class="update-badge">新增</span> 来料检验分流：根据 <code>item_master.incoming_inspection</code> 字段判断，'Y'走待检仓+质检流程，'N'免检直接入库到下道线边仓。
+</div>
+
+<!-- ==================== 一、MRP到委外全流程总览 ==================== -->
+<h2>一、MRP到委外全流程总览 <span class="update-badge">重构</span> <span class="update-badge">来料检验分流</span></h2>
+<div class="mermaid">
+graph TB
+    subgraph 计划层["📋 计划层"]
+        SO[销售订单/预测] --> MPS[MPS计算]
+        MPS --> PP[生产计划<br/>Production_plan]
+        PP -->|审批通过| MRP[MRP运算]
+    end
+
+    subgraph MRP决策["⚙️ MRP运算决策"]
+        MRP --> CHECK{检查物料<br/>business_scope}
+        CHECK -->|仅生产| PROD[生成生产单]
+        CHECK -->|仅采购| PUR[生成采购申请]
+        CHECK -->|生产+采购| DUAL[双源待决策]
+    end
+
+    subgraph 生产层["🏭 生产层"]
+        PROD --> PO[生产单<br/>production_order]
+        PO --> DIS[调度派发]
+        DIS --> PT[工序任务<br/>process_task]
+    end
+
+    subgraph 委外申请["📝 委外申请"]
+        PT -->|工序外协类型| OR[委外申请<br/>outsourcing_req]
+        OR --> OR_D[申请明细<br/>outsourcing_req_detail]
+        OR_D -->|审批通过转单| OO[委外订单<br/>outsourcing_order<br/>status=草稿]
+    end
+
+    subgraph 委外审批["✅ 委外订单审批 <span class='update-badge'>重构</span>"]
+        OO -->|审批通过| AUTO_GEN[审批回调自动生成]
+        AUTO_GEN --> OMI[备料出库申请<br/>outsourcing_material_issue<br/>status=待确认<br/>doc_type=issue]
+        AUTO_GEN --> ORC[委外回收申请<br/>outsourcing_receipt<br/>status=待确认<br/>doc_type=receipt]
+    end
+
+    subgraph 委外备料出库["📤 备料出库确认 <span class='update-badge'>重构</span>"]
+        OMI -->|仓库确认| CONFIRM_ISSUE[确认出库<br/>material体系]
+        CONFIRM_ISSUE --> FIFO1[线边仓FIFO扣减<br/>material_batch_inventory]
+        FIFO1 --> TXN1[记录material流水<br/>出库+线边仓OUT]
+    end
+
+    subgraph 委外回收分流["📥 委外回收确认 <span class='update-badge'>来料检验分流</span>"]
+        ORC -->|仓库点数确认| CHECK_INSP{查询item_master<br/>incoming_inspection}
+        CHECK_INSP -->|'Y'需检验| CONFIRM_RECV[确认收回<br/>入待检仓]
+        CHECK_INSP -->|'N'免检| DIRECT_IN[免检直接入库<br/>跳过待检仓和质检]
+        CONFIRM_RECV --> INSP_IN[待检仓入库<br/>material_batch_inventory]
+        INSP_IN --> TXN2[记录material流水<br/>入库]
+        TXN2 --> AUTO_OQC[自动创建质检单<br/>outsourcing_inspection<br/>status=待检验]
+    end
+
+    subgraph 委外质检入库["🔬 质检→回收入库 <span class='update-badge'>重构</span>"]
+        AUTO_OQC -->|合格/让步| CREATE_RSI[创建回收入库单<br/>outsourcing_return_stockin<br/>自动确认]
+        CREATE_RSI --> RSI_EXEC[待检仓FIFO出库<br/>+下道线边仓入库<br/>material体系]
+        RSI_EXEC --> UPDATE_PT[更新process_task<br/>completed_quantity<br/>此时才更新!]
+        RSI_EXEC --> UPDATE_OO[更新委外订单<br/>order_status=已完成]
+        AUTO_OQC -->|不合格| NG[记录处理方式<br/>返工/报废/退货]
+    end
+
+    subgraph 免检直接入库["📦 免检直接入库 <span class='update-badge'>来料检验分流</span>"]
+        DIRECT_IN --> CREATE_RSI2[创建回收入库单<br/>outsourcing_return_stockin<br/>status=已入库]
+        CREATE_RSI2 --> DIRECT_EXEC[直接入库到下道线边仓<br/>material体系]
+        DIRECT_EXEC --> UPDATE_PT2[更新process_task<br/>completed_quantity]
+        DIRECT_EXEC --> UPDATE_OO2[更新委外订单<br/>order_status=已完成]
+    end
+
+    subgraph 报工阻断["🚫 报工阻断 <span class='update-badge'>重构</span>"]
+        UPDATE_OO -->|下道工序报工| BLOCK_CHECK{上一道工序<br/>是否委外?}
+        UPDATE_OO2 --> BLOCK_CHECK
+        BLOCK_CHECK -->|否| ALLOW[允许报工]
+        BLOCK_CHECK -->|是且已完成| ALLOW
+        BLOCK_CHECK -->|是且未完成| DENY[拒绝报工<br/>等待委外回收入库]
+    end
+
+    subgraph 入库结算["📦 结算"]
+        UPDATE_OO --> OS[委外结算<br/>outsourcing_settlement]
+        UPDATE_OO2 --> OS
+        OS -->|付款完成| FIN[财务系统]
+    end
+</div>
+
+<div class="note">
+  <strong>重构要点：</strong>
+  <ul>
+    <li>转单不再自动生成发料单/收回单，改为<strong>委外订单审批后</strong>通过回调自动生成（status=待确认）</li>
+    <li>全程使用<strong>material体系</strong>（material_batch_inventory/material_inventory/material_inventory_transaction），不再直接操作inventory表</li>
+    <li>收回确认后入<strong>待检仓</strong>，质检合格后创建<strong>回收入库单</strong>（outsourcing_return_stockin）自动确认：待检仓出→下道线边仓入</li>
+    <li><strong>completed_quantity在质检合格回收入库时才更新</strong>，确保WIP准确</li>
+    <li>增加报工阻断校验：上一道工序为委外且未完成时拒绝报工</li>
+  </ul>
+  <strong>来料检验分流要点：</strong>
+  <ul>
+    <li>确认收回时查询 <code>item_master.incoming_inspection</code> 字段</li>
+    <li><code>incoming_inspection='Y'</code> → 入待检仓 + 创建质检单（原有流程不变）</li>
+    <li><code>incoming_inspection='N'</code> → <strong>免检直接入库</strong>：跳过待检仓和质检，直接创建回收入库单(已入库) + 入下道线边仓 + 更新completed_quantity + 更新order_status</li>
+    <li>收回单 <code>inspection_status</code> 新增值：'免检'、'部分待检'（混合场景）</li>
+  </ul>
+</div>
+
+<!-- ==================== 二、MRP运算决策逻辑 ==================== -->
+<h2>二、MRP运算决策逻辑（委外分支）</h2>
+<div class="mermaid">
+graph TD
+    START([MRP运算开始]) --> INPUT[输入: 生产计划 + 物料编号]
+    INPUT --> GET_INFO[查询 item_master<br/>获取 business_scope]
+    GET_INFO --> BOM[广度优先遍历制造BOM<br/>mfg_bom_header/mfg_bom_detail]
+    BOM --> CHECK_SCOPE{检查业务范围<br/>business_scope}
+
+    CHECK_SCOPE -->|仅生产| PROD_ONLY[action_type=生产]
+    CHECK_SCOPE -->|仅采购| PUR_ONLY[action_type=采购<br/>生成采购申请]
+    CHECK_SCOPE -->|生产+采购| DUAL[双源待决策]
+
+    PROD_ONLY --> CREATE_PO[生成生产单<br/>production_order]
+    CREATE_PO --> DISPATCH[调度派发]
+    DISPATCH --> CHECK_PROCESS{工序是否<br/>外协类型?}
+
+    CHECK_PROCESS -->|是| CREATE_OR[创建委外申请<br/>outsourcing_req]
+    CHECK_PROCESS -->|否| INTERNAL[内部加工<br/>报工流程]
+
+    CREATE_OR --> OR_APPROVE{委外申请审批}
+    OR_APPROVE -->|通过| CREATE_OO[转委外订单<br/>outsourcing_order<br/>approval_status=草稿]
+    OR_APPROVE -->|不通过| OR_DRAFT[返回修改]
+    CREATE_OO --> OO_APPROVE{委外订单审批}
+    OO_APPROVE -->|通过| AUTO_GEN[审批回调自动生成<br/>备料出库申请status=待确认<br/>委外回收申请status=待确认]
+</div>
+
+<div class="note">
+  <strong>决策要点：</strong>
+  <ul>
+    <li>MRP统一使用制造BOM（mfg_bom）而非设计BOM（bom）</li>
+    <li>action_type 由 item_master.business_scope 决定</li>
+    <li>委外申请来源于工序任务的外协标识，非MRP直接生成</li>
+    <li>转单仅创建委外订单（草稿），不再自动生成发料单/收回单</li>
+    <li>委外订单审批通过后，通过 onOutsourcingOrderApproved 回调自动生成单据</li>
+  </ul>
+</div>
+
+<!-- ==================== 三、委外申请→订单状态流转 ==================== -->
+<h2>三、委外申请→订单状态流转 <span class="update-badge">重构</span> <span class="update-badge">来料检验分流</span></h2>
+<div class="mermaid">
+stateDiagram-v2
+    state 委外申请 {
+        [*] --> 草稿_申请: 创建申请
+        草稿_申请 --> 已审批_申请: 审批通过
+        已审批_申请 --> 已转单: 自动转委外订单
+    }
+
+    state 委外订单 {
+        [*] --> 草稿_订单: 从申请转单
+        草稿_订单 --> 已审批_订单: 订单审批
+        已审批_订单 --> 待发出: 默认状态
+        待发出 --> 已发出: 发出确认
+        已发出 --> 部分收回: 首批收回
+        已发出 --> 已完成: 质检合格回收入库/免检直接入库
+        部分收回 --> 已完成: qualified>=planned
+        已完成 --> 已关闭: 关闭
+        待发出 --> 已取消: 取消订单
+    }
+
+    state 审批回调自动生成 {
+        [*] --> 待确认_出库: 订单审批通过<br/>自动创建备料出库申请<br/>doc_type=issue
+        [*] --> 待确认_回收: 订单审批通过<br/>自动创建委外回收申请<br/>doc_type=receipt
+    }
+
+    已审批_订单 --> 待确认_出库
+    已审批_订单 --> 待确认_回收
+
+    state 备料出库 {
+        待确认_出库 --> 已出库: 仓库确认出库<br/>material体系扣减
+    }
+
+    state 委外回收_来料检验分流 {
+        待确认_回收 --> 检验判断: 仓库点数确认<br/>查询incoming_inspection
+        检验判断 --> 已收回_需检验: incoming_inspection=Y<br/>入待检仓+创建质检单<br/>inspection_status=待检验
+        检验判断 --> 已收回_免检: incoming_inspection=N<br/>免检直接入库<br/>inspection_status=免检
+        检验判断 --> 已收回_混合: 部分Y部分N<br/>inspection_status=部分待检
+    }
+
+    state 质检入库_需检验路径 {
+        已收回_需检验 --> 待检验: 质检单创建
+        待检验 --> 已完成_质检: 录入结果
+        已完成_质检 --> 回收入库: 合格/让步→创建return_stockin
+        回收入库 --> 已完成_订单_质检: 待检仓出→线边仓入<br/>更新completed_quantity<br/>更新order_status
+    }
+
+    state 免检直接入库路径 {
+        已收回_免检 --> 直接入库: 创建return_stockin<br/>status=已入库
+        直接入库 --> 已完成_订单_免检: 直接入下道线边仓<br/>更新completed_quantity<br/>更新order_status
+    }
+
+    state 混合路径 {
+        已收回_混合 --> 部分待检质检: 需检验物料入待检仓<br/>+创建质检单
+        已收回_混合 --> 部分免检入库: 免检物料直接入库
+        部分待检质检 --> 质检完成回收入库: 质检合格→回收入库
+        部分免检入库 --> 已完成_订单_混合: 更新completed_quantity
+        质检完成回收入库 --> 已完成_订单_混合
+    }
+</div>
+
+<div class="note">
+  <strong>重构变更：</strong>
+  <ul>
+    <li>转单不再自动生成已审核的发料单/收回单</li>
+    <li>委外订单审批通过后 → 回调自动生成备料出库申请(status=待确认) + 委外回收申请(status=待确认)</li>
+    <li>备料出库：待确认 → 已出库（material体系FIFO扣减线边仓）</li>
+    <li>委外回收：待确认 → 根据<code>incoming_inspection</code>分流</li>
+  </ul>
+  <strong>来料检验分流：</strong>
+  <ul>
+    <li><code>incoming_inspection='Y'</code>：待确认 → 已收回(inspection_status=待检验) → 质检合格 → 回收入库 → 更新completed_quantity</li>
+    <li><code>incoming_inspection='N'</code>：待确认 → 已收回(inspection_status=免检) → 免检直接入库 → 更新completed_quantity</li>
+    <li>混合场景：部分物料入待检仓+部分免检直接入库，inspection_status=部分待检</li>
+  </ul>
+</div>
+
+<!-- ==================== 四、委外备料出库详细流程 ==================== -->
+<h2>四、委外备料出库详细流程 <span class="update-badge">重构</span></h2>
+<div class="mermaid">
+graph TB
+    START([委外订单审批通过]) --> CALLBACK[审批回调<br/>onOutsourcingOrderApproved]
+    CALLBACK --> QUERY_BOM[查询工序任务线边仓<br/>+ 查询制造BOM物料清单<br/>+ 查询下一道工序信息]
+    QUERY_BOM --> CREATE_ISSUE[创建备料出库申请<br/>outsourcing_material_issue<br/>status=待确认<br/>doc_type=issue]
+    CREATE_ISSUE --> FILL_DETAIL[填充发料明细<br/>从制造BOM自动获取物料<br/>issued_quantity=BOM标准用量x计划数量]
+    FILL_DETAIL --> WAIT_CONFIRM[等待仓库确认<br/>WEB端/移动端]
+    WAIT_CONFIRM --> CONFIRM{确认出库<br/>material体系}
+    CONFIRM --> YES[执行出库确认]
+
+    YES --> FIFO[线边仓FIFO扣减<br/>fifoDeductBatches<br/>material_batch_inventory]
+    FIFO --> SYNC[同步material_inventory<br/>汇总表]
+    SYNC --> TXN[记录material_transaction<br/>type=出库<br/>source=委外备料出库]
+    TXN --> LINESIDE[记录线边仓流水<br/>logLinesideMovement<br/>direction=OUT]
+    LINESIDE --> UPDATE_STATUS[更新出库单<br/>status=已出库]
+</div>
+
+<table>
+  <tr><th>步骤</th><th>操作</th><th>数据库表/服务</th><th>关键逻辑</th></tr>
+  <tr><td>1</td><td>审批回调自动创建</td><td>outsourcing_material_issue</td><td>status=待确认, doc_type=issue</td></tr>
+  <tr><td>2</td><td>自动填充明细</td><td>outsourcing_material_issue_detail</td><td>从制造BOM获取物料清单</td></tr>
+  <tr><td>3</td><td>仓库确认出库</td><td>confirmIssue()</td><td>WEB/移动端均可操作</td></tr>
+  <tr><td>4</td><td>FIFO扣减线边仓</td><td>material_batch_inventory</td><td>fifoDeductBatches()</td></tr>
+  <tr><td>5</td><td>同步汇总表</td><td>material_inventory</td><td>syncMaterialInventorySummary()</td></tr>
+  <tr><td>6</td><td>记录material流水</td><td>material_inventory_transaction</td><td>source_type=委外备料出库</td></tr>
+  <tr><td>7</td><td>记录线边仓流水</td><td>lineside_movement_log</td><td>direction=OUT</td></tr>
+  <tr><td>8</td><td>更新出库单状态</td><td>outsourcing_material_issue</td><td>status=已出库</td></tr>
+</table>
+
+<!-- ==================== 五、委外回收→质检→回收入库流程 ==================== -->
+<h2>五、委外回收→来料检验分流→入库流程 <span class="update-badge">重构</span> <span class="update-badge">来料检验分流</span></h2>
+<div class="mermaid">
+graph TB
+    subgraph 回收申请自动生成
+        A1([委外订单审批通过]) --> A2[审批回调自动创建<br/>委外回收申请<br/>outsourcing_receipt<br/>status=待确认<br/>doc_type=receipt]
+        A2 --> A3[填充回收明细<br/>产品编号/名称/规格<br/>receipt_quantity=计划数量<br/>待检仓/下道工序信息]
+    end
+
+    subgraph 来料检验判断
+        A3 --> B[仓库点数确认<br/>WEB/移动端]
+        B --> CHECK{查询item_master<br/>incoming_inspection}
+    end
+
+    subgraph 路径A_需检验_incoming_inspection_Y
+        CHECK -->|'Y'需检验| C[入待检仓<br/>material体系]
+        C --> C1[生成批次号<br/>INSERT material_batch_inventory]
+        C1 --> C2[更新汇总表<br/>upsertMaterialInventory]
+        C2 --> C3[记录material流水<br/>type=入库<br/>source=委外回收入待检]
+        C3 --> C4[创建质检单<br/>outsourcing_inspection<br/>status=待检验<br/>仅包含需检验物料]
+    end
+
+    subgraph 路径B_免检_incoming_inspection_N
+        CHECK -->|'N'免检| D[免检直接入库<br/>跳过待检仓和质检]
+        D --> D1[创建回收入库单<br/>outsourcing_return_stockin<br/>status=已入库<br/>remark=免检直接入库]
+        D1 --> D2[直接入库到下道线边仓<br/>material_batch_inventory]
+        D2 --> D3[更新material_inventory<br/>汇总表]
+        D3 --> D4[记录material流水<br/>source_type=委外免检直接入库]
+        D4 --> D5[记录线边仓流水<br/>当前工序OUT+下道工序IN]
+        D5 --> D6[更新process_task<br/>completed_quantity]
+        D6 --> D7[更新委外订单<br/>qualified_quantity+order_status]
+    end
+
+    subgraph 质检结果_仅路径A
+        C4 --> E[检验员录入结果]
+        E --> F{检验结果}
+        F -->|合格| G[qualified_quantity记录]
+        F -->|让步接收| H[qualified_quantity记录<br/>同合格流程]
+        F -->|不合格| I[记录缺陷+处理方式<br/>不入库]
+    end
+
+    subgraph 回收入库_仅路径A
+        G --> J[创建回收入库单<br/>outsourcing_return_stockin<br/>status=已入库<br/>自动确认]
+        H --> J
+        J --> K[待检仓FIFO出库<br/>material_batch_inventory]
+        K --> L[下道线边仓入库<br/>material_batch_inventory<br/>+ material_inventory]
+        L --> M[记录material流水<br/>出待检+入线边]
+        M --> N[记录线边仓流水<br/>当前工序OUT+下道工序IN]
+        N --> O[更新process_task<br/>completed_quantity += qualified]
+        O --> P[更新委外订单<br/>qualified_quantity累计<br/>order_status=已完成]
+    end
+
+    I --> I1[记录处理方式<br/>返工/报废/退货<br/>不入库不计入completed]
+
+    subgraph 更新收回单状态
+        C4 --> UPD_A[inspection_status=待检验]
+        D1 --> UPD_B[inspection_status=免检]
+    end
+</div>
+
+<div class="note">
+  <strong>来料检验分流逻辑：</strong>
+  <ul>
+    <li><strong>判断依据</strong>：<code>item_master.incoming_inspection</code> 字段值</li>
+    <li><strong>路径A（需检验）</strong>：incoming_inspection='Y' → 入待检仓 → 创建质检单（仅含需检验物料）→ 质检合格 → 回收入库 → 更新completed_quantity</li>
+    <li><strong>路径B（免检）</strong>：incoming_inspection='N' → 跳过待检仓和质检 → 直接创建回收入库单(已入库) → 入下道线边仓 → 更新completed_quantity</li>
+    <li><strong>混合场景</strong>：同一收回单中部分物料需检验、部分免检，两条路径并行执行</li>
+  </ul>
+  <strong>收回单 inspection_status 新增值：</strong>
+  <ul>
+    <li>'待检验'：全部物料需检验</li>
+    <li>'免检'：全部物料免检</li>
+    <li>'部分待检'：部分需检验、部分免检</li>
+  </ul>
+</div>
+
+<!-- ==================== 六、WIP影响分析 ==================== -->
+<h2>六、WIP报告影响分析 <span class="update-badge">重构</span> <span class="update-badge">来料检验分流</span></h2>
+<div class="mermaid">
+graph LR
+    subgraph 旧流程["❌ 旧流程（已废弃）"]
+        OLD_RECV[收回确认] --> OLD_PT[立即更新<br/>completed_quantity]
+        OLD_PT --> OLD_WIP[WIP虚增<br/>物料在途]
+    end
+
+    subgraph 新流程_需检验["✅ 新流程（incoming_inspection=Y）"]
+        NEW_RECV[收回确认<br/>入待检仓] --> NEW_NO[不更新<br/>completed_quantity]
+        NEW_NO --> NEW_QC[质检合格]
+        NEW_QC --> NEW_RSI[回收入库确认<br/>待检仓出→线边仓入]
+        NEW_RSI --> NEW_PT[此时更新<br/>completed_quantity]
+        NEW_PT --> NEW_WIP[WIP准确<br/>物料真正回到产线]
+    end
+
+    subgraph 新流程_免检["✅ 新流程（incoming_inspection=N）"]
+        DIRECT_RECV[收回确认<br/>免检直接入库] --> DIRECT_PT[立即更新<br/>completed_quantity]
+        DIRECT_PT --> DIRECT_WIP[WIP准确<br/>物料直接入线边仓]
+    end
+</div>
+
+<table>
+  <tr><th>步骤</th><th>process_task.completed_quantity</th><th>WIP影响</th><th>说明</th><th>条件</th></tr>
+  <tr><td>委外备料出库确认</td><td>不变</td><td>无影响</td><td>操作material体系库存，不涉及completed_quantity</td><td>—</td></tr>
+  <tr><td>委外回收确认(入待检仓)</td><td><strong>不更新</strong></td><td>无影响</td><td>物料仅入待检仓，未回到产线</td><td>incoming_inspection='Y'</td></tr>
+  <tr><td>质检合格→回收入库(入线边仓)</td><td><strong>此时更新</strong></td><td>正确反映</td><td>物料真正回到产线，计入completed_quantity</td><td>incoming_inspection='Y'</td></tr>
+  <tr><td style="background:#f6ffed">免检直接入库</td><td style="background:#f6ffed"><strong>立即更新</strong></td><td style="background:#f6ffed">正确反映</td><td style="background:#f6ffed">物料不经待检仓，直接入线边仓</td><td style="background:#f6ffed">incoming_inspection='N'</td></tr>
+</table>
+
+<!-- ==================== 七、报工阻断校验 ==================== -->
+<h2>七、报工阻断校验 <span class="update-badge">重构</span></h2>
+<div class="mermaid">
+graph TD
+    START([报工请求]) --> QUERY[查询上一道工序]
+    QUERY --> CHECK{上一道工序<br/>process_type?}
+    CHECK -->|非外协| ALLOW1[允许报工]
+    CHECK -->|外协| CHECK_OO{查询委外订单<br/>order_status}
+    CHECK_OO -->|已完成| ALLOW2[允许报工]
+    CHECK_OO -->|非已完成| DENY[拒绝报工 403<br/>提示:等待委外回收入库]
+</div>
+
+<div class="note">
+  <strong>校验逻辑：</strong>
+  <ul>
+    <li>在 createWorkReport 和 quickReport 中均增加校验</li>
+    <li>查询 process_task 中 step_number = currentStep - 1 的工序</li>
+    <li>如果上一道工序 process_type='外协'，检查关联的 outsourcing_order.order_status</li>
+    <li>order_status ≠ '已完成' 时，返回403错误，提示"需等待委外回收入库完成后方可报工"</li>
+    <li>order_status = '已完成' 时，允许报工（委外物料已回收入线边仓）</li>
+  </ul>
+</div>
+
+<!-- ==================== 八、委外数据实体关系 ==================== -->
+<h2>八、委外数据实体关系 <span class="update-badge">重构</span></h2>
+<div class="mermaid">
+erDiagram
+    production_plan ||--o{ production_order : generates
+    production_order ||--o{ process_task : contains
+    process_task ||--o| outsourcing_req : creates
+    outsourcing_req ||--o{ outsourcing_req_detail : contains
+    outsourcing_req ||--|| outsourcing_order : converts
+    outsourcing_order ||--o| outsourcing_material_issue : auto_generates_on_approve
+    outsourcing_order ||--o| outsourcing_receipt : auto_generates_on_approve
+    outsourcing_order ||--o| outsourcing_return_stockin : produces
+    outsourcing_order ||--o| outsourcing_settlement : has
+    outsourcing_material_issue ||--o{ outsourcing_material_issue_detail : contains
+    outsourcing_receipt ||--o{ outsourcing_receipt_detail : contains
+    outsourcing_receipt ||--|| outsourcing_inspection : triggers
+    outsourcing_inspection ||--o| outsourcing_return_stockin : creates_on_pass
+    outsourcing_return_stockin ||--o{ outsourcing_return_stockin_detail : contains
+
+    production_plan {
+        int id PK
+        string plan_number
+        string plan_status
+        string approval_status
+    }
+    production_order {
+        int id PK
+        string order_number
+        string plan_number FK
+        string plan_status
+        decimal planned_quantity
+    }
+    process_task {
+        int id PK
+        string task_number
+        string order_number FK
+        string process_type
+        decimal completed_quantity
+    }
+    outsourcing_req {
+        int id PK
+        string outsourcing_req_number
+        string production_order_number
+        string process_task_number
+        string approval_status
+        string order_status
+    }
+    outsourcing_order {
+        int id PK
+        string outsourcing_order_number
+        string process_task_number FK
+        string supplier_number
+        decimal planned_quantity
+        decimal received_quantity
+        decimal qualified_quantity
+        string approval_status
+        string order_status
+    }
+    outsourcing_material_issue {
+        int id PK
+        string issue_number
+        string outsourcing_order_number FK
+        string doc_type
+        string warehouse_number
+        string work_center_number
+        int step_number
+        string production_order_number
+        string status
+    }
+    outsourcing_receipt {
+        int id PK
+        string receipt_number
+        string outsourcing_order_number FK
+        string doc_type
+        string inspection_warehouse_number
+        string next_step_warehouse_number
+        int next_step_number
+        string status
+    }
+    outsourcing_inspection {
+        int id PK
+        string inspection_number
+        string receipt_number FK
+        string outsourcing_order_number FK
+        string inspection_result
+        decimal qualified_quantity
+        string inspection_status
+    }
+    outsourcing_return_stockin {
+        int id PK
+        string stockin_number
+        string outsourcing_order_number FK
+        string receipt_number
+        string inspection_number
+        string warehouse_from
+        string warehouse_to
+        int step_number
+        string status
+    }
+    outsourcing_return_stockin_detail {
+        int id PK
+        string stockin_number FK
+        string item_number
+        decimal qualified_quantity
+    }
+    outsourcing_settlement {
+        int id PK
+        string settlement_number
+        string outsourcing_order_number FK
+        decimal settlement_quantity
+        decimal total_amount
+        string payment_status
+    }
+</div>
+
+<!-- ==================== 九、库存联动机制 ==================== -->
+<h2>九、库存联动机制（material体系） <span class="update-badge">重构</span> <span class="update-badge">来料检验分流</span></h2>
+<div class="mermaid">
+graph LR
+    subgraph 委外备料出库
+        MI[出库确认] --> FIFO1[material_batch_inventory<br/>FIFO扣减线边仓]
+        FIFO1 --> SYNC1[material_inventory<br/>同步汇总表]
+        SYNC1 --> TXN1[material_inventory_transaction<br/>出库流水]
+        TXN1 --> LS1[lineside_movement_log<br/>出线边OUT]
+    end
+
+    subgraph 委外回收入待检仓_需检验
+        RC[回收确认<br/>incoming_inspection=Y] --> BATCH2[material_batch_inventory<br/>新增批次入待检仓]
+        BATCH2 --> SYNC2[material_inventory<br/>同步汇总表]
+        SYNC2 --> TXN2[material_inventory_transaction<br/>入库流水<br/>source=委外回收入待检]
+    end
+
+    subgraph 回收入库确认_需检验
+        RSI[回收入库确认<br/>质检合格后] --> FIFO3[material_batch_inventory<br/>FIFO扣减待检仓]
+        FIFO3 --> BATCH3[material_batch_inventory<br/>新增批次入线边仓]
+        BATCH3 --> SYNC3[material_inventory<br/>同步两边汇总]
+        SYNC3 --> TXN3[material_inventory_transaction<br/>出待检+入线边]
+        TXN3 --> LS2[lineside_movement_log<br/>当前工序OUT+下道IN]
+    end
+
+    subgraph 免检直接入库_incoming_inspection_N
+        DIRECT[回收确认<br/>incoming_inspection=N] --> BATCH4[material_batch_inventory<br/>新增批次入下道线边仓<br/>不经待检仓]
+        BATCH4 --> SYNC4[material_inventory<br/>同步汇总表]
+        SYNC4 --> TXN4[material_inventory_transaction<br/>入库流水<br/>source=委外免检直接入库]
+        TXN4 --> LS3[lineside_movement_log<br/>当前工序OUT+下道IN]
+    end
+</div>
+
+<table>
+  <tr><th>业务操作</th><th>material体系操作</th><th>仓库类型</th><th>触发时机</th><th>条件</th></tr>
+  <tr><td>备料出库确认</td><td>FIFO扣减 + 汇表同步 + 出库流水 + 线边OUT</td><td>线边仓</td><td>confirmIssue()</td><td>—</td></tr>
+  <tr><td>回收确认入待检仓</td><td>新增批次 + 汇表同步 + 入库流水</td><td>待检仓</td><td>confirmReceipt()</td><td>incoming_inspection='Y'</td></tr>
+  <tr><td>回收入库确认</td><td>FIFO出待检 + 新增入线边 + 双边汇表 + 双流水 + 线边OUT/IN</td><td>待检仓→线边仓</td><td>confirmReturnStockin()</td><td>incoming_inspection='Y' 且质检合格</td></tr>
+  <tr><td style="background:#f6ffed">免检直接入库</td><td style="background:#f6ffed">新增批次入线边 + 汇表同步 + 入库流水 + 线边OUT/IN</td><td style="background:#f6ffed">下道线边仓</td><td style="background:#f6ffed">confirmReceipt()</td><td style="background:#f6ffed">incoming_inspection='N'</td></tr>
+</table>
+
+<!-- ==================== 十、委外订单完整状态时序 ==================== -->
+<h2>十、委外订单完整状态时序 <span class="update-badge">重构</span></h2>
+<div class="mermaid">
+graph LR
+    A[草稿] -->|审批| B[已审批]
+    B -->|发出确认| C[已发出]
+    C -->|回收确认<br/>入待检仓| D[部分收回]
+    D -->|质检合格<br/>回收入库| E[已完成]
+    C -->|质检合格<br/>回收入库| E
+    E -->|关闭| F[已关闭]
+    B -->|取消| G[已取消]
+
+    style A fill:#f0f0f0,color:#666
+    style B fill:#e6f7ff,color:#1890ff
+    style C fill:#fff7e6,color:#fa8c16
+    style D fill:#fff7e6,color:#fa8c16
+    style E fill:#f6ffed,color:#52c41a
+    style F fill:#f0f0f0,color:#666
+    style G fill:#ffccc7,color:#ff4d4f
+</div>
+
+<div class="note">
+  <strong>重构变更：</strong>order_status 简化。旧流程：草稿→待发出→已发出→部分发料→已发料→部分收回→已收回→已质检→已结算。新流程：草稿→已审批→已发出→部分收回→已完成→已关闭。关键变化：<strong>order_status 在质检合格回收入库时直接变为"已完成"</strong>（当qualified_quantity >= planned_quantity时），不再经过"已收回→已质检"的中间状态。
+</div>
+
+<!-- ==================== 十一、关键业务规则汇总 ==================== -->
+<h2>十一、关键业务规则汇总</h2>
+
+<h3>11.1 MRP到委外的触发条件</h3>
+<div class="note">
+  <ul>
+    <li>MRP统一使用制造BOM（mfg_bom_header/mfg_bom_detail）进行运算</li>
+    <li>MRP生成生产单后，由调度派发创建工序任务</li>
+    <li>只有工序类型为"外协"的工序任务，才会触发委外申请</li>
+    <li>委外申请审批通过后，转单为委外订单（草稿状态）</li>
+    <li><strong>委外订单审批通过后</strong>，回调自动生成备料出库申请（待确认）和委外回收申请（待确认）</li>
+  </ul>
+</div>
+
+<h3>11.2 备料出库规则</h3>
+<div class="note">
+  <ul>
+    <li>审批回调自动创建备料出库申请，status=待确认，doc_type=issue</li>
+    <li>出库明细从制造BOM自动填充：物料编号、名称、规格、应发数量</li>
+    <li>仓库确认出库（WEB/移动端）后，使用material体系FIFO扣减线边仓</li>
+    <li>同步material_inventory汇总表，记录material_inventory_transaction出库流水</li>
+    <li>记录线边仓流水（direction=OUT）</li>
+    <li>更新出库单status=已出库</li>
+  </ul>
+</div>
+
+<h3>11.3 回收与质检规则 <span class="update-badge">来料检验分流</span></h3>
+<div class="note">
+  <ul>
+    <li>审批回调自动创建委外回收申请，status=待确认，doc_type=receipt</li>
+    <li>回收明细从委外订单产品信息自动填充，含待检仓和下道工序信息</li>
+    <li>确认收回时查询 <code>item_master.incoming_inspection</code> 字段进行分流：</li>
+    <ul>
+      <li><strong>incoming_inspection='Y'</strong>（需检验）：入待检仓（material体系）→ 自动创建质检单（仅含需检验物料）→ inspection_status='待检验'</li>
+      <li><strong>incoming_inspection='N'</strong>（免检）：跳过待检仓和质检，直接创建回收入库单(已入库) + 入下道线边仓 → inspection_status='免检'</li>
+      <li><strong>混合场景</strong>：部分物料需检验入待检仓、部分免检直接入库 → inspection_status='部分待检'</li>
+    </ul>
+    <li>回收确认后<strong>不更新</strong> process_task.completed_quantity（需检验路径）</li>
+    <li>免检路径在确认收回时<strong>立即更新</strong> process_task.completed_quantity 和 outsourcing_order.qualified_quantity + order_status</li>
+    <li>需检验路径：质检合格/让步接收 → 创建回收入库单 → 自动确认 → 待检仓出+线边仓入 → <strong>此时更新completed_quantity</strong></li>
+    <li>不合格品仅记录处理方式，不入库，不计入completed_quantity</li>
+    <li>质检单仅包含需检验的物料（免检物料不生成质检明细）</li>
+    <li>回收入库单（outsourcing_return_stockin）在两条路径下都会创建：
+      <ul>
+        <li>需检验路径：质检合格后创建，自动确认</li>
+        <li>免检路径：确认收回时直接创建，status=已入库，remark=免检直接入库</li>
+      </ul>
+    </li>
+  </ul>
+</div>
+
+<h3>11.4 报工阻断规则</h3>
+<div class="note">
+  <ul>
+    <li>报工时检查上一道工序是否为外协类型</li>
+    <li>上一道工序为外协且 outsourcing_order.order_status ≠ '已完成' → 拒绝报工(403)</li>
+    <li>上一道工序为外协且 order_status = '已完成' → 允许报工</li>
+    <li>前端应同步提示：报工按钮置灰，显示"等待委外回收入库"</li>
+  </ul>
+</div>
+
+<h3>11.5 结算规则</h3>
+<div class="note">
+  <ul>
+    <li>结算数量 = 质检合格数量（不合格不计费）</li>
+    <li>结算金额 = 合格数量 × 合同单价</li>
+    <li>支持分批付款，付款完成后更新订单 settlement_status</li>
+  </ul>
+</div>
+
+<h3>11.6 删除与取消规则</h3>
+<div class="note">
+  <ul>
+    <li>草稿状态的申请/订单可直接删除</li>
+    <li>已审批的单据需先反审（撤回审批）才能删除</li>
+    <li>已出库的发料单不能删除</li>
+    <li>反审委外订单时，已自动生成的出库申请/回收申请需人工处理</li>
+  </ul>
+</div>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: 'basis'
+    },
+    state: {
+      useMaxWidth: true
+    },
+    er: {
+      useMaxWidth: true
+    }
+  });
+</script>
+</body>
+</html>

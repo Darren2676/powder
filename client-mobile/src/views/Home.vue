@@ -27,6 +27,13 @@
           <span class="scan-btn__text">委外收回</span>
         </div>
       </div>
+      
+      <div class="action-grid action-grid--secondary">
+        <div class="scan-btn scan-btn--inspection" @click="goInspection">
+          <van-icon name="certificate" class="scan-btn__icon" />
+          <span class="scan-btn__text">移动质检</span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -66,6 +73,10 @@ const goOutsourcingIssue = () => {
 
 const goOutsourcingReceipt = () => {
   router.push('/outsourcing/receipt-scan')
+}
+
+const goInspection = () => {
+  router.push('/inspection')
 }
 </script>
 
@@ -157,6 +168,15 @@ const goOutsourcingReceipt = () => {
 
 .scan-btn--receipt:active {
   box-shadow: 0 3px 12px rgba(114, 50, 221, 0.3);
+}
+
+.scan-btn--inspection {
+  background: linear-gradient(145deg, #faad14, #d48806);
+  box-shadow: 0 6px 24px rgba(250, 173, 20, 0.4);
+}
+
+.scan-btn--inspection:active {
+  box-shadow: 0 3px 12px rgba(250, 173, 20, 0.3);
 }
 
 .scan-btn__icon {
