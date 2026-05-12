@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
-import { exportToExcel } from '../../../utils/excel.util';
+import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { generateForecastNumber } from '@/services/documentNumber.service';
 import { consumeForecastOnOrderApproval, recoverForecastOnOrderReversal } from '@/services/forecast.service';
@@ -82,7 +82,7 @@ export const getForecastDetail = async (req: Request, res: Response, next: NextF
               COALESCE(NULLIF(d.customer_item_number, ''), cm.customer_item_number) as customer_item_number,
               COALESCE(NULLIF(d.customer_item_description, ''), cm.customer_item_description) as customer_item_description
        FROM sales_forecast_detail d
-       LEFT JOIN customer_material_mapping cm ON cm.customer_number = :customerNumber AND cm.item_number = d.item_number
+       LEFT JOIN customer_material_mapping cm ON cm.customer_number = :customerNumber AND cm.item_number = d.item_number AND cm.approval_status = N'已审核'
        WHERE d.forecast_number = :id ORDER BY d.line_number`,
       { replacements: { id, customerNumber } }
     );
@@ -267,18 +267,29 @@ export const getForecastConsumptionLog = async (req: Request, res: Response, nex
 // ==================== 明细分页列表 ====================
 export const getForecastDetailsPage = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { page = 1, limit = 20, search = '', consumption_status = '' } = req.query;
+    const { page = 1, limit = 20, search = '', consumption_status = '', approval_status = '' } = req.query;
     const pageNum = Number(page);
     const pageSize = Number(limit);
     const offset = (pageNum - 1) * pageSize;
     const offsetEnd = offset + pageSize;
 
-    let whereClause = `WHERE h.approval_status = N'已审批'`;
+    let whereClause = 'WHERE 1=1';
     const replacements: any = { offset, offsetEnd };
 
     if (search) {
       whereClause += ` AND (h.forecast_number LIKE :search OR d.item_number LIKE :search OR d.item_name LIKE :search OR h.customer_name LIKE :search)`;
       replacements.search = `%${search}%`;
+    }
+    if (approval_status) {
+      const arr = String(approval_status).split(',').filter(Boolean);
+      if (arr.length === 1) {
+        whereClause += ` AND h.approval_status = :approval_status`;
+        replacements.approval_status = arr[0];
+      } else if (arr.length > 1) {
+        const placeholders = arr.map((_: string, i: number) => `:aps${i}`).join(', ');
+        whereClause += ` AND h.approval_status IN (${placeholders})`;
+        arr.forEach((s: string, i: number) => { replacements[`aps${i}`] = s; });
+      }
     }
     if (consumption_status) {
       const statusArr = String(consumption_status).split(',').filter(Boolean);
@@ -304,12 +315,13 @@ export const getForecastDetailsPage = async (req: Request, res: Response, next: 
                d.basic_unit, d.product_drawing_number, d.start_date, d.end_date,
                d.forecast_quantity, d.consumed_quantity, d.remaining_quantity, d.consumption_status, d.remark, d.status,
                h.customer_number, h.customer_name, h.forecast_date, h.approval_status,
+               h.[condition], h.remark AS header_remark, h.creation_date, h.creation_man,
                COALESCE(NULLIF(d.customer_item_number, ''), cm.customer_item_number) as customer_item_number,
                COALESCE(NULLIF(d.customer_item_description, ''), cm.customer_item_description) as customer_item_description,
                ROW_NUMBER() OVER (ORDER BY h.forecast_number, d.line_number) AS _row_num
         FROM sales_forecast_detail d
         INNER JOIN sales_forecast h ON h.forecast_number = d.forecast_number
-        LEFT JOIN customer_material_mapping cm ON cm.customer_number = h.customer_number AND cm.item_number = d.item_number
+        LEFT JOIN customer_material_mapping cm ON cm.customer_number = h.customer_number AND cm.item_number = d.item_number AND cm.approval_status = N'已审核'
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
@@ -474,5 +486,114 @@ export const deleteForecastDetail = async (req: Request, res: Response, next: Ne
 
     await sequelize.query(`DELETE FROM sales_forecast_detail WHERE id = :id`, { replacements: { id: detailId } });
     res.json(success(null, '删除预测明细成功'));
+  } catch (err) { next(err); }
+};
+
+// ==================== 导出/导入预测单 ====================
+const forecastExportFields = [
+  'forecast_number', 'customer_number', 'customer_name', 'forecast_date', 'approval_status',
+  'line_number', 'item_number', 'item_name', 'specifications', 'basic_unit',
+  'product_drawing_number', 'start_date', 'end_date', 'forecast_quantity',
+  'consumed_quantity', 'remaining_quantity', 'remark'
+];
+const forecastExportHeaders = [
+  '预测编号', '客户编号', '客户名称', '预测日期', '审批状态',
+  '行号', '物料编号', '物料名称', '规格', '单位',
+  '产品图号', '开始日期', '结束日期', '预测数量',
+  '已消耗', '剩余数量', '备注'
+];
+
+export const exportForecasts = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const [items]: any = await sequelize.query(`
+      SELECT h.forecast_number, h.customer_number, h.customer_name, h.forecast_date, h.approval_status,
+             d.line_number, d.item_number, d.item_name, d.specifications, d.basic_unit,
+             d.product_drawing_number, d.start_date, d.end_date, d.forecast_quantity,
+             d.consumed_quantity, d.remaining_quantity, d.remark
+      FROM sales_forecast h
+      LEFT JOIN sales_forecast_detail d ON h.forecast_number = d.forecast_number
+      ORDER BY h.forecast_number DESC, d.line_number
+    `);
+    exportToExcel(items, forecastExportFields, forecastExportHeaders, 'sales_forecasts', res);
+  } catch (err) { next(err); }
+};
+
+export const importForecasts = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.file) { res.status(400).json({ success: false, message: '请上传Excel文件' }); return; }
+    const rows = parseExcelFile(req.file.buffer, forecastExportFields, forecastExportHeaders);
+    if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件内容为空' }); return; }
+
+    const creation_man = (req as any).user?.username || '';
+
+    // 按 forecast_number 分组
+    const grouped: Record<string, any[]> = {};
+    for (const row of rows) {
+      const key = row.forecast_number || '';
+      if (!key) continue;
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(row);
+    }
+
+    const transaction = await sequelize.transaction();
+    try {
+      let headerCount = 0;
+      let detailCount = 0;
+
+      for (const forecastNumber of Object.keys(grouped)) {
+        const details = grouped[forecastNumber];
+        const first = details[0];
+
+        // 检查是否存在
+        const [existing]: any = await sequelize.query(
+          `SELECT forecast_number FROM sales_forecast WHERE forecast_number = :id`,
+          { replacements: { id: forecastNumber }, transaction }
+        );
+
+        if (existing.length > 0) continue; // 已存在则跳过
+
+        await sequelize.query(`
+          INSERT INTO sales_forecast (forecast_number, customer_number, customer_name, forecast_date, approval_status, [condition], remark, creation_date, creation_man)
+          VALUES (:forecast_number, :customer_number, :customer_name, :forecast_date, N'草稿', N'启用', :remark, GETDATE(), :creation_man)
+        `, {
+          replacements: {
+            forecast_number: forecastNumber,
+            customer_number: first.customer_number || '',
+            customer_name: first.customer_name || '',
+            forecast_date: first.forecast_date || null,
+            remark: first.remark || '',
+            creation_man
+          }, transaction
+        });
+        headerCount++;
+
+        for (const d of details) {
+          const qty = Number(d.forecast_quantity) || 0;
+          await sequelize.query(`
+            INSERT INTO sales_forecast_detail (forecast_number, line_number, item_number, item_name, specifications, basic_unit, product_drawing_number, start_date, end_date, forecast_quantity, consumed_quantity, remaining_quantity, consumption_status, remark, status)
+            VALUES (:forecast_number, :line_number, :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number, :start_date, :end_date, :forecast_quantity, 0, :remaining_quantity, N'未消耗', :remark, N'未开始')
+          `, {
+            replacements: {
+              forecast_number: forecastNumber,
+              line_number: d.line_number || detailCount + 10,
+              item_number: d.item_number || '',
+              item_name: d.item_name || '',
+              specifications: d.specifications || '',
+              basic_unit: d.basic_unit || '',
+              product_drawing_number: d.product_drawing_number || '',
+              start_date: d.start_date || null,
+              end_date: d.end_date || null,
+              forecast_quantity: qty,
+              remaining_quantity: qty,
+              remark: d.remark || ''
+            }, transaction
+          });
+          detailCount++;
+        }
+      }
+
+      await transaction.commit();
+      res.json(success({ headers: headerCount, details: detailCount }, `成功导入 ${headerCount} 条预测单，${detailCount} 条明细`));
+    } catch (e) { await transaction.rollback(); throw e; }
   } catch (err) { next(err); }
 };

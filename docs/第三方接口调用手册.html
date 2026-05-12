@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>第三方接口调用手册</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 13px; line-height: 1.8; color: #2c3e50; padding: 24px; }
+  h1 { font-size: 22px; text-align: center; margin: 0 0 6px; color: #1a1a2e; border-bottom: 3px solid #0f3460; padding-bottom: 12px; }
+  h2 { font-size: 17px; margin: 30px 0 14px; color: #0f3460; border-left: 4px solid #e94560; padding-left: 12px; background: linear-gradient(90deg, #f8f9fa 0%, transparent 100%); padding-top: 4px; padding-bottom: 4px; }
+  h3 { font-size: 14px; margin: 20px 0 10px; color: #16213e; }
+  h4 { font-size: 13px; margin: 14px 0 6px; color: #333; }
+  p { margin: 6px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 12px; }
+  th, td { border: 1px solid #d0d0d0; padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: #0f3460; color: #fff; font-weight: 500; white-space: nowrap; }
+  tr:nth-child(even) { background: #f8f9fa; }
+  code { background: #eef; padding: 1px 5px; border-radius: 3px; font-family: Consolas, "Courier New", monospace; font-size: 12px; color: #c0392b; }
+  pre { background: #1e1e2e; color: #cdd6f4; padding: 14px 18px; border-radius: 8px; font-size: 11.5px; line-height: 1.6; overflow-x: auto; margin: 10px 0; }
+  pre code { background: none; color: inherit; padding: 0; }
+  .tip { background: #e8f5e9; border-left: 4px solid #4caf50; padding: 10px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+  .tip::before { content: "提示 "; font-weight: bold; color: #2e7d32; }
+  .warn { background: #fff3e0; border-left: 4px solid #ff9800; padding: 10px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+  .warn::before { content: "警告 "; font-weight: bold; color: #e65100; }
+  .danger { background: #fce4ec; border-left: 4px solid #e53935; padding: 10px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+  .danger::before { content: "危险 "; font-weight: bold; color: #b71c1c; }
+  .info { background: #e3f2fd; border-left: 4px solid #1976d2; padding: 10px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+  .info::before { content: "说明 "; font-weight: bold; color: #0d47a1; }
+  ul, ol { margin: 6px 0 6px 24px; }
+  li { margin: 4px 0; }
+  .page-break { page-break-before: always; }
+  .cover { text-align: center; padding-top: 100px; }
+  .cover h1 { font-size: 30px; border: none; margin-bottom: 8px; }
+  .cover .subtitle { font-size: 18px; color: #555; margin-top: 16px; }
+  .cover .meta { margin-top: 80px; color: #888; font-size: 14px; }
+  .cover .meta p { margin: 6px 0; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+  .badge-green { background: #e8f5e9; color: #2e7d32; }
+  .badge-red { background: #fce4ec; color: #c62828; }
+  .badge-blue { background: #e3f2fd; color: #1565c0; }
+  .badge-orange { background: #fff3e0; color: #e65100; }
+  .badge-purple { background: #f3e5f5; color: #6a1b9a; }
+  .method-get { background: #e8f5e9; color: #2e7d32; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; }
+  .method-post { background: #e3f2fd; color: #1565c0; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; }
+  .method-put { background: #fff3e0; color: #e65100; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; }
+  .endpoint { font-family: Consolas, monospace; font-size: 12px; color: #333; }
+</style>
+</head>
+<body>
+
+<!-- ==================== 封面 ==================== -->
+<div class="cover">
+  <div style="font-size:14px;color:#999;margin-bottom:20px;">Seals MES System Open API</div>
+  <h1>第三方接口<br>调用手册</h1>
+  <div class="subtitle">认证接入 · 接口调用 · 数据格式 · 错误处理</div>
+  <div class="meta">
+    <p>文档版本：V1.0</p>
+    <p>适用对象：第三方系统开发对接人员</p>
+    <p>编制日期：2026年5月</p>
+  </div>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== 第一章：接入准备 ==================== -->
+<h1>第一章 接入准备</h1>
+
+<h2>1.1 获取 API 密钥</h2>
+<p>在对接 MES Open API 之前，需要向 MES 系统管理员申请 API 密钥。申请时请提供以下信息：</p>
+<ul>
+  <li><strong>密钥名称</strong>：标识用途（如 "ERP系统对接"）</li>
+  <li><strong>客户端名称</strong>：贵方系统/公司名称</li>
+  <li><strong>需要的权限</strong>：需要访问哪些模块的读/写权限</li>
+  <li><strong>贵方服务器IP</strong>：用于配置IP白名单（可选但推荐）</li>
+  <li><strong>期望频率限制</strong>：每分钟请求数量（默认100）</li>
+</ul>
+<p>管理员审核通过后，您将收到一个 <code>sk-</code> 开头的密钥字符串。</p>
+
+<div class="danger">请务必妥善保管密钥，不要将密钥提交到公开代码仓库（如 GitHub）。如果密钥泄露，请立即联系MES管理员处理。</div>
+
+<h2>1.2 环境信息</h2>
+<table>
+  <tr><th>项目</th><th>说明</th></tr>
+  <tr><td>API基础地址</td><td><code>http(s)://mes.company.com/api/v1/open</code></td></tr>
+  <tr><td>认证方式</td><td>请求头 <code>X-API-Key: sk-xxxx</code></td></tr>
+  <tr><td>数据格式</td><td>JSON（<code>Content-Type: application/json</code>）</td></tr>
+  <tr><td>字符编码</td><td>UTF-8</td></tr>
+  <tr><td>速率限制</td><td>默认100次/分钟，超限返回429</td></tr>
+</table>
+
+<h2>1.3 认证方式</h2>
+<p>所有 Open API 请求必须在 HTTP 请求头中携带 API 密钥：</p>
+<pre><code>X-API-Key: sk-a4f92352a2126695318836e026a78f8e1027fa439f96e1c9</code></pre>
+
+<div class="warn">密钥必须通过请求头传递，不要将密钥放在 URL 参数中，避免被日志记录泄露。</div>
+
+<h2>1.4 通用响应格式</h2>
+<p>所有接口响应均为 JSON 格式：</p>
+<pre><code>// 成功响应
+{
+  "success": true,
+  "message": "操作成功",
+  "data": { ... }
+}
+
+// 失败响应
+{
+  "success": false,
+  "message": "错误描述"
+}</code></pre>
+
+<h2>1.5 分页格式</h2>
+<p>列表接口统一使用分页，返回格式：</p>
+<pre><code>{
+  "success": true,
+  "data": {
+    "items": [ ... ],
+    "pagination": {
+      "total": 150,
+      "page": 1,
+      "limit": 20,
+      "totalPages": 8
+    }
+  }
+}</code></pre>
+<p>分页参数通过 Query String 传递：<code>?page=1&limit=20</code>，limit 最大值为 100。</p>
+
+<div class="page-break"></div>
+
+<!-- ==================== 第二章：生产工单接口 ==================== -->
+<h1>第二章 生产工单接口</h1>
+
+<h2>2.1 查询工单列表</h2>
+<table>
+  <tr><td style="width:80px;"><span class="method-get">GET</span></td><td class="endpoint">/api/v1/open/orders</td><td>权限：<code>order:read</code></td></tr>
+</table>
+
+<h3>请求参数</h3>
+<table>
+  <tr><th>参数</th><th>类型</th><th>必填</th><th>说明</th></tr>
+  <tr><td>page</td><td>int</td><td>否</td><td>页码，默认1</td></tr>
+  <tr><td>limit</td><td>int</td><td>否</td><td>每页条数，默认20，最大100</td></tr>
+  <tr><td>search</td><td>string</td><td>否</td><td>搜索关键词（匹配工单号/生产号/产品编号/产品名称）</td></tr>
+  <tr><td>plan_status</td><td>string</td><td>否</td><td>计划状态筛选</td></tr>
+  <tr><td>production_date</td><td>string</td><td>否</td><td>生产日期筛选（YYYY-MM-DD）</td></tr>
+</table>
+
+<h3>请求示例</h3>
+<pre><code>curl -X GET "http://mes.company.com/api/v1/open/orders?page=1&limit=10&search=110103" \
+  -H "X-API-Key: sk-your-api-key"</code></pre>
+
+<h3>响应示例</h3>
+<pre><code>{
+  "success": true,
+  "message": "获取工单列表成功",
+  "data": {
+    "items": [
+      {
+        "production_order_number": "PO20260508001",
+        "production_number": "",
+        "item_number": "110103",
+        "item_name": "油封",
+        "basic_unit": "PCS",
+        "specifications": "",
+        "planned_quantity": 1000,
+        "production_date": "2026-05-08",
+        "plan_status": "待执行",
+        "completion_status": "",
+        "approval_status": "草稿",
+        "remark": ""
+      }
+    ],
+    "pagination": { "total": 1, "page": 1, "limit": 10, "totalPages": 1 }
+  }
+}</code></pre>
+
+<h2>2.2 查询工单详情</h2>
+<table>
+  <tr><td style="width:80px;"><span class="method-get">GET</span></td><td class="endpoint">/api/v1/open/orders/:id</td><td>权限：<code>order:read</code></td></tr>
+</table>
+<p>其中 <code>:id</code> 为生产工单编号（<code>production_order_number</code>）。</p>
+
+<h3>请求示例</h3>
+<pre><code>curl -X GET "http://mes.company.com/api/v1/open/orders/PO20260508001" \
+  -H "X-API-Key: sk-your-api-key"</code></pre>
+
+<h2>2.3 创建工单</h2>
+<table>
+  <tr><td style="width:80px;"><span class="method-post">POST</span></td><td class="endpoint">/api/v1/open/orders</td><td>权限：<code>order:write</code></td></tr>
+</table>
+
+<h3>请求体</h3>
+<table>
+  <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+  <tr><td>item_number</td><td>string</td><td><span class="badge badge-red">必填</span></td><td>产品编号</td></tr>
+  <tr><td>item_name</td><td>string</td><td>否</td><td>产品名称</td></tr>
+  <tr><td>planned_quantity</td><td>number</td><td>否</td><td>计划数量</td></tr>
+  <tr><td>basic_unit</td><td>string</td><td>否</td><td>基本单位</td></tr>
+  <tr><td>specifications</td><td>string</td><td>否</td><td>规格</td></tr>
+  <tr><td>equipment_number</td><td>string</td><td>否</td><td>设备编号</td></tr>
+  <tr><td>mould_number</td><td>string</td><td>否</td><td>模具编号</td></tr>
+  <tr><td>planned_completion_time</td><td>string</td><td>否</td><td>计划完成时间</td></tr>
+  <tr><td>plan_status</td><td>string</td><td>否</td><td>计划状态，默认"待执行"</td></tr>
+  <tr><td>remark</td><td>string</td><td>否</td><td>备注</td></tr>
+</table>
+
+<h3>请求示例</h3>
+<pre><code>curl -X POST "http://mes.company.com/api/v1/open/orders" \
+  -H "X-API-Key: sk-your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "item_number": "110103",
+    "item_name": "油封",
+    "planned_quantity": 500,
+    "basic_unit": "PCS",
+    "plan_status": "待执行"
+  }'</code></pre>
+
+<h3>响应示例</h3>
+<pre><code>{
+  "success": true,
+  "message": "创建工单成功",
+  "data": {
+    "production_order_number": "PO20260508002"
+  }
+}</code></pre>
+
+<div class="info">工单编号由系统自动生成，格式为 <code>PO + 日期 + 三位序号</code>，如 <code>PO20260508002</code>。创建后默认为"草稿"审批状态。</div>
+
+<h2>2.4 更新工单</h2>
+<table>
+  <tr><td style="width:80px;"><span class="method-put">PUT</span></td><td class="endpoint">/api/v1/open/orders/:id</td><td>权限：<code>order:write</code></td></tr>
+</table>
+
+<div class="warn">仅"草稿"状态的工单可以更新。已提交审批或已审批的工单不允许修改。</div>
+
+<pre><code>curl -X PUT "http://mes.company.com/api/v1/open/orders/PO20260508002" \
+  -H "X-API-Key: sk-your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "planned_quantity": 800,
+    "remark": "调整计划数量"
+  }'</code></pre>
+
+<div class="page-break"></div>
+
+<!-- ==================== 第三章：工序报工接口 ==================== -->
+<h1>第三章 工序报工接口</h1>
+
+<h2>3.1 查询报工列表</h2>
+<table>
+  <tr><td style="width:80px;"><span class="method-get">GET</span></td><td class="endpoint">/api/v1/open/work-reports</td><td>权限：<code>work_report:read</code></td></tr>
+</table>
+
+<h3>请求参数</h3>
+<table>
+  <tr><th>参数</th><th>类型</th><th>必填</th><th>说明</th></tr>
+  <tr><td>page</td><td>int</td><td>否</td><td>页码，默认1</td></tr>
+  <tr><td>limit</td><td>int</td><td>否</td><td>每页条数，默认20，最大100</td></tr>
+  <tr><td>search</td><td>string</td><td>否</td><td>搜索关键词（匹配报工号/工序任务号/工单号/产品名/操作员）</td></tr>
+  <tr><td>production_order_number</td><td>string</td><td>否</td><td>按工单编号筛选</td></tr>
+  <tr><td>approval_status</td><td>string</td><td>否</td><td>审批状态筛选</td></tr>
+</table>
+
+<h3>请求示例</h3>
+<pre><code>curl -X GET "http://mes.company.com/api/v1/open/work-reports?production_order_number=PO20260508001&limit=10" \
+  -H "X-API-Key: sk-your-api-key"</code></pre>
+
+<h2>3.2 查询报工详情</h2>
+<table>
+  <tr><td style="width:80px;"><span class="method-get">GET</span></td><td class="endpoint">/api/v1/open/work-reports/:id</td><td>权限：<code>work_report:read</code></td></tr>
+</table>
+<p>其中 <code>:id</code> 为报工编号（<code>work_report_number</code>），格式如 <code>WR20260508001</code>。</p>
+
+<h2>3.3 创建报工记录</h2>
+<table>
+  <tr><td style="width:80px;"><span class="method-post">POST</span></td><td class="endpoint">/api/v1/open/work-reports</td><td>权限：<code>work_report:write</code></td></tr>
+</table>
+
+<h3>请求体</h3>
+<table>
+  <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+  <tr><td>production_order_number</td><td>string</td><td><span class="badge badge-red">必填</span></td><td>生产单编号</td></tr>
+  <tr><td>step_number</td><td>int</td><td>否</td><td>工序序号</td></tr>
+  <tr><td>standard_process_name</td><td>string</td><td>否</td><td>标准工序名称</td></tr>
+  <tr><td>item_number</td><td>string</td><td>否</td><td>产品编号</td></tr>
+  <tr><td>item_name</td><td>string</td><td>否</td><td>产品名称</td></tr>
+  <tr><td>qualified_quantity</td><td>number</td><td>否</td><td>合格数量</td></tr>
+  <tr><td>unqualified_quantity</td><td>number</td><td>否</td><td>不合格数量</td></tr>
+  <tr><td>work_center_number</td><td>string</td><td>否</td><td>工作中心编号</td></tr>
+  <tr><td>operator_name</td><td>string</td><td>否</td><td>操作员姓名</td></tr>
+  <tr><td>report_date</td><td>string</td><td>否</td><td>报工日期（YYYY-MM-DD），默认当天</td></tr>
+  <tr><td>actual_start_time</td><td>string</td><td>否</td><td>实际开始时间</td></tr>
+  <tr><td>actual_end_time</td><td>string</td><td>否</td><td>实际结束时间</td></tr>
+  <tr><td>unqualified_reason</td><td>string</td><td>否</td><td>不合格原因</td></tr>
+  <tr><td>remark</td><td>string</td><td>否</td><td>备注</td></tr>
+</table>
+
+<h3>请求示例</h3>
+<pre><code>curl -X POST "http://mes.company.com/api/v1/open/work-reports" \
+  -H "X-API-Key: sk-your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "production_order_number": "PO20260508001",
+    "step_number": 10,
+    "standard_process_name": "硫化",
+    "item_number": "110103",
+    "item_name": "油封",
+    "qualified_quantity": 480,
+    "unqualified_quantity": 5,
+    "work_center_number": "WC-LH01",
+    "operator_name": "张三",
+    "report_date": "2026-05-08"
+  }'</code></pre>
+
+<h3>响应示例</h3>
+<pre><code>{
+  "success": true,
+  "message": "创建报工记录成功",
+  "data": {
+    "work_report_number": "WR20260508001"
+  }
+}</code></pre>
+
+<div class="info">报工编号由系统自动生成，格式为 <code>WR + 日期 + 三位序号</code>。创建后默认为"草稿"审批状态，创建人为"API"。</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== 第四章：按工序备料接口 ==================== -->
+<h1>第四章 按工序备料接口</h1>
+
+<h2>4.1 查询备料单列表</h2>
+<table>
+  <tr><td style="width:80px;"><span class="method-get">GET</span></td><td class="endpoint">/api/v1/open/material-preparations</td><td>权限：<code>prep:read</code></td></tr>
+</table>
+
+<h3>请求参数</h3>
+<table>
+  <tr><th>参数</th><th>类型</th><th>必填</th><th>说明</th></tr>
+  <tr><td>page</td><td>int</td><td>否</td><td>页码，默认1</td></tr>
+  <tr><td>limit</td><td>int</td><td>否</td><td>每页条数，默认20，最大100</td></tr>
+  <tr><td>search</td><td>string</td><td>否</td><td>搜索关键词（匹配备料单号/工单号/产品编号/产品名称）</td></tr>
+  <tr><td>preparation_status</td><td>string</td><td>否</td><td>备料状态筛选</td></tr>
+  <tr><td>production_order_number</td><td>string</td><td>否</td><td>按工单编号筛选</td></tr>
+</table>
+
+<h2>4.2 查询备料单明细</h2>
+<table>
+  <tr><td style="width:80px;"><span class="method-get">GET</span></td><td class="endpoint">/api/v1/open/material-preparations/:id/details</td><td>权限：<code>prep:read</code></td></tr>
+</table>
+<p>其中 <code>:id</code> 为备料单编号（<code>preparation_number</code>），格式如 <code>MP-20260508-001</code>。</p>
+
+<h3>响应示例</h3>
+<pre><code>{
+  "success": true,
+  "data": {
+    "header": {
+      "preparation_number": "MP-20260508-001",
+      "production_order_number": "PO20260508001",
+      "item_number": "110103",
+      "item_name": "油封",
+      "planned_quantity": 1000,
+      "preparation_status": "待备料",
+      "approval_status": "草稿"
+    },
+    "details": [
+      {
+        "line_number": 1,
+        "material_number": "510103-31",
+        "material_name": "油封外骨架(涂胶）",
+        "material_type": "骨架",
+        "unit": "PCS",
+        "required_quantity": 1000,
+        "step_number": "LH",
+        "work_center_name": "硫化车间"
+      }
+    ]
+  }
+}</code></pre>
+
+<h2>4.3 按工序分组查询明细</h2>
+<table>
+  <tr><td style="width:80px;"><span class="method-get">GET</span></td><td class="endpoint">/api/v1/open/material-preparations/:id/details-grouped</td><td>权限：<code>prep:read</code></td></tr>
+</table>
+<p>返回结果中 <code>grouped</code> 字段以工序序号为 key 分组：</p>
+<pre><code>{
+  "success": true,
+  "data": {
+    "header": { ... },
+    "grouped": {
+      "10": [ { ... 工序10的物料 ... } ],
+      "20": [ { ... 工序20的物料 ... } ]
+    }
+  }
+}</code></pre>
+
+<h2>4.4 按工序生成备料单</h2>
+<table>
+  <tr><td style="width:80px;"><span class="method-post">POST</span></td><td class="endpoint">/api/v1/open/material-preparations/generate-by-process</td><td>权限：<code>prep:write</code></td></tr>
+</table>
+
+<div class="info">该接口根据工单关联的BOM，自动计算各物料的需求数量（计划数量 × BOM单位用量），一次性生成完整的备料单头和明细。</div>
+
+<h3>请求体</h3>
+<table>
+  <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+  <tr><td>production_order_number</td><td>string</td><td><span class="badge badge-red">必填</span></td><td>生产单编号</td></tr>
+  <tr><td>process_code</td><td>string</td><td>否</td><td>工序代码（预留，暂未使用筛选）</td></tr>
+  <tr><td>preparation_date</td><td>string</td><td>否</td><td>备料日期</td></tr>
+</table>
+
+<h3>请求示例</h3>
+<pre><code>curl -X POST "http://mes.company.com/api/v1/open/material-preparations/generate-by-process" \
+  -H "X-API-Key: sk-your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "production_order_number": "PO20260508001"
+  }'</code></pre>
+
+<h3>响应示例</h3>
+<pre><code>{
+  "success": true,
+  "message": "按工序生成备料单成功",
+  "data": {
+    "preparation_number": "MP-20260508-001",
+    "total_material_types": 11
+  }
+}</code></pre>
+
+<div class="warn">前置条件：工单必须已关联BOM（<code>bom_number</code> 字段不为空），否则返回400错误。</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== 第五章：设计BOM接口 ==================== -->
+<h1>第五章 设计BOM接口</h1>
+
+<h2>5.1 查询BOM列表</h2>
+<table>
+  <tr><td style="width:80px;"><span class="method-get">GET</span></td><td class="endpoint">/api/v1/open/bom</td><td>权限：<code>bom:read</code></td></tr>
+</table>
+
+<h3>请求参数</h3>
+<table>
+  <tr><th>参数</th><th>类型</th><th>必填</th><th>说明</th></tr>
+  <tr><td>page</td><td>int</td><td>否</td><td>页码，默认1</td></tr>
+  <tr><td>limit</td><td>int</td><td>否</td><td>每页条数，默认20，最大100</td></tr>
+  <tr><td>search</td><td>string</td><td>否</td><td>搜索关键词（匹配BOM编号/名称/产品编号/产品名称）</td></tr>
+  <tr><td>bom_type</td><td>string</td><td>否</td><td>BOM类型筛选（如"标准BOM"）</td></tr>
+</table>
+
+<h3>响应示例</h3>
+<pre><code>{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "bom_number": "110103",
+        "bom_name": "110103",
+        "bom_type": "标准BOM",
+        "bom_version": "V1.0",
+        "item_number": "110103",
+        "item_name": "油封",
+        "base_quantity": 1,
+        "condition": "启用",
+        "approval_status": "已审批"
+      }
+    ],
+    "pagination": { "total": 11, "page": 1, "limit": 20, "totalPages": 1 }
+  }
+}</code></pre>
+
+<h2>5.2 查询BOM详情</h2>
+<table>
+  <tr><td style="width:80px;"><span class="method-get">GET</span></td><td class="endpoint">/api/v1/open/bom/:id</td><td>权限：<code>bom:read</code></td></tr>
+</table>
+<p>其中 <code>:id</code> 为BOM编号（<code>bom_number</code>），返回头信息和所有行明细。</p>
+
+<h3>响应示例</h3>
+<pre><code>{
+  "success": true,
+  "data": {
+    "header": { "bom_number": "110103", "item_name": "油封", ... },
+    "details": [
+      {
+        "line_number": 10,
+        "material_number": "510103-31",
+        "material_name": "油封外骨架(涂胶）",
+        "material_type": "骨架",
+        "standard_quantity": 1,
+        "unit": "PCS",
+        "step_number": "LH",
+        "supply_type": ""
+      },
+      {
+        "line_number": 20,
+        "material_number": "510103-32",
+        "material_name": "油封内骨架（涂胶）",
+        "material_type": "骨架",
+        "standard_quantity": 1,
+        "unit": "PCS",
+        "step_number": "LH",
+        "supply_type": "委外"
+      }
+    ]
+  }
+}</code></pre>
+
+<h2>5.3 查询BOM树形结构</h2>
+<table>
+  <tr><td style="width:80px;"><span class="method-get">GET</span></td><td class="endpoint">/api/v1/open/bom/:id/tree</td><td>权限：<code>bom:read</code></td></tr>
+</table>
+
+<div class="info">递归展开子BOM，最多5层深度。每个节点包含 <code>children</code> 数组，自动查找半成品对应的子BOM。</div>
+
+<h3>请求示例</h3>
+<pre><code>curl -X GET "http://mes.company.com/api/v1/open/bom/110103/tree" \
+  -H "X-API-Key: sk-your-api-key"</code></pre>
+
+<h3>响应示例（简化）</h3>
+<pre><code>{
+  "success": true,
+  "data": {
+    "header": { "bom_number": "110103", "item_name": "油封" },
+    "tree": [
+      {
+        "material_number": "510103-31",
+        "material_name": "油封外骨架(涂胶）",
+        "children": [
+          {
+            "material_number": "610103-41",
+            "material_name": "油封外骨架",
+            "children": []
+          }
+        ]
+      },
+      {
+        "material_number": "510103-33",
+        "material_name": "N7502胶条",
+        "children": [
+          {
+            "material_number": "N7502",
+            "material_name": "N7502",
+            "children": [
+              {
+                "material_number": "MN7502",
+                "material_name": "N7502",
+                "material_type": "原材料",
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}</code></pre>
+
+<h2>5.4 查询BOM扁平化展开</h2>
+<table>
+  <tr><td style="width:80px;"><span class="method-get">GET</span></td><td class="endpoint">/api/v1/open/bom/:id/flatten</td><td>权限：<code>bom:read</code></td></tr>
+</table>
+
+<div class="info">将多级BOM树展平为一维列表，每条记录附带 <code>level</code>（层级）和 <code>path</code>（完整路径）字段。</div>
+
+<h3>请求示例</h3>
+<pre><code>curl -X GET "http://mes.company.com/api/v1/open/bom/110103/flatten" \
+  -H "X-API-Key: sk-your-api-key"</code></pre>
+
+<h3>响应示例（简化）</h3>
+<pre><code>{
+  "success": true,
+  "data": {
+    "header": { "bom_number": "110103", "item_name": "油封" },
+    "items": [
+      { "material_number": "510103-31", "level": 1, "path": "油封外骨架(涂胶）" },
+      { "material_number": "610103-41", "level": 2, "path": "油封外骨架(涂胶） > 油封外骨架" },
+      { "material_number": "510103-33", "level": 1, "path": "N7502胶条" },
+      { "material_number": "N7502",     "level": 2, "path": "N7502胶条 > N7502" },
+      { "material_number": "MN7502",    "level": 3, "path": "N7502胶条 > N7502 > N7502" }
+    ]
+  }
+}</code></pre>
+
+<div class="page-break"></div>
+
+<!-- ==================== 第六章：错误处理 ==================== -->
+<h1>第六章 错误处理</h1>
+
+<h2>6.1 HTTP 状态码一览</h2>
+<table>
+  <tr><th>状态码</th><th>含义</th><th>触发原因</th><th>处理建议</th></tr>
+  <tr><td><span class="badge badge-green">200</span></td><td>成功</td><td>请求正常处理</td><td>—</td></tr>
+  <tr><td><span class="badge badge-red">400</span></td><td>请求参数错误</td><td>缺少必填字段、数据格式错误</td><td>检查请求体和参数格式</td></tr>
+  <tr><td><span class="badge badge-red">401</span></td><td>未认证</td><td>缺少X-API-Key头、密钥无效/过期/已禁用</td><td>检查密钥是否正确、是否过期</td></tr>
+  <tr><td><span class="badge badge-red">403</span></td><td>权限不足</td><td>密钥没有对应模块的读/写权限、IP不在白名单</td><td>联系管理员开通权限或添加IP白名单</td></tr>
+  <tr><td><span class="badge badge-red">404</span></td><td>资源不存在</td><td>查询的编号不存在</td><td>检查编号是否正确</td></tr>
+  <tr><td><span class="badge badge-orange">429</span></td><td>请求频率超限</td><td>每分钟请求数超过限制</td><td>降低请求频率或联系管理员提高限制</td></tr>
+  <tr><td><span class="badge badge-red">500</span></td><td>服务器错误</td><td>服务端异常</td><td>联系MES管理员排查</td></tr>
+</table>
+
+<h2>6.2 错误响应格式</h2>
+<pre><code>{
+  "success": false,
+  "message": "缺少API密钥，请在请求头 X-API-Key 中提供"
+}</code></pre>
+
+<h2>6.3 重试策略</h2>
+<p>建议对可重试的错误实现指数退避策略：</p>
+<table>
+  <tr><th>错误类型</th><th>是否重试</th><th>策略</th></tr>
+  <tr><td>400 参数错误</td><td>否</td><td>修正请求参数后重试</td></tr>
+  <tr><td>401 认证失败</td><td>否</td><td>检查密钥配置</td></tr>
+  <tr><td>403 权限不足</td><td>否</td><td>联系管理员</td></tr>
+  <tr><td>404 资源不存在</td><td>否</td><td>确认编号正确</td></tr>
+  <tr><td>429 频率超限</td><td>是</td><td>等待60秒后重试，逐步增加等待时间</td></tr>
+  <tr><td>500 服务器错误</td><td>是</td><td>等待5秒后重试，最多3次</td></tr>
+  <tr><td>网络超时</td><td>是</td><td>等待5秒后重试，最多3次</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ==================== 第七章：完整代码示例 ==================== -->
+<h1>第七章 完整代码示例</h1>
+
+<h2>7.1 Python 对接示例</h2>
+<pre><code>import requests
+import time
+
+class MesApiClient:
+    """Seals MES Open API 客户端"""
+
+    def __init__(self, base_url: str, api_key: str):
+        self.base_url = base_url.rstrip('/')
+        self.headers = {
+            'X-API-Key': api_key,
+            'Content-Type': 'application/json'
+        }
+
+    def _request(self, method: str, path: str, **kwargs):
+        url = f"{self.base_url}{path}"
+        resp = requests.request(method, url, headers=self.headers, **kwargs)
+        data = resp.json()
+        if not data.get('success'):
+            raise Exception(f"API错误: {data.get('message', '未知错误')}")
+        return data.get('data')
+
+    # ---- 生产工单 ----
+    def get_orders(self, page=1, limit=20, search=None, plan_status=None):
+        params = {'page': page, 'limit': limit}
+        if search: params['search'] = search
+        if plan_status: params['plan_status'] = plan_status
+        return self._request('GET', '/api/v1/open/orders', params=params)
+
+    def get_order(self, order_number: str):
+        return self._request('GET', f'/api/v1/open/orders/{order_number}')
+
+    def create_order(self, **data):
+        return self._request('POST', '/api/v1/open/orders', json=data)
+
+    def update_order(self, order_number: str, **data):
+        return self._request('PUT', f'/api/v1/open/orders/{order_number}', json=data)
+
+    # ---- 工序报工 ----
+    def get_work_reports(self, page=1, limit=20, production_order_number=None):
+        params = {'page': page, 'limit': limit}
+        if production_order_number:
+            params['production_order_number'] = production_order_number
+        return self._request('GET', '/api/v1/open/work-reports', params=params)
+
+    def get_work_report(self, report_number: str):
+        return self._request('GET', f'/api/v1/open/work-reports/{report_number}')
+
+    def create_work_report(self, **data):
+        return self._request('POST', '/api/v1/open/work-reports', json=data)
+
+    # ---- 按工序备料 ----
+    def get_preparations(self, page=1, limit=20, production_order_number=None):
+        params = {'page': page, 'limit': limit}
+        if production_order_number:
+            params['production_order_number'] = production_order_number
+        return self._request('GET', '/api/v1/open/material-preparations', params=params)
+
+    def get_preparation_details(self, prep_number: str):
+        return self._request('GET', f'/api/v1/open/material-preparations/{prep_number}/details')
+
+    def generate_preparation(self, production_order_number: str):
+        return self._request('POST', '/api/v1/open/material-preparations/generate-by-process',
+                             json={'production_order_number': production_order_number})
+
+    # ---- 设计BOM ----
+    def get_bom_list(self, page=1, limit=20, search=None):
+        params = {'page': page, 'limit': limit}
+        if search: params['search'] = search
+        return self._request('GET', '/api/v1/open/bom', params=params)
+
+    def get_bom_detail(self, bom_number: str):
+        return self._request('GET', f'/api/v1/open/bom/{bom_number}')
+
+    def get_bom_tree(self, bom_number: str):
+        return self._request('GET', f'/api/v1/open/bom/{bom_number}/tree')
+
+    def get_bom_flatten(self, bom_number: str):
+        return self._request('GET', f'/api/v1/open/bom/{bom_number}/flatten')
+
+
+# 使用示例
+if __name__ == '__main__':
+    client = MesApiClient(
+        base_url='http://mes.company.com',
+        api_key='sk-your-api-key-here'
+    )
+
+    # 查询工单
+    orders = client.get_orders(search='110103')
+    print(f"工单数量: {orders['pagination']['total']}")
+
+    # 查询BOM树
+    tree = client.get_bom_tree('110103')
+    print(f"BOM: {tree['header']['item_name']}")
+
+    # 创建报工
+    report = client.create_work_report(
+        production_order_number='PO20260508001',
+        step_number=10,
+        standard_process_name='硫化',
+        qualified_quantity=480,
+        operator_name='张三'
+    )
+    print(f"报工编号: {report['work_report_number']}")</code></pre>
+
+<h2>7.2 C# 对接示例</h2>
+<pre><code>using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+
+public class MesApiClient
+{
+    private readonly HttpClient _http;
+    private readonly string _baseUrl;
+
+    public MesApiClient(string baseUrl, string apiKey)
+    {
+        _baseUrl = baseUrl.TrimEnd('/');
+        _http = new HttpClient();
+        _http.DefaultRequestHeaders.Add("X-API-Key", apiKey);
+        _http.DefaultRequestHeaders.Accept.Add(
+            new MediaTypeWithQualityHeaderValue("application/json"));
+    }
+
+    public async Task&lt;JsonElement&gt; GetAsync(string path, Dictionary&lt;string,string&gt;? queryParams = null)
+    {
+        var url = $"{_baseUrl}{path}";
+        if (queryParams != null && queryParams.Count > 0)
+        {
+            var qs = string.Join("&", queryParams.Select(kv => $"{kv.Key}={kv.Value}"));
+            url += $"?{qs}";
+        }
+        var resp = await _http.GetAsync(url);
+        var json = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+        return json.RootElement;
+    }
+
+    public async Task&lt;JsonElement&gt; PostAsync(string path, object data)
+    {
+        var content = new StringContent(
+            JsonSerializer.Serialize(data), Encoding.UTF8, "application/json");
+        var resp = await _http.PostAsync($"{_baseUrl}{path}", content);
+        var json = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+        return json.RootElement;
+    }
+
+    // 使用示例
+    public async Task Example()
+    {
+        // 查询工单列表
+        var orders = await GetAsync("/api/v1/open/orders",
+            new Dictionary&lt;string,string&gt; { {"page","1"}, {"limit","10"} });
+
+        // 查询BOM树
+        var tree = await GetAsync("/api/v1/open/bom/110103/tree");
+
+        // 创建报工
+        var report = await PostAsync("/api/v1/open/work-reports", new {
+            production_order_number = "PO20260508001",
+            step_number = 10,
+            qualified_quantity = 480,
+            operator_name = "张三"
+        });
+    }
+}</code></pre>
+
+<div class="page-break"></div>
+
+<!-- ==================== 第八章：接口速查表 ==================== -->
+<h1>第八章 接口速查表</h1>
+
+<table>
+  <tr><th>模块</th><th>方法</th><th>路径</th><th>权限</th><th>说明</th></tr>
+  <tr><td rowspan="4" style="background:#e3f2fd;font-weight:bold;">生产工单</td><td><span class="method-get">GET</span></td><td>/api/v1/open/orders</td><td>order:read</td><td>查询工单列表</td></tr>
+  <tr><td><span class="method-get">GET</span></td><td>/api/v1/open/orders/:id</td><td>order:read</td><td>查询工单详情</td></tr>
+  <tr><td><span class="method-post">POST</span></td><td>/api/v1/open/orders</td><td>order:write</td><td>创建工单</td></tr>
+  <tr><td><span class="method-put">PUT</span></td><td>/api/v1/open/orders/:id</td><td>order:write</td><td>更新工单</td></tr>
+  <tr><td rowspan="3" style="background:#e8f5e9;font-weight:bold;">工序报工</td><td><span class="method-get">GET</span></td><td>/api/v1/open/work-reports</td><td>work_report:read</td><td>查询报工列表</td></tr>
+  <tr><td><span class="method-get">GET</span></td><td>/api/v1/open/work-reports/:id</td><td>work_report:read</td><td>查询报工详情</td></tr>
+  <tr><td><span class="method-post">POST</span></td><td>/api/v1/open/work-reports</td><td>work_report:write</td><td>创建报工记录</td></tr>
+  <tr><td rowspan="4" style="background:#fff3e0;font-weight:bold;">按工序备料</td><td><span class="method-get">GET</span></td><td>/api/v1/open/material-preparations</td><td>prep:read</td><td>查询备料单列表</td></tr>
+  <tr><td><span class="method-get">GET</span></td><td>/api/v1/open/material-preparations/:id/details</td><td>prep:read</td><td>查询备料明细</td></tr>
+  <tr><td><span class="method-get">GET</span></td><td>/api/v1/open/material-preparations/:id/details-grouped</td><td>prep:read</td><td>按工序分组查询</td></tr>
+  <tr><td><span class="method-post">POST</span></td><td>/api/v1/open/material-preparations/generate-by-process</td><td>prep:write</td><td>按工序生成备料单</td></tr>
+  <tr><td rowspan="4" style="background:#f3e5f5;font-weight:bold;">设计BOM</td><td><span class="method-get">GET</span></td><td>/api/v1/open/bom</td><td>bom:read</td><td>查询BOM列表</td></tr>
+  <tr><td><span class="method-get">GET</span></td><td>/api/v1/open/bom/:id</td><td>bom:read</td><td>查询BOM详情</td></tr>
+  <tr><td><span class="method-get">GET</span></td><td>/api/v1/open/bom/:id/tree</td><td>bom:read</td><td>查询BOM树形结构</td></tr>
+  <tr><td><span class="method-get">GET</span></td><td>/api/v1/open/bom/:id/flatten</td><td>bom:read</td><td>查询BOM扁平化展开</td></tr>
+</table>
+
+<h2>编号规则速查</h2>
+<table>
+  <tr><th>业务对象</th><th>编号格式</th><th>示例</th></tr>
+  <tr><td>生产工单</td><td><code>PO + YYYYMMDD + 三位序号</code></td><td>PO20260508001</td></tr>
+  <tr><td>报工记录</td><td><code>WR + YYYYMMDD + 三位序号</code></td><td>WR20260508001</td></tr>
+  <tr><td>备料单</td><td><code>MP-YYYYMMDD-三位序号</code></td><td>MP-20260508-001</td></tr>
+  <tr><td>BOM编号</td><td>与产品编号一致</td><td>110103</td></tr>
+</table>
+
+</body>
+</html>

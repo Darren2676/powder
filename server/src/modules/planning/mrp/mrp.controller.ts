@@ -565,7 +565,15 @@ export const getMRPRuns = async (req: Request, res: Response, next: NextFunction
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY run_date DESC) AS _row_num FROM mrp_run ${whereClause}
+        SELECT id, mrp_run_number, run_status, plan_count,
+               result_count AS detail_count,
+               production_order_count, purchase_req_count,
+               run_date AS created_at,
+               confirmed_at,
+               run_by AS created_by,
+               remark,
+               ROW_NUMBER() OVER (ORDER BY run_date DESC) AS _row_num
+        FROM mrp_run ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
 
@@ -846,6 +854,7 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
       await sequelize.query(`
         UPDATE mrp_run SET
           run_status = N'已确认',
+          confirmed_at = GETDATE(),
           production_order_count = :po_count,
           purchase_req_count = :pr_count
         WHERE mrp_run_number = :mrp_run_number

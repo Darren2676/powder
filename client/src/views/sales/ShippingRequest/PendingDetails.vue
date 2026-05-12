@@ -132,6 +132,7 @@ onMounted(async () => {
 <template>
   <div style="padding: 20px">
     <div style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+      <span style="font-size: 18px; font-weight: 600; color: #1a1a2e; margin-right: 4px; white-space: nowrap">发货申请明细</span>
       <a-input-search
         v-model:value="searchText"
         placeholder="搜索申请单号/产品/客户/销售订单号"

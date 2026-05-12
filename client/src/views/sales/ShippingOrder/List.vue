@@ -291,6 +291,7 @@ onMounted(async () => {
   <div style="padding: 20px">
     <div style="margin-bottom: 16px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px">
       <div style="display: flex; gap: 8px; align-items: center">
+        <span style="font-size: 18px; font-weight: 600; color: #1a1a2e; margin-right: 4px; white-space: nowrap">发货单</span>
         <a-input-search
           v-model:value="searchText"
           placeholder="搜索发货单号/客户/承运商/运单号"

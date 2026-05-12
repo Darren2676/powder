@@ -6,12 +6,15 @@ import { getSalesOrderDetailsPage, exportSalesOrderDetailsSelected } from '@/api
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import { generateExportFilename } from '@/utils/exportFilename'
+import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 
+const router = useRouter()
 const loading = ref(false)
 const dataSource = ref<any[]>([])
 const searchText = ref('')
 const filterStatus = ref<string[]>([])
+const filterApprovalStatus = ref<string[]>([])
 const selectedRowKeys = ref<number[]>([])
 const exportLoading = ref(false)
 
@@ -33,7 +36,13 @@ const pagination = reactive({
 
 const defaultDataColumns: any[] = [
   { title: '行号', dataIndex: 'line_number', key: 'line_number', width: 60 },
+  { title: '客户编号', dataIndex: 'customer_number', key: 'customer_number', width: 110, resizable: true },
   { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 150, resizable: true },
+  { title: '销售负责人', dataIndex: 'head_of_sales', key: 'head_of_sales', width: 100, resizable: true },
+  { title: '联系人', dataIndex: 'linkman', key: 'linkman', width: 90, resizable: true },
+  { title: '联系方式', dataIndex: 'contacts', key: 'contacts', width: 120, resizable: true },
+  { title: '订单日期', dataIndex: 'order_date', key: 'order_date', width: 110, resizable: true },
+  { title: '订单交货日期', dataIndex: 'order_delivery_date', key: 'order_delivery_date', width: 120, resizable: true },
   { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 130, resizable: true },
   { title: '产品名称', dataIndex: 'item_name', key: 'item_name', width: 150, resizable: true },
   { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 120, resizable: true },
@@ -48,10 +57,16 @@ const defaultDataColumns: any[] = [
   { title: '发货状态', dataIndex: 'shipping_status', key: 'shipping_status', width: 90, resizable: true },
   { title: '生产状态', dataIndex: 'production_status', key: 'production_status', width: 100, resizable: true },
   { title: '退货状态', dataIndex: 'return_status', key: 'return_status', width: 90, resizable: true },
+  { title: '已发数量', dataIndex: 'shipped_quantity', key: 'shipped_quantity', width: 90, resizable: true },
+  { title: '已退数量', dataIndex: 'refunded_quantity', key: 'refunded_quantity', width: 90, resizable: true },
+  { title: '订单审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 110, resizable: true },
+  { title: '订单状态', dataIndex: 'order_status', key: 'order_status', width: 90, resizable: true },
+  { title: '启用状态', dataIndex: 'condition', key: 'condition', width: 80, resizable: true },
   { title: '客户采购订单号', dataIndex: 'customer_po_number', key: 'customer_po_number', width: 140, resizable: true },
   { title: '客户物料号', dataIndex: 'customer_item_number', key: 'customer_item_number', width: 120, resizable: true },
   { title: '客户物料描述', dataIndex: 'customer_item_description', key: 'customer_item_description', width: 140, resizable: true },
-  { title: '负责人', dataIndex: 'head_of_sales', key: 'head_of_sales', width: 100, resizable: true },
+  { title: '创建人', dataIndex: 'creation_man', key: 'creation_man', width: 90, resizable: true },
+  { title: '创建日期', dataIndex: 'creation_date', key: 'creation_date', width: 120, resizable: true },
   { title: '备注', dataIndex: 'remark', key: 'remark', width: 120, ellipsis: true, resizable: true }
 ]
 
@@ -77,6 +92,17 @@ const shippingStatusColors: Record<string, string> = {
   '全部发货': 'green'
 }
 
+const approvalStatusColors: Record<string, string> = {
+  '草稿': 'default',
+  '待审批': 'orange',
+  '已审批': 'green',
+  '已反审': 'red'
+}
+
+const goToSalesOrder = (salesOrderNumber: string) => {
+  router.push({ name: 'SalesOrderList', query: { open: salesOrderNumber } })
+}
+
 const formatDate = (date: any) => date ? dayjs(date).format('YYYY-MM-DD') : '-'
 
 const fetchData = async () => {
@@ -86,7 +112,8 @@ const fetchData = async () => {
       page: pagination.current,
       limit: pagination.pageSize,
       search: searchText.value,
-      status: filterStatus.value.length ? filterStatus.value.join(',') : ''
+      status: filterStatus.value.length ? filterStatus.value.join(',') : '',
+      approval_status: filterApprovalStatus.value.length ? filterApprovalStatus.value.join(',') : ''
     })
     if (res?.success) {
       dataSource.value = res.data.items || []
@@ -142,6 +169,7 @@ onMounted(async () => {
 <template>
   <div style="padding: 20px">
     <div style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+      <span style="font-size: 18px; font-weight: 600; color: #1a1a2e; margin-right: 4px; white-space: nowrap">销售订单明细</span>
       <a-input-search
         v-model:value="searchText"
         placeholder="搜索销售订单号/产品编号/产品名称/客户名称"
@@ -155,7 +183,7 @@ onMounted(async () => {
       <a-select
         v-model:value="filterStatus"
         mode="multiple"
-        placeholder="全部状态"
+        placeholder="明细状态"
         style="min-width: 160px"
         allow-clear
         :max-tag-count="2"
@@ -164,6 +192,19 @@ onMounted(async () => {
         <a-select-option value="未开始">未开始</a-select-option>
         <a-select-option value="进行中">进行中</a-select-option>
         <a-select-option value="已完成">已完成</a-select-option>
+      </a-select>
+      <a-select
+        v-model:value="filterApprovalStatus"
+        mode="multiple"
+        placeholder="订单审批状态"
+        style="min-width: 160px"
+        allow-clear
+        :max-tag-count="2"
+        @change="handleSearch"
+      >
+        <a-select-option value="草稿">草稿</a-select-option>
+        <a-select-option value="待审批">待审批</a-select-option>
+        <a-select-option value="已审批">已审批</a-select-option>
       </a-select>
       <a-button @click="fetchData"><ReloadOutlined /> 刷新</a-button>
       <a-button type="primary" :loading="exportLoading" :disabled="!selectedRowKeys.length" @click="handleExportSelected"><DownloadOutlined /> 导出选中</a-button>
@@ -184,11 +225,17 @@ onMounted(async () => {
       @resizeColumn="handleResizeColumn"
     >
       <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'status'">
+        <template v-if="column.key === 'sales_order_number'">
+          <a style="color: #1677ff; cursor: pointer" @click="goToSalesOrder(record.sales_order_number)">{{ record.sales_order_number }}</a>
+        </template>
+        <template v-else-if="column.key === 'status'">
           <a-tag :color="statusColors[record.status] || 'default'">{{ record.status }}</a-tag>
         </template>
         <template v-else-if="column.key === 'shipping_status'">
           <a-tag :color="shippingStatusColors[record.shipping_status] || 'default'">{{ record.shipping_status }}</a-tag>
+        </template>
+        <template v-else-if="column.key === 'approval_status'">
+          <a-tag :color="approvalStatusColors[record.approval_status] || 'default'">{{ record.approval_status }}</a-tag>
         </template>
         <template v-else-if="column.key === 'order_quantity'">
           <span style="font-weight: 600">{{ record.order_quantity }}</span>
@@ -201,6 +248,15 @@ onMounted(async () => {
         </template>
         <template v-else-if="column.key === 'promised_delivery_date'">
           {{ formatDate(record.promised_delivery_date) }}
+        </template>
+        <template v-else-if="column.key === 'order_date'">
+          {{ formatDate(record.order_date) }}
+        </template>
+        <template v-else-if="column.key === 'order_delivery_date'">
+          {{ formatDate(record.order_delivery_date) }}
+        </template>
+        <template v-else-if="column.key === 'unit_price'">
+          {{ record.unit_price ? Number(record.unit_price).toFixed(2) : '-' }}
         </template>
       </template>
     </a-table>

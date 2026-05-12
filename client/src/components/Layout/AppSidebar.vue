@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, watch, onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '@/store/auth';
 import { useMenuStore } from '@/store/menu';
 import type { MenuItem } from '@/store/menu';
+import SidebarMenuItem from './SidebarMenuItem.vue'
 import {
   DashboardOutlined,
   TeamOutlined,
@@ -82,6 +83,11 @@ const menuStore = useMenuStore();
 const openKeys = ref<string[]>([]);
 let preCollapsedOpenKeys: string[] = [];
 
+// Ensure menu tree is fresh from server
+onMounted(() => {
+  menuStore.fetchMenuTree();
+});
+
 // 图标名称到组件的映射
 const iconMap: Record<string, any> = {
   DashboardOutlined, TeamOutlined, AppstoreOutlined, ShoppingOutlined,
@@ -140,15 +146,21 @@ const keyToRoute: Record<string, string> = {
   'material-preparation-by-process': '/material-preparation-by-process',
   'material-issue': '/material-issue',
   'material-issue-by-process': '/material-issue-by-process',
+  'backflush-tasks': '/backflush-tasks',
   'work-reports': '/work-reports',
   'continuous-report': '/continuous-report',
   'dispatch-print': '/dispatch-print',
   'outsourcing-reqs': '/outsourcing-reqs',
   'outsourcing-orders': '/outsourcing-orders',
+  'outsourcing-issue': '/outsourcing-issue',
+  'outsourcing-receipt': '/outsourcing-receipt',
+  'outsourcing-inspection': '/outsourcing-inspection',
+  'outsourcing-prices': '/outsourcing-prices',
   'wip-by-order': '/wip-by-order',
   'wip-by-work-center': '/wip-by-work-center',
   'wip-lineside-transactions': '/wip-lineside-transactions',
   'fg-inventory': '/fg-inventory',
+  'fg-inventory-query': '/fg-inventory-query',
   'fg-inbound': '/fg-inbound',
   'fg-inbound-orders': '/fg-inbound-orders',
   'fg-outbound': '/fg-outbound',
@@ -170,6 +182,8 @@ const keyToRoute: Record<string, string> = {
   'purchase-prices': '/purchase-prices',
   'purchase-calc': '/purchase-calc',
   'piece-rate-prices': '/piece-rate-prices',
+  'piece-rate-wages': '/piece-rate-wages',
+  'standard-costs': '/standard-costs',
   'defect-reasons': '/defect-reasons',
   'defect-classes': '/defect-classes',
   'defects': '/defects',
@@ -182,6 +196,10 @@ const keyToRoute: Record<string, string> = {
   'product-quality-summary': '/product-quality-summary',
   'purchase-inspection': '/purchase-inspection',
   'production-inspections': '/production-inspections',
+  'nonconforming-products': '/nonconforming-products',
+  'pending-nonconforming-products': '/pending-nonconforming-products',
+  'scrap-orders': '/scrap-orders',
+  'rework-orders': '/rework-orders',
   'xhy-inspect': '/xhy-inspect',
   'xhy-inspect-lines': '/xhy-inspect-lines',
   'xhy-inspect-summary': '/xhy-inspect-summary',
@@ -224,6 +242,7 @@ const keyToRoute: Record<string, string> = {
   'permissions': '/permissions',
   'departments': '/departments',
   'workflow': '/workflow',
+  'api-keys': '/api-keys',
 };
 
 // 从路由路径查找对应的菜单key
@@ -419,48 +438,7 @@ const handleMenuClick = ({ key }: { key: string }) => {
 
     <!-- 动态菜单 - 递归渲染 -->
     <template v-for="menu in menuStore.menuTree" :key="menu.key">
-      <a-sub-menu v-if="menu.children && menu.children.length > 0" :key="menu.key">
-        <template #icon>
-          <component :is="getIcon(menu.icon)" v-if="getIcon(menu.icon)" />
-        </template>
-        <template #title>{{ menu.name }}</template>
-
-        <template v-for="child in menu.children" :key="child.key">
-          <a-sub-menu v-if="child.children && child.children.length > 0" :key="child.key">
-            <template #icon>
-              <component :is="getIcon(child.icon)" v-if="getIcon(child.icon)" />
-            </template>
-            <template #title>{{ child.name }}</template>
-
-            <a-menu-item
-              v-for="grandChild in child.children"
-              :key="grandChild.key"
-              @contextmenu="(e: MouseEvent) => handleContextMenu(e, grandChild.key)"
-            >
-              <component :is="getIcon(grandChild.icon)" v-if="getIcon(grandChild.icon)" />
-              <span>{{ grandChild.name }}</span>
-            </a-menu-item>
-          </a-sub-menu>
-
-          <a-menu-item
-            v-else
-            :key="child.key"
-            @contextmenu="(e: MouseEvent) => handleContextMenu(e, child.key)"
-          >
-            <component :is="getIcon(child.icon)" v-if="getIcon(child.icon)" />
-            <span>{{ child.name }}</span>
-          </a-menu-item>
-        </template>
-      </a-sub-menu>
-
-      <a-menu-item
-        v-else
-        :key="menu.key"
-        @contextmenu="(e: MouseEvent) => handleContextMenu(e, menu.key)"
-      >
-        <component :is="getIcon(menu.icon)" v-if="getIcon(menu.icon)" />
-        <span>{{ menu.name }}</span>
-      </a-menu-item>
+      <sidebar-menu-item :item="menu" :get-icon="getIcon" @contextmenu="(e: MouseEvent, key: string) => handleContextMenu(e, key)" />
     </template>
   </a-menu>
 </template>

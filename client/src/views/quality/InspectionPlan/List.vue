@@ -219,6 +219,55 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getInspectionPlans)
 
+// ===== Modal 状态 =====
+const modalVisible = ref(false)
+const modalMode = ref<'create' | 'edit'>('create')
+const form = reactive({
+  plan_name: '',
+  inspect_type: '专检',
+  is_full_inspect: '否',
+  is_sampling: '否',
+  sampling_trigger: '',
+  sampling_type: '',
+  sampling_ratio: 0,
+  decimal_handling: '',
+  sampling_quantity: 0,
+  sampling_range_type: '',
+  sampling_quantity_range: 0,
+  sampling_batch_range: 0,
+  is_first_inspect: '否',
+  first_inspect_time: '',
+  first_inspect_quantity: 0,
+  is_last_inspect: '否',
+  last_inspect_quantity: 0
+})
+
+const emptyForm = () => ({
+  plan_name: '',
+  inspect_type: '专检',
+  is_full_inspect: '否',
+  is_sampling: '否',
+  sampling_trigger: '',
+  sampling_type: '',
+  sampling_ratio: 0,
+  decimal_handling: '',
+  sampling_quantity: 0,
+  sampling_range_type: '',
+  sampling_quantity_range: 0,
+  sampling_batch_range: 0,
+  is_first_inspect: '否',
+  first_inspect_time: '',
+  first_inspect_quantity: 0,
+  is_last_inspect: '否',
+  last_inspect_quantity: 0
+})
+
+const openCreateModal = () => {
+  modalMode.value = 'create'
+  Object.assign(form, emptyForm())
+  modalVisible.value = true
+}
+
 const columns = [
   { title: '行号', key: 'rowIndex', width: 50 },
   { title: '方案名称', dataIndex: 'plan_name', key: 'plan_name', width: 140 },

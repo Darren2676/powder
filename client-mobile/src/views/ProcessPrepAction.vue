@@ -165,6 +165,66 @@
             <van-button size="small" type="primary" round @click="goFirstTask">去报工</van-button>
           </div>
         </div>
+
+        <!-- 历史领料记录 -->
+        <div v-if="issueHistory.length > 0" style="margin: 16px;">
+          <div class="section-title" style="margin-bottom: 8px;">
+            <span>历史领料记录（{{ issueHistory.length }} 次）</span>
+          </div>
+          <div
+            v-for="issue in issueHistory"
+            :key="issue.issue_number"
+            class="card"
+            style="padding:0; margin-bottom:6px; overflow:hidden;"
+          >
+            <!-- 领料单头部（可点击展开） -->
+            <div
+              style="display:flex; justify-content:space-between; align-items:center; padding:10px 14px;"
+              @click="toggleIssueDetail(issue)"
+            >
+              <div style="flex:1; min-width:0;">
+                <div style="font-size:13px; font-weight:500;">{{ issue.issue_number }}</div>
+                <div style="font-size:11px; color:var(--text-secondary);">{{ issue.creation_date }} | {{ issue.creation_man }}</div>
+              </div>
+              <div style="display:flex; align-items:center; margin-left:8px;">
+                <span style="font-size:12px; color:var(--text-secondary); margin-right:4px;">{{ issue.total_issue_items }} 项</span>
+                <span style="font-size:10px; color:var(--text-secondary); transform:rotate(0deg); transition:transform 0.2s;" :style="expandedIssue === issue.issue_number ? 'transform:rotate(180deg);' : ''">▼</span>
+              </div>
+            </div>
+            <!-- 展开的物料明细 -->
+            <div v-if="expandedIssue === issue.issue_number" style="border-top:1px solid var(--border-color);">
+              <div v-if="loadingDetail === issue.issue_number" style="text-align:center; padding:16px;">
+                <van-loading size="20" style="display:inline-block;" />
+              </div>
+              <div v-else-if="issueDetailsCache[issue.issue_number]?.length">
+                <div
+                  v-for="detail in issueDetailsCache[issue.issue_number]"
+                  :key="detail.id"
+                  style="padding:8px 14px; border-bottom:1px solid var(--border-color);"
+                >
+                  <div style="font-size:12px; font-weight:500;">{{ detail.material_number }} {{ detail.material_name }}</div>
+                  <div style="font-size:11px; color:var(--text-secondary); display:flex; flex-wrap:wrap; gap:8px; margin-top:3px;">
+                    <span>领用: <b style="color:#1989fa;">{{ detail.actual_quantity }}</b> {{ detail.unit }}</span>
+                    <span v-if="detail.batch_number">批次: {{ detail.batch_number }}</span>
+                    <span v-if="detail.default_warehouse">仓: {{ detail.default_warehouse }}</span>
+                  </div>
+                </div>
+              </div>
+              <div v-else style="text-align:center; padding:12px; font-size:12px; color:var(--text-secondary);">暂无明细</div>
+            </div>
+            <!-- 撤回按钮（单独一行） -->
+            <div style="border-top:1px solid var(--border-color); padding:6px 14px; text-align:right;">
+              <van-button
+                type="danger"
+                size="mini"
+                plain
+                round
+                :loading="deletingIssue === issue.issue_number"
+                @click.stop="handleDeleteIssue(issue)"
+              >撤回</van-button>
+            </div>
+          </div>
+        </div>
       </template>
     </template>
 
@@ -222,6 +282,17 @@
                 input-align="right"
                 class="issue-field"
               />
+              <van-field
+                v-if="!item.default_warehouse"
+                :model-value="item.input_warehouse_name || item.input_warehouse"
+                is-link
+                readonly
+                label="仓库"
+                placeholder="选择仓库"
+                input-align="right"
+                class="issue-field"
+                @click="onWarehousePickerOpen(item)"
+              />
             </div>
 
             <!-- 操作按钮 -->
@@ -259,6 +330,16 @@
         </div>
       </div>
     </van-popup>
+
+    <!-- 仓库选择器 -->
+    <van-popup v-model:show="warehousePickerVisible" position="bottom" round>
+      <van-picker
+        :columns="warehousePickerColumns"
+        @confirm="onWarehousePickerConfirm"
+        @cancel="warehousePickerVisible = false"
+        title="选择仓库"
+      />
+    </van-popup>
   </div>
 </template>
 
@@ -270,7 +351,11 @@ import {
   getProcessPrepStatus,
   generateByProcess,
   getPreparationDetailsGrouped,
-  createMaterialIssue
+  createMaterialIssue,
+  getWarehouseOptions,
+  getMaterialIssues,
+  deleteMaterialIssue,
+  getMaterialIssueDetail
 } from '@/api/materialPreparation'
 
 interface IssueItem {
@@ -290,6 +375,8 @@ interface IssueItem {
   default_warehouse: string
   input_actual_quantity: string
   input_batch_number: string
+  input_warehouse: string
+  input_warehouse_name: string
 }
 
 const route = useRoute()
@@ -299,6 +386,12 @@ const orderNo = decodeURIComponent(route.params.orderNo as string)
 const pageLoading = ref(true)
 const generating = ref(false)
 const saving = ref(false)
+const deletingIssue = ref<string | null>(null)
+const issueHistory = ref<any[]>([])
+// 展开的领料单明细
+const expandedIssue = ref<string | null>(null)
+const issueDetailsCache = ref<Record<string, any[]>>({})
+const loadingDetail = ref<string | null>(null)
 const viewStepIndex = ref(0)
 
 const statusData = ref<any>(null)
@@ -310,13 +403,25 @@ const materialGroups = ref<Record<number, any[]>>({})
 const issuePopupVisible = ref(false)
 const issueItems = ref<IssueItem[]>([])
 const issueRemark = ref('')
+const warehouseOptions = ref<{warehouse_number: string; warehouse_name: string}[]>([])
+const warehousePickerVisible = ref(false)
+const warehousePickerColumns = computed(() =>
+  warehouseOptions.value.map(w => ({ text: `${w.warehouse_number} - ${w.warehouse_name}`, value: w.warehouse_number }))
+)
+let currentItemForWarehouse: IssueItem | null = null
 let uidSeq = 0
 
-// 步骤条相关计算
+// 步骤条相关计算：定位到第一个还需要操作的工序（未备料完成 或 未报工完成）
 const activeStepIndex = computed(() => {
   if (!statusData.value?.steps) return 0
   const steps = statusData.value.steps
-  const idx = steps.findIndex((s: any) => !s.is_fully_issued && s.has_materials)
+  const idx = steps.findIndex((s: any) => {
+    // 有物料且未备料完成
+    if (s.is_fully_issued === false && s.has_materials) return true
+    // 工序任务未报工完成（无物料工序也靠此条件定位）
+    if (s.task_status && !['已完成', '已关闭'].includes(s.task_status)) return true
+    return false
+  })
   return idx >= 0 ? idx : steps.length
 })
 
@@ -391,6 +496,7 @@ const loadStatus = async () => {
       if (res.data.has_preparation) {
         prepNumber.value = res.data.preparation_number
         await loadMaterialDetails()
+        await loadIssueHistory()
       }
       viewStepIndex.value = activeStepIndex.value < (statusData.value.steps?.length || 0)
         ? activeStepIndex.value
@@ -433,6 +539,69 @@ const loadMaterialDetails = async () => {
   }
 }
 
+// 加载领料历史
+const loadIssueHistory = async () => {
+  try {
+    const res: any = await getMaterialIssues({ search: orderNo, limit: 20 })
+    if (res.success) {
+      issueHistory.value = res.data.items || []
+    }
+  } catch (e) {
+    console.error('Failed to load issue history:', e)
+  }
+}
+
+// 撤回领料
+const handleDeleteIssue = async (issue: any) => {
+  if (deletingIssue.value) return
+  try {
+    await showDialog({
+      title: '确认撤回',
+      message: `确认要撤回领料单 ${issue.issue_number} 吗？物料库存、备料单状态将同步回退。`,
+      confirmButtonText: '确认撤回',
+      showCancelButton: true
+    })
+  } catch { return }
+
+  deletingIssue.value = issue.issue_number
+  try {
+    const res: any = await deleteMaterialIssue(issue.issue_number)
+    if (!res || !res.success) {
+      showToast({ message: res?.message || '撤回失败', type: 'fail' })
+      return
+    }
+    showToast({ message: '领料单已撤回，库存与状态已回退', type: 'success' })
+    await loadStatus()
+    await loadIssueHistory()
+  } catch (e: any) {
+    showToast({ message: e?.response?.data?.message || '撤回失败', type: 'fail' })
+  } finally { deletingIssue.value = null }
+}
+
+// 展开/收起领料明细
+const toggleIssueDetail = async (issue: any) => {
+  const issueNo = issue.issue_number
+  if (expandedIssue.value === issueNo) {
+    expandedIssue.value = null
+    return
+  }
+  expandedIssue.value = issueNo
+  // 已缓存的无需重复加载
+  if (issueDetailsCache.value[issueNo]) return
+  
+  loadingDetail.value = issueNo
+  try {
+    const res: any = await getMaterialIssueDetail(issueNo)
+    if (res.success && res.data) {
+      issueDetailsCache.value[issueNo] = res.data.details || []
+    }
+  } catch (e) {
+    console.error('Failed to load issue detail:', e)
+  } finally {
+    loadingDetail.value = null
+  }
+}
+
 // 生成按工序备料单
 const handleGenerate = async () => {
   generating.value = true
@@ -453,47 +622,43 @@ const handleGenerate = async () => {
 }
 
 // 打开领料弹出层
-const openIssuePopup = () => {
+const openIssuePopup = async () => {
   const materials = currentMaterials.value.filter((d: any) => !isFullyIssued(d))
+
+  // 加载仓库列表（用于无默认仓库的物料）
+  try {
+    const res: any = await getWarehouseOptions()
+    if (res?.success && Array.isArray(res.data)) {
+      warehouseOptions.value = res.data
+    }
+  } catch { /* ignore */ }
+
+  const mapItem = (item: any) => ({
+    _uid: ++uidSeq,
+    is_added: false,
+    id: item.id,
+    material_number: item.material_number,
+    material_name: item.material_name,
+    material_type: item.material_type || '',
+    unit: item.unit || '',
+    required_quantity: parseFloat(item.required_quantity) || 0,
+    issued_quantity: parseFloat(item.issued_quantity) || 0,
+    remaining_quantity: item.remaining_quantity || 0,
+    step_number: item.step_number ?? null,
+    work_center_name: item.work_center_name || '',
+    is_key_material: item.is_key_material || 0,
+    default_warehouse: item.default_warehouse || '',
+    input_actual_quantity: '',
+    input_batch_number: '',
+    input_warehouse: '',
+    input_warehouse_name: ''
+  })
+
   if (materials.length === 0) {
     // 如果所有物料都领完了，也显示全部物料
-    issueItems.value = currentMaterials.value.map((item: any) => ({
-      _uid: ++uidSeq,
-      is_added: false,
-      id: item.id,
-      material_number: item.material_number,
-      material_name: item.material_name,
-      material_type: item.material_type || '',
-      unit: item.unit || '',
-      required_quantity: parseFloat(item.required_quantity) || 0,
-      issued_quantity: parseFloat(item.issued_quantity) || 0,
-      remaining_quantity: item.remaining_quantity || 0,
-      step_number: item.step_number ?? null,
-      work_center_name: item.work_center_name || '',
-      is_key_material: item.is_key_material || 0,
-      default_warehouse: item.default_warehouse || '',
-      input_actual_quantity: '',
-      input_batch_number: ''
-    }))
+    issueItems.value = currentMaterials.value.map(mapItem)
   } else {
-    issueItems.value = materials.map((item: any) => ({
-      _uid: ++uidSeq,
-      is_added: false,
-      id: item.id,
-      material_number: item.material_number,
-      material_name: item.material_name,
-      material_type: item.material_type || '',
-      unit: item.unit || '',
-      required_quantity: parseFloat(item.required_quantity) || 0,
-      issued_quantity: parseFloat(item.issued_quantity) || 0,
-      remaining_quantity: item.remaining_quantity || 0,
-      step_number: item.step_number ?? null,
-      work_center_name: item.work_center_name || '',
-      is_key_material: item.is_key_material || 0,
-      default_warehouse: item.default_warehouse || '',
-      input_actual_quantity: '',
-      input_batch_number: ''
-    }))
+    issueItems.value = materials.map(mapItem)
   }
   issueRemark.value = ''
   issuePopupVisible.value = true
@@ -508,7 +673,9 @@ const addBatchRow = (index: number) => {
     is_added: true,
     remaining_quantity: 0,
     input_actual_quantity: '',
-    input_batch_number: ''
+    input_batch_number: '',
+    input_warehouse: source.input_warehouse || '',
+    input_warehouse_name: source.input_warehouse_name || ''
   }
   issueItems.value.splice(index + 1, 0, newRow)
 }
@@ -516,6 +683,21 @@ const addBatchRow = (index: number) => {
 // 删除批次行
 const removeBatchRow = (index: number) => {
   issueItems.value.splice(index, 1)
+}
+
+// 仓库选择器弹出
+const onWarehousePickerOpen = (item: IssueItem) => {
+  currentItemForWarehouse = item
+  warehousePickerVisible.value = true
+}
+
+const onWarehousePickerConfirm = ({ selectedOptions }: any) => {
+  if (selectedOptions && selectedOptions.length > 0 && currentItemForWarehouse) {
+    currentItemForWarehouse.input_warehouse = selectedOptions[0].value
+    currentItemForWarehouse.input_warehouse_name = selectedOptions[0].text
+  }
+  warehousePickerVisible.value = false
+  currentItemForWarehouse = null
 }
 
 // 一键填充未领量
@@ -566,7 +748,7 @@ const handleSaveIssue = async () => {
         step_number: d.step_number,
         work_center_name: d.work_center_name,
         is_key_material: d.is_key_material,
-        default_warehouse: d.default_warehouse
+        default_warehouse: d.input_warehouse || d.default_warehouse
       }))
     }
 

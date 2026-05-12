@@ -1,15 +1,20 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DownloadOutlined, DeleteOutlined, EyeOutlined, EditOutlined, ExclamationCircleOutlined, SwapOutlined, DownOutlined, HistoryOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, DownloadOutlined, DeleteOutlined, EyeOutlined, EditOutlined, ExclamationCircleOutlined, SwapOutlined, DownOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getPurchaseReqs, getPurchaseReqDetail, createPurchaseReq, updatePurchaseReq, deletePurchaseReq, exportPurchaseReqs, toOrder } from '@/api/purchasing/purchaseReq'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getSuppliers } from '@/api/master-data/supplier'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval, batchSubmitForApproval, batchApproveRecords, batchWithdrawApproval, batchReverseApproval } from '@/api/system/approval'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
+import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
+import { useColumnPreference } from '@/composables/useColumnPreference'
+import { useAuthStore } from '@/store/auth'
+
+const authStore = useAuthStore()
 
 // ==================== 数据 ====================
 
@@ -41,18 +46,26 @@ const toOrderForm = reactive({ supplier_number: '', supplier_name: '', delivery_
 // ==================== 列定义 ====================
 const { loading, dataSource, searchText, pagination, selectedRowKeys, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getPurchaseReqs)
 
-const columns = [
-  { title: '采购申请号', dataIndex: 'purchase_req_number', key: 'purchase_req_number', width: 180 },
-  { title: '申请日期', dataIndex: 'request_date', key: 'request_date', width: 110, customRender: ({ text }: any) => text ? dayjs(text).format('YYYY-MM-DD') : '' },
-  { title: '申请人', dataIndex: 'requester', key: 'requester', width: 100 },
-  { title: '部门', dataIndex: 'request_department', key: 'request_department', width: 100 },
-  { title: '原因', dataIndex: 'request_reason', key: 'request_reason', width: 100 },
-  { title: '来源单号', dataIndex: 'source_number', key: 'source_number', width: 150 },
-  { title: '生产计划编号', dataIndex: 'production_number', key: 'production_number', width: 200, ellipsis: true },
-  { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 100 },
-  { title: '执行状态', dataIndex: 'order_status', key: 'order_status', width: 100 },
-  { title: '操作', key: 'action', width: 150, fixed: 'right' as const }
+const defaultDataColumns: any[] = [
+  { title: '采购申请号', dataIndex: 'purchase_req_number', key: 'purchase_req_number', width: 180, sorter: (a: any, b: any) => (a.purchase_req_number || '').localeCompare(b.purchase_req_number || ''), resizable: true },
+  { title: '申请日期', dataIndex: 'request_date', key: 'request_date', width: 110, customRender: ({ text }: any) => text ? dayjs(text).format('YYYY-MM-DD') : '', resizable: true },
+  { title: '申请人', dataIndex: 'requester', key: 'requester', width: 100, resizable: true },
+  { title: '部门', dataIndex: 'request_department', key: 'request_department', width: 100, resizable: true },
+  { title: '原因', dataIndex: 'request_reason', key: 'request_reason', width: 100, resizable: true },
+  { title: '来源单号', dataIndex: 'source_number', key: 'source_number', width: 150, resizable: true },
+  { title: '生产计划编号', dataIndex: 'production_number', key: 'production_number', width: 200, ellipsis: true, resizable: true },
+  { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 100, resizable: true },
+  { title: '执行状态', dataIndex: 'order_status', key: 'order_status', width: 100, resizable: true }
 ]
+
+const {
+  columns, columnSettingVisible, columnSettingList, columnSettingSaving,
+  openColumnSetting, moveColumnUp, moveColumnDown, saveColumnSetting, resetColumnSetting,
+  loadColumnPreference, handleResizeColumn
+} = useColumnPreference('purchase_req_list', defaultDataColumns, {
+  fixedLeft: [{ title: '行号', key: 'rowIndex', width: 60, fixed: 'left' as const }],
+  fixedRight: [{ title: '操作', key: 'action', width: 150, fixed: 'right' as const }]
+})
 
 const detailColumns = [
   { title: '物料编码', dataIndex: 'item_number', key: 'item_number', width: 140 },
@@ -90,9 +103,16 @@ const loadDropdowns = async () => {
   } catch { /* ignore */ }
 }
 
-onMounted(() => { fetchList(); loadDropdowns() })
+onMounted(() => { loadColumnPreference(); fetchList(); loadDropdowns() })
 
-
+const handleRefresh = () => { fetchList() }
+const openCreate = () => {
+  modalTitle.value = '新建采购申请'
+  isView.value = false
+  formData.value = {}
+  detailRows.value = []
+  modalVisible.value = true
+}
 
 
 
@@ -249,7 +269,7 @@ const openToOrder = async (record: any) => {
   toOrderForm.supplier_number = ''
   toOrderForm.supplier_name = ''
   toOrderForm.delivery_date = null
-  toOrderForm.procurement_manager = ''
+  toOrderForm.procurement_manager = authStore.user?.real_name || authStore.user?.username || ''
   toOrderForm.linkman = ''
   toOrderForm.contacts = ''
   toOrderVisible.value = true
@@ -325,23 +345,24 @@ const handleBatchAction = (action: string) => {
 
 <template>
   <div style="padding: 20px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <h2 style="margin:0">采购申请单</h2>
-      <div style="display:flex;gap:8px;align-items:center">
-        <a-input-search v-model:value="searchText" placeholder="搜索申请号/申请人/部门/计划编号" style="width:260px" @search="handleSearch" allow-clear />
-        <a-select v-model:value="filterApproval" placeholder="审批状态" style="width:120px" allow-clear @change="handleSearch">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:nowrap;overflow-x:auto">
+      <h3 style="margin:0;white-space:nowrap;flex-shrink:0">采购申请单</h3>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:nowrap">
+        <a-input-search v-model:value="searchText" placeholder="搜索申请号/申请人/部门/计划编号" style="width:260px;flex-shrink:0" @search="handleSearch" allow-clear />
+        <a-select v-model:value="filterApproval" placeholder="审批状态" style="width:120px;flex-shrink:0" allow-clear @change="handleSearch">
           <a-select-option value="草稿">草稿</a-select-option>
           <a-select-option value="待审批">待审批</a-select-option>
           <a-select-option value="已审批">已审批</a-select-option>
           <a-select-option value="已驳回">已驳回</a-select-option>
         </a-select>
-        <a-select v-model:value="filterOrder" placeholder="执行状态" style="width:120px" allow-clear @change="handleSearch">
+        <a-select v-model:value="filterOrder" placeholder="执行状态" style="width:120px;flex-shrink:0" allow-clear @change="handleSearch">
           <a-select-option value="未执行">未执行</a-select-option>
           <a-select-option value="部分转单">部分转单</a-select-option>
           <a-select-option value="已转单">已转单</a-select-option>
         </a-select>
         <a-button @click="handleRefresh"><template #icon><ReloadOutlined /></template></a-button>
         <a-button @click="handleExport"><template #icon><DownloadOutlined /></template>导出</a-button>
+        <a-button @click="openColumnSetting"><template #icon><SettingOutlined /></template>列设置</a-button>
         <a-button type="primary" @click="openCreate"><template #icon><PlusOutlined /></template>新建</a-button>
       </div>
     </div>
@@ -355,9 +376,12 @@ const handleBatchAction = (action: string) => {
       <a-button size="small" @click="selectedRowKeys = []">清除选择</a-button>
     </div>
 
-    <a-table :columns="columns" :data-source="dataList" :loading="loading" :pagination="{ current: pagination.current, pageSize: pagination.pageSize, total: pagination.total, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }" @change="handleTableChange" row-key="purchase_req_number" :row-selection="{ selectedRowKeys, onChange: (keys: string[]) => selectedRowKeys = keys }" :scroll="{ x: 1400 }" size="small">
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'approval_status'">
+    <a-table :columns="columns" :data-source="dataList" :loading="loading" :pagination="{ current: pagination.current, pageSize: pagination.pageSize, total: pagination.total, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }" @change="handleTableChange" row-key="purchase_req_number" :row-selection="{ selectedRowKeys, onChange: (keys: string[]) => selectedRowKeys = keys }" :scroll="{ x: 'max-content' }" size="small" @resizeColumn="handleResizeColumn">
+      <template #bodyCell="{ column, record, index }">
+        <template v-if="column.key === 'rowIndex'">
+          {{ (pagination.current - 1) * pagination.pageSize + index + 1 }}
+        </template>
+        <template v-else-if="column.key === 'approval_status'">
           <ApprovalStatusTag :status="record.approval_status" />
         </template>
         <template v-else-if="column.key === 'order_status'">
@@ -493,5 +517,16 @@ const handleBatchAction = (action: string) => {
       </a-table>
     </a-modal>
     <ApprovalLogModal v-model:open="approvalLogVisible" module="purchase_req" :record-id="approvalLogRecordId" />
+
+    <ColumnSettingDrawer
+      :open="columnSettingVisible"
+      :settingList="columnSettingList"
+      :saving="columnSettingSaving"
+      @update:open="columnSettingVisible = $event"
+      @moveUp="moveColumnUp"
+      @moveDown="moveColumnDown"
+      @save="saveColumnSetting"
+      @reset="resetColumnSetting"
+    />
   </div>
 </template>

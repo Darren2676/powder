@@ -344,7 +344,7 @@ export const getTasksByOrder = async (req: Request, res: Response, next: NextFun
 
     // 2. 查询该单所有工序任务
     const [tasks]: any = await sequelize.query(
-      `SELECT process_task_number, step_number, standard_process_number, standard_process_name, item_number, item_name, specifications, basic_unit, work_center_number, work_center_name, planned_quantity, completed_quantity, excess_reporting_ratio, task_status, approval_status, operator FROM process_task WHERE production_order_number = :orderNo ORDER BY step_number ASC`,
+      `SELECT process_task_number, step_number, standard_process_number, standard_process_name, item_number, item_name, specifications, basic_unit, work_center_number, work_center_name, planned_quantity, completed_quantity, excess_reporting_ratio, task_status, approval_status, operator, ISNULL(is_backflush, 0) as is_backflush FROM process_task WHERE production_order_number = :orderNo ORDER BY step_number ASC`,
       { replacements: { orderNo } }
     );
 
@@ -409,8 +409,9 @@ export const getTasksByOrder = async (req: Request, res: Response, next: NextFun
       const planStatus = order.plan_status || '';
 
       if (isFirstStep) {
-        // 首道工序：需要生产单状态为"已备料"或更后面的状态才可报工
-        if (planStatus === '未开始' || planStatus === '已派发') {
+        // 首道工序：需生产单状态为"已备料"或更后面，或首道倒冲（is_backflush=1）允许跳过领料
+        const isBackflush = parseInt(task.is_backflush) === 1;
+        if ((planStatus === '未开始' || planStatus === '已派发') && !isBackflush) {
           materialGateStatus = 'blocked';
           materialGateReason = '首道工序需先完成物料领料（当前状态：' + planStatus + '）';
           canReport = false;

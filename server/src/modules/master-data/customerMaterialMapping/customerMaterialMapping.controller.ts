@@ -6,7 +6,7 @@ import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 // ==================== 列表查询 ====================
 export const getList = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { page = 1, limit = 20, search = '', customer_number = '', item_number = '' } = req.query;
+    const { page = 1, limit = 20, search = '', customer_number = '', item_number = '', approval_status = '' } = req.query;
     const pageNum = Number(page);
     const pageSize = Number(limit);
     const offset = (pageNum - 1) * pageSize;
@@ -22,6 +22,10 @@ export const getList = async (req: Request, res: Response, next: NextFunction) =
     if (item_number) {
       whereClause += ` AND item_number = :item_number`;
       replacements.item_number = item_number;
+    }
+    if (approval_status) {
+      whereClause += ` AND approval_status = :approval_status`;
+      replacements.approval_status = approval_status;
     }
     if (search) {
       whereClause += ` AND (customer_number LIKE :search OR customer_name LIKE :search OR item_number LIKE :search OR item_name LIKE :search OR customer_item_number LIKE :search OR customer_item_description LIKE :search)`;

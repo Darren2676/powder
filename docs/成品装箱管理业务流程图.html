@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>成品装箱管理业务流程图</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+.container { max-width: 1100px; margin: 0 auto; padding: 30px 20px; }
+h1 { text-align: center; font-size: 28px; color: #1a1a2e; margin-bottom: 8px; letter-spacing: 3px; }
+.subtitle { text-align: center; color: #666; font-size: 14px; margin-bottom: 40px; }
+.section { background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); padding: 30px; margin-bottom: 30px; }
+.section h2 { font-size: 20px; color: #16213e; border-left: 4px solid #0f3460; padding-left: 12px; margin-bottom: 20px; }
+.section h3 { font-size: 16px; color: #1a1a2e; margin: 18px 0 10px; }
+.desc { color: #555; font-size: 14px; margin-bottom: 16px; padding: 10px 14px; background: #f8f9fb; border-radius: 6px; }
+.mermaid { display: flex; justify-content: center; margin: 16px 0; }
+table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+th { background: #e8ecf1; color: #1a1a2e; font-weight: 600; }
+tr:nth-child(even) { background: #fafbfc; }
+.toc { background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); padding: 24px 30px; margin-bottom: 30px; }
+.toc h2 { font-size: 18px; color: #16213e; border-left: 4px solid #0f3460; padding-left: 12px; margin-bottom: 14px; }
+.toc ol { padding-left: 22px; }
+.toc li { margin: 6px 0; font-size: 14px; }
+.toc a { color: #0f3460; text-decoration: none; }
+.toc a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>成品装箱管理业务流程图</h1>
+<p class="subtitle">从成品入库批次号产生 → 装袋装箱 → 拆箱复检 → 扫箱码出库 → 扫箱码盘点 全链路可视化</p>
+
+<div class="toc">
+<h2>目录</h2>
+<ol>
+<li><a href="#s1">成品入库与批次号生成流程</a></li>
+<li><a href="#s2">装箱单创建与批次标签分配流程</a></li>
+<li><a href="#s3">装箱单与箱状态流转</a></li>
+<li><a href="#s4">装箱确认与箱装库存入库流程</a></li>
+<li><a href="#s5">拆箱业务流程（整单拆箱 / 逐箱拆箱）</a></li>
+<li><a href="#s6">扫箱码发货出库流程</a></li>
+<li><a href="#s7">扫箱码盘点流程</a></li>
+<li><a href="#s8">袋标签与箱标签打印流程</a></li>
+<li><a href="#s9">核心数据实体关系ER图</a></li>
+</ol>
+</div>
+
+<!-- ==================== 第1章 ==================== -->
+<div class="section" id="s1">
+<h2>1. 成品入库与批次号生成流程</h2>
+<p class="desc">生产完工报工后触发成品入库，系统自动生成批次号（FB-YYYYMMDD-NNN），写入批次库存表、更新汇总库存、记录库存流水。</p>
+<div class="mermaid">
+graph TD
+    A[生产完工报工] --> B[触发成品入库]
+    B --> C{检验是否合格?}
+    C -->|合格| D[质量状态 = 合格品]
+    C -->|不合格| E[质量状态 = 不合格品]
+    D --> F[自动生成批次号<br/>FB-YYYYMMDD-NNN]
+    E --> F
+    F --> G[写入 finished_batch_inventory<br/>批次号+产品+仓库+数量+质量状态]
+    G --> H[更新 finished_goods_inventory<br/>按产品+仓库+质量状态汇总]
+    H --> I[写入 inventory_transaction<br/>入库流水记录]
+    I --> J[更新生产订单已入库数量]
+    J --> K[入库完成]
+</div>
+</div>
+
+<!-- ==================== 第2章 ==================== -->
+<div class="section" id="s2">
+<h2>2. 装箱单创建与批次标签分配流程</h2>
+<p class="desc">选择仓库和产品后，系统加载可用批次（FIFO排序），用户勾选批次（默认选中合格品），输入装箱参数后自动执行装袋和装箱算法。新方案以"批次标签"（packing_bag_label）为核心驱动，替代旧的袋+批次明细表。</p>
+<div class="mermaid">
+graph TD
+    A[新建装箱单] --> B[选择仓库]
+    B --> C[选择产品成品]
+    C --> D[加载可用批次<br/>finished_batch_inventory<br/>按inbound_date ASC排序]
+    D --> E[批次勾选<br/>默认选中合格品<br/>不合格品禁用勾选]
+    E --> F[输入装箱总数量 Q]
+    F --> G[输入每袋数量 S<br/>来自物料主数据inner_pack_qty]
+    G --> H[输入每箱袋数 N<br/>来自物料主数据outer_pack_qty]
+    H --> I{校验: 已选批次库存 >= Q?}
+    I -->|否| J[提示库存不足<br/>增加批次或减少数量]
+    I -->|是| K[按批次维度生成标签<br/>packing_bag_label]
+    K --> L[每袋=标准数量S<br/>尾袋=剩余数量<br/>每标签绑定一个批次号]
+    L --> M[自动装箱算法<br/>每N个标签装一箱]
+    M --> N[箱数 = ceil 标签数/N]
+    N --> O[标签分配到箱<br/>更新label.box_number]
+    O --> P[生成单据编号<br/>PK/BOX-YYYYMMDD-NNN]
+    P --> Q[写入 packing_order<br/>packing_bag_label<br/>packing_box]
+    Q --> R[状态 = 草稿]
+</div>
+
+<h3>批次标签驱动方案 vs 旧方案对比</h3>
+<table>
+<tr><th>对比项</th><th>旧方案（袋+批次明细）</th><th>新方案（批次标签）</th></tr>
+<tr><td>核心表</td><td>packing_bag + packing_bag_batch</td><td>packing_bag_label</td></tr>
+<tr><td>粒度</td><td>袋级 → 批次级</td><td>标签级（每个标签=一个批次的一份数量）</td></tr>
+<tr><td>混批装袋</td><td>一袋多批次（bag_batch多条记录）</td><td>每标签单批次，自然拆分</td></tr>
+<tr><td>标签打印</td><td>按袋打印（含多批次）</td><td>按标签打印（单批次，QR含批次号）</td></tr>
+<tr><td>拆箱恢复</td><td>需反查bag_batch再汇总</td><td>按box_number查label直接汇总</td></tr>
+</table>
+</div>
+
+<!-- ==================== 第3章 ==================== -->
+<div class="section" id="s3">
+<h2>3. 装箱单与箱状态流转</h2>
+<p class="desc">装箱单有三种主状态：草稿、已确认、已取消。确认后产生箱装库存，箱有三种子状态：在库、已出库、已拆箱。拆箱操作提供了"回退"能力，支持整单拆箱回退到草稿重新编辑，或逐箱拆箱仅恢复指定箱的批次库存。</p>
+
+<h3>3.1 装箱单状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 草稿: 创建装箱单
+    草稿 --> 已确认: 确认装箱<br/>扣减批次库存<br/>创建箱装库存
+    草稿 --> 已取消: 取消装箱
+    已确认 --> 已取消: 取消装箱<br/>恢复批次库存<br/>删除箱装库存
+    已确认 --> 草稿: 整单拆箱<br/>恢复在库箱批次库存<br/>删除箱装库存记录
+    已取消 --> [*]
+</div>
+
+<h3>3.2 箱状态生命周期</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 在库: 装箱单确认
+    在库 --> 已出库: 扫箱码出库
+    在库 --> 已拆箱: 逐箱拆箱<br/>恢复批次库存
+    已出库 --> [*]
+    已拆箱 --> [*]
+</div>
+
+<h3>3.3 状态组合矩阵</h3>
+<table>
+<tr><th>装箱单状态</th><th>箱状态</th><th>可执行操作</th><th>说明</th></tr>
+<tr><td>草稿</td><td>在库（packing_box）</td><td>编辑标签分配、重新装箱、确认</td><td>箱尚未入库，仅packing_box记录</td></tr>
+<tr><td>已确认</td><td>在库</td><td>整单拆箱、逐箱拆箱、扫箱码出库、取消</td><td>箱装库存已建立</td></tr>
+<tr><td>已确认</td><td>已出库</td><td>—</td><td>已出库的箱不可拆箱/取消</td></tr>
+<tr><td>已确认</td><td>已拆箱</td><td>整单拆箱（仅恢复剩余在库箱）</td><td>已拆箱的箱批次已恢复，不重复恢复</td></tr>
+<tr><td>已取消</td><td>—</td><td>—</td><td>装箱单作废</td></tr>
+</table>
+</div>
+
+<!-- ==================== 第4章 ==================== -->
+<div class="section" id="s4">
+<h2>4. 装箱确认与箱装库存入库流程</h2>
+<p class="desc">装箱单确认时，系统执行散装→箱装的库存形态转换：扣减批次库存、创建箱装库存记录（packing_box_inventory）、同步汇总库存。汇总库存（finished_goods_inventory）同时包含散装批次库存和箱装库存。</p>
+<div class="mermaid">
+graph TD
+    A[装箱单确认] --> B[校验状态=草稿]
+    B --> C[按标签汇总批次分配<br/>packing_bag_label<br/>GROUP BY batch_number, item_number]
+    C --> D[扣减批次库存<br/>finished_batch_inventory<br/>quantity -= 分配数量]
+    D --> E{扣减后检查<br/>quantity >= 0?}
+    E -->|否| F[回滚事务<br/>提示批次库存不足]
+    E -->|是| G[创建箱装库存记录<br/>packing_box_inventory<br/>每箱一条，状态=在库]
+    G --> H[同步汇总库存<br/>finished_goods_inventory<br/>散装库存 + 箱装库存]
+    H --> I[更新装箱单状态<br/>packing_order.status = 已确认]
+    I --> J[写入库存流水<br/>inventory_transaction<br/>source_type=装箱确认]
+    J --> K[确认完成]
+</div>
+
+<h3>库存形态转换说明</h3>
+<table>
+<tr><th>阶段</th><th>散装批次库存</th><th>箱装库存</th><th>汇总库存</th></tr>
+<tr><td>确认前</td><td>1000</td><td>0</td><td>1000</td></tr>
+<tr><td>确认后（装箱500）</td><td>500</td><td>500（5箱x100）</td><td>500+500=1000</td></tr>
+<tr><td>整单拆箱后</td><td>1000</td><td>0</td><td>1000</td></tr>
+<tr><td>逐箱拆箱1箱后</td><td>600</td><td>400（4箱x100）</td><td>600+400=1000</td></tr>
+</table>
+</div>
+
+<!-- ==================== 第5章 ==================== -->
+<div class="section" id="s5">
+<h2>5. 拆箱业务流程（整单拆箱 / 逐箱拆箱）</h2>
+<p class="desc">装箱确认后，因复检等原因需拆箱处理。系统提供两种拆箱模式：整单拆箱将装箱单回退到草稿状态重新编辑；逐箱拆箱仅恢复指定箱的批次库存，装箱单保持已确认。已出库的箱不可拆箱。</p>
+
+<h3>5.1 整单拆箱流程</h3>
+<div class="mermaid">
+graph TD
+    A[整单拆箱] --> B[校验装箱单状态=已确认]
+    B --> C{存在已出库的箱?}
+    C -->|是| D[拒绝拆箱<br/>已出库箱不可拆箱]
+    C -->|否| E[获取所有在库箱号<br/>packing_box_inventory<br/>WHERE status=在库]
+    E --> F[查询在库箱的标签<br/>packing_bag_label<br/>WHERE box_number IN 在库箱号]
+    F --> G[按批次汇总恢复数量<br/>GROUP BY batch_number, item_number]
+    G --> H[恢复批次库存<br/>finished_batch_inventory<br/>quantity += 恢复数量]
+    H --> I[写入库存流水<br/>inventory_transaction<br/>source_type=整单拆箱<br/>transaction_type=入库]
+    I --> J[写入批次流水明细<br/>inventory_transaction_batch]
+    J --> K[删除所有箱装库存<br/>DELETE packing_box_inventory<br/>WHERE packing_number=xxx]
+    K --> L[重置箱状态<br/>packing_box.status = 在库]
+    L --> M[装箱单回退草稿<br/>packing_order.status = 草稿]
+    M --> N[同步汇总库存<br/>finished_goods_inventory]
+    N --> O[整单拆箱完成<br/>可重新编辑装箱]
+</div>
+
+<h3>5.2 逐箱拆箱流程</h3>
+<div class="mermaid">
+graph TD
+    A[逐箱拆箱] --> B[选择要拆箱的箱号列表<br/>仅允许在库状态]
+    B --> C[循环处理每个箱号]
+    C --> D{箱在箱装库存中<br/>且状态=在库?}
+    D -->|否| E[拒绝并回滚<br/>提示箱状态不允许]
+    D -->|是| F[查询该箱的标签<br/>packing_bag_label<br/>WHERE box_number=xxx]
+    F --> G[按批次汇总恢复数量<br/>GROUP BY batch_number, item_number]
+    G --> H[恢复批次库存<br/>finished_batch_inventory<br/>quantity += 恢复数量]
+    H --> I[更新箱装库存状态<br/>packing_box_inventory<br/>status = 已拆箱]
+    I --> J[更新箱状态<br/>packing_box.status = 已拆箱]
+    J --> K[写入库存流水<br/>inventory_transaction<br/>source_type=逐箱拆箱<br/>transaction_type=入库]
+    K --> L[写入批次流水明细<br/>inventory_transaction_batch]
+    L --> C
+    C --> M{所有箱处理完毕?}
+    M -->|是| N[同步汇总库存<br/>finished_goods_inventory]
+    N --> O[逐箱拆箱完成<br/>装箱单状态不变]
+</div>
+
+<h3>5.3 两种拆箱模式对比</h3>
+<table>
+<tr><th>对比项</th><th>整单拆箱</th><th>逐箱拆箱</th></tr>
+<tr><td>触发条件</td><td>装箱单状态=已确认</td><td>箱状态=在库</td></tr>
+<tr><td>范围</td><td>全部箱</td><td>指定的1个或多个箱</td></tr>
+<tr><td>装箱单状态变更</td><td>已确认 → 草稿</td><td>不变（已确认）</td></tr>
+<tr><td>箱装库存处理</td><td>删除所有记录</td><td>指定箱状态→已拆箱</td></tr>
+<tr><td>批次库存恢复</td><td>仅恢复在库箱的批次<br/>已拆箱的箱不重复恢复</td><td>仅恢复指定箱的批次</td></tr>
+<tr><td>packing_box状态</td><td>重置为在库</td><td>标记为已拆箱</td></tr>
+<tr><td>重新装箱方式</td><td>原单编辑→重新确认</td><td>新建装箱单处理散装库存</td></tr>
+<tr><td>适用场景</td><td>全单质量复检、重新调整装箱</td><td>单箱复检、部分箱退货</td></tr>
+</table>
+</div>
+
+<!-- ==================== 第6章 ==================== -->
+<div class="section" id="s6">
+<h2>6. 扫箱码发货出库流程</h2>
+<p class="desc">发货申请审批通过后，系统支持扫箱码出库或FIFO批次出库两种模式。扫箱码出库直接扣减箱装库存，同步更新汇总库存和销售订单发货状态。</p>
+<div class="mermaid">
+graph TD
+    A[发货申请创建] --> B[审批通过]
+    B --> C[选择出库仓库]
+    C --> D{出库方式}
+    D -->|扫箱码出库| E[扫描箱码<br/>查询packing_box_inventory<br/>校验status=在库]
+    D -->|FIFO批次出库| F[按批次先进先出扣减<br/>finished_batch_inventory]
+    E --> G[更新箱装库存<br/>packing_box_inventory<br/>status=已出库]
+    G --> H[同步packing_box<br/>status=已出库]
+    H --> I[扣减汇总库存<br/>finished_goods_inventory<br/>quantity -= 箱总数量]
+    F --> I
+    I --> J[写入库存流水<br/>inventory_transaction<br/>source_type=扫箱码出库/批次出库]
+    J --> K[写入批次明细<br/>inventory_transaction_batch]
+    K --> L[同步销售订单明细<br/>shipped_quantity += 出库数量]
+    L --> M{已发数量 >= 订单数量?}
+    M -->|是| N[发货状态 = 全部发货]
+    M -->|否| O[发货状态 = 部分发货]
+    N --> P[生成发货单<br/>shipping_order]
+    O --> P
+    P --> Q[出库完成]
+</div>
+
+<h3>出库方式对比</h3>
+<table>
+<tr><th>对比项</th><th>扫箱码出库</th><th>FIFO批次出库</th></tr>
+<tr><td>库存扣减</td><td>箱装库存 → 已出库</td><td>散装批次库存 FIFO</td></tr>
+<tr><td>精度</td><td>整箱出库，精确到箱</td><td>按数量扣减，精确到批次</td></tr>
+<tr><td>适用场景</td><td>箱装产品发货</td><td>散装产品发货</td></tr>
+<tr><td>批次追溯</td><td>从packing_bag_label读取箱内批次</td><td>直接从FIFO队列扣减</td></tr>
+</table>
+</div>
+
+<!-- ==================== 第7章 ==================== -->
+<div class="section" id="s7">
+<h2>7. 扫箱码盘点流程</h2>
+<p class="desc">月末盘点时，通过扫描箱码快速定位箱内产品和批次信息，录入实盘数量，系统自动计算差异并调整库存。</p>
+<div class="mermaid">
+graph TD
+    A[创建盘点单] --> B{盘点类型}
+    B -->|全盘| C[加载仓库全部库存<br/>含散装+箱装]
+    B -->|抽盘| D[选择指定产品<br/>加载对应批次]
+    C --> E[写入盘点明细<br/>stock_count_detail<br/>系统数量=库存数量]
+    D --> E
+    E --> F{盘点方式}
+    F -->|扫箱码| G[扫描箱码QR<br/>调用 getBoxByNumber]
+    F -->|手动录入| H[手动输入实盘数量]
+    G --> I[获取箱信息<br/>packing_box + packing_box_inventory]
+    I --> J[获取标签信息<br/>packing_bag_label]
+    J --> K[自动填入产品+批次+系统数量]
+    K --> L[录入实盘数量]
+    H --> L
+    L --> M[计算差异数量<br/>差异 = 实盘 - 系统数量]
+    M --> N{差异类型}
+    N -->|差异=0| O[盘平,无需调整]
+    N -->|差异>0| P[盘盈]
+    N -->|差异<0| Q[盘亏]
+    P --> R[审核确认]
+    Q --> R
+    O --> R
+    R --> S[差异调整<br/>更新 finished_batch_inventory]
+    S --> T[同步 finished_goods_inventory]
+    T --> U[写入 inventory_transaction<br/>盘盈/盘亏流水]
+    U --> V[盘点完成]
+</div>
+</div>
+
+<!-- ==================== 第8章 ==================== -->
+<div class="section" id="s8">
+<h2>8. 袋标签与箱标签打印流程</h2>
+<p class="desc">装箱单创建后即可打印标签。袋标签（内包装）含批次号QR码，箱标签（外包装）含箱号QR码和批次明细。确认后也可补打。</p>
+<div class="mermaid">
+graph TD
+    A[选择打印类型] --> B{打印对象}
+    B -->|单个袋标签| C[生成QR码<br/>内容=批次号|产品编号|数量]
+    B -->|单个箱标签| D[生成QR码<br/>内容=box_number]
+    B -->|批量袋标签| E[遍历所有标签<br/>生成多个标签DIV]
+    B -->|批量箱标签| F[遍历所有箱<br/>生成多个标签DIV]
+    C --> G[袋标签渲染<br/>80mm x 60mm<br/>批次号/产品/数量/标准量]
+    D --> H[箱标签渲染<br/>100mm x 80mm<br/>箱编号/产品/袋数/仓库/批次明细]
+    E --> G
+    F --> H
+    G --> I[调用 window.print<br/>page-break-after分页]
+    H --> I
+    I --> J[标签打印完成]
+</div>
+
+<h3>标签规格对照</h3>
+<table>
+<tr><th>属性</th><th>袋标签（内包装）</th><th>箱标签（外包装）</th></tr>
+<tr><td>尺寸</td><td>80mm x 60mm</td><td>100mm x 80mm</td></tr>
+<tr><td>QR码内容</td><td>批次号|产品编号|数量</td><td>box_number（如BOX20260508001）</td></tr>
+<tr><td>核心信息</td><td>批次号、产品名、编号、规格、数量、标准量、是否满袋</td><td>箱编号、产品名、编号、规格、总数、袋数、仓库名、批次明细</td></tr>
+<tr><td>用途</td><td>袋内产品追溯</td><td>扫码出库、扫码盘点、扫码拆箱</td></tr>
+</table>
+</div>
+
+<!-- ==================== 第9章 ==================== -->
+<div class="section" id="s9">
+<h2>9. 核心数据实体关系ER图</h2>
+<p class="desc">装箱管理涉及的核心数据表及其关系，包含批次库存、装箱单、批次标签、箱、箱装库存、发货单、盘点单等实体的关联。</p>
+<div class="mermaid">
+erDiagram
+    finished_batch_inventory ||--o{ packing_bag_label : "批次分配到标签"
+    packing_order ||--|{ packing_bag_label : "包含标签"
+    packing_order ||--|{ packing_box : "包含箱"
+    packing_bag_label }o--|| packing_box : "归属箱"
+    packing_box ||--o| packing_box_inventory : "箱装库存"
+    finished_batch_inventory ||--|| finished_goods_inventory : "汇总"
+    finished_batch_inventory ||--o{ inventory_transaction : "流水记录"
+    packing_box_inventory ||--o{ inventory_transaction : "出库/拆箱流水"
+    packing_box ||--o{ shipping_order_batch : "扫码出库"
+    packing_box ||--o{ stock_count_detail : "扫码盘点"
+
+    finished_batch_inventory {
+        nvarchar batch_number PK
+        nvarchar item_number PK
+        nvarchar warehouse_number
+        decimal quantity
+        nvarchar quality_status
+        nvarchar status
+    }
+
+    packing_order {
+        nvarchar packing_number PK
+        nvarchar warehouse_number
+        nvarchar item_number
+        decimal total_quantity
+        int total_labels
+        int total_boxes
+        nvarchar status
+    }
+
+    packing_bag_label {
+        int id PK
+        nvarchar packing_number FK
+        nvarchar batch_number FK
+        nvarchar item_number
+        decimal label_quantity
+        decimal standard_qty
+        bit is_full
+        int label_sequence
+        nvarchar box_number FK
+    }
+
+    packing_box {
+        nvarchar box_number PK
+        nvarchar packing_number FK
+        int box_sequence
+        int standard_bag_qty
+        int actual_bag_qty
+        decimal total_quantity
+        nvarchar warehouse_number
+        nvarchar status
+        nvarchar batch_numbers
+    }
+
+    packing_box_inventory {
+        nvarchar box_number PK
+        nvarchar packing_number FK
+        nvarchar item_number
+        decimal total_quantity
+        nvarchar batch_numbers
+        nvarchar warehouse_number
+        nvarchar status
+        datetime inbound_date
+        datetime outbound_date
+    }
+
+    finished_goods_inventory {
+        nvarchar item_number PK
+        nvarchar warehouse_number PK
+        nvarchar quality_status PK
+        decimal quantity
+    }
+
+    inventory_transaction {
+        nvarchar transaction_number PK
+        nvarchar transaction_type
+        nvarchar source_type
+        nvarchar source_number
+        decimal quantity
+        nvarchar batch_number
+    }
+
+    inventory_transaction_batch {
+        nvarchar transaction_number FK
+        nvarchar batch_number
+        decimal quantity
+    }
+
+    shipping_order {
+        nvarchar shipping_order_number PK
+        nvarchar warehouse_number
+        nvarchar status
+    }
+
+    shipping_order_batch {
+        nvarchar shipping_order_number FK
+        nvarchar batch_number
+        decimal quantity
+    }
+
+    stock_count_detail {
+        nvarchar count_number FK
+        nvarchar batch_number
+        decimal system_quantity
+        decimal actual_quantity
+        decimal difference_quantity
+    }
+</div>
+
+<h3>核心表状态枚举</h3>
+<table>
+<tr><th>表</th><th>状态字段</th><th>枚举值</th><th>含义</th></tr>
+<tr><td rowspan="3">packing_order</td><td rowspan="3">status</td><td>草稿</td><td>新建未确认，可编辑</td></tr>
+<tr><td>已确认</td><td>已扣减库存，箱装库存已建立</td></tr>
+<tr><td>已取消</td><td>已作废，库存已恢复</td></tr>
+<tr><td rowspan="3">packing_box</td><td rowspan="3">status</td><td>在库</td><td>装箱单确认后的初始状态</td></tr>
+<tr><td>已出库</td><td>扫箱码出库完成</td></tr>
+<tr><td>已拆箱</td><td>逐箱拆箱，批次库存已恢复</td></tr>
+<tr><td rowspan="3">packing_box_inventory</td><td rowspan="3">status</td><td>在库</td><td>物理存放在仓库</td></tr>
+<tr><td>已出库</td><td>已通过扫箱码/发货出库</td></tr>
+<tr><td>已拆箱</td><td>已从箱中取出，回到散装库存</td></tr>
+</table>
+</div>
+</div>
+
+<script>
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'default',
+  securityLevel: 'loose',
+  flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+  sequence: { useMaxWidth: true },
+  er: { useMaxWidth: true }
+});
+</script>
+</body>
+</html>

@@ -170,17 +170,20 @@ async function migrate() {
         { name: '报工记录', code: 'work-reports', parent_code: 'production', menu_key: 'work-reports', route: '/work-reports', sort: 6 },
         { name: '外协申请', code: 'outsourcing-reqs', parent_code: 'production', menu_key: 'outsourcing-reqs', route: '/outsourcing-reqs', sort: 7 },
         { name: '外协订单', code: 'outsourcing-orders', parent_code: 'production', menu_key: 'outsourcing-orders', route: '/outsourcing-orders', sort: 8 },
+        { name: '计件单价', code: 'piece-rate-prices', parent_code: 'production', menu_key: 'piece-rate-prices', route: '/piece-rate-prices', sort: 9 },
+        { name: '计件工资', code: 'piece-rate-wages', parent_code: 'production', menu_key: 'piece-rate-wages', route: '/piece-rate-wages', sort: 10 },
         // 仓储管理
-        { name: '成品仓库存', code: 'fg-inventory', parent_code: 'warehouse', menu_key: 'fg-inventory', route: '/fg-inventory', sort: 1 },
-        { name: '成品入库', code: 'fg-inbound', parent_code: 'warehouse', menu_key: 'fg-inbound', route: '/fg-inbound', sort: 2 },
-        { name: '成品出库', code: 'fg-outbound', parent_code: 'warehouse', menu_key: 'fg-outbound', route: '/fg-outbound', sort: 3 },
+        { name: '生产入库', code: 'fg-inbound', parent_code: 'warehouse', menu_key: 'fg-inbound', route: '/fg-inbound', sort: 1 },
+        { name: '成品发货', code: 'fg-outbound', parent_code: 'warehouse', menu_key: 'fg-outbound', route: '/fg-outbound', sort: 2 },
+        { name: '库存查询', code: 'fg-inventory-query', parent_code: 'warehouse', menu_key: 'fg-inventory-query', route: '/fg-inventory-query', sort: 3 },
         { name: '原料仓库存', code: 'mw-inventory', parent_code: 'warehouse', menu_key: 'mw-inventory', route: '/mw-inventory', sort: 4 },
         { name: '原料入库', code: 'mw-inbound', parent_code: 'warehouse', menu_key: 'mw-inbound', route: '/mw-inbound', sort: 5 },
         { name: '原料出库', code: 'mw-outbound', parent_code: 'warehouse', menu_key: 'mw-outbound', route: '/mw-outbound', sort: 6 },
         // 采购管理
         { name: '采购申请', code: 'purchase-reqs', parent_code: 'purchasing', menu_key: 'purchase-reqs', route: '/purchase-reqs', sort: 1 },
         { name: '采购订单', code: 'purchase-orders', parent_code: 'purchasing', menu_key: 'purchase-orders', route: '/purchase-orders', sort: 2 },
-        { name: '采购入库', code: 'stock-ins', parent_code: 'purchasing', menu_key: 'stock-ins', route: '/stock-ins', sort: 3 },
+        { name: '采购订单明细', code: 'purchase-order-details', parent_code: 'purchasing', menu_key: 'purchase-order-details', route: '/purchase-order-details', sort: 3 },
+        { name: '采购入库', code: 'stock-ins', parent_code: 'purchasing', menu_key: 'stock-ins', route: '/stock-ins', sort: 4 },
         // 质量管理
         { name: '批次追溯', code: 'batch-trace', parent_code: 'quality', menu_key: 'batch-trace', route: '/batch-trace', sort: 1 },
         { name: '质量报表', code: 'quality-report', parent_code: 'quality', menu_key: 'quality-report', route: '/quality-report', sort: 2 },
@@ -188,7 +191,6 @@ async function migrate() {
         // 财务结算
         { name: '销售价目表', code: 'sales-prices', parent_code: 'finance', menu_key: 'sales-prices', route: '/sales-prices', sort: 1 },
         { name: '采购价目表', code: 'purchase-prices', parent_code: 'finance', menu_key: 'purchase-prices', route: '/purchase-prices', sort: 2 },
-        { name: '计件单价', code: 'piece-rate-prices', parent_code: 'finance', menu_key: 'piece-rate-prices', route: '/piece-rate-prices', sort: 3 },
         { name: '会计期间', code: 'accounting-periods', parent_code: 'finance', menu_key: 'accounting-periods', route: '/accounting-periods', sort: 4 },
         // 设备管理
         { name: '设备台帐管理', code: 'equipments', parent_code: 'equipment', menu_key: 'equipments', route: '/equipments', sort: 1 },

@@ -3,10 +3,12 @@ import { ref, reactive, onMounted, createVNode, computed, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import {
   ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined,
-  DownloadOutlined, UploadOutlined, PlusOutlined, SearchOutlined, DownOutlined
+  DownloadOutlined, UploadOutlined, PlusOutlined, SearchOutlined, DownOutlined, SettingOutlined
 } from '@ant-design/icons-vue'
 import { getStorageLocations, createStorageLocation, updateStorageLocation, deleteStorageLocation, exportStorageLocations, importStorageLocations, toggleStorageLocationStatus, approveStorageLocation, withdrawStorageLocation } from '@/api/master-data/storageLocation'
 import { useTableList } from '@/composables/useTableList'
+import { useColumnPreference } from '@/composables/useColumnPreference'
+import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { APPROVAL_STATUS, CONDITION_STATUS } from '@/constants/statuses'
 import { generateExportFilename } from '@/utils/exportFilename'
 import dayjs from 'dayjs'
@@ -54,7 +56,7 @@ const emptyForm = (): StorageLocation => ({
 })
 
 const filterWarehouse = ref('')
-const { loading, dataSource, searchText, pagination, rowSelection, handleTableChange } = useTableList<StorageLocation>(getStorageLocations)
+const { loading, dataSource, searchText, pagination, rowSelection, fetchData, handleTableChange } = useTableList<StorageLocation>(getStorageLocations)
 const warehouseOptions = ref<string[]>([])
 const warehouseList = ref<WarehouseOption[]>([])
 
@@ -68,26 +70,33 @@ const editForm = reactive<StorageLocation>(emptyForm())
 const createForm = reactive<StorageLocation>(emptyForm())
 const fileInputRef = ref<HTMLInputElement>()
 
-const columns = [
-  { title: '行号', key: 'rowIndex', width: 60, fixed: 'left' as const },
-  { title: '库位编号', dataIndex: 'location_number', key: 'location_number', width: 120 },
-  { title: '库位名称', dataIndex: 'location_name', key: 'location_name', width: 120 },
-  { title: '仓库编号', dataIndex: 'warehouse_number', key: 'warehouse_number', width: 120 },
-  { title: '仓库名称', dataIndex: 'warehouse_name', key: 'warehouse_name', width: 120 },
-  { title: '区', dataIndex: 'zone', key: 'zone', width: 80 },
-  { title: '柜', dataIndex: 'cabinet', key: 'cabinet', width: 80 },
-  { title: '层', dataIndex: 'layer', key: 'layer', width: 80 },
-  { title: '格', dataIndex: 'grid', key: 'grid', width: 80 },
-  { title: '列', dataIndex: 'location_column', key: 'location_column', width: 80 },
-  { title: '默认库位', dataIndex: 'is_default', key: 'is_default', width: 90 },
-  { title: '启用状态', dataIndex: 'status', key: 'status', width: 90 },
-  { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 100 },
-  { title: '创建人', dataIndex: 'created_by', key: 'created_by', width: 100 },
-  { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 170 },
-  { title: '更新人', dataIndex: 'updated_by', key: 'updated_by', width: 100 },
-  { title: '更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 170 },
-  { title: '操作', key: 'action', width: 120, fixed: 'right' as const }
+const defaultDataColumns: any[] = [
+  { title: '库位编号', dataIndex: 'location_number', key: 'location_number', width: 120, resizable: true },
+  { title: '库位名称', dataIndex: 'location_name', key: 'location_name', width: 120, resizable: true },
+  { title: '仓库编号', dataIndex: 'warehouse_number', key: 'warehouse_number', width: 120, resizable: true },
+  { title: '仓库名称', dataIndex: 'warehouse_name', key: 'warehouse_name', width: 120, resizable: true },
+  { title: '区', dataIndex: 'zone', key: 'zone', width: 80, resizable: true },
+  { title: '柜', dataIndex: 'cabinet', key: 'cabinet', width: 80, resizable: true },
+  { title: '层', dataIndex: 'layer', key: 'layer', width: 80, resizable: true },
+  { title: '格', dataIndex: 'grid', key: 'grid', width: 80, resizable: true },
+  { title: '列', dataIndex: 'location_column', key: 'location_column', width: 80, resizable: true },
+  { title: '默认库位', dataIndex: 'is_default', key: 'is_default', width: 90, resizable: true },
+  { title: '启用状态', dataIndex: 'status', key: 'status', width: 90, resizable: true },
+  { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 100, resizable: true },
+  { title: '创建人', dataIndex: 'created_by', key: 'created_by', width: 100, resizable: true },
+  { title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 170, resizable: true },
+  { title: '更新人', dataIndex: 'updated_by', key: 'updated_by', width: 100, resizable: true },
+  { title: '更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 170, resizable: true }
 ]
+
+const {
+  columns, columnSettingVisible, columnSettingList, columnSettingSaving,
+  openColumnSetting, moveColumnUp, moveColumnDown, saveColumnSetting, resetColumnSetting,
+  loadColumnPreference, handleResizeColumn
+} = useColumnPreference('storage_location_list', defaultDataColumns, {
+  fixedLeft: [{ title: '行号', key: 'rowIndex', width: 60, fixed: 'left' as const }],
+  fixedRight: [{ title: '操作', key: 'action', width: 120, fixed: 'right' as const }]
+})
 
 const formatDateTime = (val: string) => {
   if (!val) return ''
@@ -204,7 +213,7 @@ const handleWithdraw = async (record: any) => {
   })
 }
 
-onMounted(() => { fetchData() })
+onMounted(() => { loadColumnPreference(); fetchData() })
 </script>
 
 <template>
@@ -227,11 +236,12 @@ onMounted(() => { fetchData() })
             </template>
           </a-dropdown>
           <a-button @click="handleImportClick"><template #icon><UploadOutlined /></template>导入</a-button>
+          <a-button @click="openColumnSetting"><template #icon><SettingOutlined /></template></a-button>
           <a-button type="primary" @click="createModalVisible = true"><template #icon><PlusOutlined /></template>新建</a-button>
           <input ref="fileInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleFileChange" />
         </a-space>
       </template>
-      <a-table :columns="columns" :data-source="dataSource" :loading="loading" :row-key="(record: StorageLocation) => record.id!" :pagination="pagination" :scroll="{ x: 1800, y: 'calc(100vh - 280px)' }" @change="handleTableChange" size="small">
+      <a-table :columns="columns" :data-source="dataSource" :loading="loading" :row-key="(record: StorageLocation) => record.id!" :pagination="pagination" :scroll="{ x: 'max-content', y: 'calc(100vh - 280px)' }" @change="handleTableChange" @resizeColumn="handleResizeColumn" size="small">
         <template #bodyCell="{ column, index, record }">
           <template v-if="column.key === 'rowIndex'">{{ (pagination.current - 1) * pagination.pageSize + index + 1 }}</template>
           <template v-else-if="column.key === 'is_default'">
@@ -321,6 +331,17 @@ onMounted(() => { fetchData() })
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <ColumnSettingDrawer
+      :open="columnSettingVisible"
+      :settingList="columnSettingList"
+      :saving="columnSettingSaving"
+      @update:open="columnSettingVisible = $event"
+      @moveUp="moveColumnUp"
+      @moveDown="moveColumnDown"
+      @save="saveColumnSetting"
+      @reset="resetColumnSetting"
+    />
   </div>
 </template>
 

@@ -69,3 +69,19 @@ export const validateCreateWipReport = validateBody([
 export const validateUpdateWipReport = validateBody([
   { field: 'production_order_number', label: '生产单号', required: true, maxLength: 50 },
 ]);
+
+// 创建计件工资表
+export const validateCreatePieceRateWage = validateBody([
+  { field: 'wage_name', label: '工资表名称', required: true, maxLength: 100 },
+  { field: 'period_type', label: '周期类型', required: true, maxLength: 10 },
+  { field: 'period_start', label: '周期开始日期', required: true, maxLength: 20 },
+  { field: 'period_end', label: '周期结束日期', required: true, maxLength: 20 },
+]);
+
+// 更新计件工资表
+export const validateUpdatePieceRateWage = validateBody([
+  { field: 'wage_name', label: '工资表名称', required: true, maxLength: 100 },
+  { field: 'period_type', label: '周期类型', required: true, maxLength: 10 },
+  { field: 'period_start', label: '周期开始日期', required: true, maxLength: 20 },
+  { field: 'period_end', label: '周期结束日期', required: true, maxLength: 20 },
+]);

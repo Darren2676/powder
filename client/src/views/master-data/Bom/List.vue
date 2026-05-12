@@ -772,7 +772,7 @@ onMounted(async () => {
     <a-card :bordered="false" :body-style="{ padding: '0 12px 8px' }">
       <a-tabs v-model:activeKey="pageTab" size="small">
         <!-- ========== Tab 1: BOM主表 ========== -->
-        <a-tab-pane key="header" tab="BOM物料清单（主表）">
+        <a-tab-pane key="header" tab="设计BOM物料清单（主表）">
           <div class="tab-toolbar">
             <div></div>
             <a-space :size="4" wrap>
@@ -874,11 +874,11 @@ onMounted(async () => {
         <!-- ========== Tab 2: 物料明细 ========== -->
         <a-tab-pane key="detail">
           <template #tab>
-            <span>物料明细</span>
+            <span>设计BOM物料明细</span>
             <span v-if="selectedHeaderKey" style="margin-left: 8px; font-size: 12px; color: #888;">{{ selectedHeaderKey }}</span>
           </template>
           <div v-if="!selectedHeaderKey" style="text-align: center; padding: 40px 0; color: #aaa;">
-            <a-empty description="请在「BOM物料清单（主表）」中点击一行以查看明细" />
+            <a-empty description="请在「设计BOM物料清单（主表）」中点击一行以查看明细" />
           </div>
           <template v-else>
             <div class="tab-toolbar">

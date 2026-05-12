@@ -105,7 +105,7 @@ export const getSalesOrderDetail = async (req: Request, res: Response, next: Nex
               COALESCE(NULLIF(d.customer_item_number, ''), cm.customer_item_number) as customer_item_number,
               COALESCE(NULLIF(d.customer_item_description, ''), cm.customer_item_description) as customer_item_description
        FROM sales_order_detail d
-       LEFT JOIN customer_material_mapping cm ON cm.customer_number = :customerNumber AND cm.item_number = d.item_number
+       LEFT JOIN customer_material_mapping cm ON cm.customer_number = :customerNumber AND cm.item_number = d.item_number AND cm.approval_status = N'已审核'
        WHERE d.sales_order_number = :id ORDER BY d.line_number`,
       { replacements: { id, customerNumber } }
     );
@@ -356,7 +356,7 @@ export const getSalesOrderDetails = async (req: Request, res: Response, next: Ne
               COALESCE(NULLIF(d.customer_item_number, ''), cm.customer_item_number) as customer_item_number,
               COALESCE(NULLIF(d.customer_item_description, ''), cm.customer_item_description) as customer_item_description
        FROM sales_order_detail d
-       LEFT JOIN customer_material_mapping cm ON cm.customer_number = :customerNumber AND cm.item_number = d.item_number
+       LEFT JOIN customer_material_mapping cm ON cm.customer_number = :customerNumber AND cm.item_number = d.item_number AND cm.approval_status = N'已审核'
        WHERE d.sales_order_number = :headerId ORDER BY d.line_number`,
       { replacements: { headerId, customerNumber } }
     );
@@ -749,18 +749,33 @@ export const getSalesOrderDeliveryTrend = async (req: Request, res: Response, ne
 // ==================== 销售订单明细分页列表 ====================
 export const getSalesOrderDetailsPage = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { page = 1, limit = 20, search = '', status = '' } = req.query;
+    const { page = 1, limit = 20, search = '', status = '', approval_status = '', sales_order_number = '' } = req.query;
     const pageNum = Number(page);
     const pageSize = Number(limit);
     const offset = (pageNum - 1) * pageSize;
     const offsetEnd = offset + pageSize;
 
-    let whereClause = `WHERE h.approval_status = N'已审批'`;
+    let whereClause = 'WHERE 1=1';
     const replacements: any = { offset, offsetEnd };
 
     if (search) {
       whereClause += ` AND (h.sales_order_number LIKE :search OR d.item_number LIKE :search OR d.item_name LIKE :search OR h.customer_name LIKE :search)`;
       replacements.search = `%${search}%`;
+    }
+    if (sales_order_number) {
+      whereClause += ` AND h.sales_order_number = :sales_order_number`;
+      replacements.sales_order_number = sales_order_number;
+    }
+    if (approval_status) {
+      const arr = String(approval_status).split(',').filter(Boolean);
+      if (arr.length === 1) {
+        whereClause += ` AND h.approval_status = :approval_status`;
+        replacements.approval_status = arr[0];
+      } else if (arr.length > 1) {
+        const placeholders = arr.map((_: string, i: number) => `:aps${i}`).join(', ');
+        whereClause += ` AND h.approval_status IN (${placeholders})`;
+        arr.forEach((s: string, i: number) => { replacements[`aps${i}`] = s; });
+      }
     }
     if (status) {
       const statusArr = String(status).split(',').filter(Boolean);
@@ -788,14 +803,16 @@ export const getSalesOrderDetailsPage = async (req: Request, res: Response, next
                d.delivery_date, d.promised_delivery_date, d.remark, d.status,
                d.shipping_status, d.production_status, d.return_status,
                d.shipped_quantity, d.refunded_quantity,
-               h.customer_number, h.customer_name, h.head_of_sales,
+               h.customer_number, h.customer_name, h.head_of_sales, h.linkman, h.contacts,
+               h.order_date, h.delivery_date AS order_delivery_date,
                h.order_status, h.approval_status, h.customer_po_number,
+               h.[condition], h.creation_date, h.creation_man,
                COALESCE(NULLIF(d.customer_item_number, ''), cm.customer_item_number) as customer_item_number,
                COALESCE(NULLIF(d.customer_item_description, ''), cm.customer_item_description) as customer_item_description,
                ROW_NUMBER() OVER (ORDER BY h.sales_order_number, d.line_number) AS _row_num
         FROM sales_order_detail d
         INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number
-        LEFT JOIN customer_material_mapping cm ON cm.customer_number = h.customer_number AND cm.item_number = d.item_number
+        LEFT JOIN customer_material_mapping cm ON cm.customer_number = h.customer_number AND cm.item_number = d.item_number AND cm.approval_status = N'已审核'
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });

@@ -573,6 +573,7 @@ export const generateByProcess = async (req: Request, res: Response, next: NextF
 
       // 8. 为每个物料分配工序
       const unmatchedMaterials: string[] = [];
+      const unconfiguredMaterials: string[] = [];
       for (const item of flatItems) {
         if (routeMaterialMap[item.material_number]) {
           const rm = routeMaterialMap[item.material_number];
@@ -606,17 +607,31 @@ export const generateByProcess = async (req: Request, res: Response, next: NextF
             }
           }
           if (!matched) {
-            unmatchedMaterials.push(item.material_number);
+            // 最终兜底：分配到第一道工序
+            const firstStep = routeDetails.length > 0 ? routeDetails[0] : null;
+            if (firstStep && firstStep.step_number != null) {
+              item.assigned_step = firstStep.step_number;
+              item.assigned_process_name = firstStep.standard_process_name || '';
+              item.assigned_wc_number = firstStep.work_center_number || '';
+              item.assigned_wc_name = firstStep.work_center_name || '';
+              unconfiguredMaterials.push(item.material_number);
+            } else {
+              unmatchedMaterials.push(item.material_number);
+            }
           }
         }
       }
 
-      // 9. 未匹配物料报错
+      // 9. 未匹配物料处理
       if (unmatchedMaterials.length > 0) {
         const uniqueUnmatched = [...new Set(unmatchedMaterials)];
-        results.skipped.push({ orderNo, reason: '以下物料无法匹配工序：' + uniqueUnmatched.join(', ') });
+        results.skipped.push({ orderNo, reason: '以下物料无法匹配工序（无工艺路线）：' + uniqueUnmatched.join(', ') });
         results.skippedCount++;
         continue;
+      }
+      if (unconfiguredMaterials.length > 0) {
+        const uniqueUnconfigured = [...new Set(unconfiguredMaterials)];
+        console.warn(`订单 ${orderNo} 以下物料未配置 routing_detail_material 映射，已自动分配到第一道工序：${uniqueUnconfigured.join(', ')}`);
       }
 
       // 10. 按 material_number + step_number 分组汇总
@@ -732,8 +747,15 @@ export const getOrdersForGenerate = async (req: Request, res: Response, next: Ne
 
     const planStatus = req.query.plan_status as string;
     if (planStatus) {
-      whereClause += ` AND plan_status = :plan_status`;
-      replacements.plan_status = planStatus;
+      const statuses = planStatus.split(',').map(s => s.trim()).filter(Boolean);
+      if (statuses.length === 1) {
+        whereClause += ` AND plan_status = :plan_status`;
+        replacements.plan_status = statuses[0];
+      } else if (statuses.length > 1) {
+        const placeholders = statuses.map((_, i) => `:plan_status_${i}`).join(', ');
+        statuses.forEach((s, i) => { replacements[`plan_status_${i}`] = s; });
+        whereClause += ` AND plan_status IN (${placeholders})`;
+      }
     }
 
     if (search) {
@@ -944,9 +966,15 @@ export const getProcessPrepStatus = async (req: Request, res: Response, next: Ne
     `, { replacements: { prepNo: prep.preparation_number } });
 
     const matMap: Record<number, { material_count: number; issued_count: number }> = {};
+    let nullStepMaterials: { material_count: number; issued_count: number } | null = null;
     for (const g of matGroups) {
       if (g.step_number != null) {
         matMap[g.step_number] = {
+          material_count: parseInt(g.material_count) || 0,
+          issued_count: parseInt(g.issued_count) || 0
+        };
+      } else {
+        nullStepMaterials = {
           material_count: parseInt(g.material_count) || 0,
           issued_count: parseInt(g.issued_count) || 0
         };
@@ -970,6 +998,21 @@ export const getProcessPrepStatus = async (req: Request, res: Response, next: Ne
         has_materials: hasMaterials
       };
     });
+
+    // 6. 如果有未归属工序的物料（step_number=null），追加为"通用物料"步骤
+    if (nullStepMaterials && nullStepMaterials.material_count > 0) {
+      steps.push({
+        step_number: -1,
+        standard_process_name: '通用物料',
+        work_center_name: '',
+        task_status: null,
+        process_task_number: null,
+        material_count: nullStepMaterials.material_count,
+        issued_count: nullStepMaterials.issued_count,
+        is_fully_issued: nullStepMaterials.issued_count >= nullStepMaterials.material_count,
+        has_materials: true
+      });
+    }
 
     res.json(success({
       has_preparation: true,

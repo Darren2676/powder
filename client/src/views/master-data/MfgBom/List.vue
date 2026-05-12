@@ -841,39 +841,42 @@ onMounted(async () => {
 
 <template>
   <div class="mfg-bom-page">
-    <!-- ========== Header Table (Top) ========== -->
-    <a-card title="制造BOM管理（主表）" :bordered="false" class="header-card">
-      <template #extra>
-        <a-space :size="4" wrap>
-          <a-input-search v-model:value="searchText" placeholder="搜索编号/名称/产品" style="width: 170px" size="small" @search="handleHeaderSearch" />
-          <a-select v-model:value="approvalFilter" placeholder="审核状态" allow-clear style="width: 100px" size="small" @change="handleHeaderSearch">
-            <a-select-option value="">全部</a-select-option>
-            <a-select-option value="草稿">草稿</a-select-option>
-            <a-select-option value="待审批">待审核</a-select-option>
-            <a-select-option value="已审批">已审</a-select-option>
-          </a-select>
-          <a-select v-model:value="bomTypeFilter" placeholder="BOM类型" allow-clear style="width: 100px" size="small" @change="handleHeaderSearch">
-            <a-select-option value="">全部</a-select-option>
-            <a-select-option value="标准BOM">标准BOM</a-select-option>
-            <a-select-option value="工程BOM">工程BOM</a-select-option>
-          </a-select>
-          <a-button size="small" @click="handleHeaderReset"><template #icon><ReloadOutlined /></template>重置</a-button>
-          <a-dropdown>
-            <a-button size="small"><template #icon><DownloadOutlined /></template>导出</a-button>
-            <template #overlay>
-              <a-menu @click="({ key }: any) => handleExport(key)">
-                <a-menu-item key="xlsx">导出为 xlsx</a-menu-item>
-                <a-menu-item key="xls">导出为 xls</a-menu-item>
-              </a-menu>
-            </template>
-          </a-dropdown>
-          <a-button size="small" @click="handleImportClick"><template #icon><UploadOutlined /></template>导入</a-button>
-          <a-button size="small" @click="openImportBomModal"><template #icon><ImportOutlined /></template>从BOM导入</a-button>
-          <a-button type="primary" size="small" @click="headerCreateVisible = true"><template #icon><PlusOutlined /></template>新建</a-button>
-          <a-tooltip title="列设置"><a-button size="small" @click="openColumnSetting"><SettingOutlined /></a-button></a-tooltip>
-          <input ref="fileInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleFileChange" />
-        </a-space>
-      </template>
+    <a-card :bordered="false" :body-style="{ padding: '0 12px 8px' }">
+      <a-tabs v-model:activeKey="pageTab">
+        <!-- ========== Tab 1: BOM物料清单（主表） ========== -->
+        <a-tab-pane key="header" tab="制造BOM物料清单（主表）">
+          <div class="tab-toolbar">
+            <div></div>
+            <a-space :size="4" wrap>
+              <a-input-search v-model:value="searchText" placeholder="搜索编号/名称/产品" style="width: 170px" size="small" @search="handleHeaderSearch" />
+              <a-select v-model:value="approvalFilter" placeholder="审核状态" allow-clear style="width: 100px" size="small" @change="handleHeaderSearch">
+                <a-select-option value="">全部</a-select-option>
+                <a-select-option value="草稿">草稿</a-select-option>
+                <a-select-option value="待审批">待审核</a-select-option>
+                <a-select-option value="已审批">已审</a-select-option>
+              </a-select>
+              <a-select v-model:value="bomTypeFilter" placeholder="BOM类型" allow-clear style="width: 100px" size="small" @change="handleHeaderSearch">
+                <a-select-option value="">全部</a-select-option>
+                <a-select-option value="标准BOM">标准BOM</a-select-option>
+                <a-select-option value="工程BOM">工程BOM</a-select-option>
+              </a-select>
+              <a-button size="small" @click="handleHeaderReset"><template #icon><ReloadOutlined /></template>重置</a-button>
+              <a-dropdown>
+                <a-button size="small"><template #icon><DownloadOutlined /></template>导出</a-button>
+                <template #overlay>
+                  <a-menu @click="({ key }: any) => handleExport(key)">
+                    <a-menu-item key="xlsx">导出为 xlsx</a-menu-item>
+                    <a-menu-item key="xls">导出为 xls</a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
+              <a-button size="small" @click="handleImportClick"><template #icon><UploadOutlined /></template>导入</a-button>
+              <a-button size="small" @click="openImportBomModal"><template #icon><ImportOutlined /></template>从BOM导入</a-button>
+              <a-button type="primary" size="small" @click="headerCreateVisible = true"><template #icon><PlusOutlined /></template>新建</a-button>
+              <a-tooltip title="列设置"><a-button size="small" @click="openColumnSetting"><SettingOutlined /></a-button></a-tooltip>
+              <input ref="fileInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleFileChange" />
+            </a-space>
+          </div>
       <a-table
         :columns="headerColumns" :data-source="headerData" :loading="headerLoading"
         :row-key="(record: MfgBomHeader) => record.mfg_bom_number!"
@@ -941,8 +944,14 @@ onMounted(async () => {
           <SearchOutlined :style="{ color: columnFilters[column.key] ? '#1890ff' : undefined }" />
         </template>
       </a-table>
+        </a-tab-pane>
 
         <!-- ========== Tab 2: 物料明细 ========== -->
+        <a-tab-pane key="detail">
+          <template #tab>
+            <span>制造BOM物料明细</span>
+            <span v-if="selectedHeaderKey" style="margin-left: 8px; font-size: 12px; color: #888;">{{ selectedHeaderKey }}</span>
+          </template>
           <div v-if="!selectedHeaderKey" style="text-align: center; padding: 40px 0; color: #aaa;">
             <a-empty description="请在「制造BOM管理（主表）」中点击一行以查看明细" />
           </div>
@@ -1076,6 +1085,8 @@ onMounted(async () => {
         </template>
       </a-table>
           </template>
+        </a-tab-pane>
+      </a-tabs>
     </a-card>
 
     <!-- ========== Header Create Modal ========== -->

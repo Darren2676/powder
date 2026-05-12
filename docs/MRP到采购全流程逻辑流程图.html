@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MRP到采购全流程逻辑流程图 - 睿信橡胶密封件MES系统</title>
+<script src="node_modules/mermaid/dist/mermaid.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+  .page { max-width: 1300px; margin: 0 auto; padding: 32px; background: #fff; min-height: 100vh; }
+  h1 { text-align: center; font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 20px; color: #1a1a2e; margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 16px; color: #1a1a2e; margin: 20px 0 10px; }
+  .intro { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; padding: 16px; margin-bottom: 24px; font-size: 14px; }
+  .mermaid { text-align: center; margin: 16px 0; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>MRP到采购全流程逻辑流程图</h1>
+<div class="subtitle">睿信橡胶密封件MES系统 | 从生产计划到采购入库的完整业务链路</div>
+
+<div class="intro">
+  <strong>文档说明：</strong>本文档完整展示了从MRP运算开始，经过生产计划，进入采购申请→采购订单→入库→来料检验（条件触发）→确认入库的全流程。涵盖状态流转、库存联动、审批控制和数据实体关系。来料是否检验取决于物料主数据中"incoming_inspection"字段的值。
+</div>
+
+<!-- ==================== 一、MRP到采购全流程总览 ==================== -->
+<h2>一、MRP到采购全流程总览</h2>
+<div class="mermaid">
+graph TB
+    subgraph 计划层["📋 计划层"]
+        SO[销售订单/预测] --> MPS[MPS计算]
+        MPS --> PP[生产计划<br/>production_plan]
+        PP -->|审批通过| MRP[MRP运算]
+    end
+
+    subgraph MRP决策["⚙️ MRP运算决策"]
+        MRP --> CHECK{检查物料<br/>business_scope}
+        CHECK -->|仅生产| PROD[生成生产单]
+        CHECK -->|仅采购| PUR[生成采购申请]
+        CHECK -->|生产+采购| DUAL[双源待决策]
+    end
+
+    subgraph 采购申请["📝 采购申请"]
+        PUR --> PR[采购申请<br/>purchase_req]
+        PR --> PR_D[申请明细<br/>purchase_req_detail]
+        PR_D -->|审批通过转单| PO[采购订单<br/>purchase_order]
+    end
+
+    subgraph 采购执行["🔧 采购执行"]
+        PO --> PO_D[订单明细<br/>purchase_order_detail]
+        PO_D -->|供应商送货| SI[入库单<br/>stock_in]
+        SI --> SI_D[入库明细<br/>stock_in_detail]
+    end
+
+    subgraph 来料检验["🔬 来料检验（条件触发）"]
+        SI_D --> CHECK_INSP{检查物料主数据<br/>incoming_inspection}
+        CHECK_INSP -->|Y-需要检验| PQI[采购质检单<br/>purchase_quality_inspection<br/>inspect_status=待检验]
+        CHECK_INSP -->|N-无需检验| DIRECT[直接确认入库]
+    end
+
+    subgraph 入库结算["📦 入库与结算"]
+        PQI -->|合格/让步接收| QUALIFIED[确认入库]
+        PQI -->|不合格| DEFECT[不合格品处理<br/>挑选/拒收/报废/特采/退货]
+        DIRECT --> CONFIRM[确认入库]
+        QUALIFIED --> CONFIRM
+        CONFIRM --> INV[批次库存+<br/>material_batch_inventory<br/>汇总库存更新<br/>material_inventory]
+        CONFIRM --> TXN[库存流水<br/>material_inventory_transaction]
+        CONFIRM --> PO_UPDATE[回写采购订单<br/>received_quantity累计<br/>receive_status判断]
+    end
+</div>
+
+<div class="note">
+  <strong>流程概述：</strong>MRP运算根据物料BOM分解需求，business_scope为"仅采购"的物料自动生成采购申请。采购申请审批后转采购订单，供应商送货后创建入库单。入库时系统检查item_master.incoming_inspection字段，值为'Y'则自动创建来料检验单，检验合格后方可确认入库；值为'N'则直接确认入库。确认入库后自动写入批次库存、更新汇总库存、记录库存流水，并回写采购订单的到货状态。
+</div>
+
+<!-- ==================== 二、MRP运算决策逻辑（采购分支） ==================== -->
+<h2>二、MRP运算决策逻辑（采购分支）</h2>
+<div class="mermaid">
+graph TD
+    START([MRP运算开始]) --> INPUT[输入: 生产计划 + 物料编号]
+    INPUT --> GET_INFO[查询 item_master<br/>获取 business_scope]
+    GET_INFO --> BOM[广度优先遍历制造BOM<br/>mfg_bom_header/mfg_bom_detail]
+    BOM --> CHECK_SCOPE{检查业务范围<br/>business_scope}
+
+    CHECK_SCOPE -->|仅生产| PROD_ONLY[action_type=生产]
+    CHECK_SCOPE -->|仅采购| PUR_ONLY[action_type=采购<br/>生成采购申请]
+    CHECK_SCOPE -->|生产+采购| DUAL[双源待决策]
+
+    PUR_ONLY --> CREATE_PR[创建采购申请<br/>purchase_req + purchase_req_detail]
+    CREATE_PR --> PR_APPROVE{采购申请审批}
+    PR_APPROVE -->|通过| CREATE_PO[转采购订单<br/>purchase_order + purchase_order_detail]
+    PR_APPROVE -->|不通过| PR_DRAFT[返回修改]
+</div>
+
+<div class="note">
+  <strong>决策要点：</strong>
+  <ul>
+    <li>MRP统一使用制造BOM（mfg_bom）而非设计BOM（bom）</li>
+    <li>action_type 由 item_master.business_scope 决定</li>
+    <li>business_scope="仅采购"的物料直接生成采购申请</li>
+    <li>采购申请支持手动创建（安全库存预警、手工发起）</li>
+  </ul>
+</div>
+
+<!-- ==================== 三、采购申请→订单状态流转 ==================== -->
+<h2>三、采购申请→订单状态流转</h2>
+<div class="mermaid">
+stateDiagram-v2
+    state 采购申请 {
+        [*] --> 草稿_申请: 创建申请
+        草稿_申请 --> 待审批_申请: 提交审批
+        待审批_申请 --> 已审批_申请: 审批通过
+        待审批_申请 --> 草稿_申请: 审批不通过
+        已审批_申请 --> 已转单: 转采购订单
+        已审批_申请 --> 部分转单: 部分明细转单
+        部分转单 --> 已转单: 剩余明细转单
+    }
+
+    state 采购订单 {
+        [*] --> 草稿_订单: 从申请转单/手动创建
+        草稿_订单 --> 待审批_订单: 提交审批
+        待审批_订单 --> 已审批_订单: 审批通过
+        待审批_订单 --> 草稿_订单: 审批不通过
+        已审批_订单 --> 执行中: 首次到货入库
+        已审批_订单 --> 已完成: 全部到货入库
+        执行中 --> 已完成: 到货完成
+        已审批_订单 --> 已取消: 取消订单
+    }
+
+    已转单 --> 草稿_订单
+</div>
+
+<div class="note">
+  <strong>状态说明：</strong>采购申请审批后可转采购订单（支持部分转单）。采购订单经历 草稿→已审批→执行中→已完成 的生命周期。到货状态由入库单确认后自动回写：received_quantity >= order_quantity 时 receive_status 更新为"已到货"。
+</div>
+
+<!-- ==================== 四、采购入库与来料检验判断 ==================== -->
+<h2>四、采购入库与来料检验判断流程</h2>
+<div class="mermaid">
+graph TB
+    START([供应商送货]) --> CREATE_SI[创建入库单<br/>stock_in<br/>approval_status=草稿]
+    CREATE_SI --> FILL_SI[填写入库明细<br/>stock_in_detail<br/>物料/数量/仓库]
+    FILL_SI --> CHECK_INSP{遍历入库明细<br/>检查 item_master<br/>incoming_inspection}
+
+    CHECK_INSP -->|incoming_inspection=Y| NEED_INSP[需要来料检验]
+    CHECK_INSP -->|incoming_inspection=N| NO_INSP[无需来料检验]
+
+    NEED_INSP --> AUTO_CREATE[自动创建质检单<br/>purchase_quality_inspection<br/>inspect_status=待检验]
+    AUTO_CREATE --> MATCH_PLAN[匹配来料检验方案<br/>incoming_inspect_plan<br/>plan_name=物料编号]
+    MATCH_PLAN --> MATCH_SPEC[匹配来料检验规范<br/>incoming_inspect_spec<br/>spec_name=物料编号]
+    MATCH_SPEC --> WRITE_BACK[回写入库明细<br/>inspection_number<br/>inspect_status=待检验]
+
+    NO_INSP --> DIRECT_QUALIFIED[入库明细<br/>qualified_quantity=stock_in_quantity<br/>直接视为合格]
+
+    WRITE_BACK --> SI_APPROVE{入库单审核确认}
+    DIRECT_QUALIFIED --> SI_APPROVE
+
+    SI_APPROVE --> YES_CONFIRM[确认入库]
+    YES_CONFIRM --> CHECK_INSP_STATUS{检验状态检查}
+    CHECK_INSP_STATUS -->|待检验物料| WAIT_INSP[等待检验完成]
+    CHECK_INSP_STATUS -->|无需检验物料| DO_STOCK_IN[执行入库操作]
+    WAIT_INSP --> INSP_DONE[检验完成<br/>回写合格/不合格数量]
+    INSP_DONE --> DO_STOCK_IN
+
+    style NEED_INSP fill:#fff7e6,color:#fa8c16
+    style NO_INSP fill:#f6ffed,color:#52c41a
+    style AUTO_CREATE fill:#e6f7ff,color:#1890ff
+    style MATCH_PLAN fill:#e6f7ff,color:#1890ff
+    style MATCH_SPEC fill:#e6f7ff,color:#1890ff
+</div>
+
+<table>
+  <tr><th>步骤</th><th>操作</th><th>数据库表</th><th>关键逻辑</th></tr>
+  <tr><td>1</td><td>创建入库单</td><td>stock_in</td><td>关联采购订单，获取供应商信息</td></tr>
+  <tr><td>2</td><td>填写入库明细</td><td>stock_in_detail</td><td>物料、数量、仓库</td></tr>
+  <tr><td>3</td><td>检查来料检验标识</td><td>item_master.incoming_inspection</td><td>Y=需要检验，N=无需检验</td></tr>
+  <tr><td>4</td><td>自动创建质检单</td><td>purchase_quality_inspection</td><td>匹配检验方案和检验规范</td></tr>
+  <tr><td>5</td><td>确认入库</td><td>material_batch_inventory + material_inventory</td><td>按qualified_quantity入库</td></tr>
+  <tr><td>6</td><td>回写采购订单</td><td>purchase_order_detail.receive_status</td><td>累计received_quantity判断到货状态</td></tr>
+</table>
+
+<!-- ==================== 五、来料检验详细流程 ==================== -->
+<h2>五、来料检验详细流程</h2>
+<div class="mermaid">
+graph TB
+    START([来料检验触发<br/>item_master.incoming_inspection=Y]) --> CREATE[自动创建检验单<br/>purchase_quality_inspection<br/>inspect_status=待检验]
+
+    CREATE --> PLAN[匹配检验方案<br/>incoming_inspect_plan<br/>获取: 检验员/检验方法/<br/>抽样方式/抽样数量]
+    PLAN --> SPEC[匹配检验规范<br/>incoming_inspect_spec<br/>获取: 检验项目/缺陷类别]
+    SPEC --> INSP[检验员录入结果<br/>inspect_status=检验中]
+    INSP --> RESULT{检验结果}
+
+    RESULT -->|合格| PASS[inspect_result=合格<br/>qualified_quantity记录]
+    RESULT -->|不合格| FAIL[inspect_result=不合格<br/>unqualified_quantity记录]
+    RESULT -->|让步接收| CONCEDE[inspect_result=让步接收]
+
+    PASS --> COMPLETE[inspect_status=已完成]
+    FAIL --> COMPLETE
+    CONCEDE --> COMPLETE
+
+    COMPLETE --> WRITE_BACK_SI[回写入库单明细<br/>qualified_quantity<br/>unqualified_quantity]
+
+    FAIL --> DEFECT{不合格品处理}
+    DEFECT -->|挑选| SORT[挑选后更新<br/>合格/不合格数量]
+    DEFECT -->|拒收| REJECT[拒收退回供应商]
+    DEFECT -->|报废| SCRAP[报废处理]
+    DEFECT -->|特采| SPECIAL[特采让步接收<br/>不合格品转为合格]
+    DEFECT -->|退货| RETURN[退货退回供应商]
+
+    style CREATE fill:#e6f7ff,color:#1890ff
+    style PASS fill:#f6ffed,color:#52c41a
+    style FAIL fill:#fff1f0,color:#f5222d
+    style CONCEDE fill:#fff7e6,color:#fa8c16
+</div>
+
+<div class="note">
+  <strong>检验逻辑：</strong>
+  <ul>
+    <li>来料检验在入库单创建时自动触发（条件：item_master.incoming_inspection='Y'）</li>
+    <li>检验单自动匹配来料检验方案（plan_name=物料编号）和来料检验规范（spec_name=物料编号）</li>
+    <li>检验结果：合格 / 不合格 / 让步接收</li>
+    <li>检验完成后自动回写入库单明细的合格/不合格数量</li>
+    <li>不合格品支持5种处理方式：挑选 / 拒收 / 报废 / 特采 / 退货</li>
+    <li>特采处理将不合格品转为合格（让步接收），可入库</li>
+  </ul>
+</div>
+
+<!-- ==================== 六、确认入库与库存联动 ==================== -->
+<h2>六、确认入库与库存联动</h2>
+<div class="mermaid">
+graph TB
+    START([确认入库]) --> CHECK_QUAL{合格数量<br/>qualified_quantity > 0?}
+    CHECK_QUAL -->|是| BATCH[生成批次号<br/>MB-YYYYMMDD-###]
+    CHECK_QUAL -->|否| SKIP[跳过该明细行]
+
+    BATCH --> WRITE_BATCH[写入批次库存<br/>material_batch_inventory<br/>quantity=qualified_quantity]
+    WRITE_BATCH --> SYNC[同步汇总库存<br/>syncMaterialInventorySummary<br/>material_inventory]
+    SYNC --> TXN[记录库存流水<br/>material_inventory_transaction<br/>transaction_type=入库<br/>source_type=采购入库]
+    TXN --> UPDATE_SI[更新入库单明细<br/>batch_number回写]
+    UPDATE_SI --> UPDATE_PO[回写采购订单明细<br/>received_quantity累计<br/>receive_status判断]
+    UPDATE_PO --> UPDATE_PO_H[更新采购订单主表<br/>order_status判断<br/>全部到货=已完成<br/>部分到货=执行中]
+    UPDATE_PO_H --> DONE[approval_status=已入库]
+
+    style BATCH fill:#e6f7ff,color:#1890ff
+    style WRITE_BATCH fill:#f6ffed,color:#52c41a
+    style SYNC fill:#f6ffed,color:#52c41a
+</div>
+
+<table>
+  <tr><th>业务操作</th><th>库存影响</th><th>数据库表</th><th>触发时机</th></tr>
+  <tr><td>确认入库</td><td>新增批次库存</td><td>material_batch_inventory</td><td>confirmStockIn()</td></tr>
+  <tr><td>确认入库</td><td>更新汇总库存</td><td>material_inventory</td><td>syncMaterialInventorySummary()</td></tr>
+  <tr><td>确认入库</td><td>记录库存流水</td><td>material_inventory_transaction</td><td>confirmStockIn()</td></tr>
+  <tr><td>确认入库</td><td>回写采购订单到货状态</td><td>purchase_order_detail</td><td>confirmStockIn()</td></tr>
+</table>
+
+<!-- ==================== 七、采购数据实体关系 ==================== -->
+<h2>七、采购数据实体关系</h2>
+<div class="mermaid">
+erDiagram
+    production_plan ||--o{ production_order : generates
+    production_order ||--o{ material_requisition : triggers
+    production_plan ||--o{ purchase_req : generates
+    purchase_req ||--o{ purchase_req_detail : contains
+    purchase_req ||--o{ purchase_order : converts
+    purchase_order ||--o{ purchase_order_detail : contains
+    purchase_order ||--o{ stock_in : has
+    stock_in ||--o{ stock_in_detail : contains
+    stock_in_detail ||--o| purchase_quality_inspection : triggers
+    item_master ||--o| incoming_inspect_plan : has
+    item_master ||--o| incoming_inspect_spec : has
+
+    purchase_req {
+        int id PK
+        string purchase_req_number
+        string requester
+        string request_department
+        string source_number
+        string approval_status
+        string order_status
+    }
+    purchase_req_detail {
+        int id PK
+        string purchase_req_number FK
+        string item_number
+        decimal request_quantity
+        decimal ordered_quantity
+        string suggested_supplier
+        string status
+    }
+    purchase_order {
+        int id PK
+        string purchase_order_number
+        string supplier_number
+        string supplier_name
+        string procurement_manager
+        string approval_status
+        string order_status
+    }
+    purchase_order_detail {
+        int id PK
+        string purchase_order_number FK
+        string item_number
+        decimal order_quantity
+        decimal received_quantity
+        decimal unit_price
+        decimal total_amount
+        string receive_status
+    }
+    stock_in {
+        int id PK
+        string stock_in_number
+        string purchase_order_number FK
+        string supplier_number
+        string warehouse_number
+        string stock_in_date
+        string approval_status
+    }
+    stock_in_detail {
+        int id PK
+        string stock_in_number FK
+        string item_number
+        decimal stock_in_quantity
+        decimal qualified_quantity
+        decimal unqualified_quantity
+        string inspection_number
+        string inspect_status
+        string batch_number
+    }
+    purchase_quality_inspection {
+        int id PK
+        string inspection_number
+        string stock_in_number FK
+        string purchase_order_number FK
+        string item_number
+        decimal received_quantity
+        decimal qualified_quantity
+        decimal unqualified_quantity
+        string inspect_plan_name
+        string inspect_spec_name
+        string inspect_result
+        string inspect_status
+        string defect_handling
+    }
+    incoming_inspect_plan {
+        string plan_name PK
+        string inspector_name
+        string inspect_method
+        string sampling_method
+        string sampling_quantity
+        string approval_status
+    }
+    incoming_inspect_spec {
+        string spec_name PK
+        string defect_categories
+        string approval_status
+    }
+    item_master {
+        string item_number PK
+        string item_name
+        string business_scope
+        string incoming_inspection
+    }
+</div>
+
+<!-- ==================== 八、采购订单完整状态时序 ==================== -->
+<h2>八、采购订单完整状态时序</h2>
+<div class="mermaid">
+graph LR
+    A[草稿] -->|审批| B[已审批]
+    B -->|首次到货入库| C[执行中]
+    C -->|到货完成| D[已完成]
+    B -->|一次到完| D
+    B -->|取消| E[已取消]
+
+    style A fill:#f0f0f0,color:#666
+    style B fill:#e6f7ff,color:#1890ff
+    style C fill:#fff7e6,color:#fa8c16
+    style D fill:#f6ffed,color:#52c41a
+    style E fill:#fff1f0,color:#f5222d
+</div>
+
+<div class="note">
+  <strong>状态递进规则：</strong>采购订单的状态遵循单向递进原则。订单明细行的receive_status独立追踪：received_quantity=0为"未到货"，received_quantity < order_quantity为"部分到货"，received_quantity >= order_quantity为"已到货"。主表order_status由所有明细行receive_status汇总决定。
+</div>
+
+<!-- ==================== 九、关键业务规则汇总 ==================== -->
+<h2>九、关键业务规则汇总</h2>
+
+<h3>9.1 MRP到采购的触发条件</h3>
+<div class="note">
+  <ul>
+    <li>MRP统一使用制造BOM（mfg_bom_header/mfg_bom_detail）进行运算</li>
+    <li>business_scope="仅采购"的物料由MRP自动生成采购申请</li>
+    <li>采购申请也可由生产备料缺料、安全库存预警或手动发起</li>
+    <li>采购申请审批通过后，可转采购订单（支持部分转单）</li>
+  </ul>
+</div>
+
+<h3>9.2 来料检验触发规则</h3>
+<div class="note">
+  <ul>
+    <li>入库单创建时，系统自动遍历入库明细行</li>
+    <li>对每个物料查询 item_master.incoming_inspection 字段</li>
+    <li>incoming_inspection='Y' → 自动创建来料检验单（purchase_quality_inspection）</li>
+    <li>incoming_inspection='N' → 无需检验，入库数量直接视为合格数量</li>
+    <li>检验单自动匹配来料检验方案（incoming_inspect_plan，plan_name=物料编号）</li>
+    <li>检验单自动匹配来料检验规范（incoming_inspect_spec，spec_name=物料编号）</li>
+    <li>检验完成后自动回写入库单明细的合格/不合格数量</li>
+  </ul>
+</div>
+
+<h3>9.3 入库规则</h3>
+<div class="note">
+  <ul>
+    <li>确认入库时，仅按 qualified_quantity（合格数量）执行入库操作</li>
+    <li>入库自动生成批次号（MB-YYYYMMDD-###），写入批次库存</li>
+    <li>同步更新汇总库存（material_inventory）</li>
+    <li>记录库存流水（material_inventory_transaction）</li>
+    <li>回写采购订单明细的 received_quantity 和 receive_status</li>
+    <li>全部到货后采购订单 order_status 更新为"已完成"</li>
+  </ul>
+</div>
+
+<h3>9.4 不合格品处理规则</h3>
+<div class="note">
+  <ul>
+    <li>不合格品支持5种处理方式：挑选 / 拒收 / 报废 / 特采 / 退货</li>
+    <li>挑选：重新检验，更新合格/不合格数量</li>
+    <li>特采：将不合格品转为合格（让步接收），可入库</li>
+    <li>拒收/退货：退回供应商</li>
+    <li>报废：记录报废处理</li>
+    <li>不合格品处理后自动回写入库单明细的合格/不合格数量和检验状态</li>
+  </ul>
+</div>
+
+<h3>9.5 删除与取消规则</h3>
+<div class="note">
+  <ul>
+    <li>草稿状态的采购申请/订单可直接删除</li>
+    <li>已审批的单据需先反审才能删除</li>
+    <li>草稿状态的入库单可删除，已入库的不可删除</li>
+    <li>已审批的采购订单在未到货前可取消</li>
+  </ul>
+</div>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: 'basis'
+    },
+    state: {
+      useMaxWidth: true
+    },
+    er: {
+      useMaxWidth: true
+    }
+  });
+</script>
+</body>
+</html>

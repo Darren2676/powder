@@ -68,6 +68,20 @@ onMounted(() => fetchList())
 
 
 
+// ==================== 详情弹窗 ====================
+const openDetail = async (record: any) => {
+  try {
+    const res: any = await getStockInDetail(record.stock_in_number)
+    if (res?.success) {
+      detailHeader.value = res.data?.header || {}
+      detailRows.value = res.data?.details || []
+      detailVisible.value = true
+    }
+  } catch {
+    message.error('获取入库单详情失败')
+  }
+}
+
 // ==================== 确认入库 ====================
 const handleConfirm = async (record: any) => {
   try {
@@ -101,15 +115,15 @@ const handleExport = async () => {
 
 <template>
   <div style="padding: 20px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <h2 style="margin:0">来料入库</h2>
-      <div style="display:flex;gap:8px;align-items:center">
+    <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;overflow-x:auto">
+      <span style="font-size:18px;font-weight:600;white-space:nowrap;flex-shrink:0">生产入库</span>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:nowrap">
         <a-input-search v-model:value="searchText" placeholder="搜索入库单号/采购单号/供应商/仓库" style="width:300px" @search="handleSearch" allow-clear />
         <a-select v-model:value="filterStatus" placeholder="状态" style="width:120px" allow-clear @change="handleSearch">
           <a-select-option value="草稿">草稿</a-select-option>
           <a-select-option value="已入库">已入库</a-select-option>
         </a-select>
-        <a-button @click="handleRefresh"><template #icon><ReloadOutlined /></template></a-button>
+        <a-button @click="fetchList"><template #icon><ReloadOutlined /></template></a-button>
         <a-button @click="handleExport"><template #icon><DownloadOutlined /></template>导出</a-button>
       </div>
     </div>

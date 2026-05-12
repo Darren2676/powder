@@ -57,7 +57,7 @@ export const createRoutingHeader = async (req: Request, res: Response, next: Nex
     const now = new Date();
     const creation_date = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const creation_man = (req as any).user?.username || '';
-    await sequelize.query(`INSERT INTO routing_header (process_route_number, process_route_name, item_number, item_name, production_automatic_inventory_entry_rules, [condition], bom_number, is_primary, creation_date, creation_man, approval_status) VALUES (:process_route_number, :process_route_name, :item_number, :item_name, :production_automatic_inventory_entry_rules, :condition, :bom_number, :is_primary, :creation_date, :creation_man, N'草稿')`, {
+    await sequelize.query(`INSERT INTO routing_header (process_route_number, process_route_name, item_number, item_name, production_automatic_inventory_entry_rules, [condition], bom_number, is_primary, default_backflush_warehouse, creation_date, creation_man, approval_status) VALUES (:process_route_number, :process_route_name, :item_number, :item_name, :production_automatic_inventory_entry_rules, :condition, :bom_number, :is_primary, :default_backflush_warehouse, :creation_date, :creation_man, N'草稿')`, {
       replacements: {
         process_route_number: b.process_route_number,
         process_route_name: b.process_route_name || '',
@@ -67,6 +67,7 @@ export const createRoutingHeader = async (req: Request, res: Response, next: Nex
         condition: b.condition || CONDITION_STATUS.ENABLED,
         bom_number: b.bom_number || '',
         is_primary: b.is_primary === '是' || b.is_primary === true ? '是' : '否',
+        default_backflush_warehouse: b.default_backflush_warehouse || '',
         creation_date,
         creation_man
       }
@@ -82,7 +83,7 @@ export const updateRoutingHeader = async (req: Request, res: Response, next: Nex
     // 审批状态校验：只有草稿状态可以编辑
     const [check]: any = await sequelize.query(`SELECT approval_status FROM routing_header WHERE process_route_number = :id`, { replacements: { id } });
     if (check.length && check[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许编辑' }); return; }
-    await sequelize.query(`UPDATE routing_header SET process_route_name = :process_route_name, item_number = :item_number, item_name = :item_name, production_automatic_inventory_entry_rules = :production_automatic_inventory_entry_rules, [condition] = :condition, bom_number = :bom_number, is_primary = :is_primary WHERE process_route_number = :id`, {
+    await sequelize.query(`UPDATE routing_header SET process_route_name = :process_route_name, item_number = :item_number, item_name = :item_name, production_automatic_inventory_entry_rules = :production_automatic_inventory_entry_rules, [condition] = :condition, bom_number = :bom_number, is_primary = :is_primary, default_backflush_warehouse = :default_backflush_warehouse WHERE process_route_number = :id`, {
       replacements: {
         id,
         process_route_name: b.process_route_name || '',
@@ -91,7 +92,8 @@ export const updateRoutingHeader = async (req: Request, res: Response, next: Nex
         production_automatic_inventory_entry_rules: b.production_automatic_inventory_entry_rules || '',
         condition: b.condition || CONDITION_STATUS.ENABLED,
         bom_number: b.bom_number || '',
-        is_primary: b.is_primary === '是' || b.is_primary === true ? '是' : '否'
+        is_primary: b.is_primary === '是' || b.is_primary === true ? '是' : '否',
+        default_backflush_warehouse: b.default_backflush_warehouse || ''
       }
     });
     res.json(success(null, '更新工艺路线成功'));
@@ -161,6 +163,7 @@ export const addRoutingDetail = async (req: Request, res: Response, next: NextFu
         material_wastage_rate: b.material_wastage_rate || '',
         flowing_backward: b.flowing_backward || '',
         default_repository: b.default_repository || '',
+        default_repository_name: b.default_repository_name || '',
         operator: b.operator || (req as any).user?.username || '',
         is_outsourced: b.is_outsourced ? 1 : 0,
         inspect_type: b.inspect_type || '无需检',
@@ -212,7 +215,7 @@ export const updateRoutingDetail = async (req: Request, res: Response, next: Nex
       const [headerCheck]: any = await sequelize.query(`SELECT approval_status FROM routing_header WHERE process_route_number = :routeNum`, { replacements: { routeNum: detailRow[0].process_route_number } });
       if (headerCheck.length && headerCheck[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '主表已提交审批或已审批，不允许编辑工序明细' }); return; }
     }
-    await sequelize.query(`UPDATE routing_detail SET step_number = :step_number, standard_process_number = :standard_process_number, standard_process_name = :standard_process_name, post_processing_sequence_number = :post_processing_sequence_number, post_processing_sequence_name = :post_processing_sequence_name, work_center_number = :work_center_number, work_center_name = :work_center_name, excess_reporting_ratio = :excess_reporting_ratio, ingredient_addition_method = :ingredient_addition_method, process_material_input_number = :process_material_input_number, process_material_input_quantity = :process_material_input_quantity, process_material_input_unit = :process_material_input_unit, material_wastage_rate = :material_wastage_rate, flowing_backward = :flowing_backward, default_repository = :default_repository, operator = :operator, is_outsourced = :is_outsourced, inspect_type = :inspect_type, inspect_plan_name = :inspect_plan_name, inspect_spec_name = :inspect_spec_name, inspector_number = :inspector_number, inspector_name = :inspector_name, attachment_info = :attachment_info, technical_requirement = :technical_requirement, remark = :remark WHERE id = :detailId`, {
+    await sequelize.query(`UPDATE routing_detail SET step_number = :step_number, standard_process_number = :standard_process_number, standard_process_name = :standard_process_name, post_processing_sequence_number = :post_processing_sequence_number, post_processing_sequence_name = :post_processing_sequence_name, work_center_number = :work_center_number, work_center_name = :work_center_name, excess_reporting_ratio = :excess_reporting_ratio, ingredient_addition_method = :ingredient_addition_method, process_material_input_number = :process_material_input_number, process_material_input_quantity = :process_material_input_quantity, process_material_input_unit = :process_material_input_unit, material_wastage_rate = :material_wastage_rate, flowing_backward = :flowing_backward, default_repository = :default_repository, default_repository_name = :default_repository_name, operator = :operator, is_outsourced = :is_outsourced, inspect_type = :inspect_type, inspect_plan_name = :inspect_plan_name, inspect_spec_name = :inspect_spec_name, inspector_number = :inspector_number, inspector_name = :inspector_name, attachment_info = :attachment_info, technical_requirement = :technical_requirement, remark = :remark WHERE id = :detailId`, {
       replacements: {
         detailId,
         step_number: b.step_number || 10,
@@ -230,6 +233,7 @@ export const updateRoutingDetail = async (req: Request, res: Response, next: Nex
         material_wastage_rate: b.material_wastage_rate || '',
         flowing_backward: b.flowing_backward || '',
         default_repository: b.default_repository || '',
+        default_repository_name: b.default_repository_name || '',
         operator: b.operator || (req as any).user?.username || '',
         is_outsourced: b.is_outsourced ? 1 : 0,
         inspect_type: b.inspect_type || '无需检',
@@ -291,12 +295,12 @@ export const deleteRoutingDetail = async (req: Request, res: Response, next: Nex
 
 // ==================== Export / Import ====================
 
-const exportFields = ['process_route_number', 'process_route_name', 'item_number', 'item_name', 'production_automatic_inventory_entry_rules', 'condition', 'bom_number', 'is_primary', 'step_number', 'standard_process_number', 'standard_process_name', 'post_processing_sequence_number', 'post_processing_sequence_name', 'work_center_number', 'work_center_name', 'excess_reporting_ratio', 'ingredient_addition_method', 'process_material_input_number', 'process_material_input_quantity', 'process_material_input_unit', 'material_wastage_rate', 'flowing_backward', 'default_repository', 'operator', 'is_outsourced', 'inspect_type', 'inspect_plan_name', 'inspect_spec_name', 'inspector_number', 'inspector_name', 'attachment_info', 'technical_requirement', 'remark'];
-const exportHeaders = ['工艺路线编号', '工艺路线名称', '产品编号', '产品名称', '生产自动入库规则', '状态', '物料清单编号', '主工艺路线', '工序序号', '标准工序编号', '标准工序名称', '后置工序编号', '后置工序名称', '工作中心编号', '工作中心名称', '超额报工比例', '配料方式', '工序物料投入编号', '工序物料投入数量', '工序物料投入单位', '物料损耗率', '倒冲', '默认仓库', '操作员', '是否委外', '检验类型', '检验方案', '检验规范', '检验人编号', '检验人名称', '附件信息', '技术要求', '备注'];
+const exportFields = ['process_route_number', 'process_route_name', 'item_number', 'item_name', 'production_automatic_inventory_entry_rules', 'condition', 'bom_number', 'is_primary', 'step_number', 'standard_process_number', 'standard_process_name', 'post_processing_sequence_number', 'post_processing_sequence_name', 'work_center_number', 'work_center_name', 'excess_reporting_ratio', 'ingredient_addition_method', 'process_material_input_number', 'process_material_input_quantity', 'process_material_input_unit', 'material_wastage_rate', 'flowing_backward', 'default_repository', 'default_repository_name', 'operator', 'is_outsourced', 'inspect_type', 'inspect_plan_name', 'inspect_spec_name', 'inspector_number', 'inspector_name', 'attachment_info', 'technical_requirement', 'remark'];
+const exportHeaders = ['工艺路线编号', '工艺路线名称', '产品编号', '产品名称', '生产自动入库规则', '状态', '物料清单编号', '主工艺路线', '工序序号', '标准工序编号', '标准工序名称', '后置工序编号', '后置工序名称', '工作中心编号', '工作中心名称', '超额报工比例', '配料方式', '工序物料投入编号', '工序物料投入数量', '工序物料投入单位', '物料损耗率', '倒冲', '默认仓库编号', '默认仓库名称', '操作员', '是否委外', '检验类型', '检验方案', '检验规范', '检验人编号', '检验人名称', '附件信息', '技术要求', '备注'];
 
 export const exportRoutingHeaders = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [items]: any = await sequelize.query(`SELECT h.process_route_number, h.process_route_name, h.item_number, h.item_name, h.production_automatic_inventory_entry_rules, h.[condition], d.step_number, d.standard_process_number, d.standard_process_name, d.post_processing_sequence_number, d.post_processing_sequence_name, d.work_center_number, d.work_center_name, d.excess_reporting_ratio, d.ingredient_addition_method, d.process_material_input_number, d.process_material_input_quantity, d.process_material_input_unit, d.material_wastage_rate, d.flowing_backward, d.default_repository, d.operator, d.is_outsourced, d.inspect_type, d.inspect_plan_name, d.inspect_spec_name, d.inspector_number, d.inspector_name, d.attachment_info, d.technical_requirement, d.remark FROM routing_header h LEFT JOIN routing_detail d ON h.process_route_number = d.process_route_number ORDER BY h.process_route_number, d.step_number`);
+    const [items]: any = await sequelize.query(`SELECT h.process_route_number, h.process_route_name, h.item_number, h.item_name, h.production_automatic_inventory_entry_rules, h.[condition], d.step_number, d.standard_process_number, d.standard_process_name, d.post_processing_sequence_number, d.post_processing_sequence_name, d.work_center_number, d.work_center_name, d.excess_reporting_ratio, d.ingredient_addition_method, d.process_material_input_number, d.process_material_input_quantity, d.process_material_input_unit, d.material_wastage_rate, d.flowing_backward, d.default_repository, d.default_repository_name, d.operator, d.is_outsourced, d.inspect_type, d.inspect_plan_name, d.inspect_spec_name, d.inspector_number, d.inspector_name, d.attachment_info, d.technical_requirement, d.remark FROM routing_header h LEFT JOIN routing_detail d ON h.process_route_number = d.process_route_number ORDER BY h.process_route_number, d.step_number`);
     const format = (req.query.format as string) === 'xls' ? 'xls' : 'xlsx';
     exportToExcel(items, exportFields, exportHeaders, 'routing_masters', res, format);
   } catch (err) { next(err); }
@@ -367,6 +371,7 @@ export const importRoutingHeaders = async (req: Request, res: Response, next: Ne
               material_wastage_rate: row.material_wastage_rate || '',
               flowing_backward: row.flowing_backward || '',
               default_repository: row.default_repository || '',
+              default_repository_name: row.default_repository_name || '',
               operator: row.operator || (req as any).user?.username || '',
               is_outsourced: (row.is_outsourced === '是' || row.is_outsourced === '1' || row.is_outsourced === 1) ? 1 : 0,
               inspect_type: row.inspect_type || '无需检',

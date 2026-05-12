@@ -5,6 +5,7 @@ import finishedGoodsRoutes from './finishedGoods/finishedGoods.routes';
 import stockInRoutes from './stockIn/stockIn.routes';
 import stockCountRoutes from './stockCount/stockCount.routes';
 import abnormalIORoutes from './abnormalIO/abnormalIO.routes';
+import packingOrderRoutes from './packingOrder/packingOrder.routes';
 
 const router = Router();
 
@@ -13,5 +14,6 @@ router.use('/finished-goods', finishedGoodsRoutes);
 router.use('/stock-ins', stockInRoutes);
 router.use('/stock-counts', stockCountRoutes);
 router.use('/abnormal-io', abnormalIORoutes);
+router.use('/packing-orders', packingOrderRoutes);
 
 export default router;

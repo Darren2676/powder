@@ -10,7 +10,7 @@ import { getActiveDepartments } from '@/api/system/department';
 import type { User, UserQueryParams } from '@/types';
 import type { SecuritySetting, LoginLog } from '@/api/system/security';
 import { ROLE_MAP, ROLE_COLORS, USER_STATUS_MAP, USER_STATUS_COLORS, DEFAULT_PAGE_SIZE } from '@/utils/constants';
-import { EditOutlined, DeleteOutlined, PlusOutlined, LockOutlined, UnlockOutlined, KeyOutlined, SearchOutlined, StopOutlined, CheckCircleOutlined, SettingOutlined, UserOutlined } from '@ant-design/icons-vue';
+import { EditOutlined, DeleteOutlined, PlusOutlined, LockOutlined, UnlockOutlined, KeyOutlined, SearchOutlined, StopOutlined, CheckCircleOutlined, SettingOutlined, UserOutlined, DownOutlined, PauseCircleOutlined, PlayCircleOutlined } from '@ant-design/icons-vue';
 import { message, Modal } from 'ant-design-vue';
 import dayjs from 'dayjs';
 import type { Rule } from 'ant-design-vue/es/form';
@@ -159,7 +159,7 @@ const {
   loadColumnPreference, handleResizeColumn
 } = useColumnPreference('user_management', defaultDataColumns, {
   fixedLeft: [{ title: '行号', key: 'rowIndex', width: 60, fixed: 'left' as const }],
-  fixedRight: [{ title: '操作', key: 'action', width: 260, fixed: 'right' as const }]
+  fixedRight: [{ title: '操作', key: 'action', width: 140, fixed: 'right' as const }]
 });
 
 const fetchUsers = async () => {
@@ -335,6 +335,49 @@ const handleUnlockUser = (record: User) => {
         }
       } catch (e) {
         message.error('解锁失败');
+      }
+    }
+  });
+};
+
+// 停用用户（active → inactive）
+const handleDeactivateUser = (record: User) => {
+  Modal.confirm({
+    title: '确认停用',
+    content: `确定要停用用户 "${record.username}" 吗？停用后该用户将无法登录系统。`,
+    okText: '停用',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        const response: any = await userApi.updateUser(record.id, { status: 'inactive' });
+        if (response.success) {
+          message.success('用户已停用');
+          fetchUsers();
+        }
+      } catch (e) {
+        message.error('停用失败');
+      }
+    }
+  });
+};
+
+// 激活用户（inactive → active）
+const handleActivateUser = (record: User) => {
+  Modal.confirm({
+    title: '确认激活',
+    content: `确定要激活用户 "${record.username}" 吗？`,
+    okText: '激活',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        const response: any = await userApi.updateUser(record.id, { status: 'active' });
+        if (response.success) {
+          message.success('用户已激活');
+          fetchUsers();
+        }
+      } catch (e) {
+        message.error('激活失败');
       }
     }
   });
@@ -706,33 +749,40 @@ onMounted(() => {
               {{ dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss') }}
             </template>
             <template v-else-if="column.key === 'action'">
-              <a-space>
-                <a-button type="link" size="small" @click="handleEdit(record)">
-                  <template #icon><EditOutlined /></template>
-                  编辑
-                </a-button>
-                <a-tooltip title="重置密码">
-                  <a-button type="link" size="small" @click="handleResetPassword(record)">
-                    <template #icon><KeyOutlined /></template>
+              <a-space :size="4">
+                <a-button type="link" size="small" @click="handleEdit(record)">编辑</a-button>
+                <a-dropdown :trigger="['click']">
+                  <a-button type="link" size="small" @click.stop>
+                    更多<DownOutlined style="font-size: 10px; margin-left: 2px;" />
                   </a-button>
-                </a-tooltip>
-                <a-tooltip v-if="record.locked_until && new Date(record.locked_until) > new Date()" title="解锁">
-                  <a-button type="link" size="small" style="color: #fa8c16;" @click="handleUnlockUser(record)">
-                    <template #icon><UnlockOutlined /></template>
-                  </a-button>
-                </a-tooltip>
-                <a-button v-if="record.status === 'active'" type="link" size="small" danger @click="handleDisableUser(record)">
-                  <template #icon><StopOutlined /></template>
-                  禁用
-                </a-button>
-                <a-button v-if="record.status === 'disabled'" type="link" size="small" style="color: #52c41a;" @click="handleEnableUser(record)">
-                  <template #icon><CheckCircleOutlined /></template>
-                  启用
-                </a-button>
-                <a-button v-if="record.status === 'inactive'" type="link" danger size="small" @click="handleDelete(record)">
-                  <template #icon><DeleteOutlined /></template>
-                  删除
-                </a-button>
+                  <template #overlay>
+                    <a-menu>
+                      <a-menu-item @click="handleResetPassword(record)">
+                        <KeyOutlined style="margin-right: 6px;" />重置密码
+                      </a-menu-item>
+                      <a-menu-item v-if="record.locked_until && new Date(record.locked_until) > new Date()" @click="handleUnlockUser(record)">
+                        <UnlockOutlined style="margin-right: 6px; color: #fa8c16;" />解锁
+                      </a-menu-item>
+                      <a-menu-divider v-if="record.status === 'active' || (record.locked_until && new Date(record.locked_until) > new Date())" />
+                      <a-menu-item v-if="record.status === 'active'" @click="handleDeactivateUser(record)">
+                        <PauseCircleOutlined style="margin-right: 6px; color: #faad14;" />停用
+                      </a-menu-item>
+                      <a-menu-item v-if="record.status === 'active'" @click="handleDisableUser(record)">
+                        <StopOutlined style="margin-right: 6px; color: #ff4d4f;" />禁用
+                      </a-menu-item>
+                      <a-menu-item v-if="record.status === 'inactive'" @click="handleActivateUser(record)">
+                        <PlayCircleOutlined style="margin-right: 6px; color: #52c41a;" />激活
+                      </a-menu-item>
+                      <a-menu-item v-if="record.status === 'disabled'" @click="handleEnableUser(record)">
+                        <CheckCircleOutlined style="margin-right: 6px; color: #52c41a;" />启用
+                      </a-menu-item>
+                      <a-menu-divider />
+                      <a-menu-item v-if="record.status === 'inactive'" @click="handleDelete(record)">
+                        <DeleteOutlined style="margin-right: 6px; color: #ff4d4f;" />删除
+                      </a-menu-item>
+                    </a-menu>
+                  </template>
+                </a-dropdown>
               </a-space>
             </template>
           </template>

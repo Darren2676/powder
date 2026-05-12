@@ -96,6 +96,23 @@ const handleWithdraw = async (record: any) => {
   })
 }
 
+const handleEdit = (record: any) => {
+  Object.assign(editForm, {
+    char_name: record.char_name,
+    data_type: record.data_type || '',
+    inspect_requirement: record.inspect_requirement || '',
+    allow_multiple: record.allow_multiple || '否',
+    upper_limit: record.upper_limit ?? null,
+    standard_value: record.standard_value ?? null,
+    lower_limit: record.lower_limit ?? null,
+    single_options: record.single_options || '',
+    multi_options: record.multi_options || '',
+    qualified_options: record.qualified_options || '',
+    default_value: record.default_value || ''
+  })
+  editModalVisible.value = true
+}
+
 const handleEditOk = async () => {
   try { await updateQualityCharacteristic(editForm.char_name, editForm); message.success('更新成功'); editModalVisible.value = false; fetchData() }
   catch { message.error('更新失败') }
@@ -110,6 +127,22 @@ const handleCreateOk = async () => {
     Object.assign(createForm, emptyForm())
     fetchData()
   } catch { message.error('创建失败') }
+}
+
+const handleDelete = (record: any) => {
+  Modal.confirm({
+    title: '确认删除',
+    icon: createVNode(ExclamationCircleOutlined),
+    content: `确定要删除质量特性「${(record.char_name || '').trim()}」吗？`,
+    okText: '确定', okType: 'danger', cancelText: '取消',
+    async onOk() {
+      try {
+        const res: any = await deleteQualityCharacteristic(record.char_name)
+        if (res.success) { message.success('删除成功'); fetchData() }
+        else { message.error(res.message || '删除失败') }
+      } catch { message.error('删除失败') }
+    }
+  })
 }
 
 const handleExport = async () => {

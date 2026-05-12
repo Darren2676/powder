@@ -39,16 +39,18 @@ export const validateUpdatePurchasePriceList = validateBody([
 
 // ==================== 计件单价 ====================
 
-// 创建计件单价
+// 创建计件单价表
 export const validateCreatePieceRatePrice = validateBody([
-  { field: 'item_number', label: '物料编号', required: true, maxLength: 100 },
-  { field: 'standard_process_number', label: '标准工序编号', required: true, maxLength: 50 },
+  { field: 'price_list_name', label: '名称', required: true, maxLength: 100 },
+  { field: 'effective_date', label: '生效日期', required: true, maxLength: 20 },
+  { field: 'expiration_date', label: '失效日期', required: true, maxLength: 20 },
 ]);
 
-// 更新计件单价
+// 更新计件单价表
 export const validateUpdatePieceRatePrice = validateBody([
-  { field: 'item_number', label: '物料编号', required: true, maxLength: 100 },
-  { field: 'standard_process_number', label: '标准工序编号', required: true, maxLength: 50 },
+  { field: 'price_list_name', label: '名称', required: true, maxLength: 100 },
+  { field: 'effective_date', label: '生效日期', required: true, maxLength: 20 },
+  { field: 'expiration_date', label: '失效日期', required: true, maxLength: 20 },
 ]);
 
 // ==================== 采购申请 ====================
@@ -71,4 +73,20 @@ export const validateUpdatePurchaseReq = validateBody([
 export const validatePurchaseReqToOrder = validateBody([
   { field: 'supplier_number', label: '供应商编号', required: true, maxLength: 50 },
   { field: 'detail_ids', label: '明细ID列表', required: true },
+]);
+
+// ==================== 标准成本单价 ====================
+
+// 创建标准成本单价表
+export const validateCreateStandardCost = validateBody([
+  { field: 'cost_list_name', label: '名称', required: true, maxLength: 100 },
+  { field: 'effective_date', label: '生效日期', required: true, maxLength: 20 },
+  { field: 'expiration_date', label: '失效日期', required: true, maxLength: 20 },
+]);
+
+// 更新标准成本单价表
+export const validateUpdateStandardCost = validateBody([
+  { field: 'cost_list_name', label: '名称', required: true, maxLength: 100 },
+  { field: 'effective_date', label: '生效日期', required: true, maxLength: 20 },
+  { field: 'expiration_date', label: '失效日期', required: true, maxLength: 20 },
 ]);

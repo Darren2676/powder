@@ -1,28 +1,26 @@
 <template>
-  <div class="page-container">
-    <a-card :bordered="false">
-      <div class="table-header">
-        <div class="table-header-left">
-          <a-input-search v-model:value="searchText" placeholder="搜索申请号/生产单号/产品编号/产品名称" style="width: 360px" allow-clear @search="fetchList" @pressEnter="fetchList" />
-          <a-select v-model:value="approvalFilter" placeholder="审批状态" style="width: 120px; margin-left: 8px" allow-clear @change="fetchList">
-            <a-select-option value="">全部</a-select-option>
-            <a-select-option value="草稿">草稿</a-select-option>
-            <a-select-option value="待审批">待审批</a-select-option>
-            <a-select-option value="已审批">已审批</a-select-option>
-          </a-select>
-          <a-select v-model:value="orderStatusFilter" placeholder="转单状态" style="width: 120px; margin-left: 8px" allow-clear @change="fetchList">
-            <a-select-option value="">全部</a-select-option>
-            <a-select-option value="未执行">未执行</a-select-option>
-            <a-select-option value="部分转单">部分转单</a-select-option>
-            <a-select-option value="已转单">已转单</a-select-option>
-          </a-select>
-        </div>
-        <div class="table-header-right">
-          <a-button @click="handleExport"><template #icon><DownloadOutlined /></template>导出</a-button>
-        </div>
+  <div style="padding: 20px">
+    <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; overflow-x: auto">
+      <span style="font-size: 18px; font-weight: 600; white-space: nowrap; flex-shrink: 0">工序委外申请</span>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: nowrap">
+        <a-input-search v-model:value="searchText" placeholder="搜索申请号/生产单号/产品编号/产品名称" style="width: 360px" allow-clear @search="fetchList" @pressEnter="fetchList" />
+        <a-select v-model:value="approvalFilter" placeholder="审批状态" style="width: 120px" allow-clear @change="fetchList">
+          <a-select-option value="">全部</a-select-option>
+          <a-select-option value="草稿">草稿</a-select-option>
+          <a-select-option value="待审批">待审批</a-select-option>
+          <a-select-option value="已审批">已审批</a-select-option>
+        </a-select>
+        <a-select v-model:value="orderStatusFilter" placeholder="转单状态" style="width: 120px" allow-clear @change="fetchList">
+          <a-select-option value="">全部</a-select-option>
+          <a-select-option value="未执行">未执行</a-select-option>
+          <a-select-option value="部分转单">部分转单</a-select-option>
+          <a-select-option value="已转单">已转单</a-select-option>
+        </a-select>
+        <a-button @click="handleExport"><template #icon><DownloadOutlined /></template>导出</a-button>
       </div>
+    </div>
 
-      <a-table
+    <a-table
         :columns="columns" :data-source="tableData" :loading="loading"
         :pagination="{ current: page, pageSize: limit, total, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }"
         @change="handleTableChange"
@@ -49,7 +47,6 @@
           </template>
         </template>
       </a-table>
-    </a-card>
 
     <!-- 查看/编辑弹窗（含明细表格） -->
     <a-modal v-model:open="detailVisible" :title="detailMode === 'edit' ? '编辑委外申请' : '查看委外申请'" :footer="detailMode === 'edit' ? undefined : null" @ok="handleEditOk" okText="保存" cancelText="取消" width="900px">
@@ -402,8 +399,4 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.page-container { padding: 0; }
-.table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
-.table-header-left { display: flex; align-items: center; flex-wrap: wrap; gap: 0; }
-.table-header-right { display: flex; gap: 8px; }
 </style>

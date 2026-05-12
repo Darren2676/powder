@@ -105,7 +105,8 @@ export const generateProcessTasks = async (params: {
               excess_reporting_ratio, ingredient_addition_method,
               task_status, approval_status, creation_date, creation_man, is_outsourced,
               inspect_type, inspect_plan_name, inspect_spec_name, inspect_status,
-              inspector_number, inspector_name, attachment_info, technical_requirement, remark
+              inspector_number, inspector_name, attachment_info, technical_requirement, remark,
+              is_backflush
             ) VALUES (
               :taskNumber, :orderNo, :prodNum, :routeNum, :step,
               :itemNum, :itemName, :specs, :unit, :plannedQty, 0,
@@ -114,7 +115,8 @@ export const generateProcessTasks = async (params: {
               :excessRatio, :ingredientMethod,
               N'未开始', N'已审批', :createDate, :createMan, :isOutsourced,
               :inspectType, :inspectPlanName, :inspectSpecName, N'无需检',
-              :inspectorNumber, :inspectorName, :attachmentInfo, :technicalRequirement, :remark
+              :inspectorNumber, :inspectorName, :attachmentInfo, :technicalRequirement, :remark,
+              :isBackflush
             )`,
             {
               replacements: {
@@ -148,7 +150,8 @@ export const generateProcessTasks = async (params: {
                 inspectorName: d.inspector_name || '',
                 attachmentInfo: d.attachment_info || '',
                 technicalRequirement: d.technical_requirement || '',
-                remark: d.remark || ''
+                remark: d.remark || '',
+                isBackflush: (d as any).flowing_backward === '是' ? 1 : 0
               },
               transaction
             }

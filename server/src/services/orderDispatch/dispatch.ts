@@ -11,6 +11,7 @@ import { withTransaction } from '@/shared/db/withTransaction';
 import { syncProductionStatus } from '@/services/salesOrderSync.service';
 import { checkSchedulingConflicts } from './conflictCheck';
 import { generateProcessTasks, generateMaterialPreparation } from './taskAndMaterialGen';
+import { generateBackflushTasks } from '@/services/backflushTask.service';
 
 // ==================== 生产单拆分 ====================
 export const splitOrdersCore = async (params: {
@@ -413,6 +414,20 @@ export const dispatchAndGenerateCore = async (params: {
 
       semiProductResults.push({ orderNo, semiOrders: [] });
       prepResults.push({ orderNo, materialsGenerated: prepResult.materialsGenerated, prepSkipped: prepResult.skipReason || undefined });
+
+      // ============ 第四步：倒冲任务生成 ============
+      try {
+        await generateBackflushTasks({
+          orderNumber: orderNo,
+          itemNumber: order.item_number,
+          itemName: order.item_name,
+          specifications: order.specifications,
+          basicUnit: order.basic_unit,
+          plannedQuantity: order.planned_quantity,
+        }, username, transaction);
+      } catch (bfErr: any) {
+        // 倒冲任务生成失败不阻断派发
+      }
     }
 
     const successCount = dispatchResults.length;
@@ -476,8 +491,8 @@ export const generateFromOrderCore = async (productionOrderNumbers: string[], us
 
       const taskNumber = await generateTaskNumber();
       await sequelize.query(`
-        INSERT INTO process_task (process_task_number, production_order_number, production_number, process_route_number, step_number, item_number, item_name, specifications, basic_unit, planned_quantity, completed_quantity, standard_process_number, standard_process_name, work_center_number, work_center_name, process_material_input_number, process_material_input_quantity, process_material_input_unit, material_wastage_rate, excess_reporting_ratio, ingredient_addition_method, task_status, approval_status, remark, creation_date, creation_man, operator, is_outsourced, inspect_type, inspect_plan_name, inspect_spec_name, inspect_status, inspector_number, inspector_name, attachment_info, technical_requirement)
-        VALUES (:process_task_number, :production_order_number, :production_number, :process_route_number, :step_number, :item_number, :item_name, :specifications, :basic_unit, :planned_quantity, 0, :standard_process_number, :standard_process_name, :work_center_number, :work_center_name, :process_material_input_number, :process_material_input_quantity, :process_material_input_unit, :material_wastage_rate, :excess_reporting_ratio, :ingredient_addition_method, N'未开始', N'草稿', :remark, :creation_date, :creation_man, :operator, :is_outsourced, :inspect_type, :inspect_plan_name, :inspect_spec_name, N'无需检', :inspector_number, :inspector_name, :attachment_info, :technical_requirement)
+        INSERT INTO process_task (process_task_number, production_order_number, production_number, process_route_number, step_number, item_number, item_name, specifications, basic_unit, planned_quantity, completed_quantity, standard_process_number, standard_process_name, work_center_number, work_center_name, process_material_input_number, process_material_input_quantity, process_material_input_unit, material_wastage_rate, excess_reporting_ratio, ingredient_addition_method, task_status, approval_status, remark, creation_date, creation_man, operator, is_outsourced, inspect_type, inspect_plan_name, inspect_spec_name, inspect_status, inspector_number, inspector_name, attachment_info, technical_requirement, is_backflush)
+        VALUES (:process_task_number, :production_order_number, :production_number, :process_route_number, :step_number, :item_number, :item_name, :specifications, :basic_unit, :planned_quantity, 0, :standard_process_number, :standard_process_name, :work_center_number, :work_center_name, :process_material_input_number, :process_material_input_quantity, :process_material_input_unit, :material_wastage_rate, :excess_reporting_ratio, :ingredient_addition_method, N'未开始', N'草稿', :remark, :creation_date, :creation_man, :operator, :is_outsourced, :inspect_type, :inspect_plan_name, :inspect_spec_name, N'无需检', :inspector_number, :inspector_name, :attachment_info, :technical_requirement, :isBackflush)
       `, {
         replacements: {
           process_task_number: taskNumber,
@@ -511,7 +526,8 @@ export const generateFromOrderCore = async (productionOrderNumbers: string[], us
           inspector_number: d.inspector_number || '',
           inspector_name: d.inspector_name || '',
           attachment_info: d.attachment_info || '',
-          technical_requirement: d.technical_requirement || ''
+          technical_requirement: d.technical_requirement || '',
+          isBackflush: d.flowing_backward === '是' ? 1 : 0
         }
       });
       if (d.is_outsourced) {

@@ -117,7 +117,7 @@
           </div>
 
           <!-- 底部操作栏 -->
-          <div class="bottom-action" v-if="currentTask.task_status !== '已完成' && currentTask.task_status !== '已关闭'">
+          <div class="bottom-action" v-if="currentTask.can_report">
             <van-button
               type="primary"
               block
@@ -390,7 +390,8 @@ const form = reactive({
 
 // 计算属性
 const activeStepIndex = computed(() => {
-  return tasks.value.findIndex(t => t.task_status !== '已完成' && t.task_status !== '已关闭')
+  const idx = tasks.value.findIndex(t => t.can_report)
+  return idx >= 0 ? idx : tasks.value.findIndex(t => t.task_status !== '已完成')
 })
 
 const completedTaskCount = computed(() => {
@@ -458,9 +459,14 @@ const loadOrderTasks = async () => {
     if (res.success) {
       orderInfo.value = res.data.order
       tasks.value = res.data.tasks || []
-      // 初始定位到第一个未完成且未关闭的工序
-      const firstNotDone = tasks.value.findIndex(t => t.task_status !== '已完成' && t.task_status !== '已关闭')
-      viewStepIndex.value = firstNotDone >= 0 ? firstNotDone : 0
+      // 初始定位到第一个可报工的工序
+      const firstCanReport = tasks.value.findIndex(t => t.can_report)
+      if (firstCanReport >= 0) {
+        viewStepIndex.value = firstCanReport
+      } else {
+        const firstNotDone = tasks.value.findIndex(t => t.task_status !== '已完成')
+        viewStepIndex.value = firstNotDone >= 0 ? firstNotDone : 0
+      }
     } else {
       showToast({ message: res.message || '加载失败', type: 'fail' })
     }

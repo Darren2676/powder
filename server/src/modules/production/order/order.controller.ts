@@ -7,8 +7,8 @@ import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { BusinessError } from '@/shared/errors/BusinessError';
 import { splitOrdersCore, dispatchOrdersCore, dispatchAndGenerateCore } from '@/services/orderDispatch.service';
 
-const fields = ['production_order_number', 'production_number', 'item_number', 'item_name', 'basic_unit', 'specifications', 'product_drawing_number', 'rubber_compound_number', 'batch_production_quota', 'planned_quantity', 'equipment_number', 'equipment_name', 'mould_number', 'formed_part_specifications', 'formed_part_unit_consumption', 'actual_cavity_count', 'actual_hole_count', 'actual_daily_output', 'production_date', 'schedule_id', 'planned_completion_time', 'plan_status', 'remark'];
-const headers = ['生产单编号', '生产计划编号', '产品编号', '产品名称', '基本单位', '规格', '产品图号', '胶料编号', '班产定额', '计划数量', '设备编号', '设备名称', '模具编号', '成型件规格', '成型件单耗', '实际模腔数', '实际模穴数', '实际班产', '生产日期', '班次', '计划完成时间', '状态', '备注'];
+const fields = ['production_order_number', 'production_number', 'item_number', 'item_name', 'basic_unit', 'specifications', 'product_drawing_number', 'rubber_compound_number', 'batch_production_quota', 'planned_quantity', 'equipment_number', 'equipment_name', 'mould_number', 'formed_part_specifications', 'formed_part_unit_consumption', 'actual_cavity_count', 'actual_hole_count', 'actual_daily_output', 'production_date', 'schedule_id', 'planned_completion_time', 'plan_status', 'completion_status', 'inbound_status', 'remark'];
+const headers = ['生产单编号', '生产计划编号', '产品编号', '产品名称', '基本单位', '规格', '产品图号', '胶料编号', '班产定额', '计划数量', '设备编号', '设备名称', '模具编号', '成型件规格', '成型件单耗', '实际模腔数', '实际模穴数', '实际班产', '生产日期', '班次', '计划完成时间', '状态', '完成状态', '入库状态', '备注'];
 
 export const getOrders = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -75,7 +75,7 @@ export const getOrders = async (req: Request, res: Response, next: NextFunction)
     const [countResult]: any = await sequelize.query(countSql, { replacements });
     const total = countResult[0].total;
 
-    const selectCols = 'production_order_number, production_number, item_number, item_name, basic_unit, specifications, product_drawing_number, rubber_compound_number, batch_production_quota, planned_quantity, equipment_number, equipment_name, mould_number, formed_part_specifications, formed_part_unit_consumption, actual_cavity_count, actual_hole_count, actual_daily_output, production_date, schedule_id, planned_completion_time, plan_status, remark, approval_status';
+    const selectCols = 'production_order_number, production_number, item_number, item_name, basic_unit, specifications, product_drawing_number, rubber_compound_number, batch_production_quota, planned_quantity, equipment_number, equipment_name, mould_number, formed_part_specifications, formed_part_unit_consumption, actual_cavity_count, actual_hole_count, actual_daily_output, production_date, schedule_id, planned_completion_time, plan_status, completion_status, inbound_status, remark, approval_status';
     const dataSql = `
       SELECT * FROM (
         SELECT ${selectCols}, ROW_NUMBER() OVER (ORDER BY production_order_number DESC) AS _row_num
@@ -220,12 +220,47 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
 export const deleteOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [chk]: any = await sequelize.query(`SELECT approval_status FROM production_order WHERE production_order_number = :id`, { replacements: { id } });
+    const [chk]: any = await sequelize.query(`SELECT approval_status, production_number FROM production_order WHERE production_order_number = :id`, { replacements: { id } });
     if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return; }
-    await sequelize.query(`DELETE FROM production_order WHERE production_order_number = :id`, {
-      replacements: { id }
-    });
-    res.json(success(null, '删除生产单成功'));
+
+    const productionNumber = chk[0]?.production_number || '';
+
+    const transaction = await sequelize.transaction();
+    try {
+      await sequelize.query(`DELETE FROM production_order WHERE production_order_number = :id`, {
+        replacements: { id },
+        transaction
+      });
+
+      // 如果该生产单有关联的生产计划，检查是否需要回退计划状态
+      if (productionNumber) {
+        // 检查该计划下是否还有其他生产单
+        const [otherOrders]: any = await sequelize.query(
+          `SELECT 1 FROM production_order WHERE production_number = :pn AND production_order_number != :id`,
+          { replacements: { pn: productionNumber, id }, transaction }
+        );
+
+        // 检查该计划下是否还有关联的采购申请（production_number 为逗号分隔的多值字段）
+        const [otherReqs]: any = await sequelize.query(
+          `SELECT 1 FROM purchase_req WHERE CHARINDEX(:pn, production_number) > 0 AND purchase_req_number NOT LIKE N'MRP_TEMP%'`,
+          { replacements: { pn: productionNumber }, transaction }
+        );
+
+        if (otherOrders.length === 0 && otherReqs.length === 0) {
+          // 无其他任何关联单据，回退计划状态
+          await sequelize.query(
+            `UPDATE Production_plan SET plan_status = N'待加入任务', mrp_status = NULL WHERE production_number = :pn AND plan_status = N'已加入任务'`,
+            { replacements: { pn: productionNumber }, transaction }
+          );
+        }
+      }
+
+      await transaction.commit();
+      res.json(success(null, '删除生产单成功'));
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
+    }
   } catch (err) {
     next(err);
   }
@@ -418,7 +453,7 @@ export const getOrderOverview = async (req: Request, res: Response, next: NextFu
 
     // 1. 查询生产单基本信息
     const [orders]: any = await sequelize.query(
-      `SELECT production_order_number, production_number, item_number, item_name, basic_unit, specifications, product_drawing_number, rubber_compound_number, batch_production_quota, planned_quantity, equipment_number, equipment_name, mould_number, formed_part_specifications, formed_part_unit_consumption, actual_cavity_count, actual_hole_count, actual_daily_output, planned_completion_time, plan_status, remark, approval_status FROM production_order WHERE production_order_number = :id`,
+      `SELECT production_order_number, production_number, item_number, item_name, basic_unit, specifications, product_drawing_number, rubber_compound_number, batch_production_quota, planned_quantity, equipment_number, equipment_name, mould_number, formed_part_specifications, formed_part_unit_consumption, actual_cavity_count, actual_hole_count, actual_daily_output, planned_completion_time, plan_status, completion_status, inbound_status, remark, approval_status FROM production_order WHERE production_order_number = :id`,
       { replacements: { id } }
     );
     if (!orders.length) {

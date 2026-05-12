@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;600;700&display=swap" rel="stylesheet">
+<title>备料出库记录删除操作指南</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif; background: #fff; color: #333; line-height: 1.8; padding: 40px 60px; }
+  .cover { text-align: center; padding: 80px 0 60px 0; page-break-after: always; }
+  .cover h1 { font-size: 32px; color: #1a1a2e; margin-bottom: 12px; }
+  .cover .subtitle { font-size: 16px; color: #888; margin-bottom: 8px; }
+  .cover .meta { font-size: 13px; color: #aaa; }
+
+  h2 { font-size: 22px; color: #1a1a2e; margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 17px; color: #333; margin: 24px 0 10px; }
+  h4 { font-size: 14px; color: #555; margin: 16px 0 6px; }
+
+  p { margin: 8px 0; font-size: 14px; }
+  ul, ol { margin: 8px 0 8px 24px; font-size: 14px; }
+  li { margin: 4px 0; }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 10px 14px; text-align: left; vertical-align: top; }
+  th { background: #f7f8fa; font-weight: 600; color: #333; }
+  tr:nth-child(even) td { background: #fafbfc; }
+
+  .step-box { background: #f7f9fc; border: 1px solid #dde4ef; border-radius: 8px; padding: 16px 20px; margin: 12px 0; }
+  .step-box .step-num { display: inline-block; width: 26px; height: 26px; background: #1989fa; color: #fff; border-radius: 13px; text-align: center; line-height: 26px; font-size: 13px; font-weight: 700; margin-right: 8px; }
+  .step-box .step-title { font-weight: 600; font-size: 14px; }
+
+  .screen { background: #fff; border: 1px solid #e0e0e0; border-radius: 6px; padding: 16px; margin: 12px 0; font-family: "Consolas", "Courier New", monospace; font-size: 12px; line-height: 1.6; white-space: pre; overflow-x: auto; color: #333; }
+
+  .highlight { background: #fffbe6; padding: 2px 6px; border-radius: 3px; font-weight: 600; color: #e6a23c; }
+  .btn-red { color: #ff4d4f; font-weight: 700; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; border-radius: 0 6px 6px 0; }
+  .important { background: #fff1f0; border-left: 4px solid #ff4d4f; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #a8071a; border-radius: 0 6px 6px 0; }
+
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; margin: 0 2px; }
+  .tag-menu { background: #e6f7ff; color: #1890ff; }
+  .tag-btn { background: #fff1f0; color: #ff4d4f; }
+  .tag-page { background: #f6ffed; color: #52c41a; }
+
+  .page-break { page-break-before: always; }
+
+  @media print {
+    body { padding: 20px 40px; }
+    .page-break { page-break-before: always; }
+    .no-print-break { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ========== 封面 ========== -->
+<div class="cover">
+  <h1>备料出库记录删除操作指南</h1>
+  <div class="subtitle">Seals MES System — 睿信橡胶密封件制造执行系统</div>
+  <div class="meta">文档版本: v1.0 | 适用日期: 2026年4月</div>
+</div>
+
+<!-- ========== 一、概述 ========== -->
+<div class="no-print-break">
+<h2>一、功能概述</h2>
+
+<p>备料出库记录删除（即<b>"撤回领料"</b>）功能，允许操作人员在发现领料错误时，将已生成的备料出库单<strong>完全回退</strong>，包括：</p>
+
+<table>
+<tr><th style="width:180px;">回退项</th><th>说明</th></tr>
+<tr><td>物料库存恢复</td><td>批次库存 / 汇总库存数量还原，同时生成入库对冲流水记录</td></tr>
+<tr><td>备料明细回退</td><td><code>issued_quantity</code> 扣减对应领料数量</td></tr>
+<tr><td>备料单状态重算</td><td><code>preparation_status</code> 从「已领料」退回「部分领料」或「未领料」</td></tr>
+<tr><td>生产单状态回退</td><td><code>plan_status</code> 从「已备料」退回「已派发」（条件触发）</td></tr>
+<tr><td>线边仓对冲</td><td>创建「出线边」对冲记录，冲销领料入线边</td></tr>
+<tr><td>领料单删除</td><td>物理删除 <code>material_issue</code> 和 <code>material_issue_detail</code> 记录</td></tr>
+</table>
+
+<div class="important">
+<strong>注意：</strong>撤回操作不可逆。确认撤回后，领料单据将被物理删除，仅保留对冲流水作为审计线索。
+</div>
+</div>
+
+<!-- ========== 二、WEB端操作 ========== -->
+<div class="page-break"></div>
+<div class="no-print-break">
+<h2>二、WEB 端操作步骤</h2>
+
+<h3>2.1 入口一：通过「生产备料」菜单</h3>
+
+<div class="step-box">
+  <span class="step-num">1</span>
+  <span class="step-title">打开菜单</span>
+</div>
+<p>点击左侧菜单栏：<span class="tag tag-menu">生产管理</span> → <span class="tag tag-menu">生产备料</span></p>
+<p>页面 URL：<code>/production/material-issue</code></p>
+
+<div class="step-box">
+  <span class="step-num">2</span>
+  <span class="step-title">搜索生产单</span>
+</div>
+<p>在顶部搜索框输入/扫码 <strong>生产单编号</strong>（如 <code>P20260504008</code>），点击 <strong>「查询」</strong> 按钮。</p>
+
+<div class="step-box">
+  <span class="step-num">3</span>
+  <span class="step-title">定位到历史领料记录表格</span>
+</div>
+<p>查询成功后，页面从上到下依次显示：</p>
+<ul>
+  <li>生产单基本信息（编号、产品、规格、计划数量等）</li>
+  <li>备料单信息摘要卡片（备料单编号、BOM、物料种类、状态标签、<strong>「开始备料」</strong>按钮）</li>
+  <li><strong>📋 历史领料记录表格</strong> — 撤回按钮在此处</li>
+</ul>
+
+<div class="step-box">
+  <span class="step-num">4</span>
+  <span class="step-title">执行撤回</span>
+</div>
+<p>在「历史领料记录」表格中，每一行的 <strong>最后一列</strong> 有一个红色 <span class="btn-red">「撤回」</span> 按钮：</p>
+<ol>
+  <li>点击 <span class="btn-red">撤回</span> 按钮</li>
+  <li>弹出确认框：「确认要撤回此领料单吗？物料库存、备料单状态、生产单状态将同步回退。」</li>
+  <li>点击 <strong>「确认撤回」</strong></li>
+  <li>系统开始回退，按钮显示加载状态</li>
+  <li>成功后页面自动刷新，领料记录从列表中消失</li>
+</ol>
+
+<div class="screen">
+┌──────────────────────────────────────────────────────┐
+│  搜索: [________________________] [查询]              │
+├──────────────────────────────────────────────────────┤
+│  生产单: P20260504008  产品  xxx   计划: 200          │
+├──────────────────────────────────────────────────────┤
+│  备料单: MP-20260504-021   BOM: BOM-xxx    [已领料]  │
+│  物料种类: 2                  已领料 1 次 [开始备料]   │
+├──────────────────────────────────────────────────────┤
+│  📋 历史领料记录（1 次）                               │
+│  ┌───────────────────────────────────┬────────────┐  │
+│  │ 领料单号    │ 物料种类 │ 状态 │ … │ 操作       │  │
+│  ├───────────────────────────────────┼────────────┤  │
+│  │ MI-20260504-006 │ 2       │ …  │ … │ 🗑 撤回 ← │  │
+│  └───────────────────────────────────┴────────────┘  │
+└──────────────────────────────────────────────────────┘
+</div>
+
+<h3>2.2 入口二：通过「按工序备料」菜单</h3>
+
+<div class="step-box">
+  <span class="step-num">1</span>
+  <span class="step-title">打开菜单</span>
+</div>
+<p>点击左侧菜单栏：<span class="tag tag-menu">生产管理</span> → <span class="tag tag-menu">按工序备料</span></p>
+<p>页面 URL：<code>/production/material-issue-by-process</code></p>
+
+<p>后续步骤 <strong>与 2.1 完全相同</strong>（搜索生产单 → 历史领料表格 → 撤回按钮）。</p>
+
+<h3>2.3 WEB 端界面关键位置速查</h3>
+
+<table>
+<tr><th style="width:60px;">序号</th><th style="width:240px;">页面元素</th><th>位置说明</th></tr>
+<tr><td>1</td><td>搜索框</td><td>页面顶部第一行，左侧</td></tr>
+<tr><td>2</td><td>备料单摘要卡片</td><td>搜索框下方，蓝色标题栏</td></tr>
+<tr><td>3</td><td>历史领料记录表格</td><td>备料单卡片正下方，卡片内包含表格</td></tr>
+<tr><td>4</td><td><span class="btn-red">撤回</span> 按钮</td><td>表格每行最后一列（操作列），红色链接按钮</td></tr>
+</table>
+
+<div class="note">
+<strong>提示：</strong>如果搜索后看不到「历史领料记录」表格，说明该生产单尚未执行过任何备料出库操作，无需撤回。
+</div>
+</div>
+
+<!-- ========== 三、APP端操作 ========== -->
+<div class="page-break"></div>
+<div class="no-print-break">
+<h2>三、APP 端操作步骤</h2>
+
+<h3>3.1 唯一入口：通过「按工序备料」进入</h3>
+
+<div class="step-box">
+  <span class="step-num">1</span>
+  <span class="step-title">打开首页入口</span>
+</div>
+<p>在 APP 首页中，点击功能入口 <strong>「按工序备料」</strong>。</p>
+
+<div class="step-box">
+  <span class="step-num">2</span>
+  <span class="step-title">选择生产单</span>
+</div>
+<p>在按工序备料列表页中，找到并点击目标生产单（如 <code>P20260504008</code>），进入详情操作页。</p>
+
+<div class="step-box">
+  <span class="step-num">3</span>
+  <span class="step-title">滑动到页面最底部</span>
+</div>
+<p>进入详情页后，页面从上到下依次显示：</p>
+<ul>
+  <li>生产单信息卡片（编号、产品、规格、备料进度）</li>
+  <li>工序步骤条（当前选中工序高亮）</li>
+  <li>当前工序物料列表 / 已备料完成提示</li>
+  <li>全部完成区域（🎉 所有工序备料已完成）</li>
+  <li><strong>⚠️ 继续向下滑动</strong></li>
+  <li><strong>📋 历史领料记录列表</strong> — 撤回按钮在此处</li>
+</ul>
+
+<div class="step-box">
+  <span class="step-num">4</span>
+  <span class="step-title">执行撤回</span>
+</div>
+<ol>
+  <li>在「历史领料记录」列表中，每条记录右侧有一个红色 <span class="btn-red">「撤回」</span> 按钮</li>
+  <li>点击 <span class="btn-red">撤回</span> → 弹出对话框：「确认要撤回领料单 MI-xxx 吗？物料库存、备料单状态将同步回退。」</li>
+  <li>点击 <strong>「确认撤回」</strong></li>
+  <li>撤回成功后页面自动刷新，状态和数据同步回退</li>
+</ol>
+
+<div class="screen">
+┌──────────────────────────────────────┐
+│  ← 按工序备料                        │  ← 顶部导航
+├──────────────────────────────────────┤
+│  P20260504008              [已领料]  │  ← 生产单卡片
+│  产品: 防尘罩组件                    │
+│  备料进度: 1/1 工序                  │
+├──────────────────────────────────────┤
+│  ● 工序10: 涂胶        [已备料]      │  ← 步骤条
+├──────────────────────────────────────┤
+│  ✓ 该工序物料已全部领取              │
+│  [前往报工]                          │
+├──────────────────────────────────────┤
+│  🎉 所有工序备料已完成               │
+│  [返回] [去报工]                     │
+├──────────────────────────────────────┤  ← ⚠️ 继续往下滑
+│  历史领料记录（1 次）                │  ← 撤回入口
+│  ┌──────────────────┬────────────┐  │
+│  │ MI-20260504-006   │    [撤回]  │  │  ← 红色按钮
+│  │ 2026-05-04|操作人  │            │  │
+│  └──────────────────┴────────────┘  │
+└──────────────────────────────────────┘
+</div>
+
+<div class="important">
+<strong>⚠️ 关键提示：</strong>「历史领料记录」区域位于页面<strong>最底部</strong>，需要将整页内容<strong>向上滑动</strong>才能看到。它位于「所有工序备料已完成」卡片的<strong>下方</strong>。
+</div>
+
+<h3>3.2 APP 端界面关键位置速查</h3>
+
+<table>
+<tr><th style="width:60px;">序号</th><th style="width:240px;">页面元素</th><th>位置说明</th></tr>
+<tr><td>1</td><td>生产单信息卡片</td><td>页面顶部，导航栏下方</td></tr>
+<tr><td>2</td><td>工序步骤条</td><td>信息卡片下方，横向步骤指示器</td></tr>
+<tr><td>3</td><td>当前工序物料列表</td><td>步骤条下方，各物料卡片含进度条</td></tr>
+<tr><td>4</td><td>全部完成卡片</td><td>物料列表下方，🎉 庆祝图标</td></tr>
+<tr><td>5</td><td>历史领料记录列表</td><td>页面<strong>最底部</strong>，标题「历史领料记录（N 次）」</td></tr>
+<tr><td>6</td><td><span class="btn-red">撤回</span> 按钮</td><td>每条领料记录右侧，红色圆角按钮</td></tr>
+</table>
+</div>
+
+<!-- ========== 四、撤回后验证 ========== -->
+<div class="page-break"></div>
+<div class="no-print-break">
+<h2>四、撤回后验证方法</h2>
+
+<table>
+<tr><th style="width:200px;">验证项</th><th>验证方法</th><th>预期结果</th></tr>
+<tr>
+  <td>领料单是否删除</td>
+  <td>刷新页面，历史领料记录中该条消失</td>
+  <td>领料单不再显示</td>
+</tr>
+<tr>
+  <td>备料单状态回退</td>
+  <td>查看备料单摘要卡片的状态标签</td>
+  <td>「已领料」→「部分领料」或「未领料」</td>
+</tr>
+<tr>
+  <td>备料明细已领量回退</td>
+  <td>打开「开始备料」弹窗，查看物料的已领量</td>
+  <td><code>issued_quantity</code> 减少对应数量</td>
+</tr>
+<tr>
+  <td>生产单状态回退</td>
+  <td>查看生产单信息中的 plan_status 标签</td>
+  <td>「已备料」→「已派发」（条件触发）</td>
+</tr>
+<tr>
+  <td>物料库存恢复</td>
+  <td>在仓库管理页面查看对应物料库存</td>
+  <td>库存数量增加对应领料数量</td>
+</tr>
+<tr>
+  <td>物料流水对冲记录</td>
+  <td>查询 <code>material_inventory_transaction</code> 表</td>
+  <td>存在 <code>transaction_type='入库', source_type='领料撤回'</code> 的对冲流水</td>
+</tr>
+</table>
+</div>
+
+<!-- ========== 五、常见问题 ========== -->
+<div class="no-print-break">
+<h2>五、常见问题</h2>
+
+<h4>Q1: 看不到「历史领料记录」表格</h4>
+<p>原因：该生产单尚未执行过任何备料出库操作。只有至少执行过一次领料后，历史记录表格才会出现。</p>
+
+<h4>Q2: 点击「撤回」后报错</h4>
+<p>常见原因：</p>
+<ul>
+  <li>网络连接异常 → 刷新页面后重试</li>
+  <li>该领料单已被他人撤回 → 刷新页面确认记录是否已消失</li>
+  <li>服务器异常 → 联系系统管理员查看后端日志</li>
+</ul>
+
+<h4>Q3: WEB 端菜单中找不到「生产备料」或「按工序备料」</h4>
+<p>原因：当前登录角色没有对应菜单权限。请联系管理员在 <strong>系统管理 → 权限菜单</strong> 中为该角色分配菜单权限。</p>
+
+<h4>Q4: 撤回后备料单状态没有回退</h4>
+<p>如果撤回后仍有其他领料单覆盖了对应物料的需求量，备料单状态可能保持不变。例如：全部物料需求量为 10，第一次领了 8，第二次领了 2。撤回第二次后，第一次的 8 仍然满足全部需求，状态保持「已领料」不变。这是正常行为。</p>
+</div>
+
+</body>
+</html>

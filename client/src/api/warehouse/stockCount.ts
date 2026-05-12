@@ -50,6 +50,11 @@ export function cancelStockCount(count_number: string, data: any) {
   return request.post(`/stock-counts/${count_number}/cancel`, data)
 }
 
+// 导出选中行
+export function exportStockCountSelected(data: { ids: number[] }) {
+  return request.post('/stock-counts/export-selected', data, { responseType: 'blob' })
+}
+
 // 报表：盘点汇总
 export function getReportSummary(params: any) {
   return request.get('/stock-counts/report/summary', { params })

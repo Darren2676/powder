@@ -6,7 +6,7 @@ export function getInventoryList(params?: { page?: number; limit?: number; searc
   return request.get('/finished-goods/inventory', { params })
 }
 
-export function getInventoryDetail(params: { item_number: string; warehouse_number?: string }) {
+export function getInventoryDetail(params: { item_number: string; warehouse_number?: string; inventory_type?: string }) {
   return request.get('/finished-goods/inventory/detail', { params })
 }
 
@@ -32,7 +32,7 @@ export function shippingOutbound(data: any) {
 
 // ==================== 库存流水 ====================
 
-export function getTransactionList(params?: { page?: number; limit?: number; search?: string; transaction_type?: string; source_type?: string }) {
+export function getTransactionList(params?: { page?: number; limit?: number; search?: string; transaction_type?: string; source_type?: string; status?: string }) {
   return request.get('/finished-goods/transactions', { params })
 }
 
@@ -54,7 +54,7 @@ export function getFinishedBatchInventory(params?: { page?: number; limit?: numb
   return request.get('/finished-goods/batch-inventory', { params })
 }
 
-export function getFinishedBatchOptions(params: { item_number: string; warehouse_number?: string }) {
+export function getFinishedBatchOptions(params: { item_number: string; warehouse_number?: string; inventory_type?: string }) {
   return request.get('/finished-goods/batch-options', { params })
 }
 
@@ -96,4 +96,8 @@ export function getInboundOrderList(params?: { page?: number; limit?: number; se
 
 export function getInboundOrderDetail(inbound_order_number: string) {
   return request.get(`/finished-goods/inbound-orders/${inbound_order_number}`)
+}
+
+export function withdrawInboundOrder(inbound_order_number: string) {
+  return request.post(`/finished-goods/inbound-orders/${inbound_order_number}/withdraw`)
 }

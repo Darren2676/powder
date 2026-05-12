@@ -5,6 +5,7 @@
  */
 import sequelize from '@/config/database';
 import { createLogger } from '@/config/logger';
+import { checkAndAutoComplete } from '@/services/documentAutoComplete.service';
 
 const log = createLogger('salesOrderSync');
 
@@ -154,23 +155,91 @@ export const syncOrderHeaderStatus = async (salesOrderNumber: string, transactio
     const voided = parseInt(stats[0]?.voided) || 0;
     if (total === 0) return;
 
-    // 有效行全部已完成（不含作废） → 订单已完成
+    // 有效行全部已完成（不含作废） → 尝试配置驱动的自动完成
     const activeLines = total - voided;
-    let newOrderStatus = currentOrderStatus;
     if (activeLines > 0 && completed >= activeLines) {
-      newOrderStatus = '已完成';
+      // 使用配置驱动的自动完成判定
+      const result = await checkAndAutoComplete('sales_order', salesOrderNumber, transaction);
+      if (!result.completed) {
+        // 配置不存在或未启用，回退到原有硬编码逻辑
+        if (currentOrderStatus !== '已完成') {
+          await sequelize.query(
+            `UPDATE sales_order SET order_status = N'已完成' WHERE sales_order_number = :son`,
+            { replacements: { son: salesOrderNumber }, transaction }
+          );
+        }
+      }
     } else if (currentOrderStatus === '已完成' && completed < activeLines) {
       // 有行回退，订单也回退
-      newOrderStatus = '生产中';
-    }
-
-    if (newOrderStatus !== currentOrderStatus) {
       await sequelize.query(
-        `UPDATE sales_order SET order_status = :status WHERE sales_order_number = :son`,
-        { replacements: { status: newOrderStatus, son: salesOrderNumber }, transaction }
+        `UPDATE sales_order SET order_status = N'生产中' WHERE sales_order_number = :son`,
+        { replacements: { son: salesOrderNumber }, transaction }
       );
     }
   } catch (e) {
     log.warn({ error: (e as Error).message }, 'syncOrderHeaderStatus跳过');
+  }
+};
+
+// ==================== 5. 审批回调：明细状态联动 ====================
+
+/**
+ * 销售订单审批通过时：
+ * - 将 order_status 设为 '待执行'
+ * - 确保所有明细行 status = '未开始'
+ */
+export const onSalesOrderApproved = async (salesOrderNumber: string): Promise<void> => {
+  try {
+    // 更新订单头状态
+    await sequelize.query(
+      `UPDATE sales_order SET order_status = N'待执行' WHERE sales_order_number = :son AND order_status = N'待执行'`,
+      { replacements: { son: salesOrderNumber } }
+    );
+    // 确保明细行状态为“未开始”
+    await sequelize.query(
+      `UPDATE sales_order_detail SET status = N'未开始' WHERE sales_order_number = :son AND (status IS NULL OR status = N'')`,
+      { replacements: { son: salesOrderNumber } }
+    );
+    log.info({ salesOrderNumber }, '审批通过：明细行状态已同步');
+  } catch (e) {
+    log.error({ error: (e as Error).message, salesOrderNumber }, 'onSalesOrderApproved failed');
+  }
+};
+
+/**
+ * 销售订单反审时：
+ * - 仅当所有明细行均为“未开始”且无下游单据时，将 order_status 重置为 '待执行'，明细行 status 保持 '未开始'
+ * - 如果有明细行已推进（已开始生产、已发货等），记录警告日志但不回退
+ */
+export const onSalesOrderReversed = async (salesOrderNumber: string): Promise<void> => {
+  try {
+    // 检查是否有明细行已推进（非“未开始”状态）
+    const [progressRows]: any = await sequelize.query(
+      `SELECT COUNT(*) as cnt FROM sales_order_detail WHERE sales_order_number = :son AND status <> N'未开始'`,
+      { replacements: { son: salesOrderNumber } }
+    );
+    const hasProgress = (parseInt(progressRows[0]?.cnt) || 0) > 0;
+
+    if (hasProgress) {
+      log.warn({ salesOrderNumber }, '反审跳过：存在已推进的明细行，不回退明细状态');
+      return;
+    }
+
+    // 检查是否有已发货或已生产的明细行
+    const [downstreamRows]: any = await sequelize.query(
+      `SELECT COUNT(*) as cnt FROM sales_order_detail WHERE sales_order_number = :son AND (shipping_status <> N'未申请' OR production_status <> N'未加入计划')`,
+      { replacements: { son: salesOrderNumber } }
+    );
+    const hasDownstream = (parseInt(downstreamRows[0]?.cnt) || 0) > 0;
+
+    if (hasDownstream) {
+      log.warn({ salesOrderNumber }, '反审跳过：存在下游单据（发货/生产），不回退明细状态');
+      return;
+    }
+
+    // 安全回退：订单头状态保持，明细行保持“未开始”
+    log.info({ salesOrderNumber }, '反审完成：所有明细行状态未受影响（仍为“未开始”）');
+  } catch (e) {
+    log.error({ error: (e as Error).message, salesOrderNumber }, 'onSalesOrderReversed failed');
   }
 };

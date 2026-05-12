@@ -32,7 +32,7 @@ export function importSalesOrders(formData: FormData) {
 
 // ==================== Detail ====================
 
-export function getSalesOrderDetailsPage(params?: { page?: number; limit?: number; search?: string; status?: string }) {
+export function getSalesOrderDetailsPage(params?: { page?: number; limit?: number; search?: string; status?: string; approval_status?: string; sales_order_number?: string }) {
   return request.get('/sales-orders/details-page', { params })
 }
 

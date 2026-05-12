@@ -8,6 +8,9 @@ const DepartmentList = () => import('@/views/system/Department/List.vue');
 const WorkflowList = () => import('@/views/system/Workflow/List.vue');
 const WorkflowDesigner = () => import('@/views/system/Workflow/Designer.vue');
 const MyTasks = () => import('@/views/system/Workflow/MyTasks.vue');
+const DocumentCompletionConfigList = () => import('@/views/system/DocumentCompletionConfig/List.vue');
+const ManualClosePending = () => import('@/views/system/ManualClose/Pending.vue');
+const ApiKeyList = () => import('@/views/system/ApiKey/List.vue');
 
 export const systemRoutes: RouteRecordRaw[] = [
   { path: 'users', name: 'UserManagement', component: UserManagement, meta: {"title":"用户管理","permissionCode":"users"} },
@@ -17,4 +20,7 @@ export const systemRoutes: RouteRecordRaw[] = [
   { path: 'workflow', name: 'WorkflowList', component: WorkflowList, meta: {"title":"流程定义管理","permissionCode":"workflow"} },
   { path: 'workflow/designer/:id', name: 'WorkflowDesigner', component: WorkflowDesigner, meta: {"title":"流程设计器","permissionCode":"workflow"} },
   { path: 'my-tasks', name: 'MyTasks', component: MyTasks, meta: {"title":"我的待办"} },
+  { path: 'document-completion-config', name: 'DocumentCompletionConfig', component: DocumentCompletionConfigList, meta: {"title":"单据自动完成配置","permissionCode":"system"} },
+  { path: 'manual-close-pending', name: 'ManualClosePending', component: ManualClosePending, meta: {"title":"手动关闭审批","permissionCode":"manual_close"} },
+  { path: 'api-keys', name: 'ApiKeyList', component: ApiKeyList, meta: {"title":"API密钥管理","permissionCode":"system"} },
 ];

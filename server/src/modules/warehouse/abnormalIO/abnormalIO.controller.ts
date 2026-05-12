@@ -3,8 +3,9 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { generateBatchNumber, syncFinishedGoodsSummary } from '@/services/inventory.service';
 import { generateTransactionNumber } from '@/services/inventory.service';
+import { createTransactionBatches } from '@/services/warehouse/helpers';
 
-// ==================== 异常出入库单号生成 ====================
+// ==================== 其他出入库单号生成 ====================
 // RI-退货入库, SO-报废出库, TR-调拨, SC-盘点
 const generateAbnormalIONumber = async (prefix: string): Promise<string> => {
   const today = new Date();
@@ -200,15 +201,17 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
     if (existing.length === 0) {
       res.status(404).json({ success: false, message: '单据不存在' }); return;
     }
-    if (existing[0].status !== '待确认') {
-      res.status(400).json({ success: false, message: '只能修改待确认状态的单据' }); return;
+    if (existing[0].status !== '待确认' && existing[0].status !== '已驳回' && existing[0].status !== '已撤消') {
+      res.status(400).json({ success: false, message: '只能修改待确认、已驳回或已撤消状态的单据' }); return;
     }
 
     const transaction = await sequelize.transaction();
     try {
-      // 更新单头
+      // 更新单头，已驳回/已撤消状态编辑后重置为待确认
+      const newStatus = (existing[0].status === '已驳回' || existing[0].status === '已撤消') ? '待确认' : existing[0].status;
       await sequelize.query(`
         UPDATE abnormal_io_request SET
+          status = :status,
           customer_number = :customer_number, customer_name = :customer_name,
           original_shipping_number = :original_shipping_number,
           warehouse_number = :warehouse_number, warehouse_name = :warehouse_name,
@@ -217,6 +220,7 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
         WHERE request_number = :rn
       `, {
         replacements: {
+          status: newStatus,
           rn: request_number,
           customer_number: b.customer_number || '',
           customer_name: b.customer_name || '',
@@ -288,8 +292,8 @@ export const remove = async (req: Request, res: Response, next: NextFunction) =>
     if (existing.length === 0) {
       res.status(404).json({ success: false, message: '单据不存在' }); return;
     }
-    if (existing[0].status !== '待确认') {
-      res.status(400).json({ success: false, message: '只能删除待确认状态的单据' }); return;
+    if (existing[0].status !== '待确认' && existing[0].status !== '已驳回' && existing[0].status !== '已撤消') {
+      res.status(400).json({ success: false, message: '只能删除待确认、已驳回或已撤消状态的单据' }); return;
     }
 
     const transaction = await sequelize.transaction();
@@ -527,7 +531,7 @@ async function handleScrapOutbound(
     `, { replacements: { item_number: d.item_number, wn: header.warehouse_number }, transaction });
 
     let remaining = qty;
-    const usedBatchNos: string[] = [];
+    const usedBatches: Array<{ batch_number: string; quantity: number }> = [];
 
     for (const batch of batches) {
       if (remaining <= 0) break;
@@ -539,7 +543,7 @@ async function handleScrapOutbound(
         { replacements: { qty: newBatchQty, id: batch.id }, transaction }
       );
 
-      usedBatchNos.push(batch.batch_number);
+      usedBatches.push({ batch_number: batch.batch_number, quantity: deductQty });
       remaining -= deductQty;
     }
 
@@ -579,11 +583,13 @@ async function handleScrapOutbound(
         product_drawing_number: d.product_drawing_number || '',
         warehouse_number: header.warehouse_number, warehouse_name: header.warehouse_name,
         quantity: qty, before_quantity: beforeQty, after_quantity: afterQty,
-        batch_number: usedBatchNos.join(','), operator,
+        batch_number: usedBatches[0]?.batch_number || '', operator,
         remark: header.reason || '报废出库',
         accounting_period: header.accounting_period || ''
       }, transaction
     });
+
+    await createTransactionBatches(txNum, usedBatches, transaction);
   }
 }
 
@@ -604,7 +610,7 @@ async function handleTransfer(
     `, { replacements: { item_number: d.item_number, wn: header.warehouse_number }, transaction });
 
     let remaining = qty;
-    const usedBatchNos: string[] = [];
+    const usedBatches: Array<{ batch_number: string; quantity: number }> = [];
 
     for (const batch of batches) {
       if (remaining <= 0) break;
@@ -616,7 +622,7 @@ async function handleTransfer(
         { replacements: { qty: newBatchQty, id: batch.id }, transaction }
       );
 
-      usedBatchNos.push(batch.batch_number);
+      usedBatches.push({ batch_number: batch.batch_number, quantity: deductQty });
       remaining -= deductQty;
     }
 
@@ -654,11 +660,13 @@ async function handleTransfer(
         product_drawing_number: d.product_drawing_number || '',
         warehouse_number: header.warehouse_number, warehouse_name: header.warehouse_name,
         quantity: qty, before_quantity: srcBeforeQty, after_quantity: srcBeforeQty - qty,
-        batch_number: usedBatchNos.join(','), operator,
+        batch_number: usedBatches[0]?.batch_number || '', operator,
         remark: header.reason || '调拨出库',
         accounting_period: header.accounting_period || ''
       }, transaction
     });
+
+    await createTransactionBatches(txNumOut, usedBatches, transaction);
 
     // --- 目标仓库入库 ---
     const newBatchNo = await generateBatchNumber('FB', transaction);
@@ -843,7 +851,7 @@ async function handleStockCount(
       `, { replacements: { item_number: d.item_number, wn: header.warehouse_number }, transaction });
 
       let remaining = absDiff;
-      const usedBatchNos: string[] = [];
+      const usedBatches: Array<{ batch_number: string; quantity: number }> = [];
 
       for (const batch of batches) {
         if (remaining <= 0) break;
@@ -855,7 +863,7 @@ async function handleStockCount(
           { replacements: { qty: newBatchQty, id: batch.id }, transaction }
         );
 
-        usedBatchNos.push(batch.batch_number);
+        usedBatches.push({ batch_number: batch.batch_number, quantity: deductQty });
         remaining -= deductQty;
       }
 
@@ -888,11 +896,218 @@ async function handleStockCount(
           product_drawing_number: d.product_drawing_number || '',
           warehouse_number: header.warehouse_number, warehouse_name: header.warehouse_name,
           quantity: absDiff, before_quantity: beforeQty, after_quantity: afterQty,
-          batch_number: usedBatchNos.join(','), operator,
+          batch_number: usedBatches[0]?.batch_number || '', operator,
           remark: header.reason || '盘亏调整',
           accounting_period: header.accounting_period || ''
         }, transaction
       });
+
+      await createTransactionBatches(txNum, usedBatches, transaction);
     }
+  }
+}
+
+// ==================== 撤消确认（回退库存变更） ====================
+export const withdraw = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { request_number } = req.params;
+    const operator = (req as any).user?.username || '';
+
+    // 1. 校验单据状态
+    const [headers]: any = await sequelize.query(
+      `SELECT * FROM abnormal_io_request WHERE request_number = :rn`,
+      { replacements: { rn: request_number } }
+    );
+    if (headers.length === 0) {
+      res.status(404).json({ success: false, message: '单据不存在' }); return;
+    }
+    const header = headers[0];
+    if (header.status !== '已确认') {
+      res.status(400).json({ success: false, message: '只能撤消已确认状态的单据' }); return;
+    }
+
+    // 2. 查找关联的库存流水（正常状态的）
+    const [txRows]: any = await sequelize.query(
+      `SELECT * FROM inventory_transaction WHERE source_number = :rn AND (status IS NULL OR status = N'正常')`,
+      { replacements: { rn: request_number } }
+    );
+    if (txRows.length === 0) {
+      res.status(400).json({ success: false, message: '未找到关联的库存流水记录' }); return;
+    }
+
+    // 3. 查找批次明细
+    const txNumbers = txRows.map((r: any) => r.transaction_number);
+    const [batchRows]: any = await sequelize.query(
+      `SELECT * FROM inventory_transaction_batch WHERE transaction_number IN (:txns) ORDER BY id`,
+      { replacements: { txns: txNumbers } }
+    );
+
+    // 4. 开启事务，执行反转
+    const transaction = await sequelize.transaction();
+    try {
+      switch (header.type) {
+        case '退货入库':
+          await reverseInbound(txRows, batchRows, transaction);
+          break;
+        case '报废出库':
+          await reverseOutbound(txRows, batchRows, transaction);
+          break;
+        case '调拨出入库':
+          await reverseTransfer(txRows, batchRows, transaction);
+          break;
+        case '盘盈盘亏':
+          await reverseStockCount(txRows, batchRows, transaction);
+          break;
+        default:
+          await transaction.rollback();
+          res.status(400).json({ success: false, message: `未知操作类型: ${header.type}` }); return;
+      }
+
+      // 5. 标记库存流水为作废
+      await sequelize.query(
+        `UPDATE inventory_transaction SET status = N'作废', void_operator = :op, void_date = GETDATE()
+         WHERE source_number = :rn AND (status IS NULL OR status = N'正常')`,
+        { replacements: { rn: request_number, op: operator }, transaction }
+      );
+
+      // 6. 更新单据状态
+      await sequelize.query(
+        `UPDATE abnormal_io_request SET status = N'已撤消',
+          withdraw_operator = :op, withdraw_date = GETDATE()
+         WHERE request_number = :rn`,
+        { replacements: { rn: request_number, op: operator }, transaction }
+      );
+
+      await transaction.commit();
+      res.json(success({ transactionNumbers: txNumbers }, '撤消成功，库存已回退'));
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
+    }
+  } catch (err) { next(err); }
+};
+
+// ==================== 入库类反转（退货入库 / 盘盈调整） ====================
+// 确认时创建了批次并增加了库存，撤消时需扣减/删除批次
+async function reverseInbound(
+  txRows: any[], batchRows: any[], transaction: any
+) {
+  for (const tx of txRows) {
+    const batchNo = tx.batch_number;
+    if (!batchNo) continue;
+
+    const [batchInv]: any = await sequelize.query(
+      `SELECT id, quantity, initial_quantity FROM finished_batch_inventory
+       WHERE batch_number = :bn AND item_number = :in AND warehouse_number = :wn`,
+      { replacements: { bn: batchNo, in: tx.item_number, wn: tx.warehouse_number }, transaction }
+    );
+
+    if (batchInv.length === 0) continue;
+
+    const currentQty = Number(batchInv[0].quantity);
+    const originalQty = Number(tx.quantity);
+
+    if (currentQty < originalQty) {
+      throw new Error(
+        `物料 ${tx.item_number} 的批次 ${batchNo} 已被后续操作消耗（剩余 ${currentQty}，需回退 ${originalQty}），无法撤消。请先撤消后续操作。`
+      );
+    }
+
+    const newQty = currentQty - originalQty;
+    if (newQty <= 0) {
+      // 批次数量归零，删除批次记录
+      await sequelize.query(
+        `DELETE FROM finished_batch_inventory WHERE id = :id`,
+        { replacements: { id: batchInv[0].id }, transaction }
+      );
+    } else {
+      await sequelize.query(
+        `UPDATE finished_batch_inventory SET quantity = :qty, last_updated = GETDATE() WHERE id = :id`,
+        { replacements: { qty: newQty, id: batchInv[0].id }, transaction }
+      );
+    }
+
+    // 同步汇总库存
+    await syncFinishedGoodsSummary(tx.item_number, tx.warehouse_number, transaction);
+  }
+}
+
+// ==================== 出库类反转（报废出库 / 盘亏调整） ====================
+// 确认时FIFO扣减了批次，撤消时按inventory_transaction_batch加回
+async function reverseOutbound(
+  txRows: any[], batchRows: any[], transaction: any
+) {
+  for (const tx of txRows) {
+    const txBatches = batchRows.filter((b: any) => b.transaction_number === tx.transaction_number);
+
+    for (const b of txBatches) {
+      const [batchInv]: any = await sequelize.query(
+        `SELECT id, quantity FROM finished_batch_inventory
+         WHERE batch_number = :bn AND item_number = :in AND warehouse_number = :wn`,
+        { replacements: { bn: b.batch_number, in: tx.item_number, wn: tx.warehouse_number }, transaction }
+      );
+
+      if (batchInv.length > 0) {
+        const newQty = Number(batchInv[0].quantity) + Number(b.quantity);
+        await sequelize.query(
+          `UPDATE finished_batch_inventory SET quantity = :qty, last_updated = GETDATE() WHERE id = :id`,
+          { replacements: { qty: newQty, id: batchInv[0].id }, transaction }
+        );
+      } else {
+        // 批次已被删除（理论上不应发生），重建批次
+        await sequelize.query(`
+          INSERT INTO finished_batch_inventory (batch_number, item_number, item_name, specifications, basic_unit,
+            product_drawing_number, warehouse_number, warehouse_name, quantity, initial_quantity,
+            production_order_number, inbound_date, status, creation_date, last_updated)
+          VALUES (:batch_number, :item_number, :item_name, :specifications, :basic_unit,
+            :product_drawing_number, :warehouse_number, :warehouse_name, :quantity, :quantity,
+            N'', GETDATE(), N'正常', GETDATE(), GETDATE())
+        `, {
+          replacements: {
+            batch_number: b.batch_number,
+            item_number: tx.item_number, item_name: tx.item_name || '',
+            specifications: tx.specifications || '', basic_unit: tx.basic_unit || '',
+            product_drawing_number: tx.product_drawing_number || '',
+            warehouse_number: tx.warehouse_number, warehouse_name: tx.warehouse_name || '',
+            quantity: b.quantity
+          }, transaction
+        });
+      }
+    }
+
+    // 同步汇总库存
+    await syncFinishedGoodsSummary(tx.item_number, tx.warehouse_number, transaction);
+  }
+}
+
+// ==================== 调拨出入库反转 ====================
+async function reverseTransfer(
+  txRows: any[], batchRows: any[], transaction: any
+) {
+  const outTxRows = txRows.filter((t: any) => t.source_type === '调拨出库');
+  const inTxRows = txRows.filter((t: any) => t.source_type === '调拨入库');
+
+  // 1. 反转调出（出库→加回源仓库批次）
+  await reverseOutbound(outTxRows, batchRows, transaction);
+
+  // 2. 反转调入（入库→扣减/删除目标仓库批次）
+  await reverseInbound(inTxRows, batchRows, transaction);
+}
+
+// ==================== 盘盈盘亏反转 ====================
+async function reverseStockCount(
+  txRows: any[], batchRows: any[], transaction: any
+) {
+  const surplusTxRows = txRows.filter((t: any) => t.source_type === '盘盈调整');
+  const lossTxRows = txRows.filter((t: any) => t.source_type === '盘亏调整');
+
+  // 1. 盘盈反转（入库类→扣减批次）
+  if (surplusTxRows.length > 0) {
+    await reverseInbound(surplusTxRows, batchRows, transaction);
+  }
+
+  // 2. 盘亏反转（出库类→加回批次）
+  if (lossTxRows.length > 0) {
+    await reverseOutbound(lossTxRows, batchRows, transaction);
   }
 }
