@@ -24,3 +24,27 @@ NUL
 *.tmp
 *.bak
 *.swp
+
+# Security - tokens and credentials
+tmp_token.json
+test_wage_api.js
+server/.env
+
+# Debug / temp scripts (server root)
+server/0
+server/_*.cjs
+server/_*.js
+server/_*.ts
+server/check_*.js
+server/check_*.cjs
+server/kill_*.cjs
+server/run_*_migration.js
+server/add_inventory*.cjs
+server/backfill_*.cjs
+server/test_db_*.cjs
+server/.nodemon_trigger
+
+# E2E test artifacts
+e2e/node_modules/
+e2e/reports/
+e2e/test-results/
