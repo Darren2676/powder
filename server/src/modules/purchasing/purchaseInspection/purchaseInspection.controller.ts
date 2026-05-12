@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { Transaction } from 'sequelize';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
+import { createNonconformingFromInspection } from '../../quality/nonconformingProduct/nonconformingProduct.controller';
+import { generateMaterialTxnNumber } from '@/services/inventory.service';
 
 /**
  * 生成检验单号 QI-YYYYMMDD-###
@@ -461,13 +463,15 @@ export const completePurchaseInspection = async (req: Request, res: Response, ne
 
     // 回写入库单合格/不合格数量 (如果关联了入库单)
     const [inspRows]: any = await sequelize.query(`
-      SELECT stock_in_number, item_number, qualified_quantity, unqualified_quantity
+      SELECT stock_in_number, item_number, qualified_quantity, unqualified_quantity, batch_number
       FROM purchase_quality_inspection
       WHERE inspection_number = :inspection_number
     `, { replacements: { inspection_number } });
 
     if (inspRows.length > 0 && inspRows[0].stock_in_number) {
       const insp = inspRows[0];
+      const qQty = parseFloat(insp.qualified_quantity) || 0;
+
       try {
         await sequelize.query(`
           UPDATE stock_in_detail SET
@@ -485,6 +489,199 @@ export const completePurchaseInspection = async (req: Request, res: Response, ne
         });
       } catch (e) {
         console.log('回写入库单合格数量失败（可能字段不存在）:', e);
+      }
+
+      // ==================== 检验合格/让步接收 → 待检仓转原料库 ====================
+      if ((inspect_result === '合格' || inspect_result === '让步接收') && qQty > 0) {
+        const transaction = await sequelize.transaction();
+        try {
+          // 查询待检仓中的批次库存
+          const [batchRows]: any = await sequelize.query(`
+            SELECT id, batch_number, warehouse_number, warehouse_name, quantity
+            FROM material_batch_inventory
+            WHERE item_number = :item_number AND batch_number = :batch_number
+              AND quantity > 0 AND status = N'正常'
+            ORDER BY inbound_date ASC
+          `, {
+            replacements: { item_number: insp.item_number, batch_number: insp.batch_number || '' },
+            transaction
+          });
+
+          // 查询原料库（目标仓库）
+          const [rawWhRows]: any = await sequelize.query(
+            `SELECT TOP 1 warehouse_number, warehouse_name FROM warehouse WHERE warehouse_type = N'原料' OR warehouse_name LIKE N'%原料%'`,
+            { transaction }
+          );
+          const [inspWhRows]: any = await sequelize.query(
+            `SELECT TOP 1 warehouse_number, warehouse_name FROM warehouse WHERE warehouse_name = N'待检仓' OR warehouse_type = N'待检仓'`,
+            { transaction }
+          );
+          const rawWhNumber = rawWhRows.length > 0 ? rawWhRows[0].warehouse_number : '';
+          const rawWhName = rawWhRows.length > 0 ? rawWhRows[0].warehouse_name : '原料库';
+          const inspWhNumber = inspWhRows.length > 0 ? inspWhRows[0].warehouse_number : '';
+          const inspWhName = inspWhRows.length > 0 ? inspWhRows[0].warehouse_name : '待检仓';
+
+          if (!rawWhNumber || !inspWhNumber) {
+            console.log('未找到原料库或待检仓，跳过仓移');
+            await transaction.rollback();
+          } else {
+            // FIFO 从待检仓出库
+            let remaining = qQty;
+            for (const b of batchRows) {
+              if (remaining <= 0) break;
+              const deductQty = Math.min(parseFloat(b.quantity) || 0, remaining);
+              remaining -= deductQty;
+
+              await sequelize.query(`
+                UPDATE material_batch_inventory SET
+                  quantity = quantity - :deductQty,
+                  status = CASE WHEN quantity - :deductQty <= 0 THEN N'已用完' ELSE status END,
+                  last_updated = GETDATE()
+                WHERE id = :batchId
+              `, { replacements: { deductQty, batchId: b.id }, transaction });
+
+              // 同步待检仓汇总库存
+              await sequelize.query(`
+                UPDATE material_inventory SET quantity = quantity - :deductQty, last_updated = GETDATE()
+                WHERE item_number = :item_number AND warehouse_number = :whNo
+              `, {
+                replacements: { deductQty, item_number: insp.item_number, whNo: inspWhNumber },
+                transaction
+              });
+
+              // 记录待检仓出库流水
+              const txnOut = await generateMaterialTxnNumber(transaction);
+
+              const [invOut]: any = await sequelize.query(
+                `SELECT quantity FROM material_inventory WHERE item_number = :itemNo AND warehouse_number = :whNo`,
+                { replacements: { itemNo: insp.item_number, whNo: inspWhNumber }, transaction }
+              );
+              const afterOut = invOut.length ? parseFloat(invOut[0].quantity) : 0;
+              const beforeOut = afterOut + deductQty;
+
+              await sequelize.query(`
+                INSERT INTO material_inventory_transaction (transaction_number, transaction_type, source_type, source_number,
+                  item_number, item_name, item_type, specifications, basic_unit,
+                  warehouse_number, warehouse_name, quantity, before_quantity, after_quantity,
+                  batch_number, supplier_number, supplier_name, operator, operation_date, remark, creation_date)
+                VALUES (:txnNo, N'出库', N'检验合格转出', :sourceNo,
+                  :item_number, :item_name, N'原材料', :specifications, :basic_unit,
+                  :warehouse_number, :warehouse_name, :quantity, :beforeQty, :afterQty,
+                  :batchNo, '', '', :operator, GETDATE(), :remark, GETDATE())
+              `, {
+                replacements: {
+                  txnNo: txnOut, sourceNo: inspection_number,
+                  item_number: insp.item_number, item_name: insp.item_name || '',
+                  specifications: insp.specifications || '', basic_unit: insp.basic_unit || '',
+                  warehouse_number: inspWhNumber, warehouse_name: inspWhName,
+                  quantity: deductQty, beforeQty: beforeOut, afterQty: afterOut,
+                  batchNo: b.batch_number, operator: (req as any).user?.username || '',
+                  remark: `检验单${inspection_number}合格转入原料库`
+                },
+                transaction
+              });
+
+              // 原料库入库（保持原批次号）
+              await sequelize.query(`
+                INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications,
+                  basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity,
+                  supplier_number, supplier_name, production_order_number, inbound_date, status, creation_date, last_updated)
+                VALUES (:batchNo, :item_number, :item_name, N'原材料', :specifications,
+                  :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity,
+                  '', '', '', GETDATE(), N'正常', GETDATE(), GETDATE())
+              `, {
+                replacements: {
+                  batchNo: b.batch_number,
+                  item_number: insp.item_number,
+                  item_name: insp.item_name || '',
+                  specifications: insp.specifications || '',
+                  basic_unit: insp.basic_unit || '',
+                  warehouse_number: rawWhNumber,
+                  warehouse_name: rawWhName,
+                  quantity: deductQty
+                },
+                transaction
+              });
+
+              // 同步原料库汇总库存
+              await sequelize.query(`
+                MERGE material_inventory AS t
+                USING (SELECT :item_number AS item_number, :warehouse_number AS warehouse_number, :item_name AS item_name, N'原材料' AS item_type, :specifications AS specifications, :basic_unit AS basic_unit, :warehouse_name AS warehouse_name, :quantity AS quantity) AS s
+                ON (t.item_number = s.item_number AND t.warehouse_number = s.warehouse_number)
+                WHEN MATCHED THEN UPDATE SET quantity = t.quantity + s.quantity, last_updated = GETDATE()
+                WHEN NOT MATCHED THEN INSERT (item_number, warehouse_number, item_name, item_type, specifications, basic_unit, warehouse_name, quantity, last_updated)
+                VALUES (s.item_number, s.warehouse_number, s.item_name, s.item_type, s.specifications, s.basic_unit, s.warehouse_name, s.quantity, GETDATE());
+              `, {
+                replacements: {
+                  item_number: insp.item_number,
+                  warehouse_number: rawWhNumber,
+                  item_name: insp.item_name || '',
+                  specifications: insp.specifications || '',
+                  basic_unit: insp.basic_unit || '',
+                  warehouse_name: rawWhName,
+                  quantity: deductQty
+                },
+                transaction
+              });
+
+              // 记录原料库入库流水
+              const txnIn = await generateMaterialTxnNumber(transaction);
+
+              const [invIn]: any = await sequelize.query(
+                `SELECT quantity FROM material_inventory WHERE item_number = :itemNo AND warehouse_number = :whNo`,
+                { replacements: { itemNo: insp.item_number, whNo: rawWhNumber }, transaction }
+              );
+              const afterIn = invIn.length ? parseFloat(invIn[0].quantity) : deductQty;
+              const beforeIn = afterIn - deductQty;
+
+              await sequelize.query(`
+                INSERT INTO material_inventory_transaction (transaction_number, transaction_type, source_type, source_number,
+                  item_number, item_name, item_type, specifications, basic_unit,
+                  warehouse_number, warehouse_name, quantity, before_quantity, after_quantity,
+                  batch_number, supplier_number, supplier_name, operator, operation_date, remark, creation_date)
+                VALUES (:txnNo, N'入库', N'检验合格入库', :sourceNo,
+                  :item_number, :item_name, N'原材料', :specifications, :basic_unit,
+                  :warehouse_number, :warehouse_name, :quantity, :beforeQty, :afterQty,
+                  :batchNo, '', '', :operator, GETDATE(), :remark, GETDATE())
+              `, {
+                replacements: {
+                  txnNo: txnIn, sourceNo: inspection_number,
+                  item_number: insp.item_number, item_name: insp.item_name || '',
+                  specifications: insp.specifications || '', basic_unit: insp.basic_unit || '',
+                  warehouse_number: rawWhNumber, warehouse_name: rawWhName,
+                  quantity: deductQty, beforeQty: beforeIn, afterQty: afterIn,
+                  batchNo: b.batch_number, operator: (req as any).user?.username || '',
+                  remark: `检验单${inspection_number}合格转入原料库`
+                },
+                transaction
+              });
+            }
+
+            // 更新 stock_in_detail: 仓库改为原料库
+            await sequelize.query(`
+              UPDATE stock_in_detail SET inspect_status = N'已完成'
+              WHERE stock_in_number = :stock_in_number AND item_number = :item_number
+            `, {
+              replacements: { stock_in_number: insp.stock_in_number, item_number: insp.item_number },
+              transaction
+            });
+
+            await transaction.commit();
+          }
+        } catch (e) {
+          await transaction.rollback();
+          console.log('待检仓→原料库转移失败:', e);
+        }
+      } else if (inspect_result === '不合格') {
+        // 不合格：更新状态，库存保留在待检仓等待缺陷处理
+        try {
+          await sequelize.query(`
+            UPDATE stock_in_detail SET inspect_status = N'不合格'
+            WHERE stock_in_number = :stock_in_number AND item_number = :item_number
+          `, {
+            replacements: { stock_in_number: insp.stock_in_number, item_number: insp.item_number }
+          });
+        } catch (e) { /* ignore */ }
       }
     }
 
@@ -593,26 +790,6 @@ export const getPurchaseInspectionSummary = async (req: Request, res: Response, 
 export const defectHandlingPurchaseInspection = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { inspection_number } = req.params;
-    const {
-      defect_handling,      // 挑选 | 拒收 | 报废 | 特采 | 退货
-      handling_quantity,    // 处理数量
-      handling_remark,      // 处理备注
-      return_order_number,  // 关联退货单号
-      special_warehouse,    // 特采入库仓库
-      qualified_quantity,   // 挑选后合格数量
-      unqualified_quantity  // 挑选后不合格数量
-    } = req.body;
-
-    if (!defect_handling) {
-      res.status(400).json({ success: false, message: '处理方式不能为空' });
-      return;
-    }
-
-    const validHandlings = ['挑选', '拒收', '报废', '特采', '退货'];
-    if (!validHandlings.includes(defect_handling)) {
-      res.status(400).json({ success: false, message: `无效的处理方式，可选: ${validHandlings.join('/')}` });
-      return;
-    }
 
     // 查询检验单
     const [inspRows]: any = await sequelize.query(`
@@ -638,95 +815,35 @@ export const defectHandlingPurchaseInspection = async (req: Request, res: Respon
 
     const transaction = await sequelize.transaction();
     try {
-      // 更新检验单不合格品处理信息
+      // 仅创建NC待处理单，不再同步执行处理动作
+      // 处理方式由人工在"不合格品处理"页面选择
+      const ncNumber = await createNonconformingFromInspection({
+        source_type: '来料检验',
+        source_number: String(inspection_number),
+        item_number: insp.item_number || '',
+        item_name: insp.item_name || '',
+        specifications: insp.specifications || '',
+        basic_unit: insp.basic_unit || '',
+        unqualified_quantity: parseFloat(insp.unqualified_quantity) || 0,
+        defect_class_name: insp.defect_class_name || '',
+        defect_name: insp.defect_name || '',
+        defect_reason_name: insp.defect_reason_name || '',
+        supplier_number: insp.supplier_number || '',
+        supplier_name: insp.supplier_name || '',
+        warehouse_number: insp.warehouse_number || '',
+        warehouse_name: insp.warehouse_name || '',
+        creation_man: (req as any).user?.username || '',
+        inspection_table: 'purchase_quality_inspection'
+      }, transaction);
+
+      // 标记检验单缺陷处理为"待处理"
       await sequelize.query(`
-        UPDATE purchase_quality_inspection SET
-          defect_handling = :defect_handling,
-          handling_quantity = :handling_quantity,
-          handling_remark = :handling_remark,
-          return_order_number = :return_order_number,
-          special_warehouse = :special_warehouse
+        UPDATE purchase_quality_inspection SET defect_handling = N'待处理'
         WHERE inspection_number = :inspection_number
-      `, {
-        replacements: {
-          inspection_number,
-          defect_handling,
-          handling_quantity: handling_quantity || 0,
-          handling_remark: handling_remark || '',
-          return_order_number: return_order_number || '',
-          special_warehouse: special_warehouse || ''
-        },
-        transaction
-      });
-
-      // 根据处理方式执行不同业务动作
-      if (defect_handling === '挑选') {
-        // 挑选：更新合格/不合格数量
-        if (qualified_quantity !== undefined || unqualified_quantity !== undefined) {
-          await sequelize.query(`
-            UPDATE purchase_quality_inspection SET
-              qualified_quantity = :qualified_quantity,
-              unqualified_quantity = :unqualified_quantity,
-              inspect_result = CASE WHEN :unqualified_quantity > 0 THEN N'不合格' ELSE N'合格' END
-            WHERE inspection_number = :inspection_number
-          `, {
-            replacements: {
-              inspection_number,
-              qualified_quantity: qualified_quantity || 0,
-              unqualified_quantity: unqualified_quantity || 0
-            },
-            transaction
-          });
-        }
-      } else if (defect_handling === '特采') {
-        // 特采：将不合格品计入合格（让步接收）
-        const handlingQty = parseFloat(handling_quantity) || 0;
-        if (handlingQty > 0) {
-          await sequelize.query(`
-            UPDATE purchase_quality_inspection SET
-              qualified_quantity = qualified_quantity + :handlingQty,
-              unqualified_quantity = CASE WHEN unqualified_quantity - :handlingQty < 0 THEN 0 ELSE unqualified_quantity - :handlingQty END,
-              inspect_result = N'让步接收'
-            WHERE inspection_number = :inspection_number
-          `, {
-            replacements: { inspection_number, handlingQty },
-            transaction
-          });
-        }
-      }
-
-      // 回写入库单明细的合格/不合格数量
-      if (insp.stock_in_number) {
-        // 重新查询最新的检验单数据
-        const [updatedInsp]: any = await sequelize.query(`
-          SELECT qualified_quantity, unqualified_quantity
-          FROM purchase_quality_inspection
-          WHERE inspection_number = :inspection_number
-        `, { replacements: { inspection_number }, transaction });
-
-        if (updatedInsp.length > 0) {
-          await sequelize.query(`
-            UPDATE stock_in_detail SET
-              qualified_quantity = :qualified_quantity,
-              unqualified_quantity = :unqualified_quantity,
-              inspect_status = :inspect_status
-            WHERE stock_in_number = :stock_in_number
-              AND item_number = :item_number
-          `, {
-            replacements: {
-              stock_in_number: insp.stock_in_number,
-              item_number: insp.item_number,
-              qualified_quantity: updatedInsp[0].qualified_quantity,
-              unqualified_quantity: updatedInsp[0].unqualified_quantity,
-              inspect_status: `已处理-${defect_handling}`
-            },
-            transaction
-          });
-        }
-      }
+      `, { replacements: { inspection_number }, transaction });
 
       await transaction.commit();
-      res.json(success({ message: `不合格品处理完成（${defect_handling}）` }));
+      res.json(success({ nonconforming_number: ncNumber }, `不合格品待处理单已创建：${ncNumber}，请在不合格品处理页面选择处理方式`));
     } catch (e) {
       await transaction.rollback();
       throw e;

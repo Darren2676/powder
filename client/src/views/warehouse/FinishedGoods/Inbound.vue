@@ -185,8 +185,9 @@ onMounted(() => {
 
 <template>
   <div style="padding: 20px">
-    <div style="margin-bottom: 16px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px">
-      <div style="display: flex; gap: 8px; align-items: center">
+    <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;overflow-x:auto">
+      <span style="font-size:18px;font-weight:600;white-space:nowrap;flex-shrink:0">生产入库</span>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:nowrap">
         <a-input-search
           v-model:value="searchText"
           placeholder="搜索生产单号/产品编号/名称"
@@ -198,8 +199,6 @@ onMounted(() => {
           <template #prefix><SearchOutlined /></template>
         </a-input-search>
         <a-button @click="fetchData"><ReloadOutlined /> 刷新</a-button>
-      </div>
-      <div>
         <a-button type="primary" @click="handleInbound" :disabled="selectedRowKeys.length === 0">
           <ImportOutlined /> 确认入库 ({{ selectedRowKeys.length }})
         </a-button>

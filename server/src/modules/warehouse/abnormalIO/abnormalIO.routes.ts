@@ -8,7 +8,8 @@ import {
   update,
   remove,
   confirm,
-  reject
+  reject,
+  withdraw
 } from './abnormalIO.controller';
 
 const router = Router();
@@ -33,5 +34,8 @@ router.post('/:request_number/confirm', authenticate, confirm);
 
 // 驳回
 router.post('/:request_number/reject', authenticate, reject);
+
+// 撤消确认（回退库存变更）
+router.post('/:request_number/withdraw', authenticate, withdraw);
 
 export default router;
