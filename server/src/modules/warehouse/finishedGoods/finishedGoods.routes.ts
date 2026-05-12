@@ -19,9 +19,11 @@ import {
   getReturnInboundDetail,
   returnInbound,
   getCompletedStockCounts,
-  getMonthlyReport
+  getMonthlyReport,
+  rollbackOutbound,
+  withdrawInboundOrder
 } from './finishedGoods.controller';
-import { validateFinishedGoodsInbound, validateFinishedGoodsOutbound, validateFinishedGoodsAdjust, validateFinishedGoodsSafetyStock, validateFinishedGoodsReturnInbound } from '../../../validators/warehouse.validator';
+import { validateFinishedGoodsInbound, validateFinishedGoodsOutbound, validateFinishedGoodsAdjust, validateFinishedGoodsSafetyStock, validateFinishedGoodsReturnInbound, validateFinishedGoodsOutboundRollback } from '../../../validators/warehouse.validator';
 
 const router = Router();
 
@@ -39,10 +41,12 @@ router.post('/inbound', authenticate, productionInbound);
 // 生产入库单
 router.get('/inbound-orders', authenticate, getInboundOrderList);
 router.get('/inbound-orders/:inbound_order_number', authenticate, getInboundOrderDetail);
+router.post('/inbound-orders/:inbound_order_number/withdraw', authenticate, withdrawInboundOrder);
 
 // 出库管理
 router.get('/pending-outbound', authenticate, getPendingOutbound);
 router.post('/outbound', authenticate, shippingOutbound);
+router.post('/outbound/rollback', authenticate, validateFinishedGoodsOutboundRollback, rollbackOutbound);
 
 // 库存流水
 router.get('/transactions', authenticate, getTransactionList);

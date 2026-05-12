@@ -82,12 +82,25 @@ export const createFinishedTransaction = async (
     product_drawing_number: string; warehouse_number: string; warehouse_name: string;
     quantity: number; before_quantity: number; after_quantity: number;
     batch_number: string; operator: string; remark: string; quality_status: string; accounting_period: string;
+    shipping_order_number?: string;
   },
   transaction?: Transaction
 ) => {
+  // 如果 item_name/specifications/basic_unit 为空，从 item_master 补全
+  if (!params.item_name || !params.specifications || !params.basic_unit) {
+    const [imRows]: any = await sequelize.query(
+      'SELECT item_name, specifications, basic_unit FROM item_master WHERE item_number = :item_number',
+      { replacements: { item_number: params.item_number }, transaction }
+    );
+    if (imRows.length > 0) {
+      if (!params.item_name) params.item_name = imRows[0].item_name || '';
+      if (!params.specifications) params.specifications = imRows[0].specifications || '';
+      if (!params.basic_unit) params.basic_unit = imRows[0].basic_unit || '';
+    }
+  }
   await sequelize.query(
-    "INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number, item_number, item_name, specifications, basic_unit, product_drawing_number, warehouse_number, warehouse_name, quantity, before_quantity, after_quantity, batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period) VALUES (:transaction_number, :transaction_type, :source_type, :source_number, :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number, :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity, :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE(), :accounting_period)",
-    { replacements: params, transaction }
+    "INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number, item_number, item_name, specifications, basic_unit, product_drawing_number, warehouse_number, warehouse_name, quantity, before_quantity, after_quantity, batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period, shipping_order_number) VALUES (:transaction_number, :transaction_type, :source_type, :source_number, :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number, :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity, :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE(), :accounting_period, :shipping_order_number)",
+    { replacements: { ...params, shipping_order_number: params.shipping_order_number || '' }, transaction }
   );
 };
 
@@ -105,7 +118,7 @@ export const createMaterialTransaction = async (
 ) => {
   await sequelize.query(
     "INSERT INTO material_inventory_transaction (transaction_number, transaction_type, source_type, source_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, before_quantity, after_quantity, batch_number, supplier_number, supplier_name, operator, operation_date, remark, creation_date) VALUES (:transaction_number, :transaction_type, :source_type, :source_number, :item_number, :item_name, :item_type, :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity, :batch_number, :supplier_number, :supplier_name, :operator, GETDATE(), :remark, GETDATE())",
-    { replacements: params, transaction }
+    { replacements: { ...params, supplier_number: params.supplier_number || '', supplier_name: params.supplier_name || '' }, transaction }
   );
 };
 
@@ -200,6 +213,20 @@ export const writeBatchTraceability = async (
           mq: Number(detail.actual_quantity) || 0, isn: detail.issue_number || ''
         }, transaction
       }
+    );
+  }
+};
+
+/** 写入库存流水批次明细 (inventory_transaction_batch) */
+export const createTransactionBatches = async (
+  transaction_number: string,
+  batchDeductions: Array<{ batch_number: string; quantity: number }>,
+  transaction?: Transaction
+) => {
+  for (const bd of batchDeductions) {
+    await sequelize.query(
+      'INSERT INTO inventory_transaction_batch (transaction_number, batch_number, quantity, creation_date) VALUES (:transaction_number, :batch_number, :quantity, GETDATE())',
+      { replacements: { transaction_number, batch_number: bd.batch_number, quantity: bd.quantity }, transaction }
     );
   }
 };
