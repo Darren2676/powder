@@ -12,6 +12,44 @@ const request: AxiosInstance = axios.create({
   }
 })
 
+// Token刷新状态管理
+let isRefreshing = false
+let refreshSubscribers: Array<(token: string) => void> = []
+
+function onTokenRefreshed(newToken: string) {
+  refreshSubscribers.forEach(cb => cb(newToken))
+  refreshSubscribers = []
+}
+
+function addRefreshSubscriber(callback: (token: string) => void) {
+  refreshSubscribers.push(callback)
+}
+
+// 尝试刷新token
+async function tryRefreshToken(): Promise<string | null> {
+  const currentToken = localStorage.getItem('token')
+  if (!currentToken) return null
+
+  try {
+    const response = await axios.post('/api/v1/auth/refresh', {}, {
+      headers: { Authorization: `Bearer ${currentToken}` },
+      timeout: 10000
+    })
+    if (response.data?.success) {
+      const newToken = response.data.data.token
+      const newUser = response.data.data.user
+      localStorage.setItem('token', newToken)
+      if (newUser) {
+        localStorage.setItem('user', JSON.stringify(newUser))
+      }
+      return newToken
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 // 请求拦截器 — 附加JWT Token
 request.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
@@ -27,7 +65,7 @@ request.interceptors.request.use(
   }
 )
 
-// 响应拦截器 — 错误处理 + 数据提取 + 离线拦截
+// 响应拦截器 — 错误处理 + 数据提取 + 离线拦截 + Token自动刷新
 request.interceptors.response.use(
   (response: AxiosResponse) => {
     // blob 响应返回完整 response，以便 res.data 获取 blob
@@ -42,6 +80,7 @@ request.interceptors.response.use(
     return response.data
   },
   async (error) => {
+    const originalRequest = error.config
     const isNetworkError = error.message === 'Network Error' || !navigator.onLine
     const method = error.config?.method?.toUpperCase() || ''
     const url = error.config?.url || ''
@@ -70,11 +109,52 @@ request.interceptors.response.use(
     }
 
     if (error.response?.status === 401) {
-      localStorage.removeItem('token')
-      localStorage.removeItem('user')
-      showToast({ message: '登录已过期，请重新登录', type: 'fail' })
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login'
+      // 排除refresh接口本身的401，避免死循环
+      if (originalRequest?.url?.includes('/auth/refresh')) {
+        // refresh也失败了，必须重新登录
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+        if (window.location.pathname !== '/login') {
+          showToast({ message: '登录已过期，请重新登录', type: 'fail' })
+          window.location.href = '/login'
+        }
+        return Promise.reject(error)
+      }
+
+      // 尝试刷新token
+      if (!isRefreshing) {
+        isRefreshing = true
+        const newToken = await tryRefreshToken()
+        isRefreshing = false
+
+        if (newToken) {
+          // token刷新成功，重试所有排队的请求
+          onTokenRefreshed(newToken)
+          // 重试当前请求
+          if (originalRequest) {
+            originalRequest.headers.Authorization = `Bearer ${newToken}`
+            return request(originalRequest)
+          }
+        } else {
+          // token刷新失败，必须重新登录
+          localStorage.removeItem('token')
+          localStorage.removeItem('user')
+          if (window.location.pathname !== '/login') {
+            showToast({ message: '登录已过期，请重新登录', type: 'fail' })
+            window.location.href = '/login'
+          }
+          return Promise.reject(error)
+        }
+      } else {
+        // 正在刷新中，排队等待
+        return new Promise((resolve) => {
+          addRefreshSubscriber((newToken: string) => {
+            if (originalRequest) {
+              originalRequest.headers.Authorization = `Bearer ${newToken}`
+              resolve(request(originalRequest))
+            }
+          })
+        })
       }
     } else if (error.response?.status === 403) {
       showToast({ message: '没有权限执行此操作', type: 'fail' })
