@@ -149,6 +149,41 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getIncomingInspectPlans)
 
+// ===== Modal 状态 =====
+const modalVisible = ref(false)
+const modalMode = ref<'create' | 'edit'>('create')
+const form = reactive({
+  plan_name: '',
+  inspector_id: '',
+  inspector_name: '',
+  inspect_department: '',
+  inspect_method: '',
+  sampling_method: '',
+  sampling_quantity: 0,
+  decimal_handling: '',
+  is_destructive: '',
+  applied_category: ''
+})
+
+const emptyForm = () => ({
+  plan_name: '',
+  inspector_id: '',
+  inspector_name: '',
+  inspect_department: '',
+  inspect_method: '',
+  sampling_method: '',
+  sampling_quantity: 0,
+  decimal_handling: '',
+  is_destructive: '',
+  applied_category: ''
+})
+
+const openCreateModal = () => {
+  modalMode.value = 'create'
+  Object.assign(form, emptyForm())
+  modalVisible.value = true
+}
+
 const columns = [
   { title: '行号', key: 'rowIndex', width: 50 },
   { title: '方案名称', dataIndex: 'plan_name', key: 'plan_name', width: 130 },

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
+import { createNonconformingFromInspection } from '../nonconformingProduct/nonconformingProduct.controller';
 import dayjs from 'dayjs';
 
 // ==================== 编号生成 ====================
@@ -193,8 +194,7 @@ export const completeInspection = async (req: Request, res: Response, next: Next
 export const defectHandling = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const b = req.body;
-    const handling = b.defect_handling; // 返修 / 报废 / 让步接收
+    const inspectionNumber = String(id);
 
     const [records]: any = await sequelize.query(`SELECT * FROM production_inspection WHERE inspection_number = :id`, { replacements: { id } });
     if (!records.length) { res.status(404).json({ success: false, message: '检验记录不存在' }); return; }
@@ -206,133 +206,28 @@ export const defectHandling = async (req: Request, res: Response, next: NextFunc
     const transaction = await sequelize.transaction();
 
     try {
-      if (handling === '返修') {
-        const reworkStep = b.rework_step_number;
-        if (!reworkStep) { await transaction.rollback(); res.status(400).json({ success: false, message: '返修处理必须指定返修目标工序号' }); return; }
+      // 仅创建NC待处理单，不再同步执行处理动作
+      // 处理方式由人工在"不合格品处理"页面选择
+      const ncNumber = await createNonconformingFromInspection({
+        source_type: '生产检验',
+        source_number: inspectionNumber,
+        item_number: record.item_number || '',
+        item_name: record.item_name || '',
+        specifications: record.specifications || '',
+        unqualified_quantity: unqualifiedQty,
+        production_order_number: record.production_order_number || '',
+        step_number: record.step_number || 0,
+        creation_man: (req as any).user?.username || '',
+        inspection_table: 'production_inspection'
+      }, transaction);
 
-        // 将不合格数量加回目标工序的计划量
-        await sequelize.query(`
-          UPDATE process_task SET planned_quantity = planned_quantity + :qty
-          WHERE production_order_number = :orderNo AND step_number = :step
-        `, {
-          replacements: { qty: unqualifiedQty, orderNo: record.production_order_number, step: reworkStep },
-          transaction
-        });
-
-        await sequelize.query(`
-          UPDATE production_inspection SET defect_handling = N'返修', rework_step_number = :reworkStep WHERE inspection_number = :id
-        `, { replacements: { id, reworkStep }, transaction });
-
-        // 返修：目标工序状态回退
-        await sequelize.query(`
-          UPDATE process_task SET task_status = N'未开始', inspect_status = N'无需检', completed_quantity = 0
-          WHERE production_order_number = :orderNo AND step_number = :step
-        `, { replacements: { orderNo: record.production_order_number, step: reworkStep }, transaction });
-
-        // 返修：生产单回退为生产中
-        await sequelize.query(
-          `UPDATE production_order SET plan_status = N'生产中' WHERE production_order_number = :orderNo AND plan_status = N'已完成'`,
-          { replacements: { orderNo: record.production_order_number }, transaction }
-        );
-        // 回写销售订单
-        const { syncProductionStatus } = await import('@/services/salesOrderSync.service');
-        await syncProductionStatus(record.production_order_number, '生产中', transaction);
-
-      } else if (handling === '报废') {
-        const scrapType = b.scrap_type || '批量';
-        const scrapQty = b.scrap_quantity != null ? Number(b.scrap_quantity) : unqualifiedQty;
-
-        // 创建报废入库单（主表 + 明细表）
-        const today = dayjs().format('YYYYMMDD');
-        const siPrefix = `SI-${today}-`;
-        const [siRows]: any = await sequelize.query(
-          `SELECT MAX(stock_in_number) as max_num FROM stock_in WHERE stock_in_number LIKE :prefix`,
-          { replacements: { prefix: siPrefix + '%' }, transaction }
-        );
-        let siSeq = 1;
-        if (siRows[0].max_num) {
-          const lastSeq = parseInt(siRows[0].max_num.slice(-3));
-          if (!isNaN(lastSeq)) siSeq = lastSeq + 1;
-        }
-        const stockInNumber = siPrefix + String(siSeq).padStart(3, '0');
-        const now = dayjs().format('YYYY/MM/DD HH:mm');
-        const username = (req as any).user?.username || 'system';
-
-        // 插入主表
-        await sequelize.query(`
-          INSERT INTO stock_in (stock_in_number, purchase_order_number, supplier_number, supplier_name,
-            warehouse_number, warehouse_name, stock_in_date, stock_in_type, approval_status,
-            [condition], operator, remark, creation_date, creation_man)
-          VALUES (:stock_in_number, N'', N'', N'', N'', N'', :stock_in_date, N'报废入库', N'草稿',
-            N'启用', :operator, :remark, :creation_date, :creation_man)
-        `, {
-          replacements: {
-            stock_in_number: stockInNumber,
-            stock_in_date: dayjs().format('YYYY/MM/DD'),
-            operator: username,
-            remark: `报废入库 - 来源检验单 ${record.inspection_number}`,
-            creation_date: now,
-            creation_man: username
-          }, transaction
-        });
-
-        // 插入明细表
-        await sequelize.query(`
-          INSERT INTO stock_in_detail (stock_in_number, line_number, purchase_order_number, purchase_detail_id,
-            item_number, item_name, specifications, basic_unit, order_quantity, received_quantity,
-            stock_in_quantity, qualified_quantity, unqualified_quantity, batch_number, remark)
-          VALUES (:stock_in_number, 10, N'', 0,
-            :item_number, :item_name, :specifications, N'', 0, 0,
-            :stock_in_quantity, 0, :scrapQty, N'', :remark)
-        `, {
-          replacements: {
-            stock_in_number: stockInNumber,
-            item_number: record.item_number || '',
-            item_name: record.item_name || '',
-            specifications: record.specifications || '',
-            stock_in_quantity: scrapQty,
-            scrapQty,
-            remark: `报废 - 检验单 ${record.inspection_number}`
-          }, transaction
-        });
-
-        await sequelize.query(`
-          UPDATE production_inspection SET defect_handling = N'报废', scrap_type = :scrapType, scrap_quantity = :scrapQty WHERE inspection_number = :id
-        `, { replacements: { id, scrapType, scrapQty }, transaction });
-
-        // 报废：当前工序标记为已处理
-        await sequelize.query(
-          `UPDATE process_task SET inspect_status = N'已处理' WHERE process_task_number = :taskNo`,
-          { replacements: { taskNo: record.process_task_number }, transaction }
-        );
-
-      } else if (handling === '让步接收') {
-        const concessionQty = b.concession_quantity != null ? Number(b.concession_quantity) : unqualifiedQty;
-
-        // 将让步数量加入合格数量
-        await sequelize.query(`
-          UPDATE production_inspection SET
-            defect_handling = N'让步接收',
-            concession_quantity = :concessionQty,
-            qualified_quantity = qualified_quantity + :concessionQty,
-            unqualified_quantity = CASE WHEN unqualified_quantity - :concessionQty < 0 THEN 0 ELSE unqualified_quantity - :concessionQty END
-          WHERE inspection_number = :id
-        `, { replacements: { id, concessionQty }, transaction });
-
-        // 让步接收：当前工序标记为已处理
-        await sequelize.query(
-          `UPDATE process_task SET inspect_status = N'已处理' WHERE process_task_number = :taskNo`,
-          { replacements: { taskNo: record.process_task_number }, transaction }
-        );
-
-      } else {
-        await transaction.rollback();
-        res.status(400).json({ success: false, message: '不合格品处理方式必须为：返修、报废或让步接收' });
-        return;
-      }
+      // 标记检验单缺陷处理为"待处理"
+      await sequelize.query(`
+        UPDATE production_inspection SET defect_handling = N'待处理' WHERE inspection_number = :id
+      `, { replacements: { id }, transaction });
 
       await transaction.commit();
-      res.json(success(null, `不合格品处理完成：${handling}`));
+      res.json(success({ nonconforming_number: ncNumber }, `不合格品待处理单已创建：${ncNumber}，请在不合格品处理页面选择处理方式`));
     } catch (e) {
       await transaction.rollback();
       throw e;

@@ -382,3 +382,56 @@ export const importSalesPriceList = async (req: Request, res: Response, next: Ne
     }
   } catch (err) { next(err); }
 };
+
+// ==================== 查询销售订单可用价格（根据客户+物料） ====================
+export const getSalesPriceForOrder = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { customer_number, item_number } = req.query;
+    if (!customer_number || !item_number) {
+      res.status(400).json({ success: false, message: '客户编号和物料编号不能为空' });
+      return;
+    }
+
+    const [rows]: any = await sequelize.query(`
+      SELECT TOP 1
+        h.price_type,
+        h.currency,
+        d.tax_inclusive_price,
+        d.tax_exclusive_price,
+        d.tax_rate,
+        h.price_list_number,
+        h.price_list_name,
+        h.effective_date,
+        h.expiration_date
+      FROM sales_price_list h
+      INNER JOIN sales_price_list_detail d ON h.price_list_number = d.price_list_number
+      WHERE h.approval_status = N'已审批'
+        AND (h.customer_number = :customer_number OR h.customer_number = '' OR h.customer_number IS NULL)
+        AND d.item_number = :item_number
+        AND (h.effective_date IS NULL OR CONVERT(DATE, h.effective_date) <= CONVERT(DATE, GETDATE()))
+        AND (h.expiration_date IS NULL OR CONVERT(DATE, h.expiration_date) >= CONVERT(DATE, GETDATE()))
+      ORDER BY h.effective_date DESC, h.creation_date DESC
+    `, {
+      replacements: { customer_number: String(customer_number), item_number: String(item_number) }
+    });
+
+    if (rows.length === 0) {
+      res.json(success(null, '未找到符合条件的销售价目表记录'));
+      return;
+    }
+
+    const row = rows[0];
+    const unit_price = row.price_type === '未税'
+      ? parseFloat(row.tax_exclusive_price) || 0
+      : parseFloat(row.tax_inclusive_price) || 0;
+
+    res.json(success({
+      price_type: row.price_type,
+      currency: row.currency,
+      unit_price,
+      tax_rate: parseFloat(row.tax_rate) || 0,
+      price_list_number: row.price_list_number,
+      price_list_name: row.price_list_name
+    }, '获取价格成功'));
+  } catch (err) { next(err); }
+};

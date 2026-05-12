@@ -4,6 +4,7 @@ import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
 import { generateBatchNumber, generateMaterialTxnNumber, syncMaterialInventorySummary } from '@/services/inventory.service';
 import { ORDER_STATUS, PURCHASE_STATUS } from '@/shared/constants/statuses';
+import { checkAndAutoComplete } from '@/services/documentAutoComplete.service';
 import { createInspectionForStockIn } from '../../../modules/purchasing/purchaseInspection/purchaseInspection.controller';
 
 // ==================== 编号生成 ====================
@@ -262,9 +263,35 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
 
     const transaction = await sequelize.transaction();
     try {
+      // 预查询待检仓信息（来料检验用）
+      const [inspWhRows]: any = await sequelize.query(
+        `SELECT TOP 1 warehouse_number, warehouse_name FROM warehouse WHERE warehouse_name = N'待检仓' OR warehouse_type = N'待检仓'`,
+        { transaction }
+      );
+      const inspWhNumber = inspWhRows.length > 0 ? inspWhRows[0].warehouse_number : header.warehouse_number;
+      const inspWhName = inspWhRows.length > 0 ? inspWhRows[0].warehouse_name : (header.warehouse_name + '(待检)');
+
+      // 预查询物料来料检验标志
+      const itemInspectionMap: Record<string, boolean> = {};
+      for (const d of details) {
+        if (!d.item_number || itemInspectionMap[d.item_number] !== undefined) continue;
+        const [itemRows]: any = await sequelize.query(
+          `SELECT incoming_inspection FROM item_master WHERE item_number = :item_number`,
+          { replacements: { item_number: d.item_number }, transaction }
+        );
+        itemInspectionMap[d.item_number] = itemRows.length > 0 && itemRows[0].incoming_inspection === 'Y';
+      }
+
       for (const d of details) {
         const qualifiedQty = parseFloat(d.qualified_quantity) || 0;
         if (qualifiedQty <= 0) continue;
+
+        // 根据物料来料检验标志分流仓库
+        const needsInspection = itemInspectionMap[d.item_number || ''] === true;
+        const whNumber = needsInspection ? inspWhNumber : header.warehouse_number;
+        const whName = needsInspection ? inspWhName : header.warehouse_name;
+        const sourceType = needsInspection ? '来料待检' : '采购入库';
+        const inspectStatus = needsInspection ? '待检验' : '免检';
 
         // 1. 生成批次号
         const batchNo = await generateBatchNumber('MB', transaction);
@@ -284,8 +311,8 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
             item_name: d.item_name,
             specifications: d.specifications || '',
             basic_unit: d.basic_unit || '',
-            warehouse_number: header.warehouse_number,
-            warehouse_name: header.warehouse_name,
+            warehouse_number: whNumber,
+            warehouse_name: whName,
             quantity: qualifiedQty,
             supplier_number: header.supplier_number || '',
             supplier_name: header.supplier_name || ''
@@ -295,38 +322,39 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
 
         // 3. 同步汇总库存
         await syncMaterialInventorySummary(
-          d.item_number, header.warehouse_number, transaction
+          d.item_number, whNumber, transaction
         );
 
         // 4. 写入库存流水
         // 获取当前汇总库存（入库后）
         const [invRows]: any = await sequelize.query(
           `SELECT quantity FROM material_inventory WHERE item_number = :itemNo AND warehouse_number = :whNo`,
-          { replacements: { itemNo: d.item_number, whNo: header.warehouse_number }, transaction }
+          { replacements: { itemNo: d.item_number, whNo: whNumber }, transaction }
         );
         const afterQty = invRows.length ? parseFloat(invRows[0].quantity) : qualifiedQty;
         const beforeQty = afterQty - qualifiedQty;
 
-        const txnNo = await generateMaterialTxnNumber();
+        const txnNo = await generateMaterialTxnNumber(transaction);
         await sequelize.query(`
           INSERT INTO material_inventory_transaction (transaction_number, transaction_type, source_type, source_number,
             item_number, item_name, item_type, specifications, basic_unit,
             warehouse_number, warehouse_name, quantity, before_quantity, after_quantity,
             batch_number, supplier_number, supplier_name, operator, operation_date, remark, creation_date)
-          VALUES (:txnNo, N'入库', N'采购入库', :sourceNo,
+          VALUES (:txnNo, N'入库', :sourceType, :sourceNo,
             :item_number, :item_name, N'原材料', :specifications, :basic_unit,
             :warehouse_number, :warehouse_name, :quantity, :beforeQty, :afterQty,
             :batchNo, :supplier_number, :supplier_name, :operator, GETDATE(), :remark, GETDATE())
         `, {
           replacements: {
             txnNo,
+            sourceType,
             sourceNo: id,
             item_number: d.item_number,
             item_name: d.item_name,
             specifications: d.specifications || '',
             basic_unit: d.basic_unit || '',
-            warehouse_number: header.warehouse_number,
-            warehouse_name: header.warehouse_name,
+            warehouse_number: whNumber,
+            warehouse_name: whName,
             quantity: qualifiedQty,
             beforeQty,
             afterQty,
@@ -334,15 +362,15 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
             supplier_number: header.supplier_number || '',
             supplier_name: header.supplier_name || '',
             operator,
-            remark: `入库单${id}采购入库`
+            remark: `入库单${id}${sourceType === '来料待检' ? '来料待检' : '采购入库'}`
           },
           transaction
         });
 
-        // 5. 更新入库单明细批次号
+        // 5. 更新入库单明细批次号与检验状态
         await sequelize.query(
-          `UPDATE stock_in_detail SET batch_number = :batchNo WHERE id = :detailId`,
-          { replacements: { batchNo, detailId: d.id }, transaction }
+          `UPDATE stock_in_detail SET batch_number = :batchNo, inspect_status = :inspectStatus WHERE id = :detailId`,
+          { replacements: { batchNo, inspectStatus, detailId: d.id }, transaction }
         );
 
         // 6. 回写采购订单明细 received_quantity
@@ -372,6 +400,8 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
           `UPDATE purchase_order SET order_status = :newStatus WHERE purchase_order_number = :pon`,
           { replacements: { newStatus, pon: header.purchase_order_number }, transaction }
         );
+        // 尝试配置驱动的自动完成（覆盖上面的硬编码状态，如配置启用则以配置为准）
+        await checkAndAutoComplete('purchase_order', header.purchase_order_number, transaction);
       }
 
       // 8. 更新入库单状态

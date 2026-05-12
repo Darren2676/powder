@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, createVNode } from 'vue'
-import { message, Modal } from 'ant-design-vue'
-import { ReloadOutlined, DownloadOutlined, CalculatorOutlined, SettingOutlined, SearchOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
-import { calculateMPS, getDemandSources, importFromDemandSources, importToPlan } from '@/api/planning/mps'
+import { ref, reactive, onMounted } from 'vue'
+import { message } from 'ant-design-vue'
+import { ReloadOutlined, DownloadOutlined, CalculatorOutlined, SettingOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { calculateMPS, getDemandSources, importFromDemandSources } from '@/api/planning/mps'
 import { getCustomers } from '@/api/master-data/customer'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -96,38 +96,9 @@ const handleCalculate = async () => {
   }
 }
 
-// ==================== MPS 结果导入生产计划 ====================
+// ==================== MPS 结果导入生产计划（功能已禁用） ====================
 const handleMpsImport = () => {
-  if (selectedRowKeys.value.length === 0) {
-    message.warning('请先选择一条物料'); return
-  }
-  const selected = dataSource.value.find(d => d.item_number === selectedRowKeys.value[0])
-  if (!selected || selected.net_demand <= 0) {
-    message.warning('请先选择一条净需求大于0的物料'); return
-  }
-
-  Modal.confirm({
-    title: '确认导入生产计划',
-    icon: createVNode(ExclamationCircleOutlined),
-    content: `将为选中的物料【${selected.item_number}】创建生产计划，并更新对应预测明细状态为【计划中】，是否继续？`,
-    okText: '确认',
-    cancelText: '取消',
-    onOk: async () => {
-      mpsImportLoading.value = true
-      try {
-        const res: any = await importToPlan({ items: [selected] })
-        if (res?.success) {
-          message.success(res.message || `成功导入 ${res.data?.imported || 0} 条生产计划`)
-          selectedRowKeys.value = []
-          handleCalculate()
-        }
-      } catch (err: any) {
-        message.error(err.response?.data?.message || '导入失败')
-      } finally {
-        mpsImportLoading.value = false
-      }
-    }
-  })
+  message.warning('导入生产计划功能已禁用，请使用「从销售订单导入」功能')
 }
 
 // ==================== 从销售订单/预测导入 ====================
@@ -154,6 +125,10 @@ const soImportColumns = [
   { title: '发货状态', dataIndex: 'shipping_status', key: 'shipping_status', width: 90 },
   { title: '生产状态', dataIndex: 'production_status', key: 'production_status', width: 90 },
 ]
+
+const handleRowSelectionChange = (keys: string[]) => {
+  selectedRowKeys.value = keys
+}
 
 const handleSoImportOpen = async () => {
   if (selectedRowKeys.value.length === 0) {
@@ -246,10 +221,10 @@ const getProductionStatusColor = (s: string) => {
 
 <template>
   <div style="padding: 16px">
-    <!-- 筛选条件 -->
-    <a-card size="small" style="margin-bottom: 16px">
-      <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center">
-        <span style="font-weight: 500">筛选条件:</span>
+    <!-- 工具栏 -->
+    <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; overflow-x: auto">
+      <span style="font-size: 18px; font-weight: 600; white-space: nowrap; flex-shrink: 0">MPS计算</span>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: nowrap">
         <a-range-picker style="width: 260px" @change="handleDateChange" allowClear />
         <a-select v-model:value="filterForm.customer_number" style="width: 240px" placeholder="客户 (可选)"
           show-search allowClear
@@ -263,7 +238,7 @@ const getProductionStatusColor = (s: string) => {
           <a-button @click="openColumnSetting"><SettingOutlined /></a-button>
         </a-tooltip>
       </div>
-    </a-card>
+    </div>
 
     <!-- 汇总信息 -->
     <div v-if="dataSource.length > 0" style="margin-bottom: 12px; display: flex; gap: 24px; align-items: center">
@@ -271,7 +246,7 @@ const getProductionStatusColor = (s: string) => {
       <a-statistic title="需生产种数" :value="summaryInfo.items_need_production"
         :value-style="{ color: summaryInfo.items_need_production > 0 ? '#f5222d' : '#52c41a' }" />
       <div style="flex: 1"></div>
-      <a-button type="primary" @click="handleMpsImport" :loading="mpsImportLoading" :disabled="selectedRowKeys.length === 0">
+      <a-button @click="handleMpsImport" style="background: #d9d9d9; border-color: #d9d9d9; color: #999">
         <DownloadOutlined />导入生产计划
       </a-button>
       <a-button type="primary" @click="handleSoImportOpen" :disabled="selectedRowKeys.length === 0">
@@ -283,7 +258,7 @@ const getProductionStatusColor = (s: string) => {
     <a-table
       :columns="columns" :data-source="dataSource" :loading="loading"
       :pagination="false" :row-key="(r: any) => r.item_number"
-      :row-selection="{ type: 'radio', selectedRowKeys: selectedRowKeys, onChange: (keys: string[]) => { selectedRowKeys = keys }, getCheckboxProps: (record: any) => ({ disabled: record.net_demand <= 0 }) }"
+      :row-selection="{ type: 'radio', selectedRowKeys: selectedRowKeys, onChange: handleRowSelectionChange, getCheckboxProps: (record: any) => ({ disabled: record.net_demand <= 0 }) }"
       :scroll="{ x: 1200, y: 600 }" size="small" bordered
     >
       <template #bodyCell="{ column, text }">

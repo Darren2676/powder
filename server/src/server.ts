@@ -9,7 +9,9 @@ const PORT = Number(process.env.PORT) || 3000;
 
 const startServer = async () => {
   try {
+    console.log('[DEBUG] 开始初始化数据库...');
     await initDatabase();
+    console.log('[DEBUG] 数据库初始化完成，继续启动服务器...');
 
     const adminExists = await User.findOne({
       where: {

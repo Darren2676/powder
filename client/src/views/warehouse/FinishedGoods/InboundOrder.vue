@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { message } from 'ant-design-vue'
-import { SearchOutlined, ReloadOutlined, EyeOutlined } from '@ant-design/icons-vue'
-import { getInboundOrderList, getInboundOrderDetail } from '@/api/warehouse/finishedGoods'
+import { ref, reactive, createVNode, onMounted } from 'vue'
+import { message, Modal } from 'ant-design-vue'
+import { SearchOutlined, ReloadOutlined, EyeOutlined, UndoOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
+import { getInboundOrderList, getInboundOrderDetail, withdrawInboundOrder } from '@/api/warehouse/finishedGoods'
+import { useModalDrag } from '@/composables/useModalDrag'
 import dayjs from 'dayjs'
 
 const loading = ref(false)
@@ -28,7 +29,8 @@ const columns = [
   { title: '操作人', dataIndex: 'operator', key: 'operator', width: 100 },
   { title: '入库日期', dataIndex: 'inbound_date', key: 'inbound_date', width: 160 },
   { title: '备注', dataIndex: 'remark', key: 'remark', width: 150, ellipsis: true },
-  { title: '操作', key: 'action', width: 80, fixed: 'right' as const }
+  { title: '状态', dataIndex: 'status', key: 'status', width: 90 },
+  { title: '操作', key: 'action', width: 120, fixed: 'right' as const }
 ]
 
 const formatDateTime = (date: any) => {
@@ -66,11 +68,37 @@ const handleSearch = () => {
   fetchData()
 }
 
+// ==================== 撤回 ====================
+const handleWithdraw = (record: any) => {
+  Modal.confirm({
+    title: '确认撤回生产入库',
+    icon: createVNode(ExclamationCircleOutlined),
+    content: `将撤回入库单「${record.inbound_order_number}」的所有入库操作，已入库的成品批次将被清除，倒冲扣减的物料将被回退。此操作不可撤销，确定继续？`,
+    okText: '确定撤回',
+    okType: 'danger',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        const res: any = await withdrawInboundOrder(record.inbound_order_number)
+        if (res?.success) {
+          message.success('撤回成功，库存已回退')
+          fetchData()
+        } else {
+          message.error(res?.message || '撤回失败')
+        }
+      } catch (err: any) {
+        message.error(err.response?.data?.message || '撤回失败')
+      }
+    }
+  })
+}
+
 // ==================== 详情弹窗 ====================
 const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detailHeader = ref<any>({})
 const detailItems = ref<any[]>([])
+const { modalStyle, onDragStart, resetDrag } = useModalDrag()
 
 const detailColumns = [
   { title: '行号', dataIndex: 'line_number', key: 'line_number', width: 50, align: 'center' as const },
@@ -89,6 +117,7 @@ const detailColumns = [
 const handleView = async (record: any) => {
   detailLoading.value = true
   detailVisible.value = true
+  resetDrag()
   try {
     const res: any = await getInboundOrderDetail(record.inbound_order_number)
     if (res?.success) {
@@ -109,8 +138,9 @@ onMounted(() => {
 
 <template>
   <div style="padding: 20px">
-    <div style="margin-bottom: 16px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px">
-      <div style="display: flex; gap: 8px; align-items: center">
+    <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; overflow-x: auto">
+      <span style="font-size: 18px; font-weight: 600; white-space: nowrap; flex-shrink: 0">生产入库单</span>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: nowrap">
         <a-input-search
           v-model:value="searchText"
           placeholder="搜索入库单号/仓库/操作人"
@@ -131,7 +161,7 @@ onMounted(() => {
       :loading="loading"
       :pagination="pagination"
       row-key="id"
-      :scroll="{ x: 1200 }"
+      :scroll="{ x: 1300 }"
       size="small"
       bordered
       @change="handleTableChange"
@@ -146,10 +176,24 @@ onMounted(() => {
         <template v-else-if="column.key === 'inbound_date'">
           {{ formatDateTime(record.inbound_date) }}
         </template>
+        <template v-else-if="column.key === 'status'">
+          <a-tag :color="(record.status || '').trim() === '已撤回' ? 'red' : 'green'">
+            {{ record.status || '正常' }}
+          </a-tag>
+        </template>
         <template v-else-if="column.key === 'action'">
-          <a-button type="link" size="small" @click="handleView(record)">
-            <EyeOutlined /> 查看
-          </a-button>
+          <a-space :size="4">
+            <a-button type="link" size="small" @click="handleView(record)">
+              <EyeOutlined /> 查看
+            </a-button>
+            <a-button
+              v-if="(record.status || '').trim() !== '已撤回'"
+              type="link" danger size="small"
+              @click="handleWithdraw(record)"
+            >
+              <UndoOutlined /> 撤回
+            </a-button>
+          </a-space>
         </template>
       </template>
     </a-table>
@@ -157,11 +201,14 @@ onMounted(() => {
     <!-- 详情弹窗 -->
     <a-modal
       v-model:open="detailVisible"
-      title="生产入库单详情"
       width="1100px"
       :bodyStyle="{ maxHeight: '75vh', overflowY: 'auto' }"
       :footer="null"
+      :style="modalStyle"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="onDragStart">生产入库单详情</div>
+      </template>
       <a-spin :spinning="detailLoading">
         <a-descriptions bordered size="small" :column="3" style="margin-bottom: 16px">
           <a-descriptions-item label="入库单号">
@@ -175,7 +222,15 @@ onMounted(() => {
           </a-descriptions-item>
           <a-descriptions-item label="操作人">{{ detailHeader.operator }}</a-descriptions-item>
           <a-descriptions-item label="入库日期">{{ formatDateTime(detailHeader.inbound_date) }}</a-descriptions-item>
-          <a-descriptions-item label="备注" :span="2">{{ detailHeader.remark || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="状态">
+            <a-tag :color="(detailHeader.status || '').trim() === '已撤回' ? 'red' : 'green'">
+              {{ detailHeader.status || '正常' }}
+            </a-tag>
+          </a-descriptions-item>
+          <a-descriptions-item v-if="(detailHeader.status || '').trim() === '已撤回'" label="撤回操作人">{{ detailHeader.withdraw_operator }}</a-descriptions-item>
+          <a-descriptions-item v-if="(detailHeader.status || '').trim() === '已撤回'" label="撤回时间">{{ formatDateTime(detailHeader.withdraw_date) }}</a-descriptions-item>
+          <a-descriptions-item v-if="(detailHeader.status || '').trim() !== '已撤回'" label="备注" :span="2">{{ detailHeader.remark || '-' }}</a-descriptions-item>
+          <a-descriptions-item v-else label="备注">{{ detailHeader.remark || '-' }}</a-descriptions-item>
         </a-descriptions>
 
         <div style="font-weight: 600; margin-bottom: 8px">入库明细</div>
@@ -201,3 +256,10 @@ onMounted(() => {
     </a-modal>
   </div>
 </template>
+
+<style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+</style>

@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { SearchOutlined, ReloadOutlined, SettingOutlined, DownloadOutlined } from '@ant-design/icons-vue'
-import { getPurchaseReqDetailsPage, exportPurchaseReqDetailsSelected } from '@/api/purchasing/purchaseReq'
+import { SearchOutlined, ReloadOutlined, SettingOutlined, DownloadOutlined, SwapOutlined } from '@ant-design/icons-vue'
+import { getPurchaseReqDetailsPage, exportPurchaseReqDetailsSelected, toOrder } from '@/api/purchasing/purchaseReq'
+import { getSuppliers } from '@/api/master-data/supplier'
+import { useAuthStore } from '@/store/auth'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import { generateExportFilename } from '@/utils/exportFilename'
 import dayjs from 'dayjs'
+
+const authStore = useAuthStore()
 
 const loading = ref(false)
 const dataSource = ref<any[]>([])
@@ -127,6 +131,87 @@ const handleExportSelected = async () => {
   }
 }
 
+// ==================== 转采购订单 ====================
+const toOrderVisible = ref(false)
+const toOrderLoading = ref(false)
+const toOrderSelectedRows = ref<any[]>([])
+const toOrderForm = reactive({ supplier_number: '', supplier_name: '', delivery_date: null as string | null, procurement_manager: '', linkman: '', contacts: '' })
+const supplierOptions = ref<any[]>([])
+
+// 按申请单号分组
+const toOrderGrouped = computed(() => {
+  const map = new Map<string, any[]>()
+  for (const row of toOrderSelectedRows.value) {
+    const key = row.purchase_req_number
+    if (!map.has(key)) map.set(key, [])
+    map.get(key)!.push(row)
+  }
+  return [...map.entries()].map(([reqNumber, rows]) => ({ reqNumber, rows }))
+})
+
+const fetchSuppliers = async () => {
+  if (supplierOptions.value.length) return
+  try {
+    const res: any = await getSuppliers({ limit: 9999 })
+    if (res?.success) supplierOptions.value = res.data?.items || res.data || []
+  } catch { /* ignore */ }
+}
+
+const onToOrderSupplierSelect = (val: string) => {
+  const sup = supplierOptions.value.find((s: any) => s.supplier_number === val)
+  if (sup) {
+    toOrderForm.supplier_number = sup.supplier_number
+    toOrderForm.supplier_name = sup.supplier_name
+    toOrderForm.procurement_manager = sup.procurement_manager || ''
+    toOrderForm.linkman = sup.linkman || ''
+    toOrderForm.contacts = sup.contacts || ''
+  }
+}
+
+const handleOpenToOrder = async () => {
+  if (!selectedRowKeys.value.length) { message.warning('请先勾选要转单的行'); return }
+  const selected = dataSource.value.filter((r: any) => selectedRowKeys.value.includes(r.id))
+  // 过滤：仅已审批且尚有未转单数量的行
+  const valid = selected.filter((r: any) => r.approval_status === '已审批' && (parseFloat(r.request_quantity) || 0) > (parseFloat(r.ordered_quantity) || 0))
+  if (!valid.length) { message.warning('选中行中没有可转单的明细（需已审批且有剩余数量）'); return }
+  toOrderSelectedRows.value = valid
+  toOrderForm.supplier_number = ''
+  toOrderForm.supplier_name = ''
+  toOrderForm.delivery_date = null
+  toOrderForm.procurement_manager = authStore.user?.real_name || authStore.user?.username || ''
+  toOrderForm.linkman = ''
+  toOrderForm.contacts = ''
+  toOrderVisible.value = true
+  await fetchSuppliers()
+}
+
+const handleToOrder = async () => {
+  if (!toOrderForm.supplier_number) { message.warning('请选择供应商'); return }
+  toOrderLoading.value = true
+  try {
+    // 按申请单号分组，每组生成一个采购订单
+    for (const group of toOrderGrouped.value) {
+      await toOrder(group.reqNumber, {
+        supplier_number: toOrderForm.supplier_number,
+        supplier_name: toOrderForm.supplier_name,
+        procurement_manager: toOrderForm.procurement_manager,
+        linkman: toOrderForm.linkman,
+        contacts: toOrderForm.contacts,
+        delivery_date: toOrderForm.delivery_date,
+        detail_ids: group.rows.map((r: any) => r.id)
+      })
+    }
+    message.success(`转采购订单成功，共处理 ${toOrderGrouped.value.length} 个申请单`)
+    toOrderVisible.value = false
+    selectedRowKeys.value = []
+    fetchData()
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || e?.message || '转采购订单失败')
+  } finally {
+    toOrderLoading.value = false
+  }
+}
+
 onMounted(async () => {
   await loadColumnPreference()
   fetchData()
@@ -135,35 +220,41 @@ onMounted(async () => {
 
 <template>
   <div style="padding: 20px">
-    <div style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
-      <a-input-search
-        v-model:value="searchText"
-        placeholder="搜索采购申请号/物料编号/物料名称/建议供应商"
-        style="width: 380px"
-        @search="handleSearch"
-        @pressEnter="handleSearch"
-        allow-clear
-      >
-        <template #prefix><SearchOutlined /></template>
-      </a-input-search>
-      <a-select
-        v-model:value="filterStatus"
-        mode="multiple"
-        placeholder="全部行状态"
-        style="min-width: 160px"
-        allow-clear
-        :max-tag-count="2"
-        @change="handleSearch"
-      >
-        <a-select-option value="未执行">未执行</a-select-option>
-        <a-select-option value="部分转单">部分转单</a-select-option>
-        <a-select-option value="已转单">已转单</a-select-option>
-      </a-select>
-      <a-button @click="fetchData"><ReloadOutlined /> 刷新</a-button>
-      <a-button :disabled="selectedRowKeys.length === 0" :loading="exportLoading" @click="handleExportSelected">
-        <DownloadOutlined /> 导出选中{{ selectedRowKeys.length ? ` (${selectedRowKeys.length})` : '' }}
-      </a-button>
-      <a-tooltip title="列设置"><a-button @click="openColumnSetting"><SettingOutlined /></a-button></a-tooltip>
+    <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; overflow-x: auto">
+      <h3 style="margin: 0; white-space: nowrap; flex-shrink: 0">采购申请明细</h3>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: nowrap">
+        <a-input-search
+          v-model:value="searchText"
+          placeholder="搜索采购申请号/物料编号/物料名称/建议供应商"
+          style="width: 380px; flex-shrink: 0"
+          @search="handleSearch"
+          @pressEnter="handleSearch"
+          allow-clear
+        >
+          <template #prefix><SearchOutlined /></template>
+        </a-input-search>
+        <a-select
+          v-model:value="filterStatus"
+          mode="multiple"
+          placeholder="全部行状态"
+          style="min-width: 160px; flex-shrink: 0"
+          allow-clear
+          :max-tag-count="2"
+          @change="handleSearch"
+        >
+          <a-select-option value="未执行">未执行</a-select-option>
+          <a-select-option value="部分转单">部分转单</a-select-option>
+          <a-select-option value="已转单">已转单</a-select-option>
+        </a-select>
+        <a-button @click="fetchData"><ReloadOutlined /> 刷新</a-button>
+        <a-button :disabled="selectedRowKeys.length === 0" :loading="exportLoading" @click="handleExportSelected">
+          <DownloadOutlined /> 导出选中{{ selectedRowKeys.length ? ` (${selectedRowKeys.length})` : '' }}
+        </a-button>
+        <a-button type="primary" :disabled="selectedRowKeys.length === 0" @click="handleOpenToOrder">
+          <SwapOutlined /> 转采购订单{{ selectedRowKeys.length ? ` (${selectedRowKeys.length})` : '' }}
+        </a-button>
+        <a-tooltip title="列设置"><a-button @click="openColumnSetting"><SettingOutlined /></a-button></a-tooltip>
+      </div>
     </div>
 
     <a-table
@@ -218,5 +309,45 @@ onMounted(async () => {
       @save="saveColumnSetting"
       @reset="resetColumnSetting"
     />
+
+    <!-- 转采购订单弹窗 -->
+    <a-modal v-model:open="toOrderVisible" title="转采购订单" width="900px" :confirm-loading="toOrderLoading" @ok="handleToOrder" ok-text="确认转单">
+      <a-form layout="vertical">
+        <a-row :gutter="16">
+          <a-col :span="8"><a-form-item label="供应商" required>
+            <a-select v-model:value="toOrderForm.supplier_number" show-search option-filter-prop="label" style="width:100%" @change="onToOrderSupplierSelect" placeholder="选择供应商">
+              <a-select-option v-for="s in supplierOptions" :key="s.supplier_number" :value="s.supplier_number" :label="s.supplier_number + ' ' + s.supplier_name">{{ s.supplier_name }}</a-select-option>
+            </a-select>
+          </a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="交货日期"><a-date-picker v-model:value="toOrderForm.delivery_date" style="width:100%" value-format="YYYY-MM-DD" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="采购负责人"><a-input v-model:value="toOrderForm.procurement_manager" /></a-form-item></a-col>
+        </a-row>
+      </a-form>
+      <h4>将转单的明细行 (按申请单号分组，每组生成一个采购订单)</h4>
+      <div v-for="group in toOrderGrouped" :key="group.reqNumber" style="margin-bottom: 12px">
+        <a-tag color="blue" style="margin-bottom: 4px">{{ group.reqNumber }} ({{ group.rows.length }} 行)</a-tag>
+        <a-table
+          :columns="[
+            { title: '物料编码', dataIndex: 'item_number', width: 130 },
+            { title: '物料名称', dataIndex: 'item_name', width: 150 },
+            { title: '规格', dataIndex: 'specifications', width: 100 },
+            { title: '单位', dataIndex: 'basic_unit', width: 60 },
+            { title: '申请数量', dataIndex: 'request_quantity', width: 90 },
+            { title: '已转单', dataIndex: 'ordered_quantity', width: 80 },
+            { title: '可转数量', key: 'remaining', width: 90 }
+          ]"
+          :data-source="group.rows"
+          :pagination="false"
+          row-key="id"
+          size="small"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'remaining'">
+              {{ ((parseFloat(record.request_quantity) || 0) - (parseFloat(record.ordered_quantity) || 0)).toFixed(2) }}
+            </template>
+          </template>
+        </a-table>
+      </div>
+    </a-modal>
   </div>
 </template>

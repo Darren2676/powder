@@ -555,77 +555,68 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="plan-page">
-    <div class="page-header">
-      <h3 class="page-title">计划管理</h3>
-    </div>
-    <a-card :bordered="false">
-      <div class="toolbar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;">
-        <a-space wrap>
-          <a-input-search
-            v-model:value="searchText"
-            placeholder="搜索计划编号/产品编号/名称/状态"
-            style="width: 280px"
-            allow-clear
-            @search="handleSearch"
-            @pressEnter="handleSearch"
-          />
-          <a-select v-model:value="approvalFilter" placeholder="审批状态" allow-clear style="width: 120px" @change="handleSearch">
-            <a-select-option value="">全部</a-select-option>
-            <a-select-option value="草稿">草稿</a-select-option>
-            <a-select-option value="待审批">待审批</a-select-option>
-            <a-select-option value="已审批">已审批</a-select-option>
-            <a-select-option value="已驳回">已驳回</a-select-option>
-          </a-select>
-          <a-select v-model:value="mrpStatusFilter" placeholder="MRP状态" allow-clear style="width: 120px" @change="handleSearch">
-            <a-select-option value="">全部</a-select-option>
-            <a-select-option value="已分解">已分解</a-select-option>
-            <a-select-option value="未分解">未分解</a-select-option>
-          </a-select>
-          <a-button @click="handleReset">
-            <template #icon><ReloadOutlined /></template>
-            重置
+  <div style="padding: 20px">
+    <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; overflow-x: auto">
+      <span style="font-size: 18px; font-weight: 600; white-space: nowrap; flex-shrink: 0">计划管理</span>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: nowrap">
+        <a-input-search
+          v-model:value="searchText"
+          placeholder="搜索计划编号/产品编号/名称/状态"
+          style="width: 280px"
+          allow-clear
+          @search="handleSearch"
+          @pressEnter="handleSearch"
+        />
+        <a-select v-model:value="approvalFilter" placeholder="审批状态" allow-clear style="width: 120px" @change="handleSearch">
+          <a-select-option value="">全部</a-select-option>
+          <a-select-option value="草稿">草稿</a-select-option>
+          <a-select-option value="待审批">待审批</a-select-option>
+          <a-select-option value="已审批">已审批</a-select-option>
+          <a-select-option value="已驳回">已驳回</a-select-option>
+        </a-select>
+        <a-select v-model:value="mrpStatusFilter" placeholder="MRP状态" allow-clear style="width: 120px" @change="handleSearch">
+          <a-select-option value="">全部</a-select-option>
+          <a-select-option value="已分解">已分解</a-select-option>
+          <a-select-option value="未分解">未分解</a-select-option>
+        </a-select>
+        <a-button @click="handleReset">
+          <template #icon><ReloadOutlined /></template>
+          重置
+        </a-button>
+        <a-button @click="handleExport">
+          <template #icon><DownloadOutlined /></template>
+          导出
+        </a-button>
+        <a-button @click="handleImportClick">
+          <template #icon><UploadOutlined /></template>
+          导入
+        </a-button>
+        <input ref="fileInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleFileChange" />
+        <a-button type="primary" @click="handleCreate">
+          <template #icon><PlusOutlined /></template>
+          新建
+        </a-button>
+        <a-tooltip title="列设置">
+          <a-button @click="openColumnSetting">
+            <template #icon><SettingOutlined /></template>
           </a-button>
-          <a-button @click="handleExport">
-            <template #icon><DownloadOutlined /></template>
-            导出
-          </a-button>
-          <a-button @click="handleImportClick">
-            <template #icon><UploadOutlined /></template>
-            导入
-          </a-button>
-          <a-button @click="handleSoImportOpen" type="dashed">
-            <template #icon><ShoppingCartOutlined /></template>
-            从销售订单导入
-          </a-button>
-          <a-button @click="handleFcImportOpen" type="dashed">
-            <template #icon><LineChartOutlined /></template>
-            从销售预测导入
-          </a-button>
-          <input
-            ref="fileInputRef"
-            type="file"
-            accept=".xlsx,.xls"
-            style="display: none"
-            @change="handleFileChange"
-          />
-          <a-button type="primary" @click="handleCreate">
-            <template #icon><PlusOutlined /></template>
-            新建
-          </a-button>
-          <a-tooltip title="列设置">
-            <a-button @click="openColumnSetting">
-              <template #icon><SettingOutlined /></template>
-            </a-button>
-          </a-tooltip>
-        </a-space>
+        </a-tooltip>
+        <a-button @click="handleSoImportOpen" type="dashed">
+          <template #icon><ShoppingCartOutlined /></template>
+          从销售订单导入
+        </a-button>
+        <a-button @click="handleFcImportOpen" type="dashed">
+          <template #icon><LineChartOutlined /></template>
+          从销售预测导入
+        </a-button>
       </div>
+    </div>
 
       <a-table
         :columns="columns"
         :data-source="dataSource"
         :loading="loading"
-        :pagination="pagination"
+        :pagination="false"
         :scroll="{ x: 'max-content' }"
         :row-selection="rowSelection"
         row-key="production_number"
@@ -673,16 +664,28 @@ onMounted(async () => {
         </template>
       </a-table>
 
-      <!-- 批量操作栏 -->
-      <div style="display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid #f0f0f0; margin-top: 4px;">
-        <span style="color: #666; margin-right: 4px;">已选 <b style="color: #1890ff;">{{ selectedRowKeys.length }}</b> 项</span>
-        <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('submit')">批量提交</a-button>
-        <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('approve')">批量审批</a-button>
-        <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('withdraw')">批量撤回</a-button>
-        <a-button size="small" danger :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('reverse')">批量反审</a-button>
-        <a-button size="small" type="link" :disabled="selectedRowKeys.length === 0" @click="selectedRowKeys = []">清除选择</a-button>
+      <!-- 批量操作 + 分页 合并行 -->
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-top: 1px solid #f0f0f0; margin-top: 4px; flex-wrap: wrap; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="color: #666;">已选 <b style="color: #1890ff;">{{ selectedRowKeys.length }}</b> 项</span>
+          <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('submit')">批量提交</a-button>
+          <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('approve')">批量审批</a-button>
+          <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('withdraw')">批量撤回</a-button>
+          <a-button size="small" danger :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('reverse')">批量反审</a-button>
+          <a-button size="small" type="link" :disabled="selectedRowKeys.length === 0" @click="selectedRowKeys = []">清除选择</a-button>
+        </div>
+        <a-pagination
+          v-model:current="pagination.current"
+          v-model:page-size="pagination.pageSize"
+          :total="pagination.total"
+          :show-size-changer="pagination.showSizeChanger"
+          :show-quick-jumper="pagination.showQuickJumper"
+          :page-size-options="pagination.pageSizeOptions"
+          :show-total="pagination.showTotal"
+          size="small"
+          @change="(page: number, pageSize: number) => { pagination.current = page; pagination.pageSize = pageSize; fetchData() }"
+        />
       </div>
-    </a-card>
 
     <!-- 编辑弹窗 -->
     <a-modal
@@ -927,16 +930,4 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.plan-page {
-  padding: 0;
-}
-.page-header {
-  margin-bottom: 8px;
-}
-.page-title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: rgba(0, 0, 0, 0.85);
-}
 </style>

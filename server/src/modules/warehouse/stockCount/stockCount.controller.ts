@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
+import { exportToExcel } from '../../../utils/excel.util';
 import { syncFinishedGoodsSummary } from '@/services/inventory.service';
 import { generateTransactionNumber } from '@/services/inventory.service';
 
@@ -193,42 +194,92 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
         ORDER BY item_number, quality_status, inbound_date ASC, id ASC
       `, { replacements, transaction });
 
-      if (batches.length === 0) {
+      // ========== 新增：加载箱装库存快照 ==========
+      let boxWhereClause = `WHERE warehouse_number = :warehouse_number AND status = N'在库'`;
+      if (b.count_type === '抽盘' && b.item_numbers && b.item_numbers.length > 0) {
+        const items = Array.isArray(b.item_numbers) ? b.item_numbers : [b.item_numbers];
+        boxWhereClause += ` AND item_number IN (${items.map((_: any, i: number) => `:bitem_${i}`).join(',')})`;
+        items.forEach((item: string, i: number) => { replacements[`bitem_${i}`] = item; });
+      }
+      const [boxInventory]: any = await sequelize.query(`
+        SELECT id, box_number, item_number, item_name, specifications, basic_unit,
+          warehouse_number, warehouse_name, total_quantity, batch_numbers,
+          inbound_date, status
+        FROM packing_box_inventory ${boxWhereClause}
+        ORDER BY item_number, inbound_date ASC, id ASC
+      `, { replacements, transaction });
+
+      const allDetails = [
+        ...batches.map((batch: any) => ({ ...batch, inventory_type: '散装' })),
+        ...boxInventory.map((bx: any) => ({ ...bx, inventory_type: '箱装' }))
+      ];
+
+      if (allDetails.length === 0) {
         try { await transaction.rollback(); } catch (_) {}
-        return res.status(400).json({ success: false, message: '所选仓库内无可盘点的批次库存' });
+        return res.status(400).json({ success: false, message: '所选仓库内无可盘点的库存' });
       }
 
       // 写入明细
-      for (let i = 0; i < batches.length; i++) {
-        const batch = batches[i];
-        await sequelize.query(`
-          INSERT INTO stock_count_detail (count_number, line_number, item_number, item_name, specifications,
-            basic_unit, product_drawing_number, batch_number, batch_inventory_id, system_quantity,
-            actual_quantity, difference_quantity, count_status, production_order_number, inbound_date, quality_status, remark)
-          VALUES (:count_number, :line_number, :item_number, :item_name, :specifications,
-            :basic_unit, :product_drawing_number, :batch_number, :batch_inventory_id, :system_quantity,
-            NULL, 0, N'未盘', :production_order_number, :inbound_date, :quality_status, '')
-        `, {
-          replacements: {
-            count_number,
-            line_number: (i + 1) * 10,
-            item_number: batch.item_number,
-            item_name: batch.item_name || '',
-            specifications: batch.specifications || '',
-            basic_unit: batch.basic_unit || '',
-            product_drawing_number: batch.product_drawing_number || '',
-            batch_number: batch.batch_number,
-            batch_inventory_id: batch.id,
-            system_quantity: batch.quantity,
-            production_order_number: batch.production_order_number || '',
-            inbound_date: formatDateForSQL(batch.inbound_date),
-            quality_status: batch.quality_status || '合格品'
-          }, transaction
-        });
+      for (let i = 0; i < allDetails.length; i++) {
+        const detail = allDetails[i];
+        if (detail.inventory_type === '箱装') {
+          // 箱装库存明细
+          await sequelize.query(`
+            INSERT INTO stock_count_detail (count_number, line_number, item_number, item_name, specifications,
+              basic_unit, product_drawing_number, batch_number, batch_inventory_id, system_quantity,
+              actual_quantity, difference_quantity, count_status, production_order_number, inbound_date, quality_status, remark)
+            VALUES (:count_number, :line_number, :item_number, :item_name, :specifications,
+              :basic_unit, :product_drawing_number, :batch_number, :batch_inventory_id, :system_quantity,
+              NULL, 0, N'未盘', :production_order_number, :inbound_date, :quality_status, :remark)
+          `, {
+            replacements: {
+              count_number,
+              line_number: (i + 1) * 10,
+              item_number: detail.item_number,
+              item_name: detail.item_name || '',
+              specifications: detail.specifications || '',
+              basic_unit: detail.basic_unit || '',
+              product_drawing_number: '',
+              batch_number: detail.box_number,  // 箱装用箱号代替批次号字段
+              batch_inventory_id: detail.id,
+              system_quantity: detail.total_quantity,
+              production_order_number: '',
+              inbound_date: formatDateForSQL(detail.inbound_date),
+              quality_status: '合格品',
+              remark: `箱装库存|${detail.batch_numbers || ''}|箱号:${detail.box_number}`
+            }, transaction
+          });
+        } else {
+          // 散装批次库存明细（原有逻辑）
+          await sequelize.query(`
+            INSERT INTO stock_count_detail (count_number, line_number, item_number, item_name, specifications,
+              basic_unit, product_drawing_number, batch_number, batch_inventory_id, system_quantity,
+              actual_quantity, difference_quantity, count_status, production_order_number, inbound_date, quality_status, remark)
+            VALUES (:count_number, :line_number, :item_number, :item_name, :specifications,
+              :basic_unit, :product_drawing_number, :batch_number, :batch_inventory_id, :system_quantity,
+              NULL, 0, N'未盘', :production_order_number, :inbound_date, :quality_status, '')
+          `, {
+            replacements: {
+              count_number,
+              line_number: (i + 1) * 10,
+              item_number: detail.item_number,
+              item_name: detail.item_name || '',
+              specifications: detail.specifications || '',
+              basic_unit: detail.basic_unit || '',
+              product_drawing_number: detail.product_drawing_number || '',
+              batch_number: detail.batch_number,
+              batch_inventory_id: detail.id,
+              system_quantity: detail.quantity,
+              production_order_number: detail.production_order_number || '',
+              inbound_date: formatDateForSQL(detail.inbound_date),
+              quality_status: detail.quality_status || '合格品'
+            }, transaction
+          });
+        }
       }
 
       // 统计
-      const itemSet = new Set(batches.map((batchItem: any) => batchItem.item_number));
+      const itemSet = new Set(allDetails.map((d: any) => d.item_number));
 
       // 写入主表
       await sequelize.query(`
@@ -242,7 +293,7 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
           warehouse_name: b.warehouse_name || '',
           count_type: b.count_type,
           total_items: itemSet.size,
-          total_batches: batches.length,
+          total_batches: allDetails.length,
           count_man: operator,
           remark: b.remark || ''
         }, transaction
@@ -457,11 +508,107 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
 
       for (const d of b.details) {
         const diff = Number(d.difference_quantity);
+        if (diff === 0) continue;
+
         const batchId = d.batch_inventory_id;
         const batchNumber = d.batch_number;
         const qualityStatus = d.quality_status || '合格品';
+        const isBoxInventory = d.remark && d.remark.startsWith('箱装库存');
 
-        // 获取当前批次实际数量
+        // ========== 箱装库存盘点处理 ==========
+        if (isBoxInventory) {
+          // 箱装库存的盘点差异处理：调整 packing_box_inventory 中的数量
+          const [boxInvRows]: any = await sequelize.query(
+            `SELECT id, total_quantity, status FROM packing_box_inventory WHERE id = :id`,
+            { replacements: { id: batchId }, transaction }
+          );
+          if (!boxInvRows.length) {
+            throw new Error(`箱装库存记录不存在 (id=${batchId})`);
+          }
+
+          // 获取汇总库存(before)
+          const [summaryRows]: any = await sequelize.query(
+            `SELECT quantity FROM finished_goods_inventory WHERE item_number = :item_number AND warehouse_number = :wn AND quality_status = N'合格品'`,
+            { replacements: { item_number: d.item_number, wn: header.warehouse_number }, transaction }
+          );
+          const beforeQty = summaryRows.length > 0 ? Number(summaryRows[0].quantity) : 0;
+
+          if (diff > 0) {
+            // 箱装盘盈：增加箱内数量
+            const newBoxQty = Number(boxInvRows[0].total_quantity) + diff;
+            await sequelize.query(
+              `UPDATE packing_box_inventory SET total_quantity = :qty, last_updated = GETDATE() WHERE id = :id`,
+              { replacements: { qty: newBoxQty, id: batchId }, transaction }
+            );
+            adjustedItems.add(`${d.item_number}|${header.warehouse_number}|合格品`);
+
+            const txNum = await generateTransactionNumber(transaction);
+            transactionNumbers.push(txNum);
+            const afterQty = beforeQty + diff;
+            await sequelize.query(`
+              INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number,
+                item_number, item_name, specifications, basic_unit, product_drawing_number,
+                warehouse_number, warehouse_name, quantity, before_quantity, after_quantity,
+                batch_number, operator, operation_date, remark, quality_status, creation_date)
+              VALUES (:transaction_number, N'入库', N'月末盘盈(箱)', :source_number,
+                :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number,
+                :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity,
+                :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE())
+            `, {
+              replacements: {
+                transaction_number: txNum, source_number: count_number,
+                item_number: d.item_number, item_name: d.item_name || '',
+                specifications: d.specifications || '', basic_unit: d.basic_unit || '',
+                product_drawing_number: '',
+                warehouse_number: header.warehouse_number, warehouse_name: header.warehouse_name,
+                quantity: diff, before_quantity: beforeQty, after_quantity: afterQty,
+                batch_number: batchNumber, operator,
+                remark: `箱装盘盈 ${batchNumber}`, quality_status: '合格品'
+              }, transaction
+            });
+          } else {
+            // 箱装盘亏：减少箱内数量
+            const absDiff = Math.abs(diff);
+            const currentBoxQty = Number(boxInvRows[0].total_quantity);
+            if (currentBoxQty < absDiff) {
+              throw new Error(`箱 ${batchNumber} 库存不足，当前: ${currentBoxQty}，盘亏: ${absDiff}`);
+            }
+            const newBoxQty = currentBoxQty - absDiff;
+            await sequelize.query(
+              `UPDATE packing_box_inventory SET total_quantity = :qty, last_updated = GETDATE() WHERE id = :id`,
+              { replacements: { qty: newBoxQty, id: batchId }, transaction }
+            );
+            adjustedItems.add(`${d.item_number}|${header.warehouse_number}|合格品`);
+
+            const txNum = await generateTransactionNumber(transaction);
+            transactionNumbers.push(txNum);
+            const afterQty = beforeQty - absDiff;
+            await sequelize.query(`
+              INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number,
+                item_number, item_name, specifications, basic_unit, product_drawing_number,
+                warehouse_number, warehouse_name, quantity, before_quantity, after_quantity,
+                batch_number, operator, operation_date, remark, quality_status, creation_date)
+              VALUES (:transaction_number, N'出库', N'月末盘亏(箱)', :source_number,
+                :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number,
+                :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity,
+                :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE())
+            `, {
+              replacements: {
+                transaction_number: txNum, source_number: count_number,
+                item_number: d.item_number, item_name: d.item_name || '',
+                specifications: d.specifications || '', basic_unit: d.basic_unit || '',
+                product_drawing_number: '',
+                warehouse_number: header.warehouse_number, warehouse_name: header.warehouse_name,
+                quantity: absDiff, before_quantity: beforeQty, after_quantity: afterQty,
+                batch_number: batchNumber, operator,
+                remark: `箱装盘亏 ${batchNumber}`, quality_status: '合格品'
+              }, transaction
+            });
+          }
+          continue;  // 跳过散装逻辑
+        }
+
+        // ========== 散装批次库存盘点处理（原有逻辑） ==========
         const [batchRows]: any = await sequelize.query(
           `SELECT id, quantity FROM finished_batch_inventory WHERE id = :id`,
           { replacements: { id: batchId }, transaction }
@@ -752,6 +899,53 @@ export const reportTrend = async (req: Request, res: Response, next: NextFunctio
     `, { replacements });
 
     res.json(success(items.reverse()));
+  } catch (err) { next(err); }
+};
+
+// ==================== 导出选中行 ====================
+export const exportSelected = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || !ids.length) {
+      res.status(400).json({ success: false, message: '请选择要导出的记录' });
+      return;
+    }
+    if (ids.length > 1000) {
+      res.status(400).json({ success: false, message: '单次导出不能超过1000条' });
+      return;
+    }
+
+    const replacements: any = {};
+    ids.forEach((id: any, i: number) => { replacements[`id${i}`] = id; });
+    const placeholders = ids.map((_: any, i: number) => `:id${i}`).join(', ');
+
+    const [items]: any = await sequelize.query(
+      `SELECT count_number, count_period, warehouse_name, count_type, status,
+        total_batches, matched_batches, surplus_batches, shortage_batches,
+        total_surplus_qty, total_shortage_qty,
+        count_man, reviewer, confirmed_by,
+        CONVERT(VARCHAR(19), created_time, 120) as created_time,
+        CONVERT(VARCHAR(19), completed_time, 120) as completed_time
+       FROM stock_count
+       WHERE id IN (${placeholders})
+       ORDER BY creation_date DESC, id DESC`,
+      { replacements }
+    );
+
+    const fields = [
+      'count_number', 'count_period', 'warehouse_name', 'count_type', 'status',
+      'total_batches', 'matched_batches', 'surplus_batches', 'shortage_batches',
+      'total_surplus_qty', 'total_shortage_qty',
+      'count_man', 'reviewer', 'confirmed_by', 'created_time', 'completed_time'
+    ];
+    const headers = [
+      '盘点单号', '盘点期间', '仓库', '类型', '状态',
+      '批次数', '相符', '盘盈', '盘亏',
+      '盘盈数量', '盘亏数量',
+      '盘点人', '复核人', '确认人', '新建时间', '完成时间'
+    ];
+
+    exportToExcel(items, fields, headers, 'stock_count_selected', res);
   } catch (err) { next(err); }
 };
 

@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;600;700&display=swap" rel="stylesheet">
+<title>批量关闭订单操作手册</title>
+<script src="node_modules/mermaid/dist/mermaid.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif; background: #fff; color: #333; line-height: 1.8; padding: 40px 60px; }
+  .cover { text-align: center; padding: 80px 0 60px 0; page-break-after: always; }
+  .cover h1 { font-size: 32px; color: #1a1a2e; margin-bottom: 12px; }
+  .cover .subtitle { font-size: 16px; color: #888; margin-bottom: 8px; }
+  .cover .meta { font-size: 13px; color: #aaa; }
+
+  h2 { font-size: 22px; color: #1a1a2e; margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 17px; color: #333; margin: 24px 0 10px; }
+  h4 { font-size: 14px; color: #555; margin: 16px 0 6px; }
+
+  p { margin: 8px 0; font-size: 14px; }
+  ul, ol { margin: 8px 0 8px 24px; font-size: 14px; }
+  li { margin: 4px 0; }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 10px 14px; text-align: left; vertical-align: top; }
+  th { background: #f7f8fa; font-weight: 600; color: #333; }
+  tr:nth-child(even) td { background: #fafbfc; }
+
+  .step-box { background: #f7f9fc; border: 1px solid #dde4ef; border-radius: 8px; padding: 16px 20px; margin: 12px 0; }
+  .step-box .step-num { display: inline-block; width: 26px; height: 26px; background: #1989fa; color: #fff; border-radius: 13px; text-align: center; line-height: 26px; font-size: 13px; font-weight: 700; margin-right: 8px; }
+  .step-box .step-title { font-weight: 600; font-size: 14px; }
+
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; margin: 0 2px; }
+  .tag-menu { background: #e6f7ff; color: #1890ff; }
+  .tag-btn { background: #fff1f0; color: #ff4d4f; }
+  .tag-page { background: #f6ffed; color: #52c41a; }
+
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; border-radius: 0 6px 6px 0; }
+  .important { background: #fff1f0; border-left: 4px solid #ff4d4f; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #a8071a; border-radius: 0 6px 6px 0; }
+  .info { background: #e6f7ff; border-left: 4px solid #1890ff; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #096dd9; border-radius: 0 6px 6px 0; }
+
+  .mermaid { margin: 16px 0; }
+
+  .reason-group { margin: 12px 0; }
+  .reason-group h4 { margin-bottom: 6px; }
+
+  .faq-item { margin: 12px 0; padding: 12px 16px; background: #fafbfc; border-radius: 6px; border: 1px solid #e8e8e8; }
+  .faq-item .faq-q { font-weight: 600; color: #1a1a2e; margin-bottom: 6px; }
+  .faq-item .faq-a { color: #555; }
+
+  .page-break { page-break-before: always; }
+
+  @media print {
+    body { padding: 20px 40px; }
+    .page-break { page-break-before: always; }
+    .no-print-break { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 封面 -->
+<div class="cover">
+  <h1>批量关闭订单操作手册</h1>
+  <div class="subtitle">销售订单 / 生产订单 / 采购订单 — 手动关闭与审批流程</div>
+  <div class="meta">Seals MES System &nbsp;|&nbsp; 版本 1.0 &nbsp;|&nbsp; 2026年5月</div>
+</div>
+
+<!-- 一、业务概述 -->
+<h2>一、业务概述</h2>
+<p>销售订单、生产订单、采购订单在正常业务流程中，满足条件时可由系统<strong>自动完成关闭</strong>（通过单据自动完成配置）。但部分订单因异常情况无法满足自动完成条件（如发货中断、生产未完成、收货逾期等），需由操作人员<strong>手动发起关闭申请</strong>，经主管审批后执行关闭。</p>
+<p>批量关闭功能支持：</p>
+<ul>
+  <li>在各订单列表页<strong>批量选择</strong>待关闭单据</li>
+  <li>自动<strong>检测异常</strong>并分类提示（发货异常、生产异常、质量异常等）</li>
+  <li>选择关闭原因并填写备注后<strong>提交审批</strong></li>
+  <li>主管在"关闭审批"页面<strong>审批通过或拒绝</strong></li>
+  <li>审批通过后<strong>自动执行关闭</strong>并<strong>级联关闭</strong>下游关联单据</li>
+</ul>
+
+<!-- 总体流程图 -->
+<h3>总体业务流程</h3>
+<div class="mermaid">
+flowchart TD
+    A[操作员：选择订单] --> B[点击批量关闭]
+    B --> C[系统自动异常检测]
+    C --> D{存在可关闭订单?}
+    D -->|否| E[提示无可关闭单据]
+    D -->|是| F[选择关闭原因 + 填写备注]
+    F --> G[提交关闭申请]
+    G --> H[状态：待审批]
+    H --> I[主管：关闭审批页面]
+    I --> J{审批决策}
+    J -->|通过| K[执行关闭 + 级联]
+    K --> L[状态：已执行]
+    J -->|拒绝| M[状态：已拒绝]
+    H -->|申请人撤回| N[状态：已撤回]
+
+    style A fill:#e6f7ff,stroke:#1890ff
+    style K fill:#fff1f0,stroke:#ff4d4f
+    style L fill:#f6ffed,stroke:#52c41a
+    style M fill:#fafafa,stroke:#999
+    style N fill:#fafafa,stroke:#999
+</div>
+
+<!-- 二、适用范围 -->
+<h2>二、适用范围</h2>
+<table>
+  <thead>
+    <tr><th>单据类型</th><th>入口页面</th><th>关闭后状态</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>销售订单</td><td><span class="tag tag-menu">销售管理</span> → 销售订单列表</td><td>订单状态 → <strong>已取消</strong></td></tr>
+    <tr><td>生产订单</td><td><span class="tag tag-menu">生产管理</span> → 生产订单列表</td><td>完成状态 → <strong>已关闭</strong>，计划状态 → <strong>已关闭</strong></td></tr>
+    <tr><td>采购订单</td><td><span class="tag tag-menu">采购管理</span> → 采购订单列表</td><td>订单状态 → <strong>已关闭</strong></td></tr>
+  </tbody>
+</table>
+
+<!-- 三、前置条件 -->
+<h2>三、前置条件</h2>
+<table>
+  <thead>
+    <tr><th>条件</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>订单审批状态</td><td><strong>已审批</strong>（未审批的订单不可关闭）</td></tr>
+    <tr><td>订单当前状态</td><td>非"已完成"、非"已取消/已关闭"</td></tr>
+    <tr><td>操作权限</td><td>需拥有对应模块的批量关闭权限</td></tr>
+    <tr><td>审批权限</td><td>主管需拥有<span class="tag tag-page">关闭审批</span>页面权限</td></tr>
+  </tbody>
+</table>
+
+<!-- 四、关闭原因分类 -->
+<h2>四、关闭原因分类</h2>
+
+<div class="reason-group">
+<h4>销售订单关闭原因</h4>
+<table>
+  <thead><tr><th>编码</th><th>原因</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>SO_SHIP</td><td>发货异常</td><td>部分/无法发货</td></tr>
+    <tr><td>SO_PROD</td><td>生产异常</td><td>生产未完成/中断</td></tr>
+    <tr><td>SO_RETURN</td><td>退货异常</td><td>退货处理中</td></tr>
+    <tr><td>SO_OTHER</td><td>其他原因</td><td>客户取消/商务决策</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="reason-group">
+<h4>生产订单关闭原因</h4>
+<table>
+  <thead><tr><th>编码</th><th>原因</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>PO_EXEC</td><td>执行异常</td><td>生产中断/工序卡住</td></tr>
+    <tr><td>PO_INBOUND</td><td>入库异常</td><td>未入库/部分入库</td></tr>
+    <tr><td>PO_QUALITY</td><td>质量异常</td><td>检验不合格/返修</td></tr>
+    <tr><td>PO_OTHER</td><td>其他原因</td><td>计划取消/工艺变更</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="reason-group">
+<h4>采购订单关闭原因</h4>
+<table>
+  <thead><tr><th>编码</th><th>原因</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>PUR_RECV</td><td>收货异常</td><td>未到货/部分到货/逾期</td></tr>
+    <tr><td>PUR_QUALITY</td><td>质量异常</td><td>检验不合格/待检</td></tr>
+    <tr><td>PUR_OTHER</td><td>其他原因</td><td>供应商放弃/商务取消</td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- 五、操作步骤 -->
+<div class="page-break"></div>
+<h2>五、操作步骤</h2>
+
+<h3>5.1 操作员：发起批量关闭</h3>
+
+<div class="step-box">
+  <span class="step-num">1</span><span class="step-title">进入订单列表页</span>
+  <p>导航至对应的订单列表页（销售订单 / 生产订单 / 采购订单）。</p>
+</div>
+
+<div class="step-box">
+  <span class="step-num">2</span><span class="step-title">选择待关闭订单</span>
+  <p>在列表中勾选需要关闭的订单（支持跨页选择），点击工具栏中的 <span class="tag tag-btn">批量关闭</span> 按钮。</p>
+</div>
+
+<div class="step-box">
+  <span class="step-num">3</span><span class="step-title">查看异常检测结果</span>
+  <p>弹窗打开后，系统自动检测所选订单的异常情况，展示结果表：</p>
+  <table>
+    <thead><tr><th>列</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>单据编号</td><td>订单号</td></tr>
+      <tr><td>状态</td><td>"可关闭"（绿色）或"不可关闭"（红色）</td></tr>
+      <tr><td>异常分类</td><td>检测到的异常类型标签，如"发货异常: 3行未完成发货"</td></tr>
+      <tr><td>级联影响</td><td>关闭后将影响的下游单据及数量</td></tr>
+    </tbody>
+  </table>
+  <div class="note">不可关闭的订单会显示原因（如"订单已完成""订单未审批"等），不会进入后续关闭流程。</div>
+</div>
+
+<div class="step-box">
+  <span class="step-num">4</span><span class="step-title">选择关闭原因并提交</span>
+  <ol>
+    <li>确认可关闭的订单后，点击 <strong>"下一步"</strong></li>
+    <li>在关闭原因下拉框中选择合适的关闭原因（<span style="color:#ff4d4f;">必填</span>）</li>
+    <li>在备注框中填写关闭说明（选填）</li>
+    <li>确认影响范围提示信息</li>
+    <li>点击 <strong>"提交关闭申请"</strong></li>
+  </ol>
+</div>
+
+<div class="step-box">
+  <span class="step-num">5</span><span class="step-title">查看提交结果</span>
+  <p>系统显示提交结果：成功条数及订单号、失败条数及失败原因（如有）。</p>
+  <div class="info">提交成功的订单进入"待审批"状态，需等待主管审批。</div>
+</div>
+
+<h3>5.2 主管：审批关闭申请</h3>
+
+<div class="step-box">
+  <span class="step-num">1</span><span class="step-title">进入关闭审批页面</span>
+  <p>导航至 <span class="tag tag-menu">系统管理</span> → <span class="tag tag-page">关闭审批</span>，打开待审批列表。</p>
+</div>
+
+<div class="step-box">
+  <span class="step-num">2</span><span class="step-title">查看申请详情</span>
+  <ul>
+    <li>页面以折叠面板展示各批次申请</li>
+    <li>每个面板显示：批次号、单据类型、申请人、申请时间</li>
+    <li>展开面板可查看涉及的单据编号和异常分类</li>
+  </ul>
+</div>
+
+<div class="step-box">
+  <span class="step-num">3</span><span class="step-title">审批操作</span>
+  <ul>
+    <li><strong>审批通过</strong>：点击"审批通过并执行关闭"按钮，确认后立即执行关闭及级联操作</li>
+    <li><strong>拒绝</strong>：点击"拒绝"按钮，该批次所有申请被拒绝</li>
+  </ul>
+  <div class="important">审批通过后操作不可撤销，请务必确认下游级联影响后再审批。</div>
+</div>
+
+<!-- 六、关闭后数据变化 -->
+<div class="page-break"></div>
+<h2>六、关闭后数据变化</h2>
+
+<h3>6.1 销售订单关闭</h3>
+<table>
+  <thead><tr><th>对象</th><th>字段变化</th></tr></thead>
+  <tbody>
+    <tr><td>主表</td><td><code>order_status</code> → 已取消</td></tr>
+    <tr><td>主表</td><td><code>close_reason</code> ← 关闭原因编码，<code>close_remark</code> ← 关闭备注</td></tr>
+    <tr><td>主表</td><td><code>force_closed_by</code> ← 操作人，<code>force_closed_date</code> ← 关闭时间</td></tr>
+    <tr><td>明细行</td><td><code>status</code> → 已作废（非已完成/已作废的行）</td></tr>
+  </tbody>
+</table>
+
+<h3>6.2 生产订单关闭</h3>
+<table>
+  <thead><tr><th>对象</th><th>字段变化</th></tr></thead>
+  <tbody>
+    <tr><td>主表</td><td><code>completion_status</code> → 已关闭，<code>plan_status</code> → 已关闭</td></tr>
+    <tr><td>主表</td><td><code>close_reason</code> / <code>close_remark</code> / <code>force_closed_by</code> / <code>force_closed_date</code></td></tr>
+    <tr><td>工序任务</td><td><code>task_status</code> → 已关闭（未完成/未关闭的工序）</td></tr>
+    <tr><td>销售订单明细</td><td><code>production_status</code> → 已关闭（关联行）</td></tr>
+  </tbody>
+</table>
+
+<h3>6.3 采购订单关闭</h3>
+<table>
+  <thead><tr><th>对象</th><th>字段变化</th></tr></thead>
+  <tbody>
+    <tr><td>主表</td><td><code>order_status</code> → 已关闭</td></tr>
+    <tr><td>主表</td><td><code>close_reason</code> / <code>close_remark</code> / <code>force_closed_by</code> / <code>force_closed_date</code></td></tr>
+    <tr><td>明细行</td><td><code>receive_status</code> → 已关闭（未到货的行）</td></tr>
+  </tbody>
+</table>
+
+<!-- 七、级联关闭规则 -->
+<h2>七、级联关闭规则</h2>
+<p>关闭订单时，系统自动处理下游关联单据：</p>
+
+<div class="mermaid">
+flowchart LR
+    A["<b>销售订单</b><br>关闭"] --> B["发货申请<br>→ 已取消"]
+    A --> C["明细行<br>→ 已作废"]
+
+    D["<b>生产订单</b><br>关闭"] --> E["工序任务<br>→ 已关闭"]
+    D --> F["销售订单明细<br>production_status → 已关闭"]
+
+    G["<b>采购订单</b><br>关闭"] --> H["收货通知<br>→ 已取消"]
+    G --> I["明细行<br>receive_status → 已关闭"]
+
+    style A fill:#e6f7ff,stroke:#1890ff
+    style D fill:#fff7e6,stroke:#fa8c16
+    style G fill:#f6ffed,stroke:#52c41a
+</div>
+
+<table>
+  <thead><tr><th>上游关闭</th><th>下游单据</th><th>级联操作</th><th>条件</th></tr></thead>
+  <tbody>
+    <tr><td>销售订单</td><td>发货申请</td><td>状态 → 已取消</td><td>未发货、未取消的申请</td></tr>
+    <tr><td>生产订单</td><td>工序任务</td><td>状态 → 已关闭</td><td>未完成、未关闭的任务</td></tr>
+    <tr><td>生产订单</td><td>销售订单明细</td><td>production_status → 已关闭</td><td>非生产完成/已关闭的关联行</td></tr>
+    <tr><td>采购订单</td><td>收货通知</td><td>approval_status → 已取消</td><td>待确认的收货通知</td></tr>
+  </tbody>
+</table>
+
+<!-- 八、审批状态流转 -->
+<h2>八、审批状态流转</h2>
+
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 待审批 : 提交关闭申请
+    待审批 --> 已执行 : 主管审批通过
+    待审批 --> 已拒绝 : 主管拒绝
+    待审批 --> 已撤回 : 申请人撤回
+    已执行 --> [*]
+    已拒绝 --> [*]
+    已撤回 --> [*]
+</div>
+
+<!-- 九、异常检测逻辑 -->
+<h2>九、异常检测逻辑</h2>
+
+<div class="mermaid">
+flowchart TD
+    Start[选择订单 → 点击批量关闭] --> Check{订单类型}
+
+    Check -->|销售订单| SO1{已取消?}
+    SO1 -->|是| SO_N1[不可关闭：已取消]
+    SO1 -->|否| SO2{已完成?}
+    SO2 -->|是| SO_N2[不可关闭：已完成]
+    SO2 -->|否| SO3{已审批?}
+    SO3 -->|否| SO_N3[不可关闭：未审批]
+    SO3 -->|是| SO4[检测明细行异常]
+    SO4 --> SO5[发货异常 SO_SHIP]
+    SO4 --> SO6[生产异常 SO_PROD]
+    SO4 --> SO7[退货异常 SO_RETURN]
+    SO5 & SO6 & SO7 --> SO8[查询级联：发货申请]
+    SO8 --> SO_OK[可关闭 + 异常列表 + 级联预览]
+
+    Check -->|生产订单| PO1{已完成?}
+    PO1 -->|是| PO_N1[不可关闭：已完成]
+    PO1 -->|否| PO2{已关闭?}
+    PO2 -->|是| PO_N2[不可关闭：已关闭]
+    PO2 -->|否| PO3{已审批?}
+    PO3 -->|否| PO_N3[不可关闭：未审批]
+    PO3 -->|是| PO4[检测工序异常]
+    PO4 --> PO5[执行异常 PO_EXEC]
+    PO4 --> PO6[入库异常 PO_INBOUND]
+    PO4 --> PO7[质量异常 PO_QUALITY]
+    PO5 & PO6 & PO7 --> PO8[查询级联：工序任务]
+    PO8 --> PO_OK[可关闭 + 异常列表 + 级联预览]
+
+    Check -->|采购订单| PUR1{已关闭?}
+    PUR1 -->|是| PUR_N1[不可关闭：已关闭]
+    PUR1 -->|否| PUR2{已完成?}
+    PUR2 -->|是| PUR_N2[不可关闭：已完成]
+    PUR2 -->|否| PUR3{已审批?}
+    PUR3 -->|否| PUR_N3[不可关闭：未审批]
+    PUR3 -->|是| PUR4[检测收货/质量异常]
+    PUR4 --> PUR5[收货异常 PUR_RECV]
+    PUR4 --> PUR6[质量异常 PUR_QUALITY]
+    PUR5 & PUR6 --> PUR7[查询级联：收货通知]
+    PUR7 --> PUR_OK[可关闭 + 异常列表 + 级联预览]
+
+    style SO_OK fill:#f6ffed,stroke:#52c41a
+    style PO_OK fill:#f6ffed,stroke:#52c41a
+    style PUR_OK fill:#f6ffed,stroke:#52c41a
+    style SO_N1 fill:#fff1f0,stroke:#ff4d4f
+    style SO_N2 fill:#fff1f0,stroke:#ff4d4f
+    style SO_N3 fill:#fff1f0,stroke:#ff4d4f
+    style PO_N1 fill:#fff1f0,stroke:#ff4d4f
+    style PO_N2 fill:#fff1f0,stroke:#ff4d4f
+    style PO_N3 fill:#fff1f0,stroke:#ff4d4f
+    style PUR_N1 fill:#fff1f0,stroke:#ff4d4f
+    style PUR_N2 fill:#fff1f0,stroke:#ff4d4f
+    style PUR_N3 fill:#fff1f0,stroke:#ff4d4f
+</div>
+
+<!-- 十、注意事项 -->
+<div class="page-break"></div>
+<h2>十、注意事项</h2>
+
+<div class="important">1. 关闭不可逆：审批通过后立即执行关闭，操作不可撤销，请务必确认后再审批。</div>
+<div class="important">2. 级联影响：关闭生产订单会同步关闭工序任务并回写销售订单明细的生产状态，关闭前请确认下游影响。</div>
+<div class="note">3. 仅已审批订单可关闭：草稿或未审批的订单不支持手动关闭，请先完成审批或使用其他方式处理。</div>
+<div class="note">4. 已完成/已取消订单不可重复关闭：系统会自动跳过这些订单。</div>
+<ul>
+  <li><strong>批次号规则</strong>：每次批量提交生成一个批次号（格式 <code>MC-YYYYMMDD-NNN</code>），同一批次的申请一起审批</li>
+  <li><strong>审批粒度</strong>：审批以批次为单位，通过则整批执行，拒绝则整批拒绝</li>
+  <li><strong>部分失败处理</strong>：审批通过后，如果某条订单执行关闭失败，不影响同批次其他订单的关闭</li>
+</ul>
+
+<!-- 十一、常见问题 -->
+<h2>十一、常见问题</h2>
+
+<div class="faq-item">
+  <div class="faq-q">Q1：点击"批量关闭"后提示无可关闭单据？</div>
+  <div class="faq-a">检查所选订单是否已审批（审批状态为"已审批"）；检查订单是否已处于"已完成"或"已取消/已关闭"状态；确认是否已选中订单（列表需勾选复选框）。</div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q">Q2：异常检测显示"不可关闭"？</div>
+  <div class="faq-a">订单未审批需先完成审批流程；订单已完成则无需再关闭；订单已取消/已关闭则不可重复操作。</div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q">Q3：关闭申请提交后多久可以审批？</div>
+  <div class="faq-a">提交后立即出现在"关闭审批"页面，主管可即时审批。</div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q">Q4：审批通过后可以撤回吗？</div>
+  <div class="faq-a">审批通过后立即执行关闭，不可撤回。待审批状态的申请，原提交人可在审批页面撤回。</div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q">Q5：如何查看已关闭订单的关闭原因？</div>
+  <div class="faq-a">在订单详情中可查看 close_reason（关闭原因）和 close_remark（关闭备注）字段；也可在 manual_close_log 表中查询完整审批记录。</div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q">Q6：批量关闭是否支持跨类型？</div>
+  <div class="faq-a">不支持。每种订单类型需在各自列表页单独操作，原因选项和级联规则各不相同。</div>
+</div>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</body>
+</html>

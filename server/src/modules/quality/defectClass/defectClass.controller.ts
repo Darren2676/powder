@@ -28,7 +28,7 @@ export const createDefectClass = async (req: Request, res: Response, next: NextF
   try {
     const b = req.body;
     if (!b.defect_class_number) { res.status(400).json({ success: false, message: '缺陷分类编号不能为空' }); return; }
-    await sequelize.query(`INSERT INTO defect_class (defect_class_number, defect_class_name) VALUES (:defect_class_number, :defect_class_name)`, {
+    await sequelize.query(`INSERT INTO defect_class (defect_class_number, defect_class_name, approval_status) VALUES (:defect_class_number, :defect_class_name, N'未审核')`, {
       replacements: { defect_class_number: b.defect_class_number, defect_class_name: b.defect_class_name || '' }
     });
     res.json(success(null, '创建缺陷分类成功'));
@@ -41,7 +41,7 @@ export const updateDefectClass = async (req: Request, res: Response, next: NextF
     const [chk]: any = await sequelize.query(`SELECT approval_status FROM defect_class WHERE defect_class_number = :id`, { replacements: { id } });
     if (chk.length && (chk[0].approval_status || '').trim() === APPROVAL_STATUS.APPROVED) { res.status(403).json({ success: false, message: '已审核的记录不允许编辑，请先撤消审核' }); return; }
     const b = req.body;
-    await sequelize.query(`UPDATE defect_class SET defect_class_name = :defect_class_name WHERE defect_class_number = :id`, { replacements: { id, defect_class_name: b.defect_class_name } });
+    await sequelize.query(`UPDATE defect_class SET defect_class_name = :defect_class_name WHERE defect_class_number = :id`, { replacements: { id, defect_class_name: b.defect_class_name || '' } });
     res.json(success(null, '更新缺陷分类成功'));
   } catch (err) { next(err); }
 };
@@ -71,7 +71,7 @@ export const importDefectClasses = async (req: Request, res: Response, next: Nex
     let imported = 0;
     for (const item of rows) {
       try {
-        await sequelize.query(`INSERT INTO defect_class (defect_class_number, defect_class_name) VALUES (:defect_class_number, :defect_class_name)`, {
+        await sequelize.query(`INSERT INTO defect_class (defect_class_number, defect_class_name, approval_status) VALUES (:defect_class_number, :defect_class_name, N'未审核')`, {
           replacements: { defect_class_number: item.defect_class_number || '', defect_class_name: item.defect_class_name || '' }
         });
         imported++;

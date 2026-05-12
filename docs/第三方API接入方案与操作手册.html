@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Seals MES 第三方API接入方案与操作手册</title>
+<style>
+  @page { size: A4; margin: 20mm 15mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 13px; line-height: 1.7; color: #333; padding: 20px; }
+  h1 { font-size: 22px; text-align: center; margin: 30px 0 10px; color: #1a1a2e; border-bottom: 3px solid #16213e; padding-bottom: 10px; }
+  h2 { font-size: 17px; margin: 28px 0 12px; color: #16213e; border-left: 4px solid #0f3460; padding-left: 10px; }
+  h3 { font-size: 14px; margin: 18px 0 8px; color: #0f3460; }
+  h4 { font-size: 13px; margin: 14px 0 6px; color: #333; }
+  p { margin: 6px 0; text-indent: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 12px; }
+  th, td { border: 1px solid #d0d0d0; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #16213e; color: #fff; font-weight: 500; }
+  tr:nth-child(even) { background: #f8f9fa; }
+  code { background: #f0f0f0; padding: 1px 4px; border-radius: 3px; font-family: Consolas, "Courier New", monospace; font-size: 12px; color: #c0392b; }
+  pre { background: #2d2d2d; color: #f8f8f2; padding: 12px 16px; border-radius: 6px; font-size: 11.5px; line-height: 1.5; overflow-x: auto; margin: 10px 0; }
+  pre code { background: none; color: inherit; padding: 0; }
+  .arch-box { background: #f8f9fa; border: 1px solid #ddd; border-radius: 6px; padding: 16px; margin: 12px 0; font-family: Consolas, monospace; font-size: 11.5px; line-height: 1.5; white-space: pre; overflow-x: auto; }
+  .note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 14px; margin: 10px 0; border-radius: 0 4px 4px 0; }
+  .note-blue { background: #d1ecf1; border-left: 4px solid #17a2b8; padding: 10px 14px; margin: 10px 0; border-radius: 0 4px 4px 0; }
+  ul, ol { margin: 6px 0 6px 24px; }
+  li { margin: 3px 0; }
+  .page-break { page-break-before: always; }
+  .cover { text-align: center; padding-top: 120px; }
+  .cover h1 { font-size: 28px; border: none; }
+  .cover .subtitle { font-size: 16px; color: #666; margin-top: 20px; }
+  .cover .meta { margin-top: 60px; color: #888; font-size: 13px; }
+  .cover .meta p { margin: 4px 0; }
+</style>
+</head>
+<body>
+
+<!-- 封面 -->
+<div class="cover">
+  <h1>Seals MES</h1>
+  <h1 style="margin-top:10px;">第三方API接入方案与操作手册</h1>
+  <div class="subtitle">生产工单 · 工序报工 · 按工序备料 · 设计BOM</div>
+  <div class="meta">
+    <p>版本：V1.0</p>
+    <p>编制日期：2026年5月8日</p>
+  </div>
+</div>
+
+<div class="page-break"></div>
+
+<h1>一、方案概述</h1>
+
+<h2>1.1 背景</h2>
+<p>系统需要将<strong>生产工单</strong>、<strong>工序报工</strong>、<strong>按工序备料</strong>、<strong>设计BOM</strong>四个模块的数据提供给第三方系统（如 ERP、WMS 等）对接访问。要求提供长期有效的访问凭证和标准的 RESTful API 接口。</p>
+
+<h2>1.2 方案选型</h2>
+<table>
+  <tr><th>项目</th><th>选型</th><th>说明</th></tr>
+  <tr><td>认证方式</td><td>API Key 长期密钥</td><td>一次性配置，无需刷新，适合服务间调用</td></tr>
+  <tr><td>权限控制</td><td>按模块细粒度</td><td>4个模块 × 读写 = 8个权限位</td></tr>
+  <tr><td>数据范围</td><td>查询 + 写入</td><td>支持读取和创建/更新操作</td></tr>
+  <tr><td>传输安全</td><td>HTTPS + IP白名单</td><td>双重保障访问安全</td></tr>
+</table>
+
+<h2>1.3 架构设计</h2>
+<div class="arch-box">
+第三方系统
+    │
+    ├── X-API-Key: sk-xxxx ──────┐
+    │                            ▼
+    │                   ┌─────────────────┐
+    │                   │  Open API 网关   │
+    │                   │  /api/v1/open/   │
+    │                   ├─────────────────┤
+    │                   │  速率限制 100/min │
+    │                   ├─────────────────┤
+    │                   │  apiKeyAuth 中间件│ ← 验证密钥有效性
+    │                   ├─────────────────┤
+    │                   │  权限检查中间件    │ ← 检查模块+动作权限
+    │                   └────────┬────────┘
+    │                            │
+    │              ┌─────────────┼─────────────┬──────────────┐
+    │              ▼             ▼             ▼              ▼
+    │         ┌────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐
+    │         │  工单   │  │  工序报工 │  │ 按工序备料│  │ 设计BOM │
+    │         │ orders │  │workReports│  │preparations│  │   bom  │
+    │         └────────┘  └──────────┘  └──────────┘  └─────────┘
+    │
+ MES 管理后台（JWT 认证）
+    │
+    ├── 系统设置 → API密钥管理（创建/编辑/禁用/删除密钥）
+    └── 查看调用日志和统计
+</div>
+
+<div class="page-break"></div>
+
+<h1>二、API Key 认证机制</h1>
+
+<h2>2.1 密钥格式</h2>
+<ul>
+  <li>前缀：<code>sk-</code></li>
+  <li>长度：48字符随机十六进制字符串</li>
+  <li>示例：<code>sk-a4f92352a2126695318836e026a78f8e1027fa439f96e1c9</code></li>
+</ul>
+
+<h2>2.2 密钥存储</h2>
+<ul>
+  <li>数据库存储 SHA-256 哈希值，不存储明文</li>
+  <li>创建时仅展示一次完整密钥，之后仅显示脱敏格式（<code>sk-a4****1c9</code>）</li>
+  <li>支持重新生成密钥（旧密钥立即失效）</li>
+</ul>
+
+<h2>2.3 认证流程</h2>
+<ol>
+  <li>第三方在请求头中携带 <code>X-API-Key: sk-xxxx</code></li>
+  <li>服务端对密钥做 SHA-256 哈希，与数据库 <code>secret_hash</code> 比对</li>
+  <li>检查密钥状态：<code>is_active = true</code>、未过期、IP 白名单（如有）</li>
+  <li>记录 <code>last_used_at</code> 和调用日志</li>
+</ol>
+
+<h2>2.4 权限矩阵</h2>
+<table>
+  <tr><th>权限字段</th><th>说明</th><th>对应的API</th></tr>
+  <tr><td><code>perm_order_read</code></td><td>读取生产工单</td><td>GET /open/orders</td></tr>
+  <tr><td><code>perm_order_write</code></td><td>创建/更新工单</td><td>POST/PUT /open/orders</td></tr>
+  <tr><td><code>perm_work_report_read</code></td><td>读取工序报工</td><td>GET /open/work-reports</td></tr>
+  <tr><td><code>perm_work_report_write</code></td><td>创建报工</td><td>POST /open/work-reports</td></tr>
+  <tr><td><code>perm_prep_read</code></td><td>读取备料单</td><td>GET /open/material-preparations</td></tr>
+  <tr><td><code>perm_prep_write</code></td><td>创建备料单</td><td>POST /open/material-preparations/generate-by-process</td></tr>
+  <tr><td><code>perm_bom_read</code></td><td>读取BOM</td><td>GET /open/bom</td></tr>
+  <tr><td><code>perm_bom_write</code></td><td>（预留）</td><td>暂未实现</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<h1>三、API 接口清单</h1>
+
+<h2>3.1 生产工单 <code>/api/v1/open/orders</code></h2>
+<table>
+  <tr><th>方法</th><th>路径</th><th>权限</th><th>说明</th></tr>
+  <tr><td>GET</td><td>/orders</td><td>order:read</td><td>查询工单列表（分页，最大100条/页）</td></tr>
+  <tr><td>GET</td><td>/orders/:id</td><td>order:read</td><td>查询工单详情</td></tr>
+  <tr><td>POST</td><td>/orders</td><td>order:write</td><td>创建工单</td></tr>
+  <tr><td>PUT</td><td>/orders/:id</td><td>order:write</td><td>更新工单</td></tr>
+</table>
+<p><strong>查询参数</strong>：<code>page</code>, <code>limit</code>, <code>search</code>, <code>status</code>, <code>start_date</code>, <code>end_date</code></p>
+
+<h2>3.2 工序报工 <code>/api/v1/open/work-reports</code></h2>
+<table>
+  <tr><th>方法</th><th>路径</th><th>权限</th><th>说明</th></tr>
+  <tr><td>GET</td><td>/work-reports</td><td>work_report:read</td><td>查询报工列表</td></tr>
+  <tr><td>GET</td><td>/work-reports/:id</td><td>work_report:read</td><td>查询报工详情</td></tr>
+  <tr><td>POST</td><td>/work-reports</td><td>work_report:write</td><td>创建报工</td></tr>
+</table>
+
+<h2>3.3 按工序备料 <code>/api/v1/open/material-preparations</code></h2>
+<table>
+  <tr><th>方法</th><th>路径</th><th>权限</th><th>说明</th></tr>
+  <tr><td>GET</td><td>/material-preparations</td><td>prep:read</td><td>查询备料单列表</td></tr>
+  <tr><td>GET</td><td>/material-preparations/:id/details</td><td>prep:read</td><td>查询备料明细</td></tr>
+  <tr><td>GET</td><td>/material-preparations/:id/details-grouped</td><td>prep:read</td><td>按物料分组的明细</td></tr>
+  <tr><td>POST</td><td>/material-preparations/generate-by-process</td><td>prep:write</td><td>按工序自动生成备料单</td></tr>
+</table>
+
+<h2>3.4 设计BOM <code>/api/v1/open/bom</code></h2>
+<table>
+  <tr><th>方法</th><th>路径</th><th>权限</th><th>说明</th></tr>
+  <tr><td>GET</td><td>/bom</td><td>bom:read</td><td>查询BOM列表</td></tr>
+  <tr><td>GET</td><td>/bom/:id</td><td>bom:read</td><td>查询BOM详情（头+行）</td></tr>
+  <tr><td>GET</td><td>/bom/:id/tree</td><td>bom:read</td><td>查询BOM树形结构（最多5层）</td></tr>
+  <tr><td>GET</td><td>/bom/:id/flatten</td><td>bom:read</td><td>查询BOM扁平化展开</td></tr>
+</table>
+<p><strong>查询参数</strong>：<code>page</code>, <code>limit</code>, <code>search</code>, <code>bom_type</code></p>
+
+<div class="page-break"></div>
+
+<h1>四、安全机制</h1>
+
+<h2>4.1 速率限制</h2>
+<ul>
+  <li>默认：100 次/分钟</li>
+  <li>可按密钥自定义 <code>rate_limit</code> 值</li>
+  <li>超限返回 <code>429 Too Many Requests</code></li>
+</ul>
+
+<h2>4.2 IP 白名单</h2>
+<ul>
+  <li>可为每个密钥配置 <code>allowed_ips</code>（逗号分隔）</li>
+  <li>留空表示不限制来源 IP</li>
+  <li>配置后仅允许指定 IP 访问</li>
+</ul>
+
+<h2>4.3 密钥过期</h2>
+<ul>
+  <li>支持 <code>expires_at</code> 设置过期时间</li>
+  <li>过期后返回 <code>401 Unauthorized</code></li>
+  <li>留空表示永不过期</li>
+</ul>
+
+<h2>4.4 传输安全</h2>
+<ul>
+  <li>生产环境必须启用 HTTPS</li>
+  <li>API Key 通过 <code>X-API-Key</code> 请求头传输（不通过 URL 参数）</li>
+  <li>CORS 已配置允许 <code>X-API-Key</code> 头</li>
+</ul>
+
+<div class="page-break"></div>
+
+<h1>五、操作手册</h1>
+
+<h2>5.1 管理员操作</h2>
+
+<h3>5.1.1 创建 API 密钥</h3>
+<ol>
+  <li>登录 MES 管理后台</li>
+  <li>进入 <strong>系统设置 → API密钥管理</strong></li>
+  <li>点击 <strong>新建密钥</strong> 按钮</li>
+  <li>填写信息：
+    <ul>
+      <li><strong>密钥名称</strong>：标识用途（如 "ERP系统对接"）</li>
+      <li><strong>客户端名称</strong>：第三方系统/公司名称</li>
+      <li><strong>描述</strong>：用途说明</li>
+      <li><strong>访问权限</strong>：勾选需要的模块读/写权限</li>
+      <li><strong>频率限制</strong>：设置每分钟最大请求数</li>
+      <li><strong>IP白名单</strong>：可选，填写第三方服务器 IP</li>
+      <li><strong>过期时间</strong>：可选，设置密钥有效期</li>
+    </ul>
+  </li>
+  <li>点击确定，<strong>立即复制并保管密钥</strong>（仅显示一次）</li>
+</ol>
+
+<div class="note">
+  <strong>重要提醒：</strong>密钥创建成功后仅显示一次完整值，关闭窗口后无法再次查看，请务必妥善保管！
+</div>
+
+<h3>5.1.2 编辑/禁用/删除密钥</h3>
+<ul>
+  <li><strong>编辑</strong>：修改权限、频率限制、IP 白名单等</li>
+  <li><strong>禁用</strong>：临时停用密钥（不删除，可随时重新启用）</li>
+  <li><strong>重新生成</strong>：旧密钥立即失效，生成新密钥</li>
+  <li><strong>删除</strong>：永久删除密钥（不可恢复）</li>
+</ul>
+
+<h3>5.1.3 查看调用日志</h3>
+<ol>
+  <li>在密钥列表中点击 <strong>日志</strong> 按钮</li>
+  <li>查看该密钥的调用记录（时间、端点、状态码、响应时间、IP）</li>
+</ol>
+
+<h2>5.2 第三方对接操作</h2>
+
+<h3>5.2.1 接入步骤</h3>
+<ol>
+  <li>向 MES 管理员申请 API 密钥</li>
+  <li>获取密钥值（<code>sk-</code> 开头的字符串）</li>
+  <li>在请求头中携带密钥调用接口</li>
+</ol>
+
+<h3>5.2.2 请求示例</h3>
+
+<h4>cURL 示例</h4>
+<pre><code># 查询生产工单列表
+curl -X GET "http://mes.company.com/api/v1/open/orders?page=1&limit=20" \
+  -H "X-API-Key: sk-your-api-key-here"
+
+# 查询BOM树形结构
+curl -X GET "http://mes.company.com/api/v1/open/bom/110103/tree" \
+  -H "X-API-Key: sk-your-api-key-here"
+
+# 创建报工记录
+curl -X POST "http://mes.company.com/api/v1/open/work-reports" \
+  -H "X-API-Key: sk-your-api-key-here" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "production_order_number": "PO-2026-001",
+    "process_code": "LH",
+    "report_quantity": 500,
+    "worker_name": "张三"
+  }'</code></pre>
+
+<h4>Python 示例</h4>
+<pre><code>import requests
+
+API_BASE = "http://mes.company.com/api/v1/open"
+API_KEY = "sk-your-api-key-here"
+HEADERS = {
+    "X-API-Key": API_KEY,
+    "Content-Type": "application/json"
+}
+
+# 查询工单
+resp = requests.get(f"{API_BASE}/orders", headers=HEADERS, params={"page": 1, "limit": 20})
+data = resp.json()
+
+# 创建报工
+resp = requests.post(f"{API_BASE}/work-reports", headers=HEADERS, json={
+    "production_order_number": "PO-2026-001",
+    "process_code": "LH",
+    "report_quantity": 500,
+    "worker_name": "张三"
+})</code></pre>
+
+<h3>5.2.3 错误码说明</h3>
+<table>
+  <tr><th>HTTP 状态码</th><th>说明</th><th>处理建议</th></tr>
+  <tr><td>200</td><td>成功</td><td>-</td></tr>
+  <tr><td>400</td><td>请求参数错误</td><td>检查请求体格式</td></tr>
+  <tr><td>401</td><td>未认证/密钥无效</td><td>检查 X-API-Key 头</td></tr>
+  <tr><td>403</td><td>权限不足</td><td>联系管理员开通对应权限</td></tr>
+  <tr><td>404</td><td>资源不存在</td><td>检查请求路径和ID</td></tr>
+  <tr><td>429</td><td>请求频率超限</td><td>降低请求频率或联系管理员提高限制</td></tr>
+  <tr><td>500</td><td>服务器内部错误</td><td>联系管理员排查</td></tr>
+</table>
+
+<h3>5.2.4 最佳实践</h3>
+<ol>
+  <li><strong>安全保管密钥</strong>：不要将密钥硬编码在代码中，使用环境变量或配置文件</li>
+  <li><strong>使用 IP 白名单</strong>：限定第三方服务器 IP，减少密钥泄露风险</li>
+  <li><strong>设置过期时间</strong>：定期轮换密钥</li>
+  <li><strong>合理设置频率限制</strong>：避免过高的请求频率影响系统性能</li>
+  <li><strong>错误重试</strong>：遇到 429 或 5xx 错误时，采用指数退避策略重试</li>
+  <li><strong>监控调用日志</strong>：定期查看调用统计，发现异常及时处理</li>
+</ol>
+
+<div class="page-break"></div>
+
+<h1>六、数据库表结构</h1>
+
+<h2>6.1 api_key 表</h2>
+<table>
+  <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+  <tr><td>id</td><td>INT IDENTITY</td><td>主键</td></tr>
+  <tr><td>key_name</td><td>NVARCHAR(100)</td><td>密钥名称</td></tr>
+  <tr><td>api_key</td><td>NVARCHAR(200)</td><td>密钥值</td></tr>
+  <tr><td>secret_hash</td><td>NVARCHAR(128)</td><td>SHA-256哈希</td></tr>
+  <tr><td>client_name</td><td>NVARCHAR(200)</td><td>客户端名称</td></tr>
+  <tr><td>description</td><td>NVARCHAR(500)</td><td>描述</td></tr>
+  <tr><td>perm_order_read</td><td>BIT</td><td>工单读权限</td></tr>
+  <tr><td>perm_order_write</td><td>BIT</td><td>工单写权限</td></tr>
+  <tr><td>perm_work_report_read</td><td>BIT</td><td>报工读权限</td></tr>
+  <tr><td>perm_work_report_write</td><td>BIT</td><td>报工写权限</td></tr>
+  <tr><td>perm_prep_read</td><td>BIT</td><td>备料读权限</td></tr>
+  <tr><td>perm_prep_write</td><td>BIT</td><td>备料写权限</td></tr>
+  <tr><td>perm_bom_read</td><td>BIT</td><td>BOM读权限</td></tr>
+  <tr><td>perm_bom_write</td><td>BIT</td><td>BOM写权限</td></tr>
+  <tr><td>is_active</td><td>BIT</td><td>是否启用</td></tr>
+  <tr><td>rate_limit</td><td>INT</td><td>频率限制（次/分钟）</td></tr>
+  <tr><td>allowed_ips</td><td>NVARCHAR(500)</td><td>IP白名单</td></tr>
+  <tr><td>expires_at</td><td>DATETIME</td><td>过期时间</td></tr>
+  <tr><td>last_used_at</td><td>DATETIME</td><td>最近使用时间</td></tr>
+  <tr><td>created_by</td><td>NVARCHAR(50)</td><td>创建人</td></tr>
+  <tr><td>created_at</td><td>DATETIME</td><td>创建时间</td></tr>
+  <tr><td>updated_at</td><td>DATETIME</td><td>更新时间</td></tr>
+</table>
+
+<h2>6.2 api_key_usage_log 表</h2>
+<table>
+  <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+  <tr><td>id</td><td>INT IDENTITY</td><td>主键</td></tr>
+  <tr><td>api_key_id</td><td>INT</td><td>关联 api_key.id</td></tr>
+  <tr><td>endpoint</td><td>NVARCHAR(200)</td><td>请求端点</td></tr>
+  <tr><td>method</td><td>NVARCHAR(10)</td><td>HTTP方法</td></tr>
+  <tr><td>status_code</td><td>INT</td><td>响应状态码</td></tr>
+  <tr><td>ip_address</td><td>NVARCHAR(50)</td><td>请求IP</td></tr>
+  <tr><td>response_time</td><td>INT</td><td>响应时间(ms)</td></tr>
+  <tr><td>created_at</td><td>DATETIME</td><td>调用时间</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<h1>七、文件清单</h1>
+
+<h2>后端新增文件</h2>
+<table>
+  <tr><th>文件</th><th>说明</th></tr>
+  <tr><td>server/src/middleware/apiKeyAuth.middleware.ts</td><td>API Key认证中间件</td></tr>
+  <tr><td>server/src/middleware/apiKeyPermission.middleware.ts</td><td>权限检查中间件</td></tr>
+  <tr><td>server/src/modules/open/index.ts</td><td>Open API路由入口</td></tr>
+  <tr><td>server/src/modules/open/orders/orders.controller.ts</td><td>工单控制器</td></tr>
+  <tr><td>server/src/modules/open/orders/orders.routes.ts</td><td>工单路由</td></tr>
+  <tr><td>server/src/modules/open/workReports/workReports.controller.ts</td><td>报工控制器</td></tr>
+  <tr><td>server/src/modules/open/workReports/workReports.routes.ts</td><td>报工路由</td></tr>
+  <tr><td>server/src/modules/open/preparations/preparations.controller.ts</td><td>备料控制器</td></tr>
+  <tr><td>server/src/modules/open/preparations/preparations.routes.ts</td><td>备料路由</td></tr>
+  <tr><td>server/src/modules/open/bom/bom.controller.ts</td><td>BOM控制器</td></tr>
+  <tr><td>server/src/modules/open/bom/bom.routes.ts</td><td>BOM路由</td></tr>
+  <tr><td>server/src/modules/system/apiKey/apiKey.controller.ts</td><td>密钥管理控制器</td></tr>
+  <tr><td>server/src/modules/system/apiKey/apiKey.routes.ts</td><td>密钥管理路由</td></tr>
+</table>
+
+<h2>后端修改文件</h2>
+<table>
+  <tr><th>文件</th><th>修改内容</th></tr>
+  <tr><td>server/src/app.ts</td><td>添加 X-API-Key 到 CORS、添加 Open API 速率限制</td></tr>
+  <tr><td>server/src/routes/index.ts</td><td>注册 /open 路由</td></tr>
+</table>
+
+<h2>前端新增文件</h2>
+<table>
+  <tr><th>文件</th><th>说明</th></tr>
+  <tr><td>client/src/api/system/apiKey.ts</td><td>API Key接口层</td></tr>
+  <tr><td>client/src/views/system/ApiKey/List.vue</td><td>密钥管理页面</td></tr>
+</table>
+
+<h2>前端修改文件</h2>
+<table>
+  <tr><th>文件</th><th>修改内容</th></tr>
+  <tr><td>client/src/router/system.ts</td><td>添加 api-keys 路由</td></tr>
+  <tr><td>client/src/router/index.ts</td><td>添加 ApiKeyList 权限映射</td></tr>
+  <tr><td>client/src/components/Layout/AppSidebar.vue</td><td>添加 api-keys 路由映射</td></tr>
+</table>
+
+</body>
+</html>

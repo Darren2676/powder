@@ -72,6 +72,11 @@ const handleWithdraw = async (record: any) => {
   })
 }
 
+const handleEdit = (record: any) => {
+  Object.assign(editForm, { defect_class_number: record.defect_class_number, defect_class_name: record.defect_class_name })
+  editModalVisible.value = true
+}
+
 const handleEditOk = async () => {
   try { await updateDefectClass(editForm.defect_class_number, editForm); message.success('更新成功'); editModalVisible.value = false; fetchData() }
   catch (error) { message.error('更新失败') }
@@ -86,6 +91,22 @@ const handleCreateOk = async () => {
     Object.assign(createForm, { defect_class_number: '', defect_class_name: '' })
     fetchData()
   } catch (error) { message.error('创建失败') }
+}
+
+const handleDelete = (record: any) => {
+  Modal.confirm({
+    title: '确认删除',
+    icon: createVNode(ExclamationCircleOutlined),
+    content: `确定要删除缺陷分类「${(record.defect_class_name || '').trim()}」吗？`,
+    okText: '确定', okType: 'danger', cancelText: '取消',
+    async onOk() {
+      try {
+        const res: any = await deleteDefectClass(record.defect_class_number)
+        if (res.success) { message.success('删除成功'); fetchData() }
+        else { message.error(res.message || '删除失败') }
+      } catch { message.error('删除失败') }
+    }
+  })
 }
 
 const handleExport = async () => {

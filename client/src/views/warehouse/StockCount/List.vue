@@ -4,12 +4,14 @@ import { message, Modal } from 'ant-design-vue'
 import {
   SearchOutlined, ReloadOutlined, PlusOutlined, EyeOutlined,
   EditOutlined, DeleteOutlined, CheckOutlined, CloseOutlined,
-  SendOutlined, AuditOutlined, ExclamationCircleOutlined
+  SendOutlined, AuditOutlined, ExclamationCircleOutlined,
+  DownloadOutlined
 } from '@ant-design/icons-vue'
 import {
   getStockCountList, getStockCountDetail, getSnapshotPreview,
   createStockCount, updateStockCount, deleteStockCount,
-  submitReview, reviewStockCount, confirmStockCount, cancelStockCount
+  submitReview, reviewStockCount, confirmStockCount, cancelStockCount,
+  exportStockCountSelected
 } from '@/api/warehouse/stockCount'
 import { getWarehouseOptions } from '@/api/warehouse/finishedGoods'
 import { getItemOptions } from '@/api/warehouse/materialWarehouse'
@@ -29,6 +31,41 @@ const warehouseOptions = ref<any[]>([])
 const stats = ref<any>({})
 
 const statusOptions = ['盘点中', '待复核', '待确认', '已完成', '已作废']
+
+// ==================== 行选择与导出 ====================
+const selectedRowKeys = ref<number[]>([])
+const exportLoading = ref(false)
+
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  preserveSelectedRowKeys: true,
+  onChange: (keys: number[]) => { selectedRowKeys.value = keys }
+}))
+
+const handleExportSelected = async () => {
+  if (!selectedRowKeys.value.length) {
+    message.warning('请先勾选要导出的行')
+    return
+  }
+  exportLoading.value = true
+  try {
+    const res = await exportStockCountSelected({ ids: selectedRowKeys.value })
+    const blob = new Blob([res.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'stock_count_selected.xlsx'
+    link.click()
+    window.URL.revokeObjectURL(url)
+    message.success('导出成功')
+  } catch {
+    message.error('导出选中行失败')
+  } finally {
+    exportLoading.value = false
+  }
+}
 
 
 
@@ -52,6 +89,18 @@ const columns = [
 
 const formatDate = (date: any) => date ? dayjs(date).format('YYYY-MM-DD') : '-'
 const formatDateTime = (date: any) => date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '-'
+
+const statusColor = (status: string) => {
+  const map: Record<string, string> = { '盘点中': 'blue', '待复核': 'orange', '待确认': 'gold', '已完成': 'green', '已作废': 'default' }
+  return map[status] || 'default'
+}
+
+const fetchWarehouseOptions = async () => {
+  try {
+    const res: any = await getWarehouseOptions()
+    warehouseOptions.value = res?.data || res || []
+  } catch { message.error('获取仓库选项失败') }
+}
 
 // ==================== 创建盘点单 ====================
 const createVisible = ref(false)
@@ -376,8 +425,9 @@ onMounted(() => {
 <template>
   <div style="padding: 20px">
     <!-- 工具栏 -->
-    <div style="margin-bottom: 16px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px">
-      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+    <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; overflow-x: auto">
+      <span style="font-size: 18px; font-weight: 600; white-space: nowrap; flex-shrink: 0">月末盘点</span>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: nowrap">
         <a-input-search
           v-model:value="searchText"
           placeholder="搜索盘点单号/仓库/盘点人"
@@ -399,8 +449,13 @@ onMounted(() => {
         <a-month-picker v-model:value="filterPeriod" placeholder="盘点期间" style="width: 130px" format="YYYY-MM"
           :valueFormat="'YYYY-MM'" @change="handleSearch" allow-clear />
         <a-button @click="handleReset"><ReloadOutlined /> 重置</a-button>
-      </div>
-      <div>
+        <a-button
+          :disabled="selectedRowKeys.length === 0"
+          :loading="exportLoading"
+          @click="handleExportSelected"
+        >
+          <DownloadOutlined /> 导出选中{{ selectedRowKeys.length ? ` (${selectedRowKeys.length})` : '' }}
+        </a-button>
         <a-button type="primary" @click="handleCreate"><PlusOutlined /> 新建盘点</a-button>
       </div>
     </div>
@@ -427,6 +482,7 @@ onMounted(() => {
       :data-source="dataSource"
       :loading="loading"
       :pagination="pagination"
+      :row-selection="rowSelection"
       row-key="id"
       :scroll="{ x: 1500 }"
       size="small"
@@ -474,6 +530,12 @@ onMounted(() => {
         </template>
       </template>
     </a-table>
+
+    <!-- 选择摘要栏 -->
+    <div v-if="selectedRowKeys.length > 0" style="margin-top: 8px; padding: 6px 12px; background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 4px; display: flex; align-items: center; gap: 8px;">
+      <span style="color: #666;">已选 <b style="color: #1890ff;">{{ selectedRowKeys.length }}</b> 项</span>
+      <a-button size="small" type="link" @click="selectedRowKeys = []">清除选择</a-button>
+    </div>
 
     <!-- 创建盘点单弹窗 -->
     <a-modal v-model:open="createVisible" title="新建盘点单" :width="700" :confirmLoading="createLoading" @ok="handleCreateSubmit">

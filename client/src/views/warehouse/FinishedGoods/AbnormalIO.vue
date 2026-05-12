@@ -1,17 +1,22 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { ref, reactive, onMounted, computed, watch, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import {
-  SearchOutlined, ReloadOutlined, PlusOutlined, EyeOutlined,
-  EditOutlined, DeleteOutlined, CheckOutlined, CloseOutlined
+  SearchOutlined, ReloadOutlined, PlusOutlined,
+  DeleteOutlined, ExclamationCircleOutlined, DownOutlined, UndoOutlined
 } from '@ant-design/icons-vue'
 import {
   getAbnormalIOList, getAbnormalIODetail, createAbnormalIO,
-  updateAbnormalIO, deleteAbnormalIO, confirmAbnormalIO, rejectAbnormalIO
+  updateAbnormalIO, deleteAbnormalIO, confirmAbnormalIO, rejectAbnormalIO, withdrawAbnormalIO
 } from '@/api/warehouse/abnormalIO'
 import { getWarehouseOptions } from '@/api/warehouse/finishedGoods'
 import { getItemOptions } from '@/api/warehouse/materialWarehouse'
+import { useModalDrag } from '@/composables/useModalDrag'
 import dayjs from 'dayjs'
+
+const { modalStyle, onDragStart, resetDrag } = useModalDrag()
+const { modalStyle: detailModalStyle, onDragStart: onDetailDragStart, resetDrag: resetDetailDrag } = useModalDrag()
+const { modalStyle: confirmModalStyle, onDragStart: onConfirmDragStart, resetDrag: resetConfirmDrag } = useModalDrag()
 
 const loading = ref(false)
 const dataSource = ref<any[]>([])
@@ -21,7 +26,7 @@ const filterStatus = ref('')
 const warehouseOptions = ref<any[]>([])
 
 const typeOptions = ['退货入库', '报废出库', '调拨出入库', '盘盈盘亏']
-const statusOptions = ['待确认', '已确认', '已驳回']
+const statusOptions = ['待确认', '已确认', '已驳回', '已撤消']
 
 const pagination = reactive({
   current: 1,
@@ -46,7 +51,7 @@ const columns = [
   { title: '会计期间', dataIndex: 'accounting_period', key: 'accounting_period', width: 100 },
   { title: '确认人', dataIndex: 'confirmed_by', key: 'confirmed_by', width: 90 },
   { title: '确认日期', dataIndex: 'confirmed_date', key: 'confirmed_date', width: 110 },
-  { title: '操作', key: 'action', width: 200, fixed: 'right' as const }
+  { title: '操作', key: 'action', width: 120, fixed: 'right' as const }
 ]
 
 const formatDate = (date: any) => {
@@ -63,6 +68,7 @@ const statusColor = (status: string) => {
   if (status === '待确认') return 'orange'
   if (status === '已确认') return 'green'
   if (status === '已驳回') return 'red'
+  if (status === '已撤消') return 'default'
   return 'default'
 }
 
@@ -135,7 +141,7 @@ const form = reactive({
   details: [] as any[]
 })
 
-const formTitle = computed(() => isEdit.value ? '编辑异常出入库申请' : '新建异常出入库申请')
+const formTitle = computed(() => isEdit.value ? '编辑其他出入库申请' : '新建其他出入库申请')
 
 const showTargetWarehouse = computed(() => form.type === '调拨出入库')
 const showCustomer = computed(() => form.type === '退货入库')
@@ -157,6 +163,7 @@ const handleCreate = () => {
   const now = new Date()
   form.accounting_period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   form.details = []
+  resetDrag()
   formVisible.value = true
 }
 
@@ -184,6 +191,7 @@ const handleEdit = async (record: any) => {
         _keyword: d.item_number ? `${d.item_number} - ${d.item_name || ''}` : '',
         _options: []
       }))
+      resetDrag()
       formVisible.value = true
     }
   } catch {
@@ -342,6 +350,7 @@ const detailData = ref<any>({ header: {}, details: [] })
 const detailLoading = ref(false)
 
 const handleView = async (record: any) => {
+  resetDetailDrag()
   detailLoading.value = true
   detailVisible.value = true
   try {
@@ -383,18 +392,36 @@ const viewDetailColumns = computed(() => {
 const handleDelete = (record: any) => {
   Modal.confirm({
     title: '确认删除',
-    content: `确定要删除单号 ${record.request_number} 吗？`,
+    icon: createVNode(ExclamationCircleOutlined),
+    content: `确定要删除其他出入库单「${(record.request_number || '').trim()}」吗？`,
+    okText: '确定',
     okType: 'danger',
-    onOk: async () => {
+    cancelText: '取消',
+    async onOk() {
       try {
         const res: any = await deleteAbnormalIO(record.request_number)
-        if (res?.success) {
-          message.success('删除成功')
-          fetchData()
-        }
-      } catch (err: any) {
-        message.error(err.response?.data?.message || '删除失败')
-      }
+        if (res?.success) { message.success('删除成功'); fetchData() }
+        else { message.error(res.message || '删除失败') }
+      } catch { message.error('删除失败') }
+    }
+  })
+}
+
+// ==================== 撤消确认 ====================
+const handleWithdraw = (record: any) => {
+  Modal.confirm({
+    title: '确认撤消',
+    icon: createVNode(ExclamationCircleOutlined),
+    content: `将撤消「${(record.request_number || '').trim()}」的确认操作，已执行的库存变更将被回退。此操作不可撤销，确定继续？`,
+    okText: '确定撤消',
+    okType: 'danger',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        const res: any = await withdrawAbnormalIO(record.request_number)
+        if (res?.success) { message.success('撤消成功，库存已回退'); fetchData() }
+        else { message.error(res.message || '撤消失败') }
+      } catch (err: any) { message.error(err.response?.data?.message || '撤消失败') }
     }
   })
 }
@@ -409,6 +436,7 @@ const showConfirmModal = (record: any) => {
   confirmAction.value = 'confirm'
   confirmTargetNumber.value = record.request_number
   confirmRemarkText.value = ''
+  resetConfirmDrag()
   confirmRemarkVisible.value = true
 }
 
@@ -416,6 +444,7 @@ const showRejectModal = (record: any) => {
   confirmAction.value = 'reject'
   confirmTargetNumber.value = record.request_number
   confirmRemarkText.value = ''
+  resetConfirmDrag()
   confirmRemarkVisible.value = true
 }
 
@@ -447,8 +476,9 @@ onMounted(() => {
 <template>
   <div style="padding: 20px">
     <!-- 工具栏 -->
-    <div style="margin-bottom: 16px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px">
-      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+    <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; overflow-x: auto">
+      <span style="font-size: 18px; font-weight: 600; white-space: nowrap; flex-shrink: 0">其他出入库</span>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: nowrap">
         <a-input-search
           v-model:value="searchText"
           placeholder="搜索单号/客户/仓库/原因"
@@ -466,8 +496,6 @@ onMounted(() => {
           <a-select-option v-for="s in statusOptions" :key="s" :value="s">{{ s }}</a-select-option>
         </a-select>
         <a-button @click="fetchData"><ReloadOutlined /> 刷新</a-button>
-      </div>
-      <div>
         <a-button type="primary" @click="handleCreate"><PlusOutlined /> 新建申请</a-button>
       </div>
     </div>
@@ -479,7 +507,7 @@ onMounted(() => {
       :loading="loading"
       :pagination="pagination"
       row-key="id"
-      :scroll="{ x: 1600 }"
+      :scroll="{ x: 'max-content' }"
       size="small"
       bordered
       @change="handleTableChange"
@@ -503,22 +531,26 @@ onMounted(() => {
         <template v-else-if="column.key === 'action'">
           <a-space :size="4">
             <a-button type="link" size="small" @click="handleView(record)">
-              <EyeOutlined /> 查看
+              查看
             </a-button>
-            <template v-if="record.status === '待确认'">
-              <a-button type="link" size="small" @click="handleEdit(record)">
-                <EditOutlined /> 编辑
+            <a-divider type="vertical" />
+            <a-dropdown :trigger="['click']">
+              <a-button type="link" size="small" @click.stop>
+                更多<DownOutlined style="font-size: 10px; margin-left: 2px;" />
               </a-button>
-              <a-button type="link" size="small" style="color: #52c41a" @click="showConfirmModal(record)">
-                <CheckOutlined /> 确认
-              </a-button>
-              <a-button type="link" size="small" danger @click="showRejectModal(record)">
-                <CloseOutlined /> 驳回
-              </a-button>
-              <a-button type="link" size="small" danger @click="handleDelete(record)">
-                <DeleteOutlined />
-              </a-button>
-            </template>
+              <template #overlay>
+                <a-menu>
+                  <a-menu-item v-if="(record.status || '').trim() === '待确认'" @click="showConfirmModal(record)">确认</a-menu-item>
+                  <a-menu-item v-if="(record.status || '').trim() === '待确认'" @click="showRejectModal(record)">驳回</a-menu-item>
+                  <a-menu-item v-if="(record.status || '').trim() === '已确认'" @click="handleWithdraw(record)"><UndoOutlined style="color: #ff4d4f; margin-right: 6px;" />撤消确认</a-menu-item>
+                  <a-menu-item v-if="(record.status || '').trim() === '待确认' || (record.status || '').trim() === '已驳回' || (record.status || '').trim() === '已撤消'" @click="handleEdit(record)">编辑</a-menu-item>
+                  <a-menu-divider v-if="(record.status || '').trim() !== '已确认'" />
+                  <a-menu-item v-if="(record.status || '').trim() === '待确认' || (record.status || '').trim() === '已驳回' || (record.status || '').trim() === '已撤消'" @click="handleDelete(record)">
+                    <span style="color: #ff4d4f">删除</span>
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
           </a-space>
         </template>
       </template>
@@ -527,13 +559,16 @@ onMounted(() => {
     <!-- 新建/编辑弹窗 -->
     <a-modal
       v-model:open="formVisible"
-      :title="formTitle"
       width="1100px"
       :bodyStyle="{ maxHeight: '75vh', overflowY: 'auto' }"
       @ok="handleFormSubmit"
       :confirmLoading="formLoading"
       :okText="isEdit ? '保存' : '提交申请'"
+      :style="modalStyle"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="onDragStart">{{ formTitle }}</div>
+      </template>
       <a-form layout="vertical" style="margin-bottom: 16px">
         <a-row :gutter="16">
           <a-col :span="6">
@@ -667,11 +702,14 @@ onMounted(() => {
     <!-- 详情弹窗 -->
     <a-modal
       v-model:open="detailVisible"
-      title="异常出入库详情"
       width="1000px"
       :bodyStyle="{ maxHeight: '75vh', overflowY: 'auto' }"
       :footer="null"
+      :style="detailModalStyle"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="onDetailDragStart">其他出入库详情</div>
+      </template>
       <a-spin :spinning="detailLoading">
         <a-descriptions bordered size="small" :column="3" style="margin-bottom: 16px">
           <a-descriptions-item label="单号">{{ detailData.header?.request_number }}</a-descriptions-item>
@@ -682,6 +720,7 @@ onMounted(() => {
             <a-tag :color="statusColor(detailData.header?.status)">{{ detailData.header?.status }}</a-tag>
           </a-descriptions-item>
           <a-descriptions-item label="仓库">{{ detailData.header?.warehouse_name }}</a-descriptions-item>
+          <a-descriptions-item label="会计期间">{{ detailData.header?.accounting_period || '-' }}</a-descriptions-item>
           <a-descriptions-item label="目标仓库" v-if="detailData.header?.type === '调拨出入库'">
             {{ detailData.header?.target_warehouse_name }}
           </a-descriptions-item>
@@ -721,12 +760,15 @@ onMounted(() => {
     <!-- 确认/驳回备注弹窗 -->
     <a-modal
       v-model:open="confirmRemarkVisible"
-      :title="confirmAction === 'confirm' ? '确认操作' : '驳回操作'"
       @ok="handleConfirmAction"
       :confirmLoading="confirmActionLoading"
       :okText="confirmAction === 'confirm' ? '确认执行' : '确认驳回'"
       :okButtonProps="confirmAction === 'reject' ? { danger: true } : {}"
+      :style="confirmModalStyle"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="onConfirmDragStart">{{ confirmAction === 'confirm' ? '确认操作' : '驳回操作' }}</div>
+      </template>
       <p v-if="confirmAction === 'confirm'" style="color: #fa8c16; margin-bottom: 12px">
         确认后将自动执行库存变更操作，请仔细核对后再确认。
       </p>
@@ -739,3 +781,10 @@ onMounted(() => {
     </a-modal>
   </div>
 </template>
+
+<style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+</style>

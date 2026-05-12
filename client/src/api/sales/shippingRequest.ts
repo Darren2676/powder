@@ -2,7 +2,7 @@ import request from '@/utils/request'
 
 // ==================== 待发货列表 ====================
 
-export function getPendingShipments(params?: { page?: number; limit?: number; search?: string }) {
+export function getPendingShipments(params?: { page?: number; limit?: number; search?: string; approval_status?: string }) {
   return request.get('/shipping-requests/pending', { params })
 }
 
@@ -40,4 +40,10 @@ export function updateShippingRequestStatus(id: string, status: string) {
 
 export function deleteShippingRequest(id: string) {
   return request.delete(`/shipping-requests/${encodeURIComponent(id)}`)
+}
+
+// ==================== 出库撤回 ====================
+
+export function rollbackShippingOutbound(request_number: string) {
+  return request.post('/finished-goods/outbound/rollback', { request_number })
 }

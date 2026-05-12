@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>销售订单综合排查报告</title>
+<style>
+  @page { size: A4; margin: 15mm 12mm; }
+  body { font-family: "Microsoft YaHei", "SimHei", sans-serif; font-size: 11pt; line-height: 1.6; color: #333; max-width: 210mm; margin: 0 auto; padding: 10px; }
+  h1 { font-size: 20pt; text-align: center; border-bottom: 2px solid #1890ff; padding-bottom: 10px; margin-bottom: 20px; color: #1890ff; }
+  h2 { font-size: 15pt; border-left: 4px solid #1890ff; padding-left: 10px; margin-top: 25px; margin-bottom: 10px; color: #1890ff; }
+  h3 { font-size: 13pt; margin-top: 18px; margin-bottom: 8px; color: #096dd9; }
+  h4 { font-size: 12pt; margin-top: 12px; margin-bottom: 6px; color: #0050b3; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 10pt; }
+  th { background: #e6f7ff; border: 1px solid #91d5ff; padding: 6px 8px; text-align: left; font-weight: 600; white-space: nowrap; }
+  td { border: 1px solid #d9d9d9; padding: 5px 8px; }
+  tr:nth-child(even) { background: #fafafa; }
+  blockquote { border-left: 3px solid #1890ff; padding: 5px 15px; margin: 10px 0; background: #f0f5ff; color: #555; font-size: 10pt; }
+  pre { background: #f5f5f5; padding: 12px; border-radius: 4px; font-size: 9.5pt; overflow-x: auto; border: 1px solid #d9d9d9; }
+  code { font-family: Consolas, "Courier New", monospace; }
+  hr { border: none; border-top: 1px solid #d9d9d9; margin: 15px 0; }
+  li { margin: 3px 0; }
+  strong { color: #262626; }
+  p { margin: 5px 0; }
+</style>
+</head>
+<body>
+<h1>销售订单综合排查报告</h1>
+
+<blockquote>排查范围：SO-20260502-003、SO-20260502-004、SO-20260506-001  </blockquote>
+<blockquote>排查日期：2026-05-06  </blockquote>
+<blockquote>涉及物料：C100809（骨架油封）  </blockquote>
+<blockquote>客户：宁国睿信</blockquote>
+
+<hr>
+
+<h2>一、销售订单概况</h2>
+
+<table><thead><tr><th>销售订单</th><th>客户</th><th>物料</th><th>订单量</th><th>已发货</th><th>发货状态</th><th>生产状态</th><th>交付日期</th></tr></thead><tbody><tr><td>SO-20260502-003</td><td>宁国睿信</td><td>C100809</td><td>30,000</td><td>6,050</td><td>部分发货</td><td>待排产</td><td>2026-05-12</td></tr><tr><td>SO-20260502-004</td><td>宁国睿信</td><td>C100809</td><td>5,000</td><td>0</td><td>未申请</td><td><strong>生产完成</strong></td><td>2026-05-20</td></tr><tr><td>SO-20260506-001</td><td>宁国睿信</td><td>C100809</td><td>40,000</td><td>0</td><td>未申请</td><td>待排产</td><td>无</td></tr></tbody></table>
+
+<strong>合计订单量：75,000，已发货：6,050（8.1%）</strong>
+
+<hr>
+
+<h2>二、生产计划</h2>
+
+<table><thead><tr><th>计划号</th><th>来源订单</th><th>计划量</th><th>状态</th><th>审批</th><th>MRP状态</th></tr></thead><tbody><tr><td>M20260503001</td><td>SO-004</td><td>5,000</td><td>已加入任务</td><td>已审批</td><td>已分解</td></tr><tr><td>M20260503002</td><td>SO-003</td><td>23,950</td><td>已加入任务</td><td>已审批</td><td>已分解</td></tr><tr><td>M20260506001</td><td>SO-006</td><td>40,000</td><td>已加入任务</td><td>已审批</td><td>已分解</td></tr></tbody></table>
+
+<strong>合计计划量：68,950</strong>
+
+<hr>
+
+<h2>三、生产单进度</h2>
+
+<h3>3.1 成品（C100809）生产单</h3>
+
+<strong>M20260503001（来自SO-004，计划5,000）</strong>
+
+<li>生成25个派工单（P20260504003~P20260504028），每个200</li>
+<li>仅1个已入库：P20260504006（200）</li>
+<li>2个生产中：P20260504005（200）、P20260504007（200）</li>
+<li>22个可派发：P20260504003/004/008~028（各200）</li>
+<li><strong>实际入库：200 / 5,000 = 4%</strong></li>
+
+<strong>M20260503002（来自SO-003，计划23,950）</strong>
+
+<li>P20260504004，23,950，<strong>未开始</strong>，0入库</li>
+
+<strong>M20260506001（来自SO-006，计划40,000）</strong>
+
+<li>P20260506003，40,000，<strong>未开始</strong>，0入库</li>
+
+<h3>3.2 子项生产单（L1）</h3>
+
+<table><thead><tr><th>生产单号</th><th>计划号</th><th>物料</th><th>数量</th><th>状态</th><th>入库量</th></tr></thead><tbody><tr><td>P20260504001</td><td>M20260503001</td><td>C100809-TJ（铁芯骨架）</td><td>28,900</td><td>未开始</td><td>0</td></tr><tr><td>P20260504002</td><td>M20260503001</td><td>C100809-Y（预成型图）</td><td>2,670.64</td><td>未开始</td><td>0</td></tr><tr><td>P20260506001</td><td>M20260506001</td><td>C100809-TJ（铁芯骨架）</td><td>10,650</td><td>未开始</td><td>0</td></tr><tr><td>P20260506002</td><td>M20260506001</td><td>C100809-Y（预成型图）</td><td>1,019.9</td><td>未开始</td><td>0</td></tr></tbody></table>
+
+<strong>所有子项生产单均未开始，0入库。</strong>
+
+<hr>
+
+<h2>四、库存现状</h2>
+
+<h3>4.1 成品库存（finished_goods_inventory）</h3>
+
+<table><thead><tr><th>物料</th><th>仓库</th><th>数量</th><th>质量状态</th></tr></thead><tbody><tr><td>C100809</td><td>成品仓库</td><td>2,200</td><td>合格品</td></tr><tr><td>C100809</td><td>成品仓库</td><td>1,100</td><td>不合格品</td></tr></tbody></table>
+
+<strong>可用合格品：2,200</strong>
+
+<h3>4.2 材料库存（material_inventory）</h3>
+
+<table><thead><tr><th>物料</th><th>仓库名</th><th>数量</th></tr></thead><tbody><tr><td>C100809-TJ（铁芯骨架）</td><td>半成品库</td><td>450</td></tr><tr><td>C100809-Y（预成型图）</td><td>半成品库</td><td>69.46</td></tr><tr><td>C100809-GJ（骨架冲件）</td><td>骨架库</td><td>28,900</td></tr><tr><td>E6005KP（胶料）</td><td>胶料库</td><td>2,670.64</td></tr></tbody></table>
+
+<h3>4.3 MPS汇总</h3>
+
+<table><thead><tr><th>指标</th><th>值</th></tr></thead><tbody><tr><td>成品在手</td><td>2,200（合格品）</td></tr><tr><td>生产在途</td><td>68,750（已修复SQL后）</td></tr><tr><td>采购在途</td><td>0</td></tr></tbody></table>
+
+<hr>
+
+<h2>五、发货链路</h2>
+
+<h3>5.1 发货申请</h3>
+
+<table><thead><tr><th>申请号</th><th>客户</th><th>状态</th><th>申请日期</th><th>申请量</th><th>已发量</th><th>关联订单</th></tr></thead><tbody><tr><td>SR-20260503-001</td><td>宁国睿信</td><td>已发货</td><td>5/3</td><td>10,000</td><td>6,050</td><td>SO-003</td></tr></tbody></table>
+
+<h3>5.2 发货单</h3>
+
+<table><thead><tr><th>发货单号</th><th>客户</th><th>仓库</th><th>状态</th><th>发货量</th><th>关联订单</th></tr></thead><tbody><tr><td>SM-20260503-002</td><td>宁国睿信</td><td>成品仓库</td><td>已发货</td><td>6,050</td><td>SO-003</td></tr></tbody></table>
+
+<h3>5.3 发货批次明细</h3>
+
+<table><thead><tr><th>发货单号</th><th>批次号</th><th>数量</th></tr></thead><tbody><tr><td>SM-20260503-002</td><td>FB-20260328-010</td><td>4,500</td></tr><tr><td>SM-20260503-002</td><td>FB-20260328-011</td><td>500</td></tr><tr><td>SM-20260503-002</td><td>FB-20260329-001</td><td>700</td></tr><tr><td>SM-20260503-002</td><td>FB-20260402-003</td><td>100</td></tr><tr><td>SM-20260503-002</td><td>FB-20260402-004</td><td>250</td></tr></tbody></table>
+
+<strong>SO-004和SO-006均无发货申请，未启动发货流程。</strong>
+
+<hr>
+
+<h2>六、采购链路（L2子项）</h2>
+
+<h3>6.1 采购申请</h3>
+
+<table><thead><tr><th>申请号</th><th>审批状态</th><th>单据状态</th><th>来源MRP</th><th>物料</th><th>申请量</th><th>已转单量</th></tr></thead><tbody><tr><td>PR-20260504-001</td><td>已审批</td><td>已转单</td><td>MRP-20260504-002</td><td>C100809-GJ（骨架冲件）</td><td>28,900</td><td>28,900</td></tr><tr><td>PR-20260504-001</td><td>已审批</td><td>已转单</td><td>MRP-20260504-002</td><td>E6005KP（胶料）</td><td>2,670.64</td><td>2,670.64</td></tr></tbody></table>
+
+<h3>6.2 采购订单</h3>
+
+<table><thead><tr><th>订单号</th><th>审批状态</th><th>订单状态</th><th>物料</th><th>订单量</th><th>已收货量</th></tr></thead><tbody><tr><td>PUR-20260505-001</td><td>已审批</td><td>已完结</td><td>C100809-GJ（骨架冲件）</td><td>28,900</td><td>28,900</td></tr><tr><td>PUR-20260505-001</td><td>已审批</td><td>已完结</td><td>E6005KP（胶料）</td><td>2,670.64</td><td>2,670.64</td></tr></tbody></table>
+
+<strong>L2采购链路完整：申请→审批→转单→收货→入库，已全部完成。</strong> 这也是后续MRP运行中L2项净需求=0的原因。
+
+<hr>
+
+<h2>七、MRP运算历史</h2>
+
+共5次MRP运算记录，分两个批次：
+
+<h3>7.1 第一批（M20260503001 + M20260503002）</h3>
+
+<table><thead><tr><th>MRP运算号</th><th>运算时间</th><th>L1结果</th><th>L2结果</th></tr></thead><tbody><tr><td>MRP-20260503-001</td><td>5/3 22:22</td><td>C100809-TJ prod=28,900；C100809-Y prod=2,670.64</td><td>C100809-GJ purch=28,900；E6005KP purch=2,670.64</td></tr><tr><td>MRP-20260504-001</td><td>5/4 08:51</td><td>同上（重新运算）</td><td>同上</td></tr><tr><td>MRP-20260504-002</td><td>5/4 08:53</td><td>同上（再次运算）</td><td>同上 → 生成 PR-20260504-001</td></tr></tbody></table>
+
+<h3>7.2 第二批（M20260506001）</h3>
+
+<table><thead><tr><th>MRP运算号</th><th>运算时间</th><th>L1结果</th><th>L2结果</th></tr></thead><tbody><tr><td>MRP-20260506-001</td><td>5/6 11:16</td><td>C100809-TJ prod=10,650 purch=10,650；C100809-Y prod=1,019.9 purch=1,019.9</td><td>净需求=0（库存已覆盖）</td></tr><tr><td>MRP-20260506-002</td><td>5/6 11:58</td><td>C100809-TJ prod=10,650 purch=<strong>0</strong>；C100809-Y prod=1,019.9 purch=<strong>0</strong></td><td>净需求=0（库存已覆盖）</td></tr></tbody></table>
+
+<strong>MRP-20260506-002为最终生效版本，双源决策选择了纯生产，不生成采购申请。</strong>
+
+<h3>7.3 MRP净需求计算说明</h3>
+
+<strong>MRP-20260506-001/002 对 C100809-TJ 的计算过程：</strong>
+
+<table><thead><tr><th>项目</th><th>值</th><th>说明</th></tr></thead><tbody><tr><td>毛需求</td><td>40,000</td><td>M20260506001计划量</td></tr><tr><td>在手库存</td><td>450</td><td>material_inventory半成品库</td></tr><tr><td>WIP</td><td>28,900</td><td>P20260504001（未开始但已建单）</td></tr><tr><td>采购在途</td><td>0</td><td>无采购订单</td></tr><tr><td>待审采购申请</td><td>0</td><td>无</td></tr><tr><td>安全库存</td><td>0</td><td>未设置</td></tr><tr><td><strong>净需求</strong></td><td><strong>10,650</strong></td><td>40,000 - 450 - 28,900 = 10,650</td></tr></tbody></table>
+
+<hr>
+
+<h2>八、发现的问题</h2>
+
+<h3>问题1：SO-004 生产状态"生产完成"与实际不符 <span style="color:#fa8c16">⚠️</span></h3>
+
+<li><strong>现象</strong>：SO-20260502-004 的 `production_status=生产完成`</li>
+<li><strong>实际</strong>：对应生产计划M20260503001的25个派工单中仅1个入库200，完成率仅4%</li>
+<li><strong>影响</strong>：误导业务判断，认为SO-004已可发货</li>
+<li><strong>建议</strong>：检查 `production_status` 的更新逻辑，确认是否在MRP分解完成时错误地被设置为"生产完成"</li>
+
+<h3>问题2：SO-003 交期2026-05-12即将到期 <span style="color:#f5222d">🔴</span></h3>
+
+<li><strong>现象</strong>：SO-20260502-003订单30,000，已发货6,050，剩余23,950</li>
+<li><strong>实际</strong>：对应生产计划M20260503002的23,950生产单P20260504004 <strong>未开始</strong>，子项生产单也未启动</li>
+<li><strong>库存</strong>：合格成品仅2,200，距离交期仅剩6天</li>
+<li><strong>影响</strong>：<strong>交期风险极高</strong></li>
+<li><strong>建议</strong>：紧急启动M20260503002生产执行</li>
+
+<h3>问题3：M20260503001生产进度严重滞后 <span style="color:#fa8c16">⚠️</span></h3>
+
+<li><strong>现象</strong>：计划5,000，实际仅入库200（4%）</li>
+<li><strong>实际</strong>：23个派工单处于"可派发"状态未执行</li>
+<li><strong>影响</strong>：SO-004的5,000无法按时交付</li>
+<li><strong>建议</strong>：排查派工单未执行原因，加快生产推进</li>
+
+<h3>问题4：MRP运算记录与实际单据不一致 <span style="color:#fa8c16">⚠️</span></h3>
+
+<li><strong>现象</strong>：mrp_run_detail 记录生成了 PR-20260503-001 和 PR-20260506-001，但数据库中实际不存在</li>
+<li><strong>原因</strong>：MRP重复运算时，前次生成的单据被后续运算覆盖/删除，但mrp_run_detail中的 `generated_order_number` 记录未同步更新</li>
+<li><strong>影响</strong>：数据一致性隐患，追踪困难</li>
+<li><strong>建议</strong>：MRP重新运算时，应同步更新前次mrp_run_detail中的生成单据编号，或在删除旧单据时记录日志</li>
+
+<h3>问题5：M20260506001双源决策变更导致采购转为生产 <span style="color:#fa8c16">⚠️</span></h3>
+
+<li><strong>现象</strong>：MRP-20260506-001选择了生产+采购各半，MRP-20260506-002改为纯生产</li>
+<li><strong>影响</strong>：C100809-TJ的10,650和C100809-Y的1,019.9原本可走采购快速到货，现在全部依赖生产</li>
+<li><strong>建议</strong>：确认是否为有意决策；如需采购部分，需重新运行MRP并选择双源分配</li>
+
+<h3>问题6：成品库存1,100不合格品未处理 <span style="color:#fa8c16">⚠️</span></h3>
+
+<li><strong>现象</strong>：C100809在成品仓库有1,100不合格品，占库存总量的33%</li>
+<li><strong>影响</strong>：占用仓储空间，未做任何处置（返工/报废）</li>
+<li><strong>建议</strong>：启动不合格品评审流程，决定返工或报废</li>
+
+<hr>
+
+<h2>九、数据链路全景图</h2>
+
+```
+SO-20260502-003 (30,000) ──→ M20260503002 (23,950) ──→ P20260504004 [未开始, 0入库]
+    │                                                        │
+    ├─ 已发货: 6,050 (SR-001 → SM-002)                    └─ 子项: C100809-TJ (28,900) P20260504001 [未开始]
+    └─ 未发货: 23,950                                        └─ 子项: C100809-Y (2,670.64) P20260504002 [未开始]
+
+SO-20260502-004 (5,000) ───→ M20260503001 (5,000) ──→ 25个派工单 [200已入库, 4800在途]
+    │                                                        │
+    └─ 未发货: 5,000 (production_status=生产完成 <span style="color:#f5222d">❌</span>)        └─ 子项: 同上（共享子项生产单）
+
+SO-20260506-001 (40,000) ──→ M20260506001 (40,000) ──→ P20260506003 [未开始, 0入库]
+                                                             │
+                                                             ├─ 子项: C100809-TJ (10,650) P20260506001 [未开始]
+                                                             └─ 子项: C100809-Y (1,019.9) P20260506002 [未开始]
+
+L2采购链路（已闭环）:
+  C100809-GJ: PR-20260504-001 → PUR-20260505-001 → 收货28,900 <span style="color:#52c41a">✓</span>
+  E6005KP:    PR-20260504-001 → PUR-20260505-001 → 收货2,670.64 <span style="color:#52c41a">✓</span>
+```
+
+<hr>
+
+*报告生成时间：2026-05-06*
+
+</body>
+</html>

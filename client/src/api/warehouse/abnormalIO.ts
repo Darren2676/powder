@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 
-// ==================== 异常出入库管理 ====================
+// ==================== 其他出入库管理 ====================
 
 export function getAbnormalIOList(params?: { page?: number; limit?: number; search?: string; type?: string; status?: string }) {
   return request.get('/abnormal-io', { params })
@@ -28,4 +28,8 @@ export function confirmAbnormalIO(request_number: string, data?: { confirm_remar
 
 export function rejectAbnormalIO(request_number: string, data?: { confirm_remark?: string }) {
   return request.post(`/abnormal-io/${request_number}/reject`, data)
+}
+
+export function withdrawAbnormalIO(request_number: string, data?: { remark?: string }) {
+  return request.post(`/abnormal-io/${request_number}/withdraw`, data)
 }

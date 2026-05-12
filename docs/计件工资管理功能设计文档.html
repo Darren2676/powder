@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>计件工资管理功能设计文档</title>
+<style>
+  body { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; color: #333; line-height: 1.6; }
+  h1 { color: #1a5276; border-bottom: 3px solid #2980b9; padding-bottom: 10px; font-size: 28px; }
+  h2 { color: #2c3e50; border-left: 5px solid #3498db; padding-left: 12px; margin-top: 40px; font-size: 22px; }
+  h3 { color: #34495e; margin-top: 25px; font-size: 18px; }
+  table { border-collapse: collapse; width: 100%; margin: 15px 0; font-size: 14px; }
+  th, td { border: 1px solid #bdc3c7; padding: 8px 12px; text-align: left; }
+  th { background-color: #ecf0f1; color: #2c3e50; font-weight: bold; }
+  tr:nth-child(even) { background-color: #f9f9f9; }
+  .highlight { background-color: #fef9e7; border-left: 4px solid #f39c12; padding: 12px 16px; margin: 15px 0; }
+  .formula { background-color: #eaf2f8; border: 2px solid #2980b9; border-radius: 6px; padding: 16px; margin: 15px 0; text-align: center; font-size: 18px; font-weight: bold; color: #1a5276; }
+  .mermaid { margin: 20px 0; }
+  .section-divider { border: none; border-top: 2px dashed #bdc3c7; margin: 30px 0; }
+  code { background-color: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-size: 13px; }
+  .toc { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px; padding: 15px 25px; margin: 20px 0; }
+  .toc a { text-decoration: none; color: #2980b9; }
+  .toc a:hover { text-decoration: underline; }
+  .toc ul { padding-left: 20px; }
+  .toc li { margin: 4px 0; }
+</style>
+</head>
+<body>
+
+<h1>计件工资管理功能设计文档</h1>
+<p style="color:#7f8c8d; font-size:14px;">Seals MES System | 版本 1.0 | 2026-05-11</p>
+
+<div class="toc">
+<h3 style="margin-top:0;">目录</h3>
+<ul>
+  <li><a href="#s1">1. 功能概述</a></li>
+  <li><a href="#s2">2. 业务流程总览</a></li>
+  <li><a href="#s3">3. 工资计算核心逻辑</a></li>
+  <li><a href="#s4">4. 单价匹配规则</a></li>
+  <li><a href="#s5">5. 数据模型</a></li>
+  <li><a href="#s6">6. 状态流转</a></li>
+  <li><a href="#s7">7. API接口清单</a></li>
+  <li><a href="#s8">8. 前端页面结构</a></li>
+  <li><a href="#s9">9. 业务规则汇总</a></li>
+</ul>
+</div>
+
+<!-- ========== 1. 功能概述 ========== -->
+<h2 id="s1">1. 功能概述</h2>
+<p>计件工资管理是基于<strong>已审批报工数据 × 计件单价</strong>，按周期（月/周）自动生成工资明细的功能模块。位于"生产管理"菜单下，与"计件单价"平级。</p>
+
+<div class="highlight">
+<strong>核心价值：</strong>将生产报工数量与计件单价自动匹配，一键计算员工工资明细，避免人工核算错误，支持审批流程确保数据可信。
+</div>
+
+<!-- ========== 2. 业务流程总览 ========== -->
+<h2 id="s2">2. 业务流程总览</h2>
+<div class="mermaid">
+graph TD
+    A[创建工资表<br/>选择周期类型+日期范围] --> B[保存为草稿<br/>WG-YYYYMMDD-NNN]
+    B --> C{是否计算?}
+    C -->|是| D[执行工资计算]
+    
+    D --> D1[查询周期内已审批报工]
+    D1 --> D2[关联工序任务获取工序编号]
+    D2 --> D3[匹配已审批计件单价]
+    D3 --> D4[生成工资明细行]
+    D4 --> D5[汇总更新表头金额]
+    
+    C -->|否| E[继续编辑]
+    D5 --> F{是否重新计算?}
+    F -->|是| D
+    F -->|否| G[提交审批]
+    
+    G --> H[待审批]
+    H --> I{审批结果}
+    I -->|通过| J[已审批<br/>工资数据锁定]
+    I -->|撤回| B
+    J --> K{是否反审?}
+    K -->|是| B
+    K -->|否| L[最终归档]
+    
+    style A fill:#3498db,color:#fff
+    style D fill:#e67e22,color:#fff
+    style J fill:#27ae60,color:#fff
+    style L fill:#2c3e50,color:#fff
+</div>
+
+<!-- ========== 3. 工资计算核心逻辑 ========== -->
+<h2 id="s3">3. 工资计算核心逻辑</h2>
+
+<h3>3.1 计算公式</h3>
+<div class="formula">
+行工资 = 合格数量 × 合格品单价 + 不合格数量 × 次品单价
+</div>
+
+<h3>3.2 计算流程图</h3>
+<div class="mermaid">
+graph TD
+    S1[开始计算] --> S2[校验工资表状态=草稿]
+    S2 --> S3[获取周期起始/结束日期]
+    S3 --> S4[查询: work_report<br/>WHERE approval_status=已审批<br/>AND report_date IN 周期]
+    S4 --> S5[INNER JOIN process_task<br/>获取 standard_process_number]
+    S5 --> S6[LEFT JOIN 已审批计件单价<br/>匹配: 物料+工序+日期+员工]
+    S6 --> S7{有匹配单价?}
+    S7 -->|有| S8[计算行工资<br/>qualified_qty × qualified_rate<br/>+ unqualified_qty × defective_rate]
+    S7 -->|无| S9[单价=0<br/>行工资=0]
+    S8 --> S10[去重: 同一报工优先<br/>取员工特定单价]
+    S9 --> S10
+    S10 --> S11[清除旧明细]
+    S11 --> S12[写入 piece_rate_wage_detail]
+    S12 --> S13[汇总更新 piece_rate_wage_header]
+    S13 --> S14[calculation_status=已计算]
+    S14 --> S15[计算完成]
+    
+    style S1 fill:#3498db,color:#fff
+    style S4 fill:#e67e22,color:#fff
+    style S8 fill:#27ae60,color:#fff
+    style S15 fill:#2c3e50,color:#fff
+</div>
+
+<h3>3.3 SQL关联逻辑</h3>
+<div class="mermaid">
+graph LR
+    subgraph 报工数据源
+        WR[work_report<br/>报工单]
+        PT[process_task<br/>工序任务]
+    end
+    subgraph 单价数据源
+        PH[piece_rate_price_header<br/>计件单价表头]
+        PD[piece_rate_price_detail<br/>计件单价明细]
+    end
+    subgraph 工资结果
+        WH[piece_rate_wage_header<br/>工资表头]
+        WD[piece_rate_wage_detail<br/>工资明细]
+    end
+    
+    WR -->|process_task_number| PT
+    WR -->|item_number| PD
+    PT -->|standard_process_number| PD
+    PH -->|price_list_number| PD
+    PH -.->|effective_date <= 周期| WR
+    PH -.->|expiration_date >= 周期| WR
+    PD -.->|employee_number 优先匹配| WR
+    
+    WR ==>|计算结果| WD
+    PD ==>|单价写入| WD
+    WD ==>|汇总| WH
+    
+    style WR fill:#3498db,color:#fff
+    style PT fill:#3498db,color:#fff
+    style PH fill:#e67e22,color:#fff
+    style PD fill:#e67e22,color:#fff
+    style WH fill:#27ae60,color:#fff
+    style WD fill:#27ae60,color:#fff
+</div>
+
+<!-- ========== 4. 单价匹配规则 ========== -->
+<h2 id="s4">4. 单价匹配规则</h2>
+
+<h3>4.1 四维匹配条件</h3>
+<table>
+<tr><th>维度</th><th>报工侧字段</th><th>单价侧字段</th><th>说明</th></tr>
+<tr><td>物料</td><td><code>work_report.item_number</code></td><td><code>price_detail.item_number</code></td><td>必须精确匹配</td></tr>
+<tr><td>工序</td><td><code>process_task.standard_process_number</code></td><td><code>price_detail.standard_process_number</code></td><td>通过报工关联工序任务获取</td></tr>
+<tr><td>日期</td><td><code>工资表.period_start / period_end</code></td><td><code>price_header.effective_date / expiration_date</code></td><td>单价有效期覆盖工资周期</td></tr>
+<tr><td>人员</td><td><code>work_report.operator_number</code></td><td><code>price_detail.employee_number</code></td><td>员工特定单价优先，空=通用</td></tr>
+</table>
+
+<h3>4.2 员工单价优先级</h3>
+<div class="mermaid">
+graph TD
+    M1[同一报工匹配到多条单价] --> M2{price_detail.employee_number<br/>是否为空?}
+    M2 -->|不为空 且 = operator_number| M3[优先选择<br/>员工特定单价]
+    M2 -->|为空或NULL| M4[通用单价<br/>作为兜底]
+    M3 --> M5[最终单价确定]
+    M4 --> M5
+    
+    style M3 fill:#27ae60,color:#fff
+    style M4 fill:#e67e22,color:#fff
+</div>
+
+<h3>4.3 优先级示例</h3>
+<table>
+<tr><th>场景</th><th>报工员工</th><th>单价A(员工特定)</th><th>单价B(通用)</th><th>选择结果</th></tr>
+<tr><td>员工有特定单价</td><td>EMP001</td><td>EMP001 → 合格¥5.00</td><td>空 → 合格¥3.00</td><td style="color:#27ae60;font-weight:bold;">单价A ¥5.00</td></tr>
+<tr><td>员工无特定单价</td><td>EMP002</td><td>EMP001 → 合格¥5.00</td><td>空 → 合格¥3.00</td><td style="color:#e67e22;font-weight:bold;">单价B ¥3.00</td></tr>
+<tr><td>无任何匹配单价</td><td>EMP003</td><td>无匹配</td><td>无匹配</td><td style="color:#e74c3c;font-weight:bold;">单价=0 工资=0</td></tr>
+</table>
+
+<!-- ========== 5. 数据模型 ========== -->
+<h2 id="s5">5. 数据模型</h2>
+
+<div class="mermaid">
+erDiagram
+    PIECE_RATE_WAGE_HEADER ||--o{ PIECE_RATE_WAGE_DETAIL : "1:N"
+    
+    PIECE_RATE_WAGE_HEADER {
+        NVARCHAR wage_number PK "工资表编号 WG-YYYYMMDD-NNN"
+        NVARCHAR wage_name "工资表名称"
+        NVARCHAR period_type "周期类型: 月/周"
+        DATE period_start "周期开始日期"
+        DATE period_end "周期结束日期"
+        DECIMAL total_qualified_wage "合格品工资合计"
+        DECIMAL total_defective_wage "次品工资合计"
+        DECIMAL total_wage "工资总额"
+        INT detail_count "明细行数"
+        NVARCHAR calculation_status "计算状态: 未计算/已计算"
+        NVARCHAR approval_status "审批状态: 草稿/待审批/已审批"
+        NVARCHAR remark "备注"
+        NVARCHAR creation_date "创建日期"
+        NVARCHAR creation_man "创建人"
+    }
+    
+    PIECE_RATE_WAGE_DETAIL {
+        INT id PK "自增主键"
+        NVARCHAR wage_number FK "工资表编号"
+        INT line_number "行号"
+        NVARCHAR work_report_number "报工单号"
+        NVARCHAR process_task_number "工序任务编号"
+        NVARCHAR production_order_number "生产单号"
+        NVARCHAR item_number "物料编号"
+        NVARCHAR item_name "物料名称"
+        NVARCHAR standard_process_number "工序编号"
+        NVARCHAR standard_process_name "工序名称"
+        NVARCHAR employee_number "员工编号"
+        NVARCHAR employee_name "员工名称"
+        NVARCHAR report_date "报工日期"
+        DECIMAL qualified_quantity "合格数量"
+        DECIMAL unqualified_quantity "不合格数量"
+        DECIMAL qualified_piece_rate "合格品单价"
+        DECIMAL defective_piece_rate "次品单价"
+        DECIMAL qualified_wage "合格品工资"
+        DECIMAL defective_wage "次品工资"
+        DECIMAL line_wage "行工资"
+        NVARCHAR price_list_number "来源单价表编号"
+        INT price_list_line_number "来源单价行号"
+    }
+</div>
+
+<!-- ========== 6. 状态流转 ========== -->
+<h2 id="s6">6. 状态流转</h2>
+
+<h3>6.1 计算状态</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 未计算: 创建工资表
+    未计算 --> 已计算: 执行计算
+    已计算 --> 已计算: 重新计算(覆盖)
+</div>
+
+<h3>6.2 审批状态</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 草稿: 创建
+    草稿 --> 待审批: 提交审批
+    待审批 --> 已审批: 审批通过
+    待审批 --> 草稿: 撤回
+    已审批 --> 草稿: 反审批
+    草稿 --> [*]: 删除
+</div>
+
+<h3>6.3 操作权限矩阵</h3>
+<table>
+<tr><th>操作</th><th>草稿</th><th>待审批</th><th>已审批</th></tr>
+<tr><td>编辑</td><td style="color:#27ae60;">✓</td><td style="color:#e74c3c;">✗</td><td style="color:#e74c3c;">✗</td></tr>
+<tr><td>计算/重算</td><td style="color:#27ae60;">✓</td><td style="color:#e74c3c;">✗</td><td style="color:#e74c3c;">✗</td></tr>
+<tr><td>提交审批</td><td style="color:#27ae60;">✓</td><td style="color:#e74c3c;">✗</td><td style="color:#e74c3c;">✗</td></tr>
+<tr><td>审核</td><td style="color:#e74c3c;">✗</td><td style="color:#27ae60;">✓</td><td style="color:#e74c3c;">✗</td></tr>
+<tr><td>撤回</td><td style="color:#e74c3c;">✗</td><td style="color:#27ae60;">✓</td><td style="color:#e74c3c;">✗</td></tr>
+<tr><td>反审批</td><td style="color:#e74c3c;">✗</td><td style="color:#e74c3c;">✗</td><td style="color:#27ae60;">✓</td></tr>
+<tr><td>删除</td><td style="color:#27ae60;">✓</td><td style="color:#e74c3c;">✗</td><td style="color:#e74c3c;">✗</td></tr>
+</table>
+
+<!-- ========== 7. API接口清单 ========== -->
+<h2 id="s7">7. API接口清单</h2>
+<table>
+<tr><th>方法</th><th>路径</th><th>功能</th><th>认证</th></tr>
+<tr><td>GET</td><td><code>/piece-rate-wages</code></td><td>工资表列表（分页/搜索/筛选）</td><td>✓</td></tr>
+<tr><td>GET</td><td><code>/piece-rate-wages/export</code></td><td>导出Excel</td><td>✓</td></tr>
+<tr><td>POST</td><td><code>/piece-rate-wages</code></td><td>创建工资表</td><td>✓</td></tr>
+<tr><td>GET</td><td><code>/piece-rate-wages/:id</code></td><td>工资表详情（header+details）</td><td>✓</td></tr>
+<tr><td>GET</td><td><code>/piece-rate-wages/:id/summary</code></td><td>员工工资汇总</td><td>✓</td></tr>
+<tr><td>POST</td><td><code>/piece-rate-wages/:id/calculate</code></td><td>执行工资计算</td><td>✓</td></tr>
+<tr><td>PUT</td><td><code>/piece-rate-wages/:id</code></td><td>更新工资表（仅草稿）</td><td>✓</td></tr>
+<tr><td>DELETE</td><td><code>/piece-rate-wages/:id</code></td><td>删除工资表（仅草稿）</td><td>✓</td></tr>
+</table>
+
+<!-- ========== 8. 前端页面结构 ========== -->
+<h2 id="s8">8. 前端页面结构</h2>
+
+<div class="mermaid">
+graph TD
+    subgraph 列表页
+        L1[搜索栏: 编号/名称]
+        L2[筛选: 审批状态 + 周期类型]
+        L3[操作栏: 新建/导出/列设置]
+        L4[数据表格: 14列含行号+操作]
+        L5[操作列: 查看/计算/提交/审核/撤回/反审/编辑/删除]
+    end
+    
+    subgraph 详情弹窗_1400px
+        H1[表单区: 名称/周期类型/起止日期/备注]
+        H2[汇总区: 合格品工资+次品工资+总额+行数+计算状态]
+        H3[操作按钮: 计算工资/重新计算]
+        T1[Tab1: 工资明细表格<br/>20列含报工/物料/工序/员工/数量/单价/金额]
+        T2[Tab2: 员工汇总表格<br/>8列含员工/行数/数量/工资合计]
+    end
+    
+    L1 --> L4
+    L2 --> L4
+    L3 --> L4
+    L4 --> L5
+    L5 -->|查看| H1
+    L5 -->|编辑| H1
+    L5 -->|新建| H1
+    H1 --> H2
+    H2 --> H3
+    H3 --> T1
+    H3 --> T2
+    
+    style L4 fill:#3498db,color:#fff
+    style T1 fill:#e67e22,color:#fff
+    style T2 fill:#27ae60,color:#fff
+</div>
+
+<!-- ========== 9. 业务规则汇总 ========== -->
+<h2 id="s9">9. 业务规则汇总</h2>
+<table>
+<tr><th>编号</th><th>规则</th><th>说明</th></tr>
+<tr><td>R01</td><td>仅已审批报工参与计算</td><td>approval_status='已审批'的work_report才纳入工资计算</td></tr>
+<tr><td>R02</td><td>仅已审批单价参与匹配</td><td>approval_status='已审批'的piece_rate_price才用于价格匹配</td></tr>
+<tr><td>R03</td><td>单价有效期必须覆盖工资周期</td><td>effective_date ≤ period_start AND expiration_date ≥ period_end</td></tr>
+<tr><td>R04</td><td>员工特定单价优先于通用单价</td><td>employee_number匹配 > employee_number为空</td></tr>
+<tr><td>R05</td><td>同一报工不重复计薪</td><td>按work_report_number+item+process去重</td></tr>
+<tr><td>R06</td><td>无匹配单价则工资为0</td><td>LEFT JOIN未匹配到单价时，rate=0，wage=0</td></tr>
+<tr><td>R07</td><td>仅草稿状态可计算/编辑/删除</td><td>非草稿状态拒绝修改操作</td></tr>
+<tr><td>R08</td><td>重新计算覆盖旧明细</td><td>先DELETE旧detail再INSERT新detail</td></tr>
+<tr><td>R09</td><td>反审批退回草稿</td><td>反审后可重新编辑和计算</td></tr>
+<tr><td>R10</td><td>工资表编号自动生成</td><td>格式：WG-YYYYMMDD-NNN，每日自增</td></tr>
+<tr><td>R11</td><td>审批流程复用通用审批服务</td><td>注册piece_rate_wage_header到approval.service</td></tr>
+<tr><td>R12</td><td>报工日期通过report_date字符串匹配</td><td>report_date格式为YYYY/MM/DD，与周期起止比较</td></tr>
+</table>
+
+<hr class="section-divider">
+<p style="text-align:center; color:#95a5a6; font-size:12px;">Seals MES System - 计件工资管理功能设计文档 | Generated 2026-05-11</p>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+mermaid.initialize({ startOnLoad: true, theme: 'default', securityLevel: 'loose' });
+</script>
+</body>
+</html>

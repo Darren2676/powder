@@ -35,7 +35,7 @@ export const calculateMPS = async (req: Request, res: Response, next: NextFuncti
     `, { replacements: forecastReplacements });
 
     // ---------- 2. 已审批销售订单需求(按物料汇总, 仅未完成发货部分) ----------
-    let orderWhere = `WHERE h.approval_status = N'已审批' AND d.shipping_status IN (N'未申请', N'未发货', N'部分发货')`;
+    let orderWhere = `WHERE h.approval_status = N'已审批' AND d.shipping_status IN (N'未申请', N'未发货', N'部分发货') AND (d.production_status IS NULL OR d.production_status NOT IN (N'待排产', N'计划中', N'待生产', N'生产中'))`;
     const orderReplacements: any = {};
 
     if (start_date) {
@@ -161,11 +161,13 @@ export const calculateMPS = async (req: Request, res: Response, next: NextFuncti
 
     // 查生产在途数(已审批且未完成的生产计划数量，扣除已入库部分)
     // 说明：已入库数量已通过入库单计入 finished_goods_inventory，此处必须扣除避免重复计算
+    // 注意：JOIN 必须加 po.item_number = pp.item_number，否则 MRP 展开的子件工单会被误累加
     const [productionInTransitRows]: any = await sequelize.query(`
       SELECT pp.item_number,
              SUM(ISNULL(po.planned_quantity, 0) - ISNULL(po.inbound_quantity, 0)) AS production_in_transit
       FROM Production_plan pp
       LEFT JOIN production_order po ON po.production_number = pp.production_number
+        AND po.item_number = pp.item_number
       WHERE pp.approval_status = N'已审批'
         AND pp.plan_status NOT IN (N'已完成', N'已关闭')
         AND pp.item_number IN (${itemPlaceholders})
@@ -350,6 +352,7 @@ export const getDemandSources = async (req: Request, res: Response, next: NextFu
       LEFT JOIN product_ext pe ON pe.item_number = d.item_number
       WHERE d.item_number = :item_number
         AND d.shipping_status IN (N'未申请', N'未发货', N'部分发货')
+        AND (d.production_status IS NULL OR d.production_status = N'未加入计划')
         AND h.approval_status = N'已审批'
       ORDER BY h.sales_order_number DESC, d.line_number
     `, { replacements: { item_number } });
@@ -405,7 +408,7 @@ export const importFromDemandSources = async (req: Request, res: Response, next:
     try {
       for (const item of items) {
         const production_number = await generateProductionNumber(transaction);
-        const planned_quantity = item.planned_quantity || item.quantity || 0;
+        const planned_quantity = item.remaining_quantity || item.quantity || 0;
         const bpq = parseFloat(item.batch_production_quota);
         const shifts_number = (bpq && bpq > 0) ? Math.ceil(planned_quantity / bpq) : null;
         const planned_completion_time = item.delivery_date || item.header_delivery_date || null;

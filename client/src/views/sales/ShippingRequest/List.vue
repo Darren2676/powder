@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import {
-  SearchOutlined, ReloadOutlined, EyeOutlined, DeleteOutlined,
-  CheckCircleOutlined, CloseCircleOutlined, CarOutlined, EditOutlined, SettingOutlined
+  SearchOutlined, ReloadOutlined, DeleteOutlined,
+  CheckCircleOutlined, CloseCircleOutlined, CarOutlined, EditOutlined, SettingOutlined,
+  DownOutlined, ExclamationCircleOutlined, UndoOutlined
 } from '@ant-design/icons-vue'
-import { getShippingRequests, getShippingRequestDetail, updateShippingRequest, updateShippingRequestStatus, deleteShippingRequest } from '@/api/sales/shippingRequest'
+import { getShippingRequests, getShippingRequestDetail, updateShippingRequest, updateShippingRequestStatus, deleteShippingRequest, rollbackShippingOutbound } from '@/api/sales/shippingRequest'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import { useTableList } from '@/composables/useTableList'
@@ -84,7 +85,7 @@ const {
   loadColumnPreference, handleResizeColumn
 } = useColumnPreference('shipping_request_list', defaultDataColumns, {
   fixedLeft: [{ title: '行号', key: 'rowIndex', width: 60, fixed: 'left' as const }],
-  fixedRight: [{ title: '操作', key: 'action', width: 200, fixed: 'right' as const }]
+  fixedRight: [{ title: '操作', key: 'action', width: 120, fixed: 'right' as const }]
 })
 
 const detailColumns = [
@@ -201,18 +202,47 @@ const handleUpdateStatus = (record: ShippingRequest, newStatus: string) => {
 
 const handleDelete = (record: ShippingRequest) => {
   Modal.confirm({
-    title: '确认删除该发货申请？',
-    content: `编号: ${record.request_number}，此操作不可撤回`,
+    title: '确认删除',
+    icon: createVNode(ExclamationCircleOutlined),
+    content: `确定要删除发货申请「${record.request_number}」吗？此操作不可撤回`,
+    okText: '确定',
     okType: 'danger',
+    cancelText: '取消',
     async onOk() {
       try {
         const res: any = await deleteShippingRequest(record.request_number)
         if (res?.success) {
           message.success('删除成功')
           fetchData()
+        } else {
+          message.error(res.message || '删除失败')
+        }
+      } catch {
+        message.error('删除失败')
+      }
+    }
+  })
+}
+
+const handleRollbackOutbound = (record: ShippingRequest) => {
+  Modal.confirm({
+    title: '确认撤回出库',
+    icon: createVNode(ExclamationCircleOutlined),
+    content: `将撤回「${record.request_number}」的最近一次发货出库记录，库存将恢复至出库前状态。此操作不可撤销，确定继续？`,
+    okText: '确定撤回',
+    okType: 'danger',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        const res: any = await rollbackShippingOutbound(record.request_number)
+        if (res?.success) {
+          message.success('出库撤回成功')
+          fetchData()
+        } else {
+          message.error(res.message || '撤回失败')
         }
       } catch (err: any) {
-        message.error(err.response?.data?.message || '删除失败')
+        message.error(err.response?.data?.message || '撤回失败')
       }
     }
   })
@@ -306,6 +336,7 @@ onMounted(async () => {
   <div style="padding: 20px">
     <div style="margin-bottom: 16px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px">
       <div style="display: flex; gap: 8px; align-items: center;">
+        <span style="font-size: 18px; font-weight: 600; color: #1a1a2e; margin-right: 4px; white-space: nowrap">发货申请</span>
         <a-input-search
           v-model:value="searchText"
           placeholder="搜索申请编号/客户"
@@ -368,24 +399,39 @@ onMounted(async () => {
         </template>
         <template v-else-if="column.key === 'action'">
           <a-space :size="4">
-            <a-tooltip title="查看详情">
-              <a-button type="link" size="small" @click="handleViewDetail(record)"><EyeOutlined /></a-button>
-            </a-tooltip>
-            <a-tooltip v-if="record.status === '待审核'" title="修改">
-              <a-button type="link" size="small" @click="handleEdit(record)"><EditOutlined style="color: #1677ff" /></a-button>
-            </a-tooltip>
-            <a-tooltip v-if="record.status === '待审核'" title="审核通过">
-              <a-button type="link" size="small" @click="handleUpdateStatus(record, APPROVAL_STATUS.APPROVED)"><CheckCircleOutlined style="color: #52c41a" /></a-button>
-            </a-tooltip>
-            <a-tooltip v-if="record.status === APPROVAL_STATUS.APPROVED" title="确认发货">
-              <a-button type="link" size="small" @click="handleUpdateStatus(record, '已发货')"><CarOutlined style="color: #52c41a" /></a-button>
-            </a-tooltip>
-            <a-tooltip v-if="record.status === '待审核' || record.status === APPROVAL_STATUS.APPROVED" title="取消">
-              <a-button type="link" size="small" @click="handleUpdateStatus(record, '已取消')"><CloseCircleOutlined style="color: #faad14" /></a-button>
-            </a-tooltip>
-            <a-tooltip v-if="record.status === '待审核'" title="删除">
-              <a-button type="link" danger size="small" @click="handleDelete(record)"><DeleteOutlined /></a-button>
-            </a-tooltip>
+            <a-button type="link" size="small" @click="handleViewDetail(record)">
+              查看
+            </a-button>
+            <a-divider type="vertical" />
+            <a-dropdown :trigger="['click']">
+              <a-button type="link" size="small" @click.stop>
+                更多<DownOutlined style="font-size: 10px; margin-left: 2px;" />
+              </a-button>
+              <template #overlay>
+                <a-menu>
+                  <a-menu-item v-if="record.status === '待审核'" @click="handleUpdateStatus(record, APPROVAL_STATUS.APPROVED)">
+                    <CheckCircleOutlined style="color: #52c41a; margin-right: 6px;" />审核通过
+                  </a-menu-item>
+                  <a-menu-item v-else-if="record.status === APPROVAL_STATUS.APPROVED" @click="handleUpdateStatus(record, '待审核')">撤消审核</a-menu-item>
+                  <a-menu-item v-if="record.status === '待审核'" @click="handleEdit(record)">
+                    <EditOutlined style="margin-right: 6px;" />编辑
+                  </a-menu-item>
+                  <a-menu-item v-if="record.status === APPROVAL_STATUS.APPROVED" @click="handleUpdateStatus(record, '已发货')">
+                    <CarOutlined style="color: #52c41a; margin-right: 6px;" />确认发货
+                  </a-menu-item>
+                  <a-menu-item v-if="record.status === '已发货'" @click="handleRollbackOutbound(record)">
+                    <UndoOutlined style="color: #ff4d4f; margin-right: 6px;" />撤回出库
+                  </a-menu-item>
+                  <a-menu-item v-if="record.status === '待审核' || record.status === APPROVAL_STATUS.APPROVED" @click="handleUpdateStatus(record, '已取消')">
+                    <CloseCircleOutlined style="color: #faad14; margin-right: 6px;" />取消申请
+                  </a-menu-item>
+                  <a-menu-divider />
+                  <a-menu-item v-if="record.status === '待审核'" @click="handleDelete(record)">
+                    <span style="color: #ff4d4f">删除</span>
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
           </a-space>
         </template>
       </template>

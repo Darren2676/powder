@@ -169,18 +169,21 @@ onMounted(() => {
 <template>
   <div style="padding: 20px">
     <!-- 筛选栏 -->
-    <div style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
-      <span style="color: #666">起始期间:</span>
-      <a-month-picker v-model:value="startPeriod" placeholder="起始月" style="width: 130px" format="YYYY-MM" :valueFormat="'YYYY-MM'" />
-      <span style="color: #666">~</span>
-      <a-month-picker v-model:value="endPeriod" placeholder="结束月" style="width: 130px" format="YYYY-MM" :valueFormat="'YYYY-MM'" />
-      <a-select v-model:value="filterWarehouse" placeholder="仓库" allow-clear style="width: 140px">
-        <a-select-option v-for="w in warehouseOptions" :key="w.warehouse_number" :value="w.warehouse_number">
-          {{ w.warehouse_name }}
-        </a-select-option>
-      </a-select>
-      <a-button type="primary" @click="handleQuery"><SearchOutlined /> 查询</a-button>
-      <a-button @click="handleReset"><ReloadOutlined /> 重置</a-button>
+    <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; overflow-x: auto">
+      <span style="font-size: 18px; font-weight: 600; white-space: nowrap; flex-shrink: 0">月末盘点报表</span>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: nowrap">
+        <span style="color: #666">起始期间:</span>
+        <a-month-picker v-model:value="startPeriod" placeholder="起始月" style="width: 130px" format="YYYY-MM" :valueFormat="'YYYY-MM'" />
+        <span style="color: #666">~</span>
+        <a-month-picker v-model:value="endPeriod" placeholder="结束月" style="width: 130px" format="YYYY-MM" :valueFormat="'YYYY-MM'" />
+        <a-select v-model:value="filterWarehouse" placeholder="仓库" allow-clear style="width: 140px">
+          <a-select-option v-for="w in warehouseOptions" :key="w.warehouse_number" :value="w.warehouse_number">
+            {{ w.warehouse_name }}
+          </a-select-option>
+        </a-select>
+        <a-button type="primary" @click="handleQuery"><SearchOutlined /> 查询</a-button>
+        <a-button @click="handleReset"><ReloadOutlined /> 重置</a-button>
+      </div>
     </div>
 
     <!-- KPI 卡片 -->

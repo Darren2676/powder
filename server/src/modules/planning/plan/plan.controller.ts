@@ -220,10 +220,25 @@ export const deletePlan = async (req: Request, res: Response, next: NextFunction
             await sequelize.query(
               `UPDATE sales_order_detail
                SET production_status = N'未加入计划',
-                   status = CASE WHEN shipping_status = N'未申请' THEN N'未开始' ELSE status END
+                   status = N'未开始'
                WHERE sales_order_number = :son AND line_number = :ln`,
               { replacements: { son: sourceOrderNumber, ln: sourceLineNumber }, transaction }
             );
+
+            // 检查整个销售订单是否还有其他明细行处于生产中
+            const [otherActiveDetails]: any = await sequelize.query(
+              `SELECT 1 FROM sales_order_detail
+               WHERE sales_order_number = :son AND production_status = N'待排产'`,
+              { replacements: { son: sourceOrderNumber }, transaction }
+            );
+
+            if (otherActiveDetails.length === 0) {
+              // 无其他明细行在排产，回退销售订单头状态
+              await sequelize.query(
+                `UPDATE sales_order SET order_status = N'待执行' WHERE sales_order_number = :son AND order_status = N'生产中'`,
+                { replacements: { son: sourceOrderNumber }, transaction }
+              );
+            }
           }
         } else {
           // 来源是销售预测：检查是否还有其他计划关联该明细行

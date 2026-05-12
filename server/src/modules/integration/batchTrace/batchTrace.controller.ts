@@ -41,10 +41,66 @@ export const forwardTrace = async (req: Request, res: Response, next: NextFuncti
       productionOrders = orders;
     }
 
+    // 查询报工记录
+    let workReports: any[] = [];
+    if (productionOrderNumbers.length > 0) {
+      const placeholders = productionOrderNumbers.map((_: any, i: number) => `:pon${i}`).join(',');
+      const ponReplacements: any = {};
+      productionOrderNumbers.forEach((pon: any, i: number) => { ponReplacements[`pon${i}`] = pon; });
+      const [wr]: any = await sequelize.query(
+        `SELECT work_report_number, production_order_number, step_number,
+                standard_process_name, qualified_quantity, unqualified_quantity,
+                cumulative_quantity, report_date, operator_name, approval_status
+         FROM work_report WHERE production_order_number IN (${placeholders})
+         ORDER BY production_order_number, step_number, report_date`,
+        { replacements: ponReplacements }
+      );
+      workReports = wr;
+    }
+
+    // 查询原材料来料检验记录
+    const materialBatchNumbers = [...new Set(traceLinks.map((t: any) => t.material_batch_number).filter(Boolean))];
+    let purchaseInspections: any[] = [];
+    if (materialBatchNumbers.length > 0) {
+      const mbPlaceholders = materialBatchNumbers.map((_: any, i: number) => `:mbn${i}`).join(',');
+      const mbReplacements: any = {};
+      materialBatchNumbers.forEach((bn: any, i: number) => { mbReplacements[`mbn${i}`] = bn; });
+      const [pi]: any = await sequelize.query(
+        `SELECT inspection_number, batch_number, item_number, item_name,
+                supplier_name, received_quantity, qualified_quantity,
+                unqualified_quantity, inspect_result, inspector_name,
+                inspect_date, inspect_status
+         FROM purchase_quality_inspection WHERE batch_number IN (${mbPlaceholders})
+         ORDER BY inspect_date`,
+        { replacements: mbReplacements }
+      );
+      purchaseInspections = pi;
+    }
+
+    // 查询生产检验记录
+    let productionInspections: any[] = [];
+    if (productionOrderNumbers.length > 0) {
+      const placeholders = productionOrderNumbers.map((_: any, i: number) => `:ppon${i}`).join(',');
+      const ppiReplacements: any = {};
+      productionOrderNumbers.forEach((pon: any, i: number) => { ppiReplacements[`ppon${i}`] = pon; });
+      const [pIns]: any = await sequelize.query(
+        `SELECT inspection_number, production_order_number, work_report_number,
+                step_number, standard_process_name, inspect_type,
+                inspection_result, inspector_name, inspection_date, status
+         FROM production_inspection WHERE production_order_number IN (${placeholders})
+         ORDER BY production_order_number, step_number, inspection_date`,
+        { replacements: ppiReplacements }
+      );
+      productionInspections = pIns;
+    }
+
     res.json(success({
       finishedBatch: finishedBatch[0] || null,
       materialBatches: traceLinks,
-      productionOrders
+      productionOrders,
+      workReports,
+      purchaseInspections,
+      productionInspections
     }));
   } catch (err) { next(err); }
 };
@@ -88,10 +144,58 @@ export const reverseTrace = async (req: Request, res: Response, next: NextFuncti
       productionOrders = orders;
     }
 
+    // 查询报工记录
+    let workReports: any[] = [];
+    if (productionOrderNumbers.length > 0) {
+      const placeholders = productionOrderNumbers.map((_: any, i: number) => `:wrpon${i}`).join(',');
+      const wrReplacements: any = {};
+      productionOrderNumbers.forEach((pon: any, i: number) => { wrReplacements[`wrpon${i}`] = pon; });
+      const [wr]: any = await sequelize.query(
+        `SELECT work_report_number, production_order_number, step_number,
+                standard_process_name, qualified_quantity, unqualified_quantity,
+                cumulative_quantity, report_date, operator_name, approval_status
+         FROM work_report WHERE production_order_number IN (${placeholders})
+         ORDER BY production_order_number, step_number, report_date`,
+        { replacements: wrReplacements }
+      );
+      workReports = wr;
+    }
+
+    // 查询原材料来料检验记录（直接用输入的批次号）
+    const [purchaseInspections]: any = await sequelize.query(
+      `SELECT inspection_number, batch_number, item_number, item_name,
+              supplier_name, received_quantity, qualified_quantity,
+              unqualified_quantity, inspect_result, inspector_name,
+              inspect_date, inspect_status
+       FROM purchase_quality_inspection WHERE batch_number = :bn
+       ORDER BY inspect_date`,
+      { replacements: { bn: batch_number } }
+    );
+
+    // 查询生产检验记录
+    let productionInspections: any[] = [];
+    if (productionOrderNumbers.length > 0) {
+      const placeholders = productionOrderNumbers.map((_: any, i: number) => `:pipon${i}`).join(',');
+      const piReplacements: any = {};
+      productionOrderNumbers.forEach((pon: any, i: number) => { piReplacements[`pipon${i}`] = pon; });
+      const [pIns]: any = await sequelize.query(
+        `SELECT inspection_number, production_order_number, work_report_number,
+                step_number, standard_process_name, inspect_type,
+                inspection_result, inspector_name, inspection_date, status
+         FROM production_inspection WHERE production_order_number IN (${placeholders})
+         ORDER BY production_order_number, step_number, inspection_date`,
+        { replacements: piReplacements }
+      );
+      productionInspections = pIns;
+    }
+
     res.json(success({
       materialBatch: materialBatch[0] || null,
       finishedBatches: traceLinks,
-      productionOrders
+      productionOrders,
+      workReports,
+      purchaseInspections,
+      productionInspections
     }));
   } catch (err) { next(err); }
 };
@@ -209,12 +313,47 @@ export const traceByProductionOrder = async (req: Request, res: Response, next: 
       SELECT * FROM batch_traceability WHERE production_order_number = :pon ORDER BY creation_date
     `, { replacements: { pon: production_order_number } });
 
+    // 报工记录
+    const [workReports]: any = await sequelize.query(`
+      SELECT work_report_number, production_order_number, step_number,
+             standard_process_name, qualified_quantity, unqualified_quantity,
+             cumulative_quantity, report_date, operator_name, approval_status
+      FROM work_report WHERE production_order_number = :pon
+      ORDER BY step_number, report_date
+    `, { replacements: { pon: production_order_number } });
+
+    // 来料检验记录（通过该生产单耗用的原材料批次关联）
+    const [purchaseInspections]: any = await sequelize.query(`
+      SELECT pqi.inspection_number, pqi.batch_number, pqi.item_number,
+             pqi.item_name, pqi.supplier_name, pqi.received_quantity,
+             pqi.qualified_quantity, pqi.unqualified_quantity,
+             pqi.inspect_result, pqi.inspector_name, pqi.inspect_date,
+             pqi.inspect_status
+      FROM purchase_quality_inspection pqi
+      INNER JOIN material_batch_inventory mbi
+        ON pqi.batch_number = mbi.batch_number AND pqi.item_number = mbi.item_number
+      WHERE mbi.production_order_number = :pon
+      ORDER BY pqi.inspect_date
+    `, { replacements: { pon: production_order_number } });
+
+    // 生产检验记录
+    const [productionInspections]: any = await sequelize.query(`
+      SELECT inspection_number, production_order_number, work_report_number,
+             step_number, standard_process_name, inspect_type,
+             inspection_result, inspector_name, inspection_date, status
+      FROM production_inspection WHERE production_order_number = :pon
+      ORDER BY step_number, inspection_date
+    `, { replacements: { pon: production_order_number } });
+
     res.json(success({
       productionOrder: orderInfo[0] || null,
       finishedBatches,
       materialBatches,
       issueRecords,
-      traceLinks
+      traceLinks,
+      workReports,
+      purchaseInspections,
+      productionInspections
     }));
   } catch (err) { next(err); }
 };

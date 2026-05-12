@@ -44,6 +44,16 @@ export function deletePurchaseOrderDetail(detailId: number) {
   return request.delete(`/purchase-orders/details/${detailId}`)
 }
 
+// ==================== 明细列表页 ====================
+
+export function getPurchaseOrderDetailsPage(params?: { page?: number; limit?: number; search?: string; receive_status?: string; approval_status?: string }) {
+  return request.get('/purchase-orders/details-page', { params })
+}
+
+export function exportPurchaseOrderDetailsSelected(data: { ids: number[] }) {
+  return request.post('/purchase-orders/details-page/export-selected', data, { responseType: 'blob' })
+}
+
 // ==================== 关闭 & 可入库 ====================
 
 export function closePurchaseOrder(id: string) {

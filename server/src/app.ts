@@ -23,7 +23,7 @@ app.use(cors({
   origin: corsOrigin ? corsOrigin.split(',').map(s => s.trim()) : true, // 未配置时全开(开发环境)，配置后仅允许指定Origin
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key']
 }));
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(requestLogger);
@@ -47,10 +47,20 @@ const authLimiter = rateLimit({
   message: { success: false, message: '登录尝试过于频繁，请稍后再试' }
 });
 
+// ==================== Open API 速率限制 ====================
+const openApiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1分钟窗口
+  max: 100,            // 默认每分钟100次，apiKeyAuth中间件会根据rate_limit字段动态覆盖
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'API调用频率超限，请稍后重试' }
+});
+
 // ==================== API 版本化 ====================
 const API_PREFIX = '/api/v1';
 
 app.use(`${API_PREFIX}/auth/login`, authLimiter);
+app.use(`${API_PREFIX}/open`, openApiLimiter);
 app.use(API_PREFIX, apiLimiter);
 
 const uploadDir = process.env.UPLOAD_DIR || 'uploads';

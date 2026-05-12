@@ -64,7 +64,12 @@ export const validateFinishedGoodsSafetyStock = validateBody([
 // 成品退货入库
 export const validateFinishedGoodsReturnInbound = validateBody([
   { field: 'warehouse_number', label: '仓库编号', required: true, maxLength: 50 },
-  { field: 'warehouse_name', label: '仓仓名称', maxLength: 100 },
+  { field: 'warehouse_name', label: '仓库名称', maxLength: 100 },
+]);
+
+// 成品发货出库撤回
+export const validateFinishedGoodsOutboundRollback = validateBody([
+  { field: 'request_number', label: '发货申请编号', required: true, maxLength: 50 },
 ]);
 
 // ==================== 采购入库 ====================
@@ -93,15 +98,15 @@ export const validateCreateStockCount = validateBody([
 // 更新盘点单
 export const validateUpdateStockCount = validateBody([]);
 
-// ==================== 异常出入库 ====================
+// ==================== 其他出入库 ====================
 
-// 创建异常出入库单
+// 创建其他出入库单
 export const validateCreateAbnormalIO = validateBody([
   { field: 'type', label: '异常类型', required: true, maxLength: 20 },
   { field: 'warehouse_number', label: '仓库编号', required: true, maxLength: 50 },
 ]);
 
-// 更新异常出入库单
+// 更新其他出入库单
 export const validateUpdateAbnormalIO = validateBody([
   { field: 'type', label: '异常类型', required: true, maxLength: 20 },
   { field: 'warehouse_number', label: '仓库编号', required: true, maxLength: 50 },

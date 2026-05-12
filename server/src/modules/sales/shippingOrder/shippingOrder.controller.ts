@@ -178,7 +178,7 @@ export const createShippingOrder = async (req: Request, res: Response, next: Nex
         // 累加申请明细 delivered_quantity
         if (reqDetail?.id) {
           await sequelize.query(
-            `UPDATE shipping_request_detail SET delivered_quantity = ISNULL(delivered_quantity, 0) + :qty WHERE id = :id`,
+            `UPDATE shipping_request_detail SET shipped_quantity = ISNULL(shipped_quantity, 0) + :qty WHERE id = :id`,
             { replacements: { qty: Number(d.quantity) || 0, id: reqDetail.id }, transaction }
           );
         }
@@ -529,12 +529,12 @@ export const cancelShippingOrder = async (req: Request, res: Response, next: Nex
         { replacements: { sn: shipping_order_number }, transaction }
       );
 
-      // 4.1 扣减申请明细 delivered_quantity
+      // 4.1 扣减申请明细 shipped_quantity
       for (const d of soDetails) {
         if (d.request_number) {
           await sequelize.query(`
             UPDATE shipping_request_detail
-            SET delivered_quantity = IIF(ISNULL(delivered_quantity, 0) - :qty < 0, 0, ISNULL(delivered_quantity, 0) - :qty)
+            SET shipped_quantity = IIF(ISNULL(shipped_quantity, 0) - :qty < 0, 0, ISNULL(shipped_quantity, 0) - :qty)
             WHERE request_number = :rn AND sales_detail_id = :sid
           `, {
             replacements: {

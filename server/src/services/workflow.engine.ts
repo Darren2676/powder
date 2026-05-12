@@ -553,8 +553,13 @@ export async function processTask(
   user: { id: number; username: string },
   remark?: string
 ): Promise<{ success: boolean; message: string }> {
+  // Capture instance info for deferred hook execution after transaction commit.
+  // Hooks must run OUTSIDE the transaction because they use separate DB connections
+  // that would block waiting for locks held by the uncommitted transaction.
+  let deferredHook: { module: string; recordId: string; hookType: 'onApproved' | 'onRejected' } | null = null;
+
   try {
-    return await withTransaction(async (transaction) => {
+    const result = await withTransaction(async (transaction) => {
       // Get task with optimistic lock check
       const [tasks]: any = await sequelize.query(`
         SELECT t.*, i.status as instance_status, i.module, i.record_id, i.initiator_id,
@@ -656,6 +661,38 @@ export async function processTask(
       }
       return { success: true, message: rejectMessages[strategy] || '已驳回' }
     })
+
+    // === After transaction commit: check if workflow completed and fire hooks ===
+    // Hooks run OUTSIDE the transaction to avoid ETIMEOUT caused by reading
+    // locked rows from a separate DB connection while the transaction is pending.
+    try {
+      const [instances]: any = await sequelize.query(
+        `SELECT module, record_id, status FROM workflow_instances
+         WHERE id IN (SELECT instance_id FROM workflow_tasks WHERE id = :taskId)`,
+        { replacements: { taskId } }
+      )
+      if (instances.length > 0) {
+        const inst = instances[0]
+        if (inst.status === 'completed') {
+          deferredHook = { module: inst.module, recordId: inst.record_id, hookType: 'onApproved' }
+        } else if (inst.status === 'rejected' || inst.status === 'returned') {
+          deferredHook = { module: inst.module, recordId: inst.record_id, hookType: 'onRejected' }
+        }
+      }
+    } catch (hookCheckErr) {
+      log.error({ error: hookCheckErr }, 'Failed to check instance status for hook');
+    }
+
+    if (deferredHook) {
+      try {
+        await executeModuleHook(deferredHook.module, deferredHook.hookType, deferredHook.recordId)
+      } catch (hookErr) {
+        log.error({ error: hookErr, module: deferredHook.module, recordId: deferredHook.recordId },
+          'Module hook execution failed (deferred)')
+      }
+    }
+
+    return result
   } catch (error: any) {
     if (error instanceof BusinessError) {
       return { success: false, message: error.message }
@@ -806,17 +843,9 @@ async function completeWorkflow(
     transaction
   })
 
-  // Execute module hooks
-  try {
-    if (status === 'completed') {
-      await executeModuleHook(instance.module, 'onApproved', instance.record_id)
-    } else {
-      await executeModuleHook(instance.module, 'onRejected', instance.record_id)
-    }
-  } catch (error) {
-    log.error({ error }, 'Module hook execution failed')
-    // Don't fail the transaction for hook errors
-  }
+  // Module hooks are now deferred to after transaction commit (see processTask).
+  // This prevents ETIMEOUT caused by reading locked rows from a separate connection
+  // while the calling transaction has not yet committed.
 }
 
 /**
@@ -1015,12 +1044,7 @@ async function returnToStart(
     transaction
   })
 
-  // Execute module hooks
-  try {
-    await executeModuleHook(instance.module, 'onRejected', instance.record_id)
-  } catch (error) {
-    log.error({ error, module: instance.module }, 'Module hook execution failed (withdraw)')
-  }
+  // Module hook deferred to after transaction commit (see processTask).
 }
 
 /**

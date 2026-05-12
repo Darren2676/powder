@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import { generateMaterialTxnNumber, syncMaterialInventorySummary } from '@/services/inventory.service';
 import { logLinesideMovement } from '@/services/linesideMovement.service';
 import { syncProductionStatus } from '@/services/salesOrderSync.service';
+import { createMaterialTransaction } from '@/services/warehouse/helpers';
 
 // 自动生成领料单编号: MI-YYYYMMDD-NNN
 const generateIssueNumber = async (): Promise<string> => {
@@ -186,6 +187,49 @@ export const createMaterialIssue = async (req: Request, res: Response, next: Nex
       transaction
     });
 
+    // 辅助函数：从汇总库存扣减并记录流水
+    const deductFromSummary = async (item: any, wh: string, qty: number, issueNo: string, operator: string, tx: any) => {
+      const [invRows]: any = await sequelize.query(
+        `SELECT id, quantity, item_name, item_type, specifications, basic_unit, warehouse_name FROM material_inventory WHERE item_number = :material_number AND warehouse_number = :wh`,
+        { replacements: { material_number: item.material_number, wh }, transaction: tx }
+      );
+      if (invRows.length > 0) {
+        const beforeQty = Number(invRows[0].quantity);
+        if (beforeQty >= qty) {
+          const afterQty = beforeQty - qty;
+          await sequelize.query(
+            `UPDATE material_inventory SET quantity = :afterQty, last_updated = GETDATE() WHERE id = :id`,
+            { replacements: { afterQty, id: invRows[0].id }, transaction: tx }
+          );
+          const mtNum = await generateMaterialTxnNumber(tx);
+          await createMaterialTransaction({
+            transaction_number: mtNum,
+            transaction_type: '出库',
+            source_type: '领料出库',
+            source_number: issueNo,
+            item_number: item.material_number,
+            item_name: invRows[0].item_name || item.material_name || '',
+            item_type: invRows[0].item_type || '',
+            specifications: invRows[0].specifications || '',
+            basic_unit: invRows[0].basic_unit || item.unit || '',
+            warehouse_number: wh,
+            warehouse_name: invRows[0].warehouse_name || '',
+            quantity: qty,
+            before_quantity: beforeQty,
+            after_quantity: afterQty,
+            batch_number: (item.batch_number || '').trim(),
+            operator,
+            remark: `领料单 ${issueNo}`
+          }, tx);
+          console.log(`[materialIssue] 汇总扣减 ${item.material_number} 仓库 ${wh} ${beforeQty}→${afterQty}`);
+        } else {
+          console.warn(`[materialIssue] 物料 ${item.material_number} 仓库 ${wh} 库存不足，需要 ${qty} 实际 ${beforeQty}`);
+        }
+      } else {
+        console.warn(`[materialIssue] 物料 ${item.material_number} 仓库 ${wh} 无库存记录`);
+      }
+    };
+
     // 插入领料明细 + 更新备料明细已领量
     for (let i = 0; i < validItems.length; i++) {
       const item = validItems[i];
@@ -228,8 +272,37 @@ export const createMaterialIssue = async (req: Request, res: Response, next: Nex
       }
 
       // 自动扣减物料库存 - 按批次扣减 (若有默认仓库和批次号)
-      const whNumber = (item.default_warehouse || '').trim();
+      let whNumber = (item.default_warehouse || '').trim();
       const batchNumber = (item.batch_number || '').trim();
+
+      // 仓库解析：优先用 default_warehouse（验证库存），空或无效则自动回退
+      const resolveWarehouse = async () => {
+        if (whNumber) {
+          const [invCheck]: any = await sequelize.query(
+            `SELECT TOP 1 warehouse_number FROM material_inventory
+             WHERE item_number = :material_number AND warehouse_number = :wh AND quantity > 0`,
+            { replacements: { material_number: item.material_number, wh: whNumber }, transaction }
+          );
+          if (invCheck.length > 0) return; // 仓库有效，直接使用
+          console.warn(`[materialIssue] 物料 ${item.material_number} 仓库 ${whNumber} 无库存，尝试查找其他仓库`);
+          whNumber = '';
+        }
+        // 回退：自动查找有库存的仓库
+        const [fallbackRows]: any = await sequelize.query(
+          `SELECT TOP 1 warehouse_number FROM material_inventory
+           WHERE item_number = :material_number AND quantity > 0
+           ORDER BY quantity DESC`,
+          { replacements: { material_number: item.material_number }, transaction }
+        );
+        if (fallbackRows.length > 0) {
+          whNumber = fallbackRows[0].warehouse_number;
+          console.log(`[materialIssue] 物料 ${item.material_number} 自动回退到仓库: ${whNumber}`);
+        } else {
+          console.warn(`[materialIssue] 物料 ${item.material_number} 无库存记录，跳过库存扣减`);
+        }
+      };
+      await resolveWarehouse();
+
       if (whNumber && actualQty > 0 && batchNumber) {
         // 从批次库存表扣减
         const [batchRows]: any = await sequelize.query(
@@ -256,73 +329,38 @@ export const createMaterialIssue = async (req: Request, res: Response, next: Nex
             );
             const invInfo = invRows[0] || {};
 
-            const mtNum = await generateMaterialTxnNumber();
-            await sequelize.query(`
-              INSERT INTO material_inventory_transaction (transaction_number, transaction_type, source_type, source_number,
-                item_number, item_name, item_type, specifications, basic_unit,
-                warehouse_number, warehouse_name, quantity, before_quantity, after_quantity,
-                batch_number, operator, operation_date, remark, creation_date)
-              VALUES (:txn, N'出库', N'领料出库', :source,
-                :item_number, :item_name, :item_type, :specifications, :basic_unit,
-                :wh_number, :wh_name, :qty, :before, :after,
-                :batch, :operator, GETDATE(), :remark, GETDATE())
-            `, {
-              replacements: {
-                txn: mtNum, source: issue_number,
-                item_number: item.material_number, item_name: invInfo.item_name || item.material_name || '',
-                item_type: invInfo.item_type || '', specifications: invInfo.specifications || '',
-                basic_unit: invInfo.basic_unit || item.unit || '',
-                wh_number: whNumber, wh_name: invInfo.warehouse_name || '',
-                qty: actualQty, before: batchBefore, after: batchAfter,
-                batch: batchNumber,
-                operator: user?.username || '',
-                remark: `领料单 ${issue_number}`
-              }, transaction
-            });
+            const mtNum = await generateMaterialTxnNumber(transaction);
+            await createMaterialTransaction({
+              transaction_number: mtNum,
+              transaction_type: '出库',
+              source_type: '领料出库',
+              source_number: issue_number,
+              item_number: item.material_number,
+              item_name: invInfo.item_name || item.material_name || '',
+              item_type: invInfo.item_type || '',
+              specifications: invInfo.specifications || '',
+              basic_unit: invInfo.basic_unit || item.unit || '',
+              warehouse_number: whNumber,
+              warehouse_name: invInfo.warehouse_name || '',
+              quantity: actualQty,
+              before_quantity: batchBefore,
+              after_quantity: batchAfter,
+              batch_number: batchNumber,
+              operator: user?.username || '',
+              remark: `领料单 ${issue_number}`
+            }, transaction);
+          } else {
+            console.warn(`[materialIssue] 批次 ${batchNumber} 库存不足，需要 ${actualQty} 实际 ${batchBefore}`);
+            // 批次库存不足时回退到汇总库存扣减
+            await deductFromSummary(item, whNumber, actualQty, issue_number, user?.username || '', transaction);
           }
-          // 批次库存不足时不阻塞领料，仅跳过扣减
+        } else {
+          // 批次不存在，回退到汇总库存扣减
+          console.log(`[materialIssue] 物料 ${item.material_number} 批次 ${batchNumber} 不存在，回退汇总库存扣减`);
+          await deductFromSummary(item, whNumber, actualQty, issue_number, user?.username || '', transaction);
         }
       } else if (whNumber && actualQty > 0 && !batchNumber) {
-        // 无批次号时，保留旧的汇总扣减逻辑（向后兼容）
-        const [invRows]: any = await sequelize.query(
-          `SELECT id, quantity, item_name, item_type, specifications, basic_unit, warehouse_name FROM material_inventory WHERE item_number = :material_number AND warehouse_number = :wh`,
-          { replacements: { material_number: item.material_number, wh: whNumber }, transaction }
-        );
-
-        if (invRows.length > 0) {
-          const beforeQty = Number(invRows[0].quantity);
-          if (beforeQty >= actualQty) {
-            const afterQty = beforeQty - actualQty;
-            await sequelize.query(
-              `UPDATE material_inventory SET quantity = :afterQty, last_updated = GETDATE() WHERE id = :id`,
-              { replacements: { afterQty, id: invRows[0].id }, transaction }
-            );
-
-            const mtNum = await generateMaterialTxnNumber();
-            await sequelize.query(`
-              INSERT INTO material_inventory_transaction (transaction_number, transaction_type, source_type, source_number,
-                item_number, item_name, item_type, specifications, basic_unit,
-                warehouse_number, warehouse_name, quantity, before_quantity, after_quantity,
-                batch_number, operator, operation_date, remark, creation_date)
-              VALUES (:txn, N'出库', N'领料出库', :source,
-                :item_number, :item_name, :item_type, :specifications, :basic_unit,
-                :wh_number, :wh_name, :qty, :before, :after,
-                :batch, :operator, GETDATE(), :remark, GETDATE())
-            `, {
-              replacements: {
-                txn: mtNum, source: issue_number,
-                item_number: item.material_number, item_name: invRows[0].item_name || item.material_name || '',
-                item_type: invRows[0].item_type || '', specifications: invRows[0].specifications || '',
-                basic_unit: invRows[0].basic_unit || item.unit || '',
-                wh_number: whNumber, wh_name: invRows[0].warehouse_name || '',
-                qty: actualQty, before: beforeQty, after: afterQty,
-                batch: '',
-                operator: user?.username || '',
-                remark: `领料单 ${issue_number}`
-              }, transaction
-            });
-          }
-        }
+        await deductFromSummary(item, whNumber, actualQty, issue_number, user?.username || '', transaction);
       }
     }
 
@@ -504,4 +542,288 @@ export const getMaterialIssueDetail = async (req: Request, res: Response, next: 
 
     res.json(success({ header: headers[0], details }, '获取领料记录详情成功'));
   } catch (err) { next(err); }
+};
+
+// ==================== 删除/撤回领料记录 ====================
+export const deleteMaterialIssue = async (req: Request, res: Response, next: NextFunction) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const user = (req as any).user;
+    const { id } = req.params;
+
+    // A. 前置校验 - 查询领料单主表
+    const [issueRows]: any = await sequelize.query(
+      `SELECT issue_number, production_order_number, preparation_number,
+              item_number, item_name, specifications, basic_unit,
+              planned_quantity, total_issue_items, creation_man, remark
+       FROM material_issue WHERE issue_number = :id`,
+      { replacements: { id }, transaction }
+    );
+    if (!issueRows.length) {
+      await transaction.rollback();
+      res.status(404).json({ success: false, message: '领料单不存在' });
+      return;
+    }
+    const issue = issueRows[0];
+    const issue_number = issue.issue_number;
+
+    // B. 查询领料明细（含 step_number 用于报工检查）
+    const [detailRows]: any = await sequelize.query(
+      `SELECT id, preparation_detail_id, material_number, material_name,
+              actual_quantity, batch_number, default_warehouse, step_number
+       FROM material_issue_detail WHERE issue_number = :issueNo`,
+      { replacements: { issueNo: issue_number }, transaction }
+    );
+    if (!detailRows.length) {
+      await transaction.rollback();
+      res.status(404).json({ success: false, message: '领料明细不存在' });
+      return;
+    }
+
+    // B2. 检查报工记录：领料工序及后道工序是否已报工
+    const issuedSteps = [...new Set(detailRows.map((d: any) => d.step_number).filter((s: any) => s != null))] as number[];
+    if (issuedSteps.length > 0) {
+      const minStep = Math.min(...issuedSteps);
+      const [conflictReports]: any = await sequelize.query(
+        `SELECT work_report_number, step_number, standard_process_name, approval_status
+         FROM work_report
+         WHERE production_order_number = :orderNo AND step_number >= :minStep
+         ORDER BY step_number ASC`,
+        { replacements: { orderNo: issue.production_order_number, minStep }, transaction }
+      );
+      if (conflictReports.length > 0) {
+        const stepNames = conflictReports.map((r: any) =>
+          `工序${r.step_number}(${r.standard_process_name || ''}) [${r.work_report_number}]`
+        ).join('、');
+        await transaction.rollback();
+        res.status(409).json({
+          success: false,
+          message: `无法撤回：生产单 ${issue.production_order_number} 的以下工序已报工，请先删除报工记录再撤回：${stepNames}`
+        });
+        return;
+      }
+    }
+
+    // C. 逐行回退库存
+    for (const detail of detailRows) {
+      const actualQty = parseFloat(detail.actual_quantity) || 0;
+      if (actualQty <= 0) continue;
+
+      const batchNumber = (detail.batch_number || '').trim();
+
+      // 仓库解析：先验证 default_warehouse 是否有记录，否则自动查找
+      let targetWh = (detail.default_warehouse || '').trim();
+      if (targetWh) {
+        const [whCheck]: any = await sequelize.query(
+          `SELECT TOP 1 warehouse_number FROM material_inventory WHERE item_number = :mn AND warehouse_number = :wh`,
+          { replacements: { mn: detail.material_number, wh: targetWh }, transaction }
+        );
+        if (!whCheck.length) targetWh = '';
+      }
+      if (!targetWh) {
+        const [whFallback]: any = await sequelize.query(
+          `SELECT TOP 1 warehouse_number FROM material_inventory WHERE item_number = :mn ORDER BY quantity DESC`,
+          { replacements: { mn: detail.material_number }, transaction }
+        );
+        if (whFallback.length > 0) targetWh = whFallback[0].warehouse_number;
+      }
+      if (!targetWh) {
+        console.warn(`[deleteMaterialIssue] 物料 ${detail.material_number} 无库存记录，跳过库存回退`);
+        continue;
+      }
+
+      // 1. 批次回退
+      let batchRestored = false;
+      if (batchNumber) {
+        const [batchRows]: any = await sequelize.query(
+          `SELECT id, quantity FROM material_batch_inventory
+           WHERE batch_number = :bn AND item_number = :mn AND warehouse_number = :wh`,
+          { replacements: { bn: batchNumber, mn: detail.material_number, wh: targetWh }, transaction }
+        );
+        if (batchRows.length > 0) {
+          const beforeQty = Number(batchRows[0].quantity);
+          const afterQty = beforeQty + actualQty;
+          await sequelize.query(
+            `UPDATE material_batch_inventory SET quantity = :qty, last_updated = GETDATE() WHERE id = :bid`,
+            { replacements: { qty: afterQty, bid: batchRows[0].id }, transaction }
+          );
+          await syncMaterialInventorySummary(detail.material_number, targetWh, transaction);
+
+          const mtNum = await generateMaterialTxnNumber(transaction);
+          await createMaterialTransaction({
+            transaction_number: mtNum,
+            transaction_type: '入库',
+            source_type: '领料撤回',
+            source_number: issue_number,
+            item_number: detail.material_number,
+            item_name: detail.material_name || '',
+            item_type: '',
+            specifications: '',
+            basic_unit: '',
+            warehouse_number: targetWh,
+            warehouse_name: '',
+            quantity: actualQty,
+            before_quantity: beforeQty,
+            after_quantity: afterQty,
+            batch_number: batchNumber,
+            operator: user?.username || '',
+            remark: `撤回领料单 ${issue_number}`
+          }, transaction);
+          batchRestored = true;
+          console.log(`[deleteMaterialIssue] 批次回退 ${detail.material_number} ${batchNumber} ${beforeQty}→${afterQty}`);
+        }
+      }
+
+      // 2. 汇总回退（无批次或批次未找到）
+      if (!batchRestored) {
+        const [invRows]: any = await sequelize.query(
+          `SELECT id, quantity, item_name, item_type, specifications, basic_unit, warehouse_name
+           FROM material_inventory WHERE item_number = :mn AND warehouse_number = :wh`,
+          { replacements: { mn: detail.material_number, wh: targetWh }, transaction }
+        );
+        if (invRows.length > 0) {
+          const beforeQty = Number(invRows[0].quantity);
+          const afterQty = beforeQty + actualQty;
+          await sequelize.query(
+            `UPDATE material_inventory SET quantity = :qty, last_updated = GETDATE() WHERE id = :iid`,
+            { replacements: { qty: afterQty, iid: invRows[0].id }, transaction }
+          );
+
+          const mtNum = await generateMaterialTxnNumber(transaction);
+          await createMaterialTransaction({
+            transaction_number: mtNum,
+            transaction_type: '入库',
+            source_type: '领料撤回',
+            source_number: issue_number,
+            item_number: detail.material_number,
+            item_name: invRows[0].item_name || detail.material_name || '',
+            item_type: invRows[0].item_type || '',
+            specifications: invRows[0].specifications || '',
+            basic_unit: invRows[0].basic_unit || '',
+            warehouse_number: targetWh,
+            warehouse_name: invRows[0].warehouse_name || '',
+            quantity: actualQty,
+            before_quantity: beforeQty,
+            after_quantity: afterQty,
+            batch_number: batchNumber,
+            operator: user?.username || '',
+            remark: `撤回领料单 ${issue_number}`
+          }, transaction);
+          console.log(`[deleteMaterialIssue] 汇总回退 ${detail.material_number} 仓库${targetWh} ${beforeQty}→${afterQty}`);
+        } else {
+          console.warn(`[deleteMaterialIssue] 物料 ${detail.material_number} 仓库 ${targetWh} 无库存记录，跳过回退`);
+        }
+      }
+
+      // D. 回退备料明细已领量
+      if (detail.preparation_detail_id) {
+        await sequelize.query(
+          `UPDATE material_preparation_detail SET issued_quantity = ISNULL(issued_quantity, 0) - :qty WHERE id = :detailId`,
+          { replacements: { qty: actualQty, detailId: detail.preparation_detail_id }, transaction }
+        );
+      }
+    }
+
+    // E. 重算备料单状态
+    if (issue.preparation_number) {
+      const [statusRows]: any = await sequelize.query(`
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN ISNULL(issued_quantity, 0) >= ISNULL(required_quantity, 0) AND ISNULL(required_quantity, 0) > 0 THEN 1 ELSE 0 END) as fully_issued,
+          SUM(CASE WHEN ISNULL(issued_quantity, 0) > 0 THEN 1 ELSE 0 END) as partially_issued
+        FROM material_preparation_detail
+        WHERE preparation_number = :prepNo
+      `, { replacements: { prepNo: issue.preparation_number }, transaction });
+
+      let newStatus = '未领料';
+      if (statusRows.length > 0) {
+        const { total, fully_issued, partially_issued } = statusRows[0];
+        if (fully_issued >= total && total > 0) {
+          newStatus = '已领料';
+        } else if (partially_issued > 0) {
+          newStatus = '部分领料';
+        }
+      }
+      await sequelize.query(
+        `UPDATE material_preparation SET preparation_status = :status WHERE preparation_number = :prepNo`,
+        { replacements: { status: newStatus, prepNo: issue.preparation_number }, transaction }
+      );
+    }
+
+    // F. 重算生产单状态
+    if (issue.production_order_number && issue.preparation_number) {
+      try {
+        const [minStepRows]: any = await sequelize.query(
+          `SELECT MIN(step_number) as first_step FROM material_preparation_detail WHERE preparation_number = :prepNo AND step_number IS NOT NULL`,
+          { replacements: { prepNo: issue.preparation_number }, transaction }
+        );
+        const firstStep = minStepRows[0]?.first_step;
+        if (firstStep != null) {
+          const [firstStepStatus]: any = await sequelize.query(`
+            SELECT COUNT(*) as total,
+                   SUM(CASE WHEN ISNULL(issued_quantity, 0) >= ISNULL(required_quantity, 0) AND ISNULL(required_quantity, 0) > 0 THEN 1 ELSE 0 END) as fully_issued
+            FROM material_preparation_detail
+            WHERE preparation_number = :prepNo AND step_number = :firstStep
+          `, { replacements: { prepNo: issue.preparation_number, firstStep }, transaction });
+          const fTotal = parseInt(firstStepStatus[0]?.total) || 0;
+          const fIssued = parseInt(firstStepStatus[0]?.fully_issued) || 0;
+          if (fTotal > 0 && fIssued < fTotal) {
+            // 首道工序不再全部领完 → 回退到已派发
+            await sequelize.query(
+              `UPDATE production_order SET plan_status = N'已派发' WHERE production_order_number = :orderNo AND plan_status = N'已备料'`,
+              { replacements: { orderNo: issue.production_order_number }, transaction }
+            );
+            await syncProductionStatus(issue.production_order_number, '待排产', transaction);
+            console.log(`[deleteMaterialIssue] 生产单 ${issue.production_order_number} 状态回退: 已备料→已派发`);
+          }
+        }
+      } catch (e) { console.log('[deleteMaterialIssue] 生产单状态重算跳过:', e); }
+    }
+
+    // G. 处理线边仓流转 - 创建对冲记录
+    try {
+      const [linesideRows]: any = await sequelize.query(
+        `SELECT transaction_number, step_number, work_center_number, work_center_name,
+                item_number, item_name, specifications, basic_unit, quantity
+         FROM lineside_inventory_transaction
+         WHERE source_number = :issueNo AND transaction_type = N'入线边'`,
+        { replacements: { issueNo: issue_number }, transaction }
+      );
+      for (const ls of linesideRows) {
+        await logLinesideMovement({
+          transactionType: '出线边',
+          sourceType: '领料撤回',
+          sourceNumber: issue_number,
+          productionOrderNumber: issue.production_order_number || '',
+          itemNumber: ls.item_number || '',
+          itemName: ls.item_name || '',
+          specifications: ls.specifications || '',
+          basicUnit: ls.basic_unit || '',
+          stepNumber: ls.step_number || 0,
+          workCenterNumber: ls.work_center_number || '',
+          workCenterName: ls.work_center_name || '',
+          quantity: parseFloat(ls.quantity) || 0,
+          direction: 'OUT',
+          operator: user?.username || '',
+          remark: `撤回领料入线 ${ls.transaction_number}`
+        }, transaction);
+      }
+    } catch (lsErr) { console.error('[deleteMaterialIssue] 线边仓回退失败:', lsErr); }
+
+    // H. 删除领料单
+    await sequelize.query(
+      `DELETE FROM material_issue_detail WHERE issue_number = :issueNo`,
+      { replacements: { issueNo: issue_number }, transaction }
+    );
+    await sequelize.query(
+      `DELETE FROM material_issue WHERE issue_number = :issueNo`,
+      { replacements: { issueNo: issue_number }, transaction }
+    );
+
+    await transaction.commit();
+    res.json(success(null, `领料单 ${issue_number} 已撤回，库存与状态已回退`));
+  } catch (err) {
+    await transaction.rollback();
+    next(err);
+  }
 };

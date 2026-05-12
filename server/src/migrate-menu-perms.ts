@@ -103,17 +103,20 @@ async function migrate() {
       // 成品仓 (finished-goods-management)
       { name: '生产入库单', code: 'fg-inbound-orders', parent_code: 'finished-goods-management', menu_key: 'fg-inbound-orders', route: '/fg-inbound-orders', sort: 3 },
       { name: '库存流水记录', code: 'fg-transactions', parent_code: 'finished-goods-management', menu_key: 'fg-transactions', route: '/fg-transactions', sort: 4 },
-      { name: '异常出入库', code: 'fg-abnormal-io', parent_code: 'finished-goods-management', menu_key: 'fg-abnormal-io', route: '/fg-abnormal-io', sort: 5 },
+      { name: '其他出入库', code: 'fg-abnormal-io', parent_code: 'finished-goods-management', menu_key: 'fg-abnormal-io', route: '/fg-abnormal-io', sort: 5 },
       { name: '月末盘点', code: 'fg-stock-count', parent_code: 'finished-goods-management', menu_key: 'fg-stock-count', route: '/fg-stock-count', sort: 6 },
       { name: '盘点报表', code: 'fg-stock-count-report', parent_code: 'finished-goods-management', menu_key: 'fg-stock-count-report', route: '/fg-stock-count-report', sort: 7 },
       { name: '月度出入库报表', code: 'fg-monthly-report', parent_code: 'finished-goods-management', menu_key: 'fg-monthly-report', route: '/fg-monthly-report', sort: 8 },
       { name: '退货入库', code: 'fg-return-inbound', parent_code: 'finished-goods-management', menu_key: 'fg-return-inbound', route: '/fg-return-inbound', sort: 9 },
       // 原料仓 (material-warehouse-management)
+      { name: '采购收货通知', code: 'receiving-notices', parent_code: 'material-warehouse-management', menu_key: 'receiving-notices', route: '/receiving-notices', sort: 0 },
       { name: '物料流水记录', code: 'mw-transactions', parent_code: 'material-warehouse-management', menu_key: 'mw-transactions', route: '/mw-transactions', sort: 3 },
       { name: '安全库存预警', code: 'mw-safety-stock', parent_code: 'material-warehouse-management', menu_key: 'mw-safety-stock', route: '/mw-safety-stock', sort: 4 },
       { name: '来料入库', code: 'stock-ins', parent_code: 'material-warehouse-management', menu_key: 'stock-ins', route: '/stock-ins', sort: 5 },
       // 采购申请 (purchase-req-management)
       { name: '采购申请明细', code: 'purchase-req-details', parent_code: 'purchase-req-management', menu_key: 'purchase-req-details', route: '/purchase-req-details', sort: 2 },
+      // 采购订单 (purchase-order-management)
+      { name: '采购订单明细', code: 'purchase-order-details', parent_code: 'purchase-order-management', menu_key: 'purchase-order-details', route: '/purchase-order-details', sort: 2 },
       // 采购价格 (purchase-price-management)
       { name: '采购需求报表', code: 'purchase-calc', parent_code: 'purchase-price-management', menu_key: 'purchase-calc', route: '/purchase-calc', sort: 3 },
       // 检验规范 (inspection-spec-management)
@@ -219,9 +222,9 @@ async function migrate() {
       // planning > mrp-management
       { code: 'mrp', new_parent_code: 'mrp-management', new_sort: 1 },
       // warehouse > finished-goods-management
-      { code: 'fg-inventory', new_parent_code: 'finished-goods-management', new_sort: 1 },
-      { code: 'fg-inbound', new_parent_code: 'finished-goods-management', new_sort: 2 },
+      { code: 'fg-inbound', new_parent_code: 'finished-goods-management', new_sort: 1 },
       { code: 'fg-outbound', new_parent_code: 'finished-goods-management', new_sort: 2 },
+      { code: 'fg-inventory-query', new_parent_code: 'warehouse', new_sort: 3 },
       // warehouse > material-warehouse-management
       { code: 'mw-inventory', new_parent_code: 'material-warehouse-management', new_sort: 1 },
       { code: 'mw-inbound', new_parent_code: 'material-warehouse-management', new_sort: 2 },
@@ -230,6 +233,7 @@ async function migrate() {
       { code: 'purchase-reqs', new_parent_code: 'purchase-req-management', new_sort: 1 },
       // purchasing > purchase-order-management
       { code: 'purchase-orders', new_parent_code: 'purchase-order-management', new_sort: 1 },
+      { code: 'purchase-order-details', new_parent_code: 'purchase-order-management', new_sort: 2 },
       // purchasing > purchase-price-management
       { code: 'purchase-prices', new_parent_code: 'purchase-price-management', new_sort: 1 },
       { code: 'piece-rate-prices', new_parent_code: 'purchase-price-management', new_sort: 2 },
@@ -237,7 +241,7 @@ async function migrate() {
       { code: 'quality-report', new_parent_code: 'quality-report-menu', new_sort: 1 },
       { code: 'purchase-inspection', new_parent_code: 'quality-report-menu', new_sort: 3 },
       // quality > xhy-dev
-      { code: 'batch-trace', new_parent_code: 'xhy-dev', new_sort: 7 },
+      { code: 'batch-trace', new_parent_code: 'quality', new_sort: 5 },
       // finance: 只保留会计期间 (sales-prices和purchase-prices移走)
       { code: 'sales-prices', new_parent_code: 'order-management', new_sort: 9 },
     ];
@@ -291,7 +295,7 @@ async function migrate() {
         'sales', 'order-management', 'sales-orders',
         'production', 'process-tasks', 'work-reports', 'normal-preparation', 'material-preparations', 'material-issue',
         'equipment', 'equipments', 'moulds', 'mould-maintenance',
-        'warehouse', 'finished-goods-management', 'fg-inventory', 'fg-inbound', 'fg-outbound',
+        'warehouse', 'finished-goods-management', 'fg-inbound', 'fg-outbound',
         'material-warehouse-management', 'mw-inventory', 'mw-inbound', 'mw-outbound',
       ];
       for (const code of staffPerms) {

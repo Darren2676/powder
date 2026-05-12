@@ -5,12 +5,13 @@ import multer from 'multer';
 import {
   getSalesPriceLists, getSalesPriceListDetail, createSalesPriceList,
   updateSalesPriceList, deleteSalesPriceList,
-  exportSalesPriceLists, importSalesPriceList
+  exportSalesPriceLists, importSalesPriceList, getSalesPriceForOrder
 } from './salesPrice.controller';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
+router.get('/price-for-order', authenticate, getSalesPriceForOrder);
 router.get('/', authenticate, getSalesPriceLists);
 router.get('/export', authenticate, exportSalesPriceLists);
 router.post('/import', authenticate, upload.single('file'), importSalesPriceList);

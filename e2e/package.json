@@ -1,0 +1,27 @@
+{
+  "name": "seals-mes-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:sales-order": "playwright test tests/sales-order-create.spec.ts --headed",
+    "test:chain": "playwright test tests/full-chain-mps-mrp.spec.ts --headed",
+    "test:packing": "playwright test tests/packing.spec.ts --headed",
+    "test:inspection": "playwright test tests/incoming-inspection.spec.ts --headed",
+    "test:production": "playwright test tests/full-chain-production.spec.ts --headed",
+    "test:shipping": "playwright test tests/shipping-outbound-return.spec.ts --headed",
+    "test:inventory": "playwright test tests/inventory-stocktaking-report.spec.ts --headed",
+    "test:abnormal-io": "playwright test tests/abnormal-io-withdraw.spec.ts --headed",
+    "test:production-inbound": "playwright test tests/production-inbound-withdraw.spec.ts --headed",
+    "test:production-inbound-flow": "playwright test tests/production-inbound-confirm-withdraw-flow.spec.ts --headed",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.45.0",
+    "@types/node": "^20.0.0",
+    "tedious": "^18.2.1",
+    "typescript": "^5.4.0"
+  }
+}

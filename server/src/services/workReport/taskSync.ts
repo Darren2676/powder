@@ -4,6 +4,7 @@
  */
 import sequelize from '@/config/database';
 import { syncProductionStatus } from '@/services/salesOrderSync.service';
+import { checkAndAutoComplete } from '@/services/documentAutoComplete.service';
 import { createLogger } from '@/config/logger';
 
 const log = createLogger('taskSync');
@@ -79,6 +80,8 @@ export const syncTaskCompletion = async (taskNo: string, qtyDelta: number, trans
         );
         // 回写销售订单明细 production_status
         await syncProductionStatus(orderNo, '生产完成', txOpt.transaction);
+        // 尝试自动完成（需同时满足生产完成+入库完成）
+        await checkAndAutoComplete('production_order', orderNo, txOpt.transaction);
       }
     }
   } catch (e) { log.warn({ taskNo, qtyDelta, error: e }, 'plan_status流转跳过'); }

@@ -8,6 +8,7 @@ import { getMaterialClasses } from '@/api/master-data/materialClass'
 import { getMateriaProperties } from '@/api/master-data/materiaProperty'
 import { getUnits } from '@/api/master-data/unit'
 import { useTableList } from '@/composables/useTableList'
+import { useModalDrag } from '@/composables/useModalDrag'
 import dayjs from 'dayjs'
 import { APPROVAL_STATUS } from '@/constants/statuses'
 import { generateExportFilename } from '@/utils/exportFilename'
@@ -116,10 +117,10 @@ const baseColumns = [
   { title: '业务范围', dataIndex: 'business_scope', key: 'business_scope', width: 120 },
   { title: '安全库存管理', dataIndex: 'safety_stock_enabled', key: 'safety_stock_enabled', width: 110 },
   { title: '安全库存数', dataIndex: 'safety_stock_qty', key: 'safety_stock_qty', width: 100 },
-  { title: '生产提前期(天)', dataIndex: 'lead_time_days', key: 'lead_time_days', width: 110 },
-  { title: '采购提前期(天)', dataIndex: 'purchase_lead_time_days', key: 'purchase_lead_time_days', width: 110 },
+  { title: '生产提前期(天)', dataIndex: 'lead_time_days', key: 'lead_time_days', width: 130 },
+  { title: '采购提前期(天)', dataIndex: 'purchase_lead_time_days', key: 'purchase_lead_time_days', width: 130 },
   { title: '备注', dataIndex: 'remark', key: 'remark', width: 120, ellipsis: true },
-  { title: '创建时间', dataIndex: 'creation_date', key: 'creation_date', width: 120 }
+  { title: '创建时间', dataIndex: 'creation_date', key: 'creation_date', width: 160 }
 ]
 
 const extColumns: Record<string, any[]> = {
@@ -210,6 +211,10 @@ const emptyForm = () => ({
   rubber_compound_number: '',
   batch_production_quota: '',
   standard_pass_rate: '',
+  inner_pack_qty: 0,
+  outer_pack_qty: 0,
+  inner_pack_unit: '袋',
+  outer_pack_unit: '箱',
   // 原材料扩展"
   supplier_number: '',
   supplier_name: '',
@@ -336,9 +341,11 @@ const editForm = reactive<any>(emptyForm())
 const detailDrawerVisible = ref(false)
 const detailLoading = ref(false)
 const detailData = ref<any>({})
+const { modalStyle: detailModalStyle, onDragStart: detailOnDragStart, resetDrag: detailResetDrag } = useModalDrag()
 
 const handleViewDetail = async (record: any) => {
   detailDrawerVisible.value = true
+  detailResetDrag()
   detailLoading.value = true
   try {
     const res = await getItemDetail(record.item_number)
@@ -864,6 +871,14 @@ onMounted(() => {
                   <a-input v-model:value="createForm.standard_pass_rate" placeholder="请输入标准合格率" />
                 </a-form-item></a-col>
               </a-row>
+              <a-row :gutter="8">
+                <a-col :span="12"><a-form-item label="内包装数量(每袋)">
+                  <a-input-number v-model:value="createForm.inner_pack_qty" :min="0" :precision="0" placeholder="每袋标准数量" style="width:100%" />
+                </a-form-item></a-col>
+                <a-col :span="12"><a-form-item label="外包装数量(每箱袋数)">
+                  <a-input-number v-model:value="createForm.outer_pack_qty" :min="0" :precision="0" placeholder="每箱装几袋" style="width:100%" />
+                </a-form-item></a-col>
+              </a-row>
             </template>
             <template v-if="createForm.item_type === '原材料'">
               <a-row :gutter="8">
@@ -1225,6 +1240,14 @@ onMounted(() => {
                     </a-form-item></a-col>
                     <a-col :span="12"><a-form-item label="标准合格率">
                       <a-input v-model:value="editForm.standard_pass_rate" />
+                    </a-form-item></a-col>
+                  </a-row>
+                  <a-row :gutter="8">
+                    <a-col :span="12"><a-form-item label="内包装数量(每袋)">
+                      <a-input-number v-model:value="editForm.inner_pack_qty" :min="0" :precision="0" placeholder="每袋标准数量" style="width:100%" />
+                    </a-form-item></a-col>
+                    <a-col :span="12"><a-form-item label="外包装数量(每箱袋数)">
+                      <a-input-number v-model:value="editForm.outer_pack_qty" :min="0" :precision="0" placeholder="每箱装几袋" style="width:100%" />
                     </a-form-item></a-col>
                   </a-row>
                 </template>
@@ -1733,11 +1756,14 @@ onMounted(() => {
     <!-- 详情 Drawer -->
     <a-drawer
       v-model:open="detailDrawerVisible"
-      title="物料详情"
       placement="right"
       width="1080"
       :destroy-on-close="true"
+      :style="detailModalStyle"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="detailOnDragStart">物料详情</div>
+      </template>
       <a-spin :spinning="detailLoading">
         <a-descriptions v-if="detailData.item_number" :column="3" bordered size="small">
           <a-descriptions-item label="物料编号" :span="1">{{ detailData.item_number }}</a-descriptions-item>
@@ -1767,6 +1793,13 @@ onMounted(() => {
             <a-descriptions-item label="产品图号">{{ detailData.product_drawing_number || '-' }}</a-descriptions-item>
             <a-descriptions-item label="胶料编号">{{ detailData.rubber_compound_number || '-' }}</a-descriptions-item>
             <a-descriptions-item label="批次产量定额">{{ detailData.batch_production_quota || '-' }}</a-descriptions-item>
+          </a-descriptions>
+          <a-divider orientation="left">包装规格</a-divider>
+          <a-descriptions :column="4" bordered size="small">
+            <a-descriptions-item label="内包装数量(每袋)">{{ detailData.inner_pack_qty || 0 }}</a-descriptions-item>
+            <a-descriptions-item label="内包装单位">{{ detailData.inner_pack_unit || '-' }}</a-descriptions-item>
+            <a-descriptions-item label="外包装数量(每箱袋数)">{{ detailData.outer_pack_qty || 0 }}</a-descriptions-item>
+            <a-descriptions-item label="外包装单位">{{ detailData.outer_pack_unit || '-' }}</a-descriptions-item>
           </a-descriptions>
         </template>
 
@@ -1876,6 +1909,7 @@ onMounted(() => {
   margin-bottom: 12px;
   gap: 8px;
 }
+.drag-handle { cursor: move; user-select: none; }
 </style>
 
 <style>

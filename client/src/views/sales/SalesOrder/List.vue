@@ -6,10 +6,12 @@ import { getSalesOrders, getSalesOrderDetail, createSalesOrder, updateSalesOrder
 import { getCustomers } from '@/api/master-data/customer'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getCustomerMaterialMappings, reverseLookupProduct } from '@/api/master-data/customerMaterialMapping'
+import { getSalesPriceForOrder } from '@/api/sales/salesPrice'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval, batchSubmitForApproval, batchApproveRecords, batchWithdrawApproval, batchReverseApproval } from '@/api/system/approval'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
+import ManualCloseModal from '@/components/Common/ManualCloseModal.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import dayjs from 'dayjs'
 import { CONDITION_STATUS } from '@/constants/statuses'
@@ -275,6 +277,23 @@ onMounted(async () => {
 
 
 
+const handleCustomerSearch = async (val: string) => {
+  if (customerSearchTimer) clearTimeout(customerSearchTimer)
+  if (!val || val.length < 1) { customerOptions.value = []; return }
+  customerSearchTimer = setTimeout(async () => {
+    try {
+      const res: any = await getCustomers({ search: val, limit: 20 })
+      if (res?.success) {
+        customerOptions.value = res.data.items.map((c: any) => ({
+          value: c.customer_number,
+          label: `${c.customer_number} - ${c.customer_name}`,
+          raw: c
+        }))
+      }
+    } catch {}
+  }, 300)
+}
+
 const handleCustomerSelect = (val: string, form: SalesOrderHeader) => {
   form.customer_number = val
   const found = customerOptions.value.find(o => o.value === val)
@@ -317,7 +336,7 @@ const handleProductSelect = async (val: string, detail: SalesOrderDetail) => {
   const customerNumber = detailViewRecord.value.customer_number || createForm.customer_number || editForm.customer_number
   if (customerNumber && val) {
     try {
-      const res: any = await getCustomerMaterialMappings({ customer_number: customerNumber, item_number: val, limit: 1 })
+      const res: any = await getCustomerMaterialMappings({ customer_number: customerNumber, item_number: val, approval_status: '已审核', limit: 1 })
       if (res?.success && res.data.items?.length > 0) {
         const cm = res.data.items[0]
         ;(detail as any).customer_item_number = cm.customer_item_number || ''
@@ -329,6 +348,20 @@ const handleProductSelect = async (val: string, detail: SalesOrderDetail) => {
     } catch {
       ;(detail as any).customer_item_number = ''
       ;(detail as any).customer_item_description = ''
+    }
+    // 自动查询销售价目表价格
+    try {
+      const priceRes: any = await getSalesPriceForOrder({ customer_number: customerNumber, item_number: val })
+      if (priceRes?.success && priceRes.data) {
+        detail.unit_price = priceRes.data.unit_price || 0
+        calcAmount(detail)
+      } else {
+        detail.unit_price = 0
+        calcAmount(detail)
+      }
+    } catch {
+      detail.unit_price = 0
+      calcAmount(detail)
     }
   }
 }
@@ -389,6 +422,13 @@ const handleRemoveCreateDetail = (index: number) => {
 
 const handleCreateSubmit = async () => {
   if (!createForm.customer_number) { message.warning('请选择客户'); return }
+  // 校验明细行单价
+  const emptyPriceDetails = createDetails.value.filter(d => !d.item_number || (d.unit_price || 0) <= 0)
+  if (emptyPriceDetails.length > 0) {
+    const lines = emptyPriceDetails.map(d => d.line_number).join(', ')
+    message.warning(`明细行行号 ${lines} 未录入单价，请手工录入价格信息后保存`)
+    return
+  }
   createLoading.value = true
   try {
     const data = {
@@ -456,6 +496,7 @@ const handleDvDetailCreate = () => {
 }
 const handleDvDetailCreateOk = async () => {
   if (!dvDetailCreateForm.item_number) { message.warning('请选择产品'); return }
+  if ((dvDetailCreateForm.unit_price || 0) <= 0) { message.warning('产品未录入单价，请手工录入价格信息后保存'); return }
   dvDetailSaving.value = true
   try {
     const submitData = { ...dvDetailCreateForm, delivery_date: dvCreateDeliveryDate.value ? dayjs(dvCreateDeliveryDate.value).format('YYYY-MM-DD') : null, promised_delivery_date: dvCreatePromisedDeliveryDate.value ? dayjs(dvCreatePromisedDeliveryDate.value).format('YYYY-MM-DD') : null }
@@ -481,6 +522,7 @@ const handleDvDetailEdit = (record: any) => {
 }
 const handleDvDetailEditOk = async () => {
   if (!dvDetailEditForm.id) return
+  if (!detailViewIsApproved.value && (dvDetailEditForm.unit_price || 0) <= 0) { message.warning('产品未录入单价，请手工录入价格信息后保存'); return }
   dvDetailSaving.value = true
   try {
     const submitData = { ...dvDetailEditForm, delivery_date: dvEditDeliveryDate.value ? dayjs(dvEditDeliveryDate.value).format('YYYY-MM-DD') : null, promised_delivery_date: dvEditPromisedDeliveryDate.value ? dayjs(dvEditPromisedDeliveryDate.value).format('YYYY-MM-DD') : null }
@@ -557,6 +599,13 @@ const handleRemoveEditDetail = (index: number) => {
 }
 
 const handleEditSubmit = async () => {
+  // 校验明细行单价
+  const emptyPriceDetails = editDetails.value.filter(d => !d.item_number || (d.unit_price || 0) <= 0)
+  if (emptyPriceDetails.length > 0) {
+    const lines = emptyPriceDetails.map(d => d.line_number).join(', ')
+    message.warning(`明细行行号 ${lines} 未录入单价，请手工录入价格信息后保存`)
+    return
+  }
   editLoading.value = true
   try {
     const data = {
@@ -670,6 +719,7 @@ const handleShowApprovalLog = (record: SalesOrderHeader) => {
 
 // 批量操作
 const batchLoading = ref(false)
+const manualCloseRef = ref()
 const handleBatchAction = (action: string) => {
   if (selectedRowKeys.value.length === 0) { message.warning('请先勾选记录'); return }
   const count = selectedRowKeys.value.length
@@ -704,6 +754,7 @@ const handleBatchAction = (action: string) => {
   <div style="padding: 16px">
     <!-- 搜索栏 -->
     <div style="margin-bottom: 16px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px">
+      <span style="font-size: 18px; font-weight: 600; color: #1a1a2e; white-space: nowrap; margin-right: 4px">销售订单</span>
       <a-space wrap>
         <a-input-search
           v-model:value="searchText"
@@ -735,7 +786,7 @@ const handleBatchAction = (action: string) => {
       :columns="columns"
       :data-source="dataSource"
       :loading="loading"
-      :pagination="pagination"
+      :pagination="false"
       :row-selection="rowSelection"
       row-key="sales_order_number"
       size="middle"
@@ -788,14 +839,27 @@ const handleBatchAction = (action: string) => {
       </template>
     </a-table>
 
-    <!-- 批量操作栏 -->
-    <div style="display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid #f0f0f0; margin-top: 4px;">
-      <span style="color: #666; margin-right: 4px;">已选 <b style="color: #1890ff;">{{ selectedRowKeys.length }}</b> 项</span>
-      <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('submit')">批量提交</a-button>
-      <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('approve')">批量审批</a-button>
-      <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('withdraw')">批量撤回</a-button>
-      <a-button size="small" danger :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('reverse')">批量反审</a-button>
-      <a-button size="small" type="link" :disabled="selectedRowKeys.length === 0" @click="selectedRowKeys = []">清除选择</a-button>
+    <!-- 批量操作栏 + 分页（合并一行） -->
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: 8px; padding: 8px 0; border-top: 1px solid #f0f0f0; margin-top: 4px;">
+      <div style="display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; white-space: nowrap;">
+        <span style="color: #666; margin-right: 2px; flex-shrink: 0;">已选 <b style="color: #1890ff;">{{ selectedRowKeys.length }}</b> 项</span>
+        <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('submit')">批量提交</a-button>
+        <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('approve')">批量审批</a-button>
+        <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('withdraw')">批量撤回</a-button>
+        <a-button size="small" danger :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('reverse')">批量反审</a-button>
+        <a-button size="small" danger :disabled="selectedRowKeys.length === 0" @click="manualCloseRef?.open()">批量关闭</a-button>
+        <a-button size="small" type="link" :disabled="selectedRowKeys.length === 0" @click="selectedRowKeys = []">清除选择</a-button>
+      </div>
+      <a-pagination
+        size="small"
+        :current="pagination.current"
+        :page-size="pagination.pageSize"
+        :total="pagination.total"
+        show-quick-jumper
+        :show-size-changer="true"
+        :show-total="(total: number) => `共 ${total} 条记录`"
+        @change="(page: number, pageSize: number) => { pagination.current = page; pagination.pageSize = pageSize; fetchData() }"
+      />
     </div>
 
     <!-- ==================== 新建弹窗 ==================== -->
@@ -812,15 +876,19 @@ const handleBatchAction = (action: string) => {
         <a-row :gutter="12">
           <a-col :span="8">
             <a-form-item label="客户编号" required>
-              <a-auto-complete
+              <a-select
                 v-model:value="createForm.customer_number"
-                :options="customerOptions"
-                :filter-option="false"
+                show-search
+                option-filter-prop="label"
+                style="width: 100%"
                 placeholder="输入搜索客户"
                 size="small"
                 @search="handleCustomerSearch"
-                @select="(val: string) => handleCustomerSelect(val, createForm)"
-              />
+                @change="(val: string) => handleCustomerSelect(val, createForm)"
+                allow-clear
+              >
+                <a-select-option v-for="opt in customerOptions" :key="opt.value" :value="opt.value" :label="opt.label">{{ opt.label }}</a-select-option>
+              </a-select>
             </a-form-item>
           </a-col>
           <a-col :span="8">
@@ -1017,16 +1085,20 @@ const handleBatchAction = (action: string) => {
           </a-col>
           <a-col :span="8">
             <a-form-item label="客户编号">
-              <a-auto-complete
+              <a-select
                 v-model:value="editForm.customer_number"
-                :options="customerOptions"
-                :filter-option="false"
+                show-search
+                option-filter-prop="label"
+                style="width: 100%"
                 placeholder="输入搜索客户"
                 size="small"
                 :disabled="editIsApproved"
                 @search="handleCustomerSearch"
-                @select="(val: string) => handleCustomerSelect(val, editForm)"
-              />
+                @change="(val: string) => handleCustomerSelect(val, editForm)"
+                allow-clear
+              >
+                <a-select-option v-for="opt in customerOptions" :key="opt.value" :value="opt.value" :label="opt.label">{{ opt.label }}</a-select-option>
+              </a-select>
             </a-form-item>
           </a-col>
           <a-col :span="8">
@@ -1207,6 +1279,9 @@ const handleBatchAction = (action: string) => {
 
     <!-- 审批日志弹窗 -->
     <ApprovalLogModal v-model:open="approvalLogVisible" :module="approvalLogModule" :recordId="approvalLogRecordId" />
+
+    <!-- 批量关闭弹窗 -->
+    <ManualCloseModal ref="manualCloseRef" module="sales_order" :record-ids="selectedRowKeys" @success="fetchData" />
 
     <!-- ==================== 详情弹窗 ==================== -->
     <a-modal

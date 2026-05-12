@@ -60,7 +60,7 @@
         <span v-else style="color: #999; font-size: 12px; margin-left: 8px">请选择上方检验规范</span>
       </template>
       <template #extra>
-        <a-button type="primary" size="small" :disabled="!selectedSpecName" @click="openCreateItemModal"><PlusOutlined />新增明细</a-button>
+        <a-button type="primary" size="small" :disabled="!selectedSpecName || selectedSpecApproved" @click="openCreateItemModal"><PlusOutlined />新增明细</a-button>
       </template>
 
       <a-table
@@ -83,10 +83,11 @@
             <span v-else>{{ record.default_result }}</span>
           </template>
           <template v-else-if="column.key === 'action'">
-            <a-space>
+            <a-space v-if="!selectedSpecApproved">
               <a-button type="link" size="small" @click="handleEditItem(record)"><EditOutlined />编辑</a-button>
               <a-button type="link" danger size="small" @click="handleDeleteItem(record)"><DeleteOutlined />删除</a-button>
             </a-space>
+            <span v-else style="color: #999; font-size: 12px">已审核</span>
           </template>
         </template>
       </a-table>
@@ -237,6 +238,13 @@ const { loading: headerLoading, dataSource: headerData, searchText, pagination: 
 const fetchHeaderList = () => fetchList({ spec_type: specType.value })
 
 const selectedSpecName = ref<string | null>(null)
+const selectedSpecApproved = ref(false)
+
+const handleSelectSpec = (record: any) => {
+  selectedSpecName.value = record.spec_name
+  selectedSpecApproved.value = (record.approval_status || '').trim() === APPROVAL_STATUS.APPROVED
+  fetchDetailList(record.spec_name)
+}
 
 const headerColumns = [
   { title: '行号', key: 'rowIndex', width: 55 },
@@ -364,6 +372,10 @@ const openCreateItemModal = () => {
 }
 
 const handleEditItem = (record: any) => {
+  if (selectedSpecApproved.value) {
+    message.warning('主表已审核，明细不允许编辑，请先撤消审核')
+    return
+  }
   itemModalMode.value = 'edit'
   itemEditingId.value = record.id
   Object.assign(itemForm, {
@@ -403,6 +415,10 @@ const handleItemOk = async () => {
 }
 
 const handleDeleteItem = (record: any) => {
+  if (selectedSpecApproved.value) {
+    message.warning('主表已审核，明细不允许删除，请先撤消审核')
+    return
+  }
   Modal.confirm({
     title: '确认删除',
     icon: createVNode(ExclamationCircleOutlined),
@@ -422,7 +438,7 @@ const handleDeleteItem = (record: any) => {
 const handleApprove = async (record: any) => {
   try {
     const res: any = await approveInspectionSpec(record.spec_name)
-    if (res.success) { message.success('审核成功'); fetchHeaderList() }
+    if (res.success) { message.success('审核成功'); fetchHeaderList(); if (selectedSpecName.value === record.spec_name) selectedSpecApproved.value = true }
     else { message.error(res.message || '审核失败') }
   } catch { message.error('审核失败') }
 }
@@ -437,7 +453,7 @@ const handleWithdraw = async (record: any) => {
     async onOk() {
       try {
         const res: any = await withdrawInspectionSpec(record.spec_name)
-        if (res.success) { message.success('已撤消审核'); fetchHeaderList() }
+        if (res.success) { message.success('已撤消审核'); fetchHeaderList(); if (selectedSpecName.value === record.spec_name) selectedSpecApproved.value = false }
         else { message.error(res.message || '撤消失败') }
       } catch { message.error('撤消失败') }
     }

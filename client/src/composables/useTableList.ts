@@ -44,8 +44,9 @@ export function useTableList<T = any>(fetchFn: (params: any) => Promise<any>) {
       } else if (Array.isArray(data)) {
         dataSource.value = data
       }
-    } catch {
-      message.error('获取数据失败')
+    } catch (err: any) {
+      console.error('获取数据失败:', err)
+      message.error(err.response?.data?.message || '获取数据失败')
     } finally {
       loading.value = false
     }

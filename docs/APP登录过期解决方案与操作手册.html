@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>APP登录过期解决方案与操作手册</title>
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 18mm 20mm 18mm;
+  }
+  body {
+    font-family: "Microsoft YaHei", "SimSun", "Segoe UI", sans-serif;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #333;
+    max-width: 210mm;
+    margin: 0 auto;
+    padding: 20px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 22px;
+    color: #1a1a1a;
+    border-bottom: 3px solid #1890ff;
+    padding-bottom: 12px;
+    margin-bottom: 24px;
+  }
+  h2 {
+    font-size: 17px;
+    color: #1890ff;
+    border-left: 4px solid #1890ff;
+    padding-left: 10px;
+    margin-top: 28px;
+    margin-bottom: 12px;
+  }
+  h3 {
+    font-size: 14px;
+    color: #333;
+    margin-top: 20px;
+    margin-bottom: 8px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 16px 0;
+    font-size: 12px;
+  }
+  th, td {
+    border: 1px solid #d9d9d9;
+    padding: 6px 10px;
+    text-align: left;
+  }
+  th {
+    background-color: #f0f5ff;
+    color: #1a1a1a;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  tr:nth-child(even) {
+    background-color: #fafafa;
+  }
+  code {
+    background-color: #f5f5f5;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12px;
+    color: #c7254e;
+  }
+  pre {
+    background-color: #f8f8f8;
+    border: 1px solid #e8e8e8;
+    border-radius: 4px;
+    padding: 10px 14px;
+    overflow-x: auto;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  pre code {
+    background: none;
+    padding: 0;
+    color: #333;
+  }
+  .flow-box {
+    background-color: #f0f5ff;
+    border: 1px solid #d6e4ff;
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin: 10px 0;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.8;
+    white-space: pre-line;
+  }
+  .timeline {
+    background-color: #fff7e6;
+    border: 1px solid #ffe58f;
+    border-radius: 6px;
+    padding: 14px 18px;
+    margin: 10px 0;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.8;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .note {
+    background-color: #fffbe6;
+    border-left: 4px solid #faad14;
+    padding: 8px 14px;
+    margin: 10px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 12px;
+  }
+  .tree {
+    padding-left: 20px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 2;
+  }
+  .tree .branch { color: #1890ff; }
+  .tree .label { color: #333; }
+  .tag-yes {
+    background-color: #f6ffed;
+    color: #52c41a;
+    border: 1px solid #b7eb8f;
+    padding: 1px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+  }
+  .tag-no {
+    background-color: #fff1f0;
+    color: #ff4d4f;
+    border: 1px solid #ffa39e;
+    padding: 1px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+  }
+  .section-break {
+    page-break-before: always;
+  }
+</style>
+</head>
+<body>
+
+<h1>APP登录过期解决方案与操作手册</h1>
+
+<h2>1. 问题描述</h2>
+
+<h3>1.1 现象</h3>
+<p>APP窗口显示<strong>"登录已过期，请重新登录"</strong>，用户被迫退出当前操作，需要重新输入账号密码登录。</p>
+
+<h3>1.2 原因分析</h3>
+<table>
+  <tr><th style="width:100px;">项目</th><th>说明</th></tr>
+  <tr><td>根因</td><td>JWT Token 默认有效期 24 小时，过期后后端返回 401 状态码，前端直接跳转登录页</td></tr>
+  <tr><td>影响范围</td><td>APP端和WEB端均受影响</td></tr>
+  <tr><td>触发场景</td><td>用户登录超过 24 小时后，任何 API 请求均会触发 401 错误</td></tr>
+  <tr><td>用户影响</td><td>操作中断，未保存的数据可能丢失，体验差</td></tr>
+</table>
+
+<h3>1.3 原有流程（改造前）</h3>
+<div class="flow-box">用户请求API → Token过期 → 后端返回401 → 前端跳转登录页 → 用户重新输入密码</div>
+
+<h2>2. 解决方案</h2>
+
+<h3>2.1 方案概述</h3>
+<p>引入<strong>Token自动刷新机制</strong>：当 Token 过期时，前端自动向后端发起刷新请求，在刷新窗口内（默认7天）无需用户重新输入密码即可获取新 Token 并继续操作。</p>
+
+<h3>2.2 改造后流程</h3>
+<div class="flow-box">用户请求API → Token过期 → 后端返回401
+  → 前端自动调用 /auth/refresh 接口
+    → 刷新成功：获取新Token，自动重试原请求，用户无感知
+    → 刷新失败（超过7天窗口）：跳转登录页，提示重新登录</div>
+
+<h3>2.3 核心机制</h3>
+
+<h4>2.3.1 时间窗口模型</h4>
+<div class="timeline">|&larr; 24小时有效Token &rarr;|&larr; 7天刷新窗口 &rarr;|
+|                    |               |
+|  正常使用          | 可自动刷新     |  必须重新登录
+|  (Token有效)       | (Token过期但  |  (超过刷新窗口)
+|                    |  在窗口内)    |
+|────────────────────|───────────────|──────────────&rarr; 时间
+0h                  24h             192h(7天)</div>
+
+<h4>2.3.2 并发请求处理</h4>
+<p>当多个请求同时收到 401 时，只发起一次刷新请求，其余请求排队等待刷新完成后自动重试：</p>
+<div class="flow-box">请求A → 401 → 发起刷新 ────────────→ 刷新成功 → 重试请求A
+请求B → 401 → 排队等待 ───────────→ 刷新成功 → 重试请求B
+请求C → 401 → 排队等待 ───────────→ 刷新成功 → 重试请求C</div>
+
+<div class="section-break"></div>
+
+<h2>3. 技术实现详情</h2>
+
+<h3>3.1 后端改造</h3>
+
+<h4>3.1.1 新增环境变量</h4>
+<p>文件：<code>server/.env</code></p>
+<pre><code>JWT_EXPIRES_IN=24h          # Token有效期（默认24小时）
+JWT_REFRESH_EXPIRES_IN=7d   # Token刷新窗口（默认7天）</code></pre>
+
+<h4>3.1.2 新增 Token 刷新验证函数</h4>
+<p>文件：<code>server/src/utils/jwt.util.ts</code></p>
+<p>新增 <code>verifyRefreshableToken</code> 函数，逻辑如下：</p>
+<ol>
+  <li>先尝试正常验证 Token（Token可能还没过期）</li>
+  <li>若 Token 过期（TokenExpiredError），检查是否在刷新窗口内</li>
+  <li>在窗口内 → 返回解码后的 Token 信息</li>
+  <li>超出窗口 → 抛出"刷新窗口已过期"错误</li>
+</ol>
+
+<p>关键代码逻辑：</p>
+<pre><code>export const verifyRefreshableToken = (token: string): any =&gt; {
+  try {
+    // 先尝试正常验证
+    return jwt.verify(token, JWT_SECRET);
+  } catch (error: any) {
+    if (error.name === 'TokenExpiredError') {
+      // 忽略过期，重新解码
+      const decoded = jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
+      const now = Math.floor(Date.now() / 1000);
+      const refreshWindow = parseDuration(JWT_REFRESH_EXPIRES_IN); // 7天=604800秒
+      if (now - decoded.exp &lt;= refreshWindow) {
+        return decoded;  // 在窗口内，允许刷新
+      }
+      throw new Error('刷新窗口已过期，请重新登录');
+    }
+    throw new Error('无效的令牌');
+  }
+};</code></pre>
+
+<h4>3.1.3 新增刷新接口</h4>
+<p>文件：<code>server/src/modules/system/auth/auth.controller.ts</code></p>
+<ul>
+  <li>请求方式：<code>POST /api/v1/auth/refresh</code></li>
+  <li>无需 <code>authenticate</code> 中间件（允许过期 Token 访问）</li>
+  <li>验证流程：解析 Token → 检查用户状态 → 生成新 Token → 返回</li>
+</ul>
+<p>返回数据：</p>
+<pre><code>{
+  "success": true,
+  "data": {
+    "token": "新的JWT Token",
+    "user": { "id": 1, "username": "admin", ... },
+    "permissions": { ... }
+  },
+  "message": "令牌刷新成功"
+}</code></pre>
+
+<h4>3.1.4 注册路由</h4>
+<p>文件：<code>server/src/modules/system/auth/auth.routes.ts</code></p>
+<pre><code>router.post('/refresh', refreshToken);  // 不需要 authenticate 中间件</code></pre>
+
+<h3>3.2 前端改造（APP端）</h3>
+<p>文件：<code>client-mobile/src/api/request.ts</code></p>
+
+<h4>3.2.1 Token 刷新状态管理</h4>
+<pre><code>let isRefreshing = false                                    // 是否正在刷新
+let refreshSubscribers: Array&lt;(token: string) =&gt; void&gt; = [] // 排队等待的请求</code></pre>
+
+<h4>3.2.2 刷新 Token 函数</h4>
+<pre><code>async function tryRefreshToken(): Promise&lt;string | null&gt; {
+  const currentToken = localStorage.getItem('token')
+  if (!currentToken) return null
+  try {
+    const response = await axios.post('/api/v1/auth/refresh', {}, {
+      headers: { Authorization: `Bearer ${currentToken}` },
+      timeout: 10000
+    })
+    if (response.data?.success) {
+      const newToken = response.data.data.token
+      localStorage.setItem('token', newToken)
+      return newToken
+    }
+    return null
+  } catch { return null }
+}</code></pre>
+
+<h4>3.2.3 响应拦截器核心逻辑</h4>
+<div class="tree">
+<span class="branch">├─</span> <span class="label">收到401响应</span><br>
+<span class="branch">│  ├─</span> <span class="label">是 /auth/refresh 接口本身返回401？</span><br>
+<span class="branch">│  │  └─</span> <span class="label">是 → 清除Token，跳转登录页（死循环保护）</span><br>
+<span class="branch">│  │</span><br>
+<span class="branch">│  ├─</span> <span class="label">当前没有正在刷新？</span><br>
+<span class="branch">│  │  ├─</span> <span class="label">是 → 发起刷新</span><br>
+<span class="branch">│  │  │  ├─</span> <span class="label">刷新成功 → 重试所有排队请求 + 重试当前请求</span><br>
+<span class="branch">│  │  │  └─</span> <span class="label">刷新失败 → 清除Token，跳转登录页</span><br>
+<span class="branch">│  │  │</span><br>
+<span class="branch">│  │  └─</span> <span class="label">正在刷新中 → 加入排队队列，等待刷新完成后自动重试</span>
+</div>
+
+<h3>3.3 前端改造（WEB端）</h3>
+<p>文件：<code>client/src/utils/request.ts</code></p>
+<p>与 APP 端逻辑相同，区别仅在于提示方式：</p>
+<ul>
+  <li>APP端：使用 Vant 的 <code>showToast</code></li>
+  <li>WEB端：使用 Ant Design Vue 的 <code>message.error</code></li>
+</ul>
+
+<div class="section-break"></div>
+
+<h2>4. 配置参数说明</h2>
+
+<table>
+  <tr><th>参数</th><th>环境变量</th><th>默认值</th><th>说明</th></tr>
+  <tr><td>Token有效期</td><td><code>JWT_EXPIRES_IN</code></td><td><code>24h</code></td><td>JWT Token 的有效时长，过期后需要刷新</td></tr>
+  <tr><td>刷新窗口期</td><td><code>JWT_REFRESH_EXPIRES_IN</code></td><td><code>7d</code></td><td>Token 过期后允许自动刷新的最大时长</td></tr>
+  <tr><td>刷新请求超时</td><td>硬编码</td><td><code>10000ms</code></td><td>刷新请求的超时时间</td></tr>
+</table>
+
+<p><strong>支持的时间单位</strong>：<code>s</code>(秒)、<code>m</code>(分)、<code>h</code>(时)、<code>d</code>(天)</p>
+
+<p><strong>调整示例</strong>：</p>
+<ul>
+  <li>Token有效期改为8小时：<code>JWT_EXPIRES_IN=8h</code></li>
+  <li>刷新窗口改为3天：<code>JWT_REFRESH_EXPIRES_IN=3d</code></li>
+  <li>Token有效期改为30分钟：<code>JWT_EXPIRES_IN=30m</code></li>
+</ul>
+
+<h2>5. 操作手册</h2>
+
+<h3>5.1 用户端操作</h3>
+
+<h4>5.1.1 正常使用（无需任何操作）</h4>
+<p>系统自动在后台完成 Token 刷新，用户不会感知到任何中断。所有在刷新窗口内的操作都会自动继续。</p>
+
+<h4>5.1.2 超过刷新窗口后重新登录</h4>
+<p>当超过7天未使用系统时，自动刷新将失败，系统会提示"登录已过期，请重新登录"，此时需要：</p>
+<ol>
+  <li>在登录页面输入用户名和密码</li>
+  <li>点击登录</li>
+  <li>进入系统后继续操作</li>
+</ol>
+
+<h4>5.1.3 常见场景说明</h4>
+<table>
+  <tr><th>场景</th><th style="width:80px;">是否需要重新登录</th><th>说明</th></tr>
+  <tr><td>当天使用</td><td style="text-align:center;"><span class="tag-yes">否</span></td><td>Token在24小时内有效</td></tr>
+  <tr><td>隔天使用</td><td style="text-align:center;"><span class="tag-yes">否</span></td><td>Token过期但自动刷新成功</td></tr>
+  <tr><td>3天后使用</td><td style="text-align:center;"><span class="tag-yes">否</span></td><td>在7天刷新窗口内</td></tr>
+  <tr><td>8天后使用</td><td style="text-align:center;"><span class="tag-no">是</span></td><td>超过7天刷新窗口</td></tr>
+  <tr><td>密码被修改</td><td style="text-align:center;"><span class="tag-no">是</span></td><td>刷新时检查用户状态，密码变更后需重新登录</td></tr>
+  <tr><td>账号被禁用</td><td style="text-align:center;"><span class="tag-no">是</span></td><td>刷新时验证用户状态</td></tr>
+</table>
+
+<h3>5.2 管理员操作</h3>
+
+<h4>5.2.1 查看当前配置</h4>
+<ol>
+  <li>登录服务器</li>
+  <li>打开文件 <code>server/.env</code></li>
+  <li>查看 <code>JWT_EXPIRES_IN</code> 和 <code>JWT_REFRESH_EXPIRES_IN</code> 配置项</li>
+</ol>
+
+<h4>5.2.2 修改配置参数</h4>
+<ol>
+  <li>打开 <code>server/.env</code> 文件</li>
+  <li>修改对应的参数值，例如：
+    <pre><code>JWT_EXPIRES_IN=12h           # 改为12小时有效期
+JWT_REFRESH_EXPIRES_IN=3d    # 改为3天刷新窗口</code></pre>
+  </li>
+  <li>重启后端服务：
+    <pre><code># 找到后端进程
+tasklist | findstr node
+
+# 结束进程（替换PID）
+taskkill /PID &lt;进程号&gt; /F
+
+# 重新启动
+cd d:\rubber\Seals MES System\server
+npx tsx src/server.ts</code></pre>
+  </li>
+  <li>验证配置生效：修改后新登录的用户将使用新的 Token 有效期</li>
+</ol>
+
+<div class="note">
+  <strong>注意：</strong>修改配置后已登录用户的 Token 不受影响，新的配置仅在下次登录或 Token 刷新时生效。
+</div>
+
+<h4>5.2.3 强制用户重新登录</h4>
+<p>如需强制所有用户重新登录（如安全审计需要）：</p>
+<ol>
+  <li>修改 <code>server/.env</code> 中的 <code>JWT_SECRET</code> 为新值</li>
+  <li>重启后端服务</li>
+  <li>所有用户的 Token 将失效，需要重新登录</li>
+</ol>
+
+<h3>5.3 运维监控</h3>
+
+<h4>5.3.1 检查刷新接口是否正常</h4>
+<pre><code># 测试刷新接口（替换为实际Token）
+curl -X POST http://localhost:3000/api/v1/auth/refresh \
+  -H "Authorization: Bearer &lt;过期Token&gt;" \
+  -H "Content-Type: application/json"</code></pre>
+
+<p>返回结果示例：</p>
+<pre><code>// 刷新成功
+{ "success": true, "data": { "token": "eyJhbG...", ... }, "message": "令牌刷新成功" }
+
+// 超过刷新窗口
+{ "success": false, "message": "刷新窗口已过期，请重新登录" }
+
+// 无效Token
+{ "success": false, "message": "无效的令牌" }</code></pre>
+
+<h4>5.3.2 常见问题排查</h4>
+<table>
+  <tr><th>问题</th><th>可能原因</th><th>解决方法</th></tr>
+  <tr><td>频繁提示"登录已过期"</td><td>刷新窗口设置过短</td><td>增大 <code>JWT_REFRESH_EXPIRES_IN</code> 值</td></tr>
+  <tr><td>刷新接口返回500</td><td>数据库连接异常</td><td>检查数据库服务状态</td></tr>
+  <tr><td>APP和WEB表现不一致</td><td>某端未更新代码</td><td>确认两端 <code>request.ts</code> 均包含刷新逻辑</td></tr>
+  <tr><td>刷新后仍提示401</td><td><code>JWT_SECRET</code> 被修改</td><td>检查 <code>.env</code> 文件是否被改动</td></tr>
+</table>
+
+<div class="section-break"></div>
+
+<h2>6. 安全说明</h2>
+
+<h3>6.1 安全措施</h3>
+<ol>
+  <li><strong>刷新窗口限制</strong>：即使 Token 被窃取，超过7天后也无法刷新，必须重新认证</li>
+  <li><strong>用户状态校验</strong>：刷新时验证用户是否仍然激活，被禁用的账号无法刷新</li>
+  <li><strong>防死循环</strong>：refresh 接口本身的 401 不再触发刷新，避免无限循环</li>
+  <li><strong>原请求重试</strong>：刷新成功后自动重试原始请求，用户无感知</li>
+</ol>
+
+<h3>6.2 安全建议</h3>
+<ul>
+  <li>生产环境中 <code>JWT_SECRET</code> 应使用强随机字符串</li>
+  <li>根据业务安全要求调整刷新窗口大小</li>
+  <li>定期审计登录日志，关注异常刷新行为</li>
+  <li>如发现 Token 泄露，立即更换 <code>JWT_SECRET</code> 强制所有用户重新登录</li>
+</ul>
+
+<h2>7. 文件修改清单</h2>
+
+<table>
+  <tr><th>文件路径</th><th>修改类型</th><th>说明</th></tr>
+  <tr><td><code>server/.env</code></td><td>新增</td><td>添加 <code>JWT_REFRESH_EXPIRES_IN=7d</code></td></tr>
+  <tr><td><code>server/src/utils/jwt.util.ts</code></td><td>新增函数</td><td>添加 <code>verifyRefreshableToken</code> 和 <code>parseDuration</code></td></tr>
+  <tr><td><code>server/src/modules/system/auth/auth.controller.ts</code></td><td>新增函数</td><td>添加 <code>refreshToken</code> 接口处理</td></tr>
+  <tr><td><code>server/src/modules/system/auth/auth.routes.ts</code></td><td>新增路由</td><td>添加 <code>POST /auth/refresh</code></td></tr>
+  <tr><td><code>client-mobile/src/api/request.ts</code></td><td>重写</td><td>添加 Token 自动刷新 + 并发请求排队</td></tr>
+  <tr><td><code>client/src/utils/request.ts</code></td><td>重写</td><td>添加 Token 自动刷新 + 并发请求排队</td></tr>
+</table>
+
+</body>
+</html>

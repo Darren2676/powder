@@ -6,12 +6,15 @@ import { getForecastDetailsPage, exportForecastDetailsSelected } from '@/api/sal
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import { generateExportFilename } from '@/utils/exportFilename'
+import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 
+const router = useRouter()
 const loading = ref(false)
 const dataSource = ref<any[]>([])
 const searchText = ref('')
 const filterStatus = ref<string[]>([])
+const filterApprovalStatus = ref<string[]>([])
 const selectedRowKeys = ref<number[]>([])
 const exportLoading = ref(false)
 
@@ -33,6 +36,7 @@ const pagination = reactive({
 
 const defaultDataColumns: any[] = [
   { title: '行号', dataIndex: 'line_number', key: 'line_number', width: 60 },
+  { title: '客户编号', dataIndex: 'customer_number', key: 'customer_number', width: 110, resizable: true },
   { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 150, resizable: true },
   { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 130, resizable: true },
   { title: '产品名称', dataIndex: 'item_name', key: 'item_name', width: 150, resizable: true },
@@ -47,9 +51,14 @@ const defaultDataColumns: any[] = [
   { title: '开始日期', dataIndex: 'start_date', key: 'start_date', width: 110, resizable: true },
   { title: '结束日期', dataIndex: 'end_date', key: 'end_date', width: 110, resizable: true },
   { title: '预测日期', dataIndex: 'forecast_date', key: 'forecast_date', width: 110, resizable: true },
+  { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 110, resizable: true },
+  { title: '启用状态', dataIndex: 'condition', key: 'condition', width: 80, resizable: true },
   { title: '客户物料号', dataIndex: 'customer_item_number', key: 'customer_item_number', width: 120, resizable: true },
   { title: '客户物料描述', dataIndex: 'customer_item_description', key: 'customer_item_description', width: 140, resizable: true },
-  { title: '备注', dataIndex: 'remark', key: 'remark', width: 120, ellipsis: true, resizable: true }
+  { title: '创建人', dataIndex: 'creation_man', key: 'creation_man', width: 90, resizable: true },
+  { title: '创建日期', dataIndex: 'creation_date', key: 'creation_date', width: 120, resizable: true },
+  { title: '备注', dataIndex: 'remark', key: 'remark', width: 120, ellipsis: true, resizable: true },
+  { title: '预测单备注', dataIndex: 'header_remark', key: 'header_remark', width: 120, ellipsis: true, resizable: true }
 ]
 
 const {
@@ -67,7 +76,17 @@ const consumptionStatusColors: Record<string, string> = {
   '已消耗': 'green'
 }
 
+const approvalStatusColors: Record<string, string> = {
+  '已审批': 'green',
+  '待审批': 'orange',
+  '草稿': 'default'
+}
+
 const formatDate = (date: any) => date ? dayjs(date).format('YYYY-MM-DD') : '-'
+
+const goToForecast = (forecastNumber: string) => {
+  router.push({ name: 'ForecastList', query: { highlight: forecastNumber } })
+}
 
 const fetchData = async () => {
   loading.value = true
@@ -76,7 +95,8 @@ const fetchData = async () => {
       page: pagination.current,
       limit: pagination.pageSize,
       search: searchText.value,
-      consumption_status: filterStatus.value.length ? filterStatus.value.join(',') : ''
+      consumption_status: filterStatus.value.length ? filterStatus.value.join(',') : '',
+      approval_status: filterApprovalStatus.value.length ? filterApprovalStatus.value.join(',') : ''
     })
     if (res?.success) {
       dataSource.value = res.data.items || []
@@ -132,6 +152,7 @@ onMounted(async () => {
 <template>
   <div style="padding: 20px">
     <div style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+      <span style="font-size: 18px; font-weight: 600; color: #1a1a2e; margin-right: 4px; white-space: nowrap">销售预测明细</span>
       <a-input-search
         v-model:value="searchText"
         placeholder="搜索预测单号/产品编号/产品名称/客户名称"
@@ -155,6 +176,19 @@ onMounted(async () => {
         <a-select-option value="部分消耗">部分消耗</a-select-option>
         <a-select-option value="已消耗">已消耗</a-select-option>
       </a-select>
+      <a-select
+        v-model:value="filterApprovalStatus"
+        mode="multiple"
+        placeholder="全部审批状态"
+        style="min-width: 160px"
+        allow-clear
+        :max-tag-count="2"
+        @change="handleSearch"
+      >
+        <a-select-option value="草稿">草稿</a-select-option>
+        <a-select-option value="待审批">待审批</a-select-option>
+        <a-select-option value="已审批">已审批</a-select-option>
+      </a-select>
       <a-button @click="fetchData"><ReloadOutlined /> 刷新</a-button>
       <a-button type="primary" :loading="exportLoading" :disabled="!selectedRowKeys.length" @click="handleExportSelected"><DownloadOutlined /> 导出选中</a-button>
       <a-tooltip title="列设置"><a-button @click="openColumnSetting"><SettingOutlined /></a-button></a-tooltip>
@@ -174,11 +208,17 @@ onMounted(async () => {
       @resizeColumn="handleResizeColumn"
     >
       <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'consumption_status'">
+        <template v-if="column.key === 'forecast_number'">
+          <a @click="goToForecast(record.forecast_number)" style="color: #1677ff">{{ record.forecast_number }}</a>
+        </template>
+        <template v-else-if="column.key === 'consumption_status'">
           <a-tag :color="consumptionStatusColors[record.consumption_status] || 'default'">{{ record.consumption_status }}</a-tag>
         </template>
         <template v-else-if="column.key === 'status'">
           <a-tag :color="record.status === '已完成' ? 'green' : record.status === '计划中' ? 'blue' : 'default'">{{ record.status || '未开始' }}</a-tag>
+        </template>
+        <template v-else-if="column.key === 'approval_status'">
+          <a-tag :color="approvalStatusColors[record.approval_status] || 'default'">{{ record.approval_status }}</a-tag>
         </template>
         <template v-else-if="column.key === 'forecast_quantity'">
           <span style="font-weight: 600">{{ record.forecast_quantity }}</span>
@@ -197,6 +237,9 @@ onMounted(async () => {
         </template>
         <template v-else-if="column.key === 'forecast_date'">
           {{ formatDate(record.forecast_date) }}
+        </template>
+        <template v-else-if="column.key === 'creation_date'">
+          {{ formatDate(record.creation_date) }}
         </template>
       </template>
     </a-table>

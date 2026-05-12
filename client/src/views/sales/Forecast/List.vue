@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { ExclamationCircleOutlined, PlusOutlined, ReloadOutlined, DeleteOutlined, EyeOutlined, EditOutlined, SettingOutlined, DownOutlined, HistoryOutlined } from '@ant-design/icons-vue'
-import { getForecasts, getForecastDetail, createForecast, updateForecast, deleteForecast, getForecastConsumptionLog } from '@/api/sales/forecast'
+import { ExclamationCircleOutlined, PlusOutlined, DownloadOutlined, UploadOutlined, ReloadOutlined, DeleteOutlined, EyeOutlined, EditOutlined, SettingOutlined, DownOutlined, HistoryOutlined } from '@ant-design/icons-vue'
+import { getForecasts, getForecastDetail, createForecast, updateForecast, deleteForecast, getForecastConsumptionLog, exportForecasts, importForecasts } from '@/api/sales/forecast'
 import { getCustomers } from '@/api/master-data/customer'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getCustomerMaterialMappings, reverseLookupProduct } from '@/api/master-data/customerMaterialMapping'
@@ -27,6 +27,10 @@ const approvalFilter = ref('')
 // 客户和物料选项
 const customerOptions = ref<any[]>([])
 const itemOptions = ref<any[]>([])
+
+// 导入导出
+const fileInputRef = ref<HTMLInputElement>()
+const importLoading = ref(false)
 
 // 创建/编辑弹窗
 const { loading, dataSource, searchText, pagination, selectedRowKeys, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getForecasts)
@@ -92,6 +96,41 @@ onMounted(() => { fetchData(); fetchCustomers(); fetchItems(); loadColumnPrefere
 
 
 const onSearch = () => { pagination.current = 1; fetchData() }
+
+// ==================== 导入导出 ====================
+const generateExportFilename = (prefix: string) => `${prefix}_${dayjs().format('YYYY-MM-DD_HH-mm-ss')}.xlsx`
+
+const handleExport = async () => {
+  try {
+    const res: any = await exportForecasts()
+    const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url; link.download = generateExportFilename('sales_forecasts'); link.click()
+    window.URL.revokeObjectURL(url)
+  } catch { message.error('导出失败') }
+}
+
+const handleImportClick = () => { fileInputRef.value?.click() }
+const handleFileChange = async (e: Event) => {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  importLoading.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res: any = await importForecasts(formData)
+    if (res?.success) {
+      message.success(res.message || '导入成功')
+      fetchData()
+    }
+  } catch (err: any) {
+    message.error(err.response?.data?.message || '导入失败')
+  } finally {
+    importLoading.value = false
+    if (fileInputRef.value) fileInputRef.value.value = ''
+  }
+}
 
 // ==================== CRUD ====================
 const handleCreate = () => {
@@ -339,21 +378,31 @@ const onExpand = async (expanded: boolean, record: any) => {
   <div style="padding: 16px">
     <!-- 顶部工具栏 -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px">
-      <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center">
-        <a-button type="primary" @click="handleCreate"><PlusOutlined />新建预测</a-button>
-        <a-button @click="handleBatchSubmit">批量提交</a-button>
-        <a-button @click="fetchData"><ReloadOutlined />刷新</a-button>
-        <a-button @click="openColumnSetting"><SettingOutlined /></a-button>
-      </div>
-      <div style="display: flex; gap: 8px; align-items: center">
+      <span style="font-size: 18px; font-weight: 600; color: #1a1a2e; white-space: nowrap; margin-right: 4px">销售预测</span>
+      <a-space wrap>
+        <a-input-search
+          v-model:value="searchText"
+          placeholder="搜索预测编号/客户名/创建人"
+          style="width: 280px"
+          allow-clear
+          @search="onSearch"
+          @pressEnter="onSearch"
+        />
         <a-select v-model:value="approvalFilter" style="width: 120px" placeholder="审批状态" allowClear @change="onSearch">
           <a-select-option value="">全部</a-select-option>
           <a-select-option value="草稿">草稿</a-select-option>
           <a-select-option value="审批中">审批中</a-select-option>
           <a-select-option value="已审批">已审批</a-select-option>
         </a-select>
-        <a-input-search v-model:value="searchText" placeholder="搜索预测编号/客户名/创建人" style="width: 280px" @search="onSearch" allowClear />
-      </div>
+        <a-button @click="handleReset"><template #icon><ReloadOutlined /></template>重置</a-button>
+      </a-space>
+      <a-space wrap>
+        <a-button @click="handleExport"><template #icon><DownloadOutlined /></template>导出</a-button>
+        <a-button @click="handleImportClick" :loading="importLoading"><template #icon><UploadOutlined /></template>导入</a-button>
+        <a-button type="primary" @click="handleCreate"><template #icon><PlusOutlined /></template>新建预测</a-button>
+        <a-tooltip title="列设置"><a-button @click="openColumnSetting"><SettingOutlined /></a-button></a-tooltip>
+      </a-space>
+      <input ref="fileInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleFileChange" />
     </div>
 
     <!-- 数据表格 -->

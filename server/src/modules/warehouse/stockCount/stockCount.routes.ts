@@ -13,7 +13,8 @@ import {
   cancel,
   reportSummary,
   reportDiffDetail,
-  reportTrend
+  reportTrend,
+  exportSelected
 } from './stockCount.controller';
 import { validateCreateStockCount, validateUpdateStockCount } from '../../../validators/warehouse.validator';
 
@@ -27,6 +28,9 @@ router.get('/snapshot-preview', authenticate, snapshotPreview);
 
 // 列表查询
 router.get('/', authenticate, getList);
+
+// 导出选中行（放在参数路由前面避免冲突）
+router.post('/export-selected', authenticate, exportSelected);
 
 // 详情
 router.get('/:count_number', authenticate, getDetail);

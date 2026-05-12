@@ -31,14 +31,14 @@ export function generateFromOrder(productionOrderNumbers: string[]) {
   return request.post('/material-preparations/generate-from-order', { production_order_numbers: productionOrderNumbers })
 }
 
-/** 获取可按工序备料的生产单列表（已审批+已派发） */
+/** 获取可按工序备料/已备料的生产单列表（已审批+已派发+已备料，用于备料和撤回） */
 export function getOrdersForProcessPrep(params?: {
   page?: number
   limit?: number
   search?: string
 }) {
   return request.get('/material-preparations/orders-for-generate', {
-    params: { ...params, plan_status: '已派发' }
+    params: { ...params, plan_status: '已派发,已备料' }
   })
 }
 
@@ -75,4 +75,24 @@ export function createMaterialIssue(data: {
   }>
 }) {
   return request.post('/material-issues', data)
+}
+
+/** 获取仓库列表 */
+export function getWarehouseOptions() {
+  return request.get('/material-warehouse/warehouse-options')
+}
+
+/** 获取领料记录列表 */
+export function getMaterialIssues(params?: { page?: number; limit?: number; search?: string }) {
+  return request.get('/material-issues', { params })
+}
+
+/** 删除/撤回领料记录 */
+export function deleteMaterialIssue(issueNumber: string) {
+  return request.delete(`/material-issues/${encodeURIComponent(issueNumber)}`)
+}
+
+/** 获取领料记录明细 */
+export function getMaterialIssueDetail(issueNumber: string) {
+  return request.get(`/material-issues/${encodeURIComponent(issueNumber)}`)
 }

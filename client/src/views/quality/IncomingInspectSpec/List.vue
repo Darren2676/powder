@@ -227,6 +227,11 @@ const { loading: headerLoading, dataSource: headerData, searchText, pagination: 
 
 const selectedSpecName = ref<string | null>(null)
 
+const handleSelectSpec = (record: any) => {
+  selectedSpecName.value = record.spec_name
+  fetchDetailList(record.spec_name)
+}
+
 const headerColumns = [
   { title: '行号', key: 'rowIndex', width: 55 },
   { title: '检验规范名', dataIndex: 'spec_name', key: 'spec_name', width: 180 },

@@ -13,6 +13,7 @@ import financeRoutes from '../modules/finance';
 import integrationRoutes from '../modules/integration';
 import equipmentRoutes from '../modules/equipment';
 import uploadRoutes from '../modules/common/upload.routes';
+import openApiRoutes from '../modules/open';
 
 const router = Router();
 
@@ -28,5 +29,6 @@ router.use(financeRoutes);
 router.use(integrationRoutes);
 router.use(equipmentRoutes);
 router.use(uploadRoutes);
+router.use('/open', openApiRoutes);
 
 export default router;

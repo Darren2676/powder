@@ -94,7 +94,7 @@
           <div v-if="!loading && orders.length === 0" class="empty-state">
             <div class="empty-state__icon">📦</div>
             <div class="empty-state__text">暂无符合条件的生产单</div>
-            <div class="empty-state__hint">仅显示已审批且已派发的生产单</div>
+            <div class="empty-state__hint">仅显示已审批且已派发/已备料的生产单</div>
           </div>
         </van-list>
       </van-pull-refresh>

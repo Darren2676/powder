@@ -76,6 +76,8 @@ const formData = reactive({
   return_order_number: '',
   type: '退款退货' as string,
   shipping_order_number: '',
+  customer_number: '',
+  customer_name: '',
   warehouse_number: '',
   warehouse_name: '',
   reason: '',
@@ -99,6 +101,10 @@ const handleLoadShippingOrder = async () => {
     if (res?.success) {
       shippingData.value = res.data
       formData.shipping_order_number = sn
+      // 从发货单回填客户信息
+      const header = res.data.header || {}
+      formData.customer_number = header.customer_number || ''
+      formData.customer_name = header.customer_name || ''
       // 自动构建明细行
       const details = res.data.details || []
       formData.details = details.map((d: any) => ({
@@ -146,6 +152,8 @@ const handleOpenCreate = () => {
   formData.return_order_number = ''
   formData.type = '退款退货'
   formData.shipping_order_number = ''
+  formData.customer_number = ''
+  formData.customer_name = ''
   formData.warehouse_number = ''
   formData.warehouse_name = ''
   formData.reason = ''
@@ -403,6 +411,7 @@ onMounted(async () => {
     <!-- 工具栏 -->
     <div style="margin-bottom: 16px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px">
       <div style="display: flex; gap: 8px; align-items: center">
+        <span style="font-size: 18px; font-weight: 600; color: #1a1a2e; margin-right: 4px; white-space: nowrap">退货单</span>
         <a-input-search
           v-model:value="searchText"
           placeholder="搜索退货单号/发货单号/客户名称"

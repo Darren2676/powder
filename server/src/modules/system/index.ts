@@ -12,6 +12,9 @@ import approvalRoutes from './approval/approval.routes';
 import workflowRoutes from './workflow/workflow.routes';
 import workflow_runtimeRoutes from './workflow/workflow-runtime.routes';
 import sseRoutes from './sse/sse.routes';
+import documentCompletionConfigRoutes from './documentCompletionConfig/documentCompletionConfig.routes';
+import manualCloseRoutes from './manualClose/manualClose.routes';
+import apiKeyRoutes from './apiKey/apiKey.routes';
 
 const router = Router();
 
@@ -27,5 +30,8 @@ router.use('/approval', approvalRoutes);
 router.use('/workflows', workflowRoutes);
 router.use('/workflow-runtime', workflow_runtimeRoutes);
 router.use('/sse', sseRoutes);
+router.use('/document-completion-config', documentCompletionConfigRoutes);
+router.use('/manual-close', manualCloseRoutes);
+router.use('/api-keys', apiKeyRoutes);
 
 export default router;

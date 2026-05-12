@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>系统管理员管理第三方接口手册</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 13px; line-height: 1.8; color: #2c3e50; padding: 24px; }
+  h1 { font-size: 22px; text-align: center; margin: 0 0 6px; color: #1a1a2e; border-bottom: 3px solid #0f3460; padding-bottom: 12px; }
+  h2 { font-size: 17px; margin: 30px 0 14px; color: #0f3460; border-left: 4px solid #e94560; padding-left: 12px; background: linear-gradient(90deg, #f8f9fa 0%, transparent 100%); padding-top: 4px; padding-bottom: 4px; }
+  h3 { font-size: 14px; margin: 20px 0 10px; color: #16213e; }
+  h4 { font-size: 13px; margin: 14px 0 6px; color: #333; }
+  p { margin: 6px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 12px; }
+  th, td { border: 1px solid #d0d0d0; padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: #0f3460; color: #fff; font-weight: 500; white-space: nowrap; }
+  tr:nth-child(even) { background: #f8f9fa; }
+  code { background: #eef; padding: 1px 5px; border-radius: 3px; font-family: Consolas, "Courier New", monospace; font-size: 12px; color: #c0392b; }
+  pre { background: #1e1e2e; color: #cdd6f4; padding: 14px 18px; border-radius: 8px; font-size: 11.5px; line-height: 1.6; overflow-x: auto; margin: 10px 0; }
+  pre code { background: none; color: inherit; padding: 0; }
+  .tip { background: #e8f5e9; border-left: 4px solid #4caf50; padding: 10px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+  .tip::before { content: "提示 "; font-weight: bold; color: #2e7d32; }
+  .warn { background: #fff3e0; border-left: 4px solid #ff9800; padding: 10px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+  .warn::before { content: "警告 "; font-weight: bold; color: #e65100; }
+  .danger { background: #fce4ec; border-left: 4px solid #e53935; padding: 10px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+  .danger::before { content: "危险 "; font-weight: bold; color: #b71c1c; }
+  .info { background: #e3f2fd; border-left: 4px solid #1976d2; padding: 10px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+  .info::before { content: "说明 "; font-weight: bold; color: #0d47a1; }
+  ul, ol { margin: 6px 0 6px 24px; }
+  li { margin: 4px 0; }
+  .page-break { page-break-before: always; }
+  .cover { text-align: center; padding-top: 100px; }
+  .cover h1 { font-size: 30px; border: none; margin-bottom: 8px; }
+  .cover .subtitle { font-size: 18px; color: #555; margin-top: 16px; }
+  .cover .meta { margin-top: 80px; color: #888; font-size: 14px; }
+  .cover .meta p { margin: 6px 0; }
+  .step { display: flex; margin: 8px 0; align-items: flex-start; }
+  .step-num { min-width: 32px; height: 32px; border-radius: 50%; background: #0f3460; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; margin-right: 12px; flex-shrink: 0; }
+  .step-content { flex: 1; padding-top: 4px; }
+  .flow-box { background: #f5f5f5; border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 12px 0; font-family: Consolas, monospace; font-size: 11.5px; line-height: 1.5; white-space: pre; overflow-x: auto; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+  .badge-green { background: #e8f5e9; color: #2e7d32; }
+  .badge-red { background: #fce4ec; color: #c62828; }
+  .badge-blue { background: #e3f2fd; color: #1565c0; }
+  .badge-orange { background: #fff3e0; color: #e65100; }
+</style>
+</head>
+<body>
+
+<!-- ==================== 封面 ==================== -->
+<div class="cover">
+  <div style="font-size:14px;color:#999;margin-bottom:20px;">Seals MES System</div>
+  <h1>系统管理员管理<br>第三方接口手册</h1>
+  <div class="subtitle">API 密钥管理 · 权限配置 · 安全策略 · 日志审计</div>
+  <div class="meta">
+    <p>文档版本：V1.0</p>
+    <p>适用对象：MES 系统管理员</p>
+    <p>编制日期：2026年5月</p>
+  </div>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== 第一章：概述 ==================== -->
+<h1>第一章 概述</h1>
+
+<h2>1.1 手册目的</h2>
+<p>本手册面向 MES 系统管理员，详细说明如何管理第三方系统接入 MES 的 Open API 接口，包括：API 密钥的创建与维护、权限分配策略、安全防护配置、调用日志审计等全部管理操作。</p>
+
+<h2>1.2 系统架构概览</h2>
+<div class="flow-box">
+┌─────────────────┐         ┌──────────────────────────────────────┐
+│  第三方系统      │         │  MES 管理后台 (JWT 认证)             │
+│  (ERP/WMS/MES等) │         │  ┌────────────────────────────┐      │
+│                  │         │  │  系统设置 → API密钥管理    │      │
+│  X-API-Key 头    │────────▶│  │  · 创建/编辑/禁用/删除     │      │
+│  sk-xxxx         │         │  │  · 调用日志查看            │      │
+│                  │         │  └────────────────────────────┘      │
+└─────────────────┘         │                                      │
+                            │  Open API 网关 (/api/v1/open/)       │
+                            │  ┌──────┬──────┬──────┬──────┐       │
+                            │  │ 工单 │ 报工 │ 备料 │ BOM  │       │
+                            │  └──────┴──────┴──────┴──────┘       │
+                            │  · apiKeyAuth 认证中间件              │
+                            │  · requirePermission 权限中间件       │
+                            │  · 速率限制 100次/分钟               │
+                            └──────────────────────────────────────┘
+</div>
+
+<h2>1.3 认证方式对比</h2>
+<table>
+  <tr><th>对比项</th><th>JWT Token（内部用户）</th><th>API Key（第三方对接）</th></tr>
+  <tr><td>认证方式</td><td>账号密码登录获取 Token</td><td>静态密钥 <code>sk-xxxx</code></td></tr>
+  <tr><td>有效期</td><td>短期（2小时 + 自动刷新）</td><td>长期（可设置过期时间或永不过期）</td></tr>
+  <tr><td>传输方式</td><td><code>Authorization: Bearer xxx</code></td><td><code>X-API-Key: sk-xxx</code></td></tr>
+  <tr><td>权限范围</td><td>基于角色的完整系统权限</td><td>4模块 × 读写 = 8个独立权限位</td></tr>
+  <tr><td>适用场景</td><td>用户通过浏览器访问</td><td>服务间自动化调用</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ==================== 第二章：API密钥管理 ==================== -->
+<h1>第二章 API 密钥管理</h1>
+
+<h2>2.1 进入管理页面</h2>
+<div class="step"><div class="step-num">1</div><div class="step-content">以管理员账号登录 MES 系统后台</div></div>
+<div class="step"><div class="step-num">2</div><div class="step-content">在左侧导航栏点击 <strong>系统设置</strong> 展开子菜单</div></div>
+<div class="step"><div class="step-num">3</div><div class="step-content">点击 <strong>API密钥管理</strong> 进入管理页面</div></div>
+
+<p>页面路由：<code>/api-keys</code>，权限代码：<code>system</code>，仅管理员可见。</p>
+
+<h2>2.2 创建 API 密钥</h2>
+
+<h3>2.2.1 操作步骤</h3>
+<div class="step"><div class="step-num">1</div><div class="step-content">点击页面右上角 <strong>新建密钥</strong> 按钮</div></div>
+<div class="step"><div class="step-num">2</div><div class="step-content">在弹窗中填写密钥信息（详见下方字段说明）</div></div>
+<div class="step"><div class="step-num">3</div><div class="step-content">点击 <strong>确定</strong> 提交</div></div>
+<div class="step"><div class="step-num">4</div><div class="step-content">系统弹出密钥值，<strong>立即复制并妥善保管</strong></div></div>
+<div class="step"><div class="step-num">5</div><div class="step-content">点击 <strong>我已复制保管</strong> 关闭窗口</div></div>
+
+<div class="danger">密钥创建成功后仅此一次展示完整值，关闭窗口后无法再次查看完整密钥！若密钥遗失，只能通过"重新生成"功能获取新密钥。</div>
+
+<h3>2.2.2 字段说明</h3>
+<table>
+  <tr><th>字段</th><th>必填</th><th>说明</th><th>示例</th></tr>
+  <tr><td>密钥名称</td><td><span class="badge badge-red">必填</span></td><td>标识密钥用途</td><td>ERP系统对接</td></tr>
+  <tr><td>客户端名称</td><td><span class="badge badge-red">必填</span></td><td>第三方系统/公司名称</td><td>XX科技有限公司</td></tr>
+  <tr><td>描述</td><td>选填</td><td>补充说明用途</td><td>用于ERP同步生产工单数据</td></tr>
+  <tr><td>访问权限</td><td>—</td><td>4个模块各勾选读/写</td><td>见下方权限配置</td></tr>
+  <tr><td>频率限制</td><td>—</td><td>每分钟最大请求数，默认100</td><td>100</td></tr>
+  <tr><td>IP白名单</td><td>选填</td><td>逗号分隔的IP列表，留空不限制</td><td>192.168.1.100,10.0.0.5</td></tr>
+  <tr><td>过期时间</td><td>选填</td><td>留空=永不过期</td><td>2027-12-31 23:59:59</td></tr>
+</table>
+
+<h3>2.2.3 权限勾选说明</h3>
+<p>创建弹窗中的"访问权限"区域以 2×2 网格展示 4 个模块，每个模块有"读取"和"写入"两个复选框：</p>
+<table>
+  <tr><th>模块</th><th>读取权限</th><th>写入权限</th><th>默认</th></tr>
+  <tr><td><span class="badge badge-blue">生产工单</span></td><td>可查询工单列表和详情</td><td>可创建和更新工单</td><td>读取=勾选，写入=不勾选</td></tr>
+  <tr><td><span class="badge badge-green">工序报工</span></td><td>可查询报工列表和详情</td><td>可创建报工记录</td><td>读取=勾选，写入=不勾选</td></tr>
+  <tr><td><span class="badge badge-orange">按工序备料</span></td><td>可查询备料单和明细</td><td>可按工序生成备料单</td><td>读取=勾选，写入=不勾选</td></tr>
+  <tr><td style="background:#f3e5f5;">设计BOM</td><td>可查询BOM列表/详情/树/扁平</td><td>（预留，暂未开放写入）</td><td>读取=勾选，写入=不勾选</td></tr>
+</table>
+
+<div class="tip">建议遵循最小权限原则：仅为第三方分配其业务场景必需的权限。例如只读对接只需勾选"读取"，不需要勾选"写入"。</div>
+
+<h2>2.3 查看密钥列表</h2>
+<p>管理页面以表格展示所有已创建的 API 密钥，包含以下列：</p>
+<table>
+  <tr><th>列名</th><th>说明</th></tr>
+  <tr><td>密钥名称</td><td>创建时填写的标识名</td></tr>
+  <tr><td>客户端</td><td>第三方系统/公司名称</td></tr>
+  <tr><td>密钥</td><td>脱敏显示，如 <code>sk-a4****1c9</code></td></tr>
+  <tr><td>权限</td><td>以标签显示各模块权限，如 <span class="badge badge-blue">工单读写</span> <span class="badge badge-green">报工读</span></td></tr>
+  <tr><td>状态</td><td><span class="badge badge-green">启用</span> 或 <span class="badge badge-red">禁用</span></td></tr>
+  <tr><td>过期时间</td><td>永不过期 / 日期（已过期显示红色）</td></tr>
+  <tr><td>频率限制</td><td>次/分钟</td></tr>
+  <tr><td>最近使用</td><td>最后调用时间，从未使用显示灰色</td></tr>
+</table>
+
+<h2>2.4 编辑密钥</h2>
+<ol>
+  <li>在密钥列表中点击某行的 <strong>编辑</strong> 按钮</li>
+  <li>在弹窗中修改权限、频率限制、IP白名单、过期时间、状态等</li>
+  <li>点击 <strong>确定</strong> 保存</li>
+</ol>
+<div class="info">编辑操作不会改变密钥值，仅修改权限和配置参数。</div>
+
+<h2>2.5 禁用/启用密钥</h2>
+<p>在密钥列表的操作列，点击 <strong>更多 → 禁用</strong> 或 <strong>更多 → 启用</strong>。</p>
+<ul>
+  <li>禁用后，使用该密钥的所有 API 请求将返回 <code>401 Unauthorized</code></li>
+  <li>启用后，密钥恢复可用</li>
+  <li>禁用是临时操作，密钥数据不会丢失</li>
+</ul>
+
+<div class="tip">当发现密钥可能泄露时，应第一时间禁用密钥，再排查问题后决定是重新启用还是重新生成。</div>
+
+<h2>2.6 重新生成密钥</h2>
+<ol>
+  <li>在密钥列表中点击 <strong>更多 → 重新生成</strong></li>
+  <li>系统弹出确认框："重新生成后旧密钥将立即失效，确定继续？"</li>
+  <li>点击确定后，系统生成新的密钥值</li>
+  <li><strong>立即复制新密钥并通知第三方更新配置</strong></li>
+</ol>
+
+<div class="warn">重新生成后旧密钥立即失效，使用旧密钥的所有请求将返回 401 错误。请务必先协调第三方做好切换准备。</div>
+
+<h2>2.7 删除密钥</h2>
+<ol>
+  <li>在密钥列表中点击 <strong>更多 → 删除</strong></li>
+  <li>系统弹出确认框："确定删除此密钥？删除后不可恢复"</li>
+  <li>点击确定后，密钥被永久删除</li>
+</ol>
+
+<div class="danger">删除操作不可逆，密钥及关联的所有调用日志将无法恢复。如只是临时停用，请使用"禁用"而非"删除"。</div>
+
+<div class="page-break"></div>
+
+<!-- ==================== 第三章：查看调用日志 ==================== -->
+<h1>第三章 查看调用日志</h1>
+
+<h2>3.1 打开日志窗口</h2>
+<p>在密钥列表中点击某行的 <strong>日志</strong> 按钮，弹出该密钥的调用日志窗口。</p>
+
+<h2>3.2 日志字段说明</h2>
+<table>
+  <tr><th>字段</th><th>说明</th></tr>
+  <tr><td>时间</td><td>API调用的确切时间</td></tr>
+  <tr><td>端点</td><td>请求的API路径，如 <code>/api/v1/open/orders</code></td></tr>
+  <tr><td>方法</td><td>HTTP方法：GET / POST / PUT</td></tr>
+  <tr><td>状态码</td><td>响应状态码：<span class="badge badge-green">200</span> 成功，<span class="badge badge-red">4xx/5xx</span> 失败</td></tr>
+  <tr><td>响应时间</td><td>服务端处理耗时（毫秒）</td></tr>
+  <tr><td>IP地址</td><td>请求来源IP</td></tr>
+</table>
+
+<h2>3.3 日志分析要点</h2>
+<table>
+  <tr><th>观察现象</th><th>可能原因</th><th>处理建议</th></tr>
+  <tr><td>大量 401 状态码</td><td>密钥过期或被禁用</td><td>检查密钥有效期和状态</td></tr>
+  <tr><td>大量 403 状态码</td><td>权限不足</td><td>检查该密钥的权限配置</td></tr>
+  <tr><td>大量 429 状态码</td><td>请求频率超限</td><td>适当提高频率限制值</td></tr>
+  <tr><td>来源IP异常</td><td>密钥可能泄露</td><td>立即禁用密钥，配置IP白名单</td></tr>
+  <tr><td>响应时间突然变长</td><td>数据库或网络异常</td><td>检查服务器性能</td></tr>
+  <tr><td>非工作时间段有调用</td><td>异常自动化任务或泄露</td><td>核实第三方调用计划</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ==================== 第四章：安全策略配置 ==================== -->
+<h1>第四章 安全策略配置</h1>
+
+<h2>4.1 速率限制</h2>
+
+<h3>4.1.1 默认限制</h3>
+<p>Open API 网关默认速率限制为 <strong>100次/分钟</strong>，超出后返回 HTTP 429 状态码。</p>
+
+<h3>4.1.2 自定义限制</h3>
+<p>在创建或编辑密钥时，可修改"频率限制"字段：</p>
+<table>
+  <tr><th>业务场景</th><th>建议值</th></tr>
+  <tr><td>低频查询（每日同步几次）</td><td>20~50 次/分钟</td></tr>
+  <tr><td>常规数据同步</td><td>100 次/分钟（默认）</td></tr>
+  <tr><td>高频批量读取</td><td>200~500 次/分钟</td></tr>
+  <tr><td>实时推送对接</td><td>500~1000 次/分钟</td></tr>
+</table>
+
+<div class="warn">过高的频率限制可能影响系统整体性能，建议根据实际需要设置合理值。</div>
+
+<h2>4.2 IP 白名单</h2>
+
+<h3>4.2.1 配置方法</h3>
+<p>在创建或编辑密钥时，在"IP白名单"字段中填写允许访问的 IP 地址，多个 IP 用英文逗号分隔。</p>
+
+<h3>4.2.2 配置示例</h3>
+<pre><code># 单个IP
+192.168.1.100
+
+# 多个IP
+192.168.1.100,10.0.0.5,172.16.0.1
+
+# 不限制（留空即可）</code></pre>
+
+<h3>4.2.3 注意事项</h3>
+<ul>
+  <li>留空表示不限制来源IP，任何IP都可以使用该密钥</li>
+  <li>配置后，仅列表中的IP可以访问，其他IP将返回 <code>403 Forbidden</code></li>
+  <li>如果第三方服务器有多个出口IP，需全部列出</li>
+  <li>注意区分内网IP和外网IP</li>
+</ul>
+
+<h2>4.3 密钥过期策略</h2>
+
+<h3>4.3.1 配置方法</h3>
+<p>在创建或编辑密钥时，设置"过期时间"。留空表示永不过期。</p>
+
+<h3>4.3.2 建议策略</h3>
+<table>
+  <tr><th>密钥类型</th><th>建议有效期</th><th>说明</th></tr>
+  <tr><td>临时对接测试</td><td>7~30天</td><td>测试完成后自动失效</td></tr>
+  <tr><td>正式对接</td><td>1年</td><td>定期轮换，配合重新生成</td></tr>
+  <tr><td>长期合作伙伴</td><td>2~3年</td><td>配合IP白名单使用</td></tr>
+</table>
+
+<h2>4.4 安全最佳实践</h2>
+<ol>
+  <li><strong>最小权限原则</strong>：仅为第三方分配必需的模块权限</li>
+  <li><strong>必须配置IP白名单</strong>：生产环境强烈建议配置IP白名单</li>
+  <li><strong>设置过期时间</strong>：避免永久密钥，定期轮换</li>
+  <li><strong>密钥泄露应急流程</strong>：
+    <ol>
+      <li>立即禁用密钥</li>
+      <li>通知第三方停止使用</li>
+      <li>重新生成密钥</li>
+      <li>通过安全渠道将新密钥传递给第三方</li>
+    </ol>
+  </li>
+  <li><strong>定期审计</strong>：每月检查一次调用日志，关注异常模式</li>
+  <li><strong>生产环境HTTPS</strong>：确保API通过HTTPS访问，防止密钥被嗅探</li>
+</ol>
+
+<div class="page-break"></div>
+
+<!-- ==================== 第五章：权限配置参考 ==================== -->
+<h1>第五章 权限配置参考</h1>
+
+<h2>5.1 权限矩阵总览</h2>
+<table>
+  <tr><th>权限位</th><th>数据库字段</th><th>对应接口</th><th>允许的操作</th></tr>
+  <tr><td>工单-读</td><td><code>perm_order_read</code></td><td>GET /open/orders<br>GET /open/orders/:id</td><td>查询工单列表、查询工单详情</td></tr>
+  <tr><td>工单-写</td><td><code>perm_order_write</code></td><td>POST /open/orders<br>PUT /open/orders/:id</td><td>创建工单、更新工单</td></tr>
+  <tr><td>报工-读</td><td><code>perm_work_report_read</code></td><td>GET /open/work-reports<br>GET /open/work-reports/:id</td><td>查询报工列表、查询报工详情</td></tr>
+  <tr><td>报工-写</td><td><code>perm_work_report_write</code></td><td>POST /open/work-reports</td><td>创建报工记录</td></tr>
+  <tr><td>备料-读</td><td><code>perm_prep_read</code></td><td>GET /open/material-preparations<br>GET /open/material-preparations/:id/details<br>GET /open/material-preparations/:id/details-grouped</td><td>查询备料单列表、查询备料明细、按工序分组查询</td></tr>
+  <tr><td>备料-写</td><td><code>perm_prep_write</code></td><td>POST /open/material-preparations/generate-by-process</td><td>按工序自动生成备料单</td></tr>
+  <tr><td>BOM-读</td><td><code>perm_bom_read</code></td><td>GET /open/bom<br>GET /open/bom/:id<br>GET /open/bom/:id/tree<br>GET /open/bom/:id/flatten</td><td>查询BOM列表、详情、树形结构、扁平化展开</td></tr>
+  <tr><td>BOM-写</td><td><code>perm_bom_write</code></td><td>—</td><td>预留，暂未开放</td></tr>
+</table>
+
+<h2>5.2 典型场景配置</h2>
+
+<h3>场景一：ERP 同步生产工单（只读）</h3>
+<table>
+  <tr><th>权限</th><th>设置</th></tr>
+  <tr><td>工单-读</td><td><span class="badge badge-green">勾选</span></td></tr>
+  <tr><td>工单-写</td><td>不勾选</td></tr>
+  <tr><td>报工-读</td><td><span class="badge badge-green">勾选</span></td></tr>
+  <tr><td>报工-写</td><td>不勾选</td></tr>
+  <tr><td>备料-读</td><td>不勾选</td></tr>
+  <tr><td>备料-写</td><td>不勾选</td></tr>
+  <tr><td>BOM-读</td><td>不勾选</td></tr>
+  <tr><td>BOM-写</td><td>不勾选</td></tr>
+</table>
+
+<h3>场景二：WMS 同步备料与报工数据</h3>
+<table>
+  <tr><th>权限</th><th>设置</th></tr>
+  <tr><td>工单-读</td><td><span class="badge badge-green">勾选</span></td></tr>
+  <tr><td>工单-写</td><td>不勾选</td></tr>
+  <tr><td>报工-读</td><td><span class="badge badge-green">勾选</span></td></tr>
+  <tr><td>报工-写</td><td><span class="badge badge-green">勾选</span></td></tr>
+  <tr><td>备料-读</td><td><span class="badge badge-green">勾选</span></td></tr>
+  <tr><td>备料-写</td><td><span class="badge badge-green">勾选</span></td></tr>
+  <tr><td>BOM-读</td><td>不勾选</td></tr>
+  <tr><td>BOM-写</td><td>不勾选</td></tr>
+</table>
+
+<h3>场景三：产品数据管理系统同步BOM</h3>
+<table>
+  <tr><th>权限</th><th>设置</th></tr>
+  <tr><td>工单-读</td><td>不勾选</td></tr>
+  <tr><td>工单-写</td><td>不勾选</td></tr>
+  <tr><td>报工-读</td><td>不勾选</td></tr>
+  <tr><td>报工-写</td><td>不勾选</td></tr>
+  <tr><td>备料-读</td><td>不勾选</td></tr>
+  <tr><td>备料-写</td><td>不勾选</td></tr>
+  <tr><td>BOM-读</td><td><span class="badge badge-green">勾选</span></td></tr>
+  <tr><td>BOM-写</td><td>不勾选</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ==================== 第六章：常见问题 ==================== -->
+<h1>第六章 常见问题处理</h1>
+
+<h2>6.1 第三方反馈"401 Unauthorized"</h2>
+<p>可能原因及排查步骤：</p>
+<ol>
+  <li>密钥未在请求头 <code>X-API-Key</code> 中传递 → 检查第三方请求代码</li>
+  <li>密钥拼写错误 → 检查密钥值是否完整（包括 <code>sk-</code> 前缀）</li>
+  <li>密钥已过期 → 在管理页面检查过期时间</li>
+  <li>密钥已被禁用 → 在管理页面检查启用状态</li>
+  <li>密钥已被重新生成 → 确认第三方使用的是最新密钥</li>
+</ol>
+
+<h2>6.2 第三方反馈"403 Forbidden"</h2>
+<p>可能原因及排查步骤：</p>
+<ol>
+  <li>权限不足 → 检查密钥是否勾选了对应模块的读/写权限</li>
+  <li>IP不在白名单 → 检查密钥的IP白名单配置，确认第三方出口IP</li>
+</ol>
+
+<h2>6.3 第三方反馈"429 Too Many Requests"</h2>
+<ol>
+  <li>请求频率超限 → 查看密钥的频率限制设置，根据需要调高</li>
+  <li>如果是短时间突发 → 建议第三方实现请求队列和退避重试</li>
+</ol>
+
+<h2>6.4 需要变更密钥权限</h2>
+<ol>
+  <li>在密钥列表中点击 <strong>编辑</strong></li>
+  <li>重新勾选/取消勾选对应模块的权限</li>
+  <li>权限变更立即生效，无需重新生成密钥</li>
+</ol>
+
+<h2>6.5 密钥泄露紧急处理</h2>
+<ol>
+  <li>立即在管理页面点击 <strong>更多 → 禁用</strong></li>
+  <li>通知第三方停止使用该密钥</li>
+  <li>评估影响范围（查看调用日志中是否有异常IP）</li>
+  <li>确认安全后，点击 <strong>更多 → 重新生成</strong></li>
+  <li>将新密钥通过安全渠道传递给第三方</li>
+</ol>
+
+<h2>6.6 管理操作速查表</h2>
+<table>
+  <tr><th>需求</th><th>操作</th><th>密钥值变化</th><th>第三方需更新</th></tr>
+  <tr><td>修改权限</td><td>编辑 → 勾选/取消权限</td><td>不变</td><td>否</td></tr>
+  <tr><td>调整频率限制</td><td>编辑 → 修改频率限制</td><td>不变</td><td>否</td></tr>
+  <tr><td>添加IP白名单</td><td>编辑 → 填写IP</td><td>不变</td><td>否</td></tr>
+  <tr><td>临时停用</td><td>更多 → 禁用</td><td>不变</td><td>否（恢复启用即可）</td></tr>
+  <tr><td>密钥泄露</td><td>更多 → 重新生成</td><td>变化</td><td>是（必须更新）</td></tr>
+  <tr><td>永久移除</td><td>更多 → 删除</td><td>删除</td><td>是（需重新创建）</td></tr>
+</table>
+
+</body>
+</html>

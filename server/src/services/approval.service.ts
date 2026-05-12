@@ -10,6 +10,7 @@ import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { hasActiveWorkflow, startWorkflow } from '@/services/workflow.engine';
 import { onWorkReportApproved, onWorkReportReversed } from '@/services/workReport.service';
 import { consumeForecastOnOrderApproval, recoverForecastOnOrderReversal } from '@/services/forecast.service';
+import { onSalesOrderApproved, onSalesOrderReversed } from '@/services/salesOrderSync.service';
 import { withTransaction } from '@/shared/db/withTransaction';
 import { createLogger } from '@/config/logger';
 
@@ -35,7 +36,9 @@ const moduleConfig: Record<string, { tableName: string; primaryKey: string; disp
   'sales_price_list': { tableName: 'sales_price_list', primaryKey: 'price_list_number', displayName: '销售价目表' },
   'outsourcing_order': { tableName: 'outsourcing_order', primaryKey: 'outsourcing_order_number', displayName: '委外订单' },
   'outsourcing_req': { tableName: 'outsourcing_req', primaryKey: 'outsourcing_req_number', displayName: '工序委外申请' },
-  'piece_rate_price': { tableName: 'piece_rate_price', primaryKey: 'id', displayName: '计件单价' }
+  'piece_rate_price_header': { tableName: 'piece_rate_price_header', primaryKey: 'price_list_number', displayName: '计件单价表' },
+  'standard_cost_header': { tableName: 'standard_cost_header', primaryKey: 'cost_list_number', displayName: '标准成本单价表' },
+  'piece_rate_wage_header': { tableName: 'piece_rate_wage_header', primaryKey: 'wage_number', displayName: '计件工资表' }
 };
 
 export const getModuleConfig = (module: string) => {
@@ -149,7 +152,16 @@ const noopCallback = (module: string, action: string): ApprovalCallback => {
 // ==================== Register Module Callbacks ====================
 // Modules with real business logic callbacks:
 registerApprovalHandler('work_report', { onApprove: onWorkReportApproved, onReverse: onWorkReportReversed });
-registerApprovalHandler('sales_order', { onApprove: consumeForecastOnOrderApproval, onReverse: recoverForecastOnOrderReversal });
+registerApprovalHandler('sales_order', {
+  onApprove: async (recordId: string) => {
+    await consumeForecastOnOrderApproval(recordId);
+    await onSalesOrderApproved(recordId);
+  },
+  onReverse: async (recordId: string) => {
+    await recoverForecastOnOrderReversal(recordId);
+    await onSalesOrderReversed(recordId);
+  }
+});
 
 // Modules with no-op callbacks (no side-effects on approval/reversal yet).
 // When a module needs approval side-effects, replace the no-op with a real
@@ -168,9 +180,11 @@ registerApprovalHandler('return_order', { onApprove: noopCallback('return_order'
 registerApprovalHandler('mfg_bom_header', { onApprove: noopCallback('mfg_bom_header', 'onApprove'), onReverse: noopCallback('mfg_bom_header', 'onReverse') });
 registerApprovalHandler('purchase_price_list', { onApprove: noopCallback('purchase_price_list', 'onApprove'), onReverse: noopCallback('purchase_price_list', 'onReverse') });
 registerApprovalHandler('sales_price_list', { onApprove: noopCallback('sales_price_list', 'onApprove'), onReverse: noopCallback('sales_price_list', 'onReverse') });
-registerApprovalHandler('outsourcing_order', { onApprove: noopCallback('outsourcing_order', 'onApprove'), onReverse: noopCallback('outsourcing_order', 'onReverse') });
+registerApprovalHandler('outsourcing_order', { onApprove: noopCallback('outsourcing_order', 'onApprove'), onReverse: noopCallback('outsourcing_order', 'onReverse') }); // replaced by real handler in outsourcingOrder.controller.ts
 registerApprovalHandler('outsourcing_req', { onApprove: noopCallback('outsourcing_req', 'onApprove'), onReverse: noopCallback('outsourcing_req', 'onReverse') });
-registerApprovalHandler('piece_rate_price', { onApprove: noopCallback('piece_rate_price', 'onApprove'), onReverse: noopCallback('piece_rate_price', 'onReverse') });
+registerApprovalHandler('piece_rate_price_header', { onApprove: noopCallback('piece_rate_price_header', 'onApprove'), onReverse: noopCallback('piece_rate_price_header', 'onReverse') });
+registerApprovalHandler('standard_cost_header', { onApprove: noopCallback('standard_cost_header', 'onApprove'), onReverse: noopCallback('standard_cost_header', 'onReverse') });
+registerApprovalHandler('piece_rate_wage_header', { onApprove: noopCallback('piece_rate_wage_header', 'onApprove'), onReverse: noopCallback('piece_rate_wage_header', 'onReverse') });
 
 // ==================== Submit for Approval ====================
 export const submitForApprovalCore = async (params: {

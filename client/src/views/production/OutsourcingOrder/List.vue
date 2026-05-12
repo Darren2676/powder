@@ -1,29 +1,27 @@
 <template>
-  <div class="page-container">
-    <a-card :bordered="false">
-      <div class="table-header">
-        <div class="table-header-left">
-          <a-input-search v-model:value="searchText" placeholder="搜索订单号/生产单/供应商/产品/工序" style="width: 360px" allow-clear @search="fetchList" @pressEnter="fetchList" />
-          <a-select v-model:value="approvalFilter" placeholder="审批状态" style="width: 120px; margin-left: 8px" allow-clear @change="fetchList">
-            <a-select-option value="">全部</a-select-option>
-            <a-select-option value="草稿">草稿</a-select-option>
-            <a-select-option value="待审批">待审批</a-select-option>
-            <a-select-option value="已审批">已审批</a-select-option>
-          </a-select>
-          <a-select v-model:value="statusFilter" placeholder="执行状态" style="width: 120px; margin-left: 8px" allow-clear @change="fetchList">
-            <a-select-option value="">全部</a-select-option>
-            <a-select-option value="待发出">待发出</a-select-option>
-            <a-select-option value="已发出">已发出</a-select-option>
-            <a-select-option value="部分收回">部分收回</a-select-option>
-            <a-select-option value="已完成">已完成</a-select-option>
-            <a-select-option value="已关闭">已关闭</a-select-option>
-          </a-select>
-        </div>
-        <div class="table-header-right">
-          <a-button type="primary" @click="openCreate"><template #icon><PlusOutlined /></template>新建委外订单</a-button>
-          <a-button @click="handleExport"><template #icon><DownloadOutlined /></template>导出</a-button>
-        </div>
+  <div style="padding: 20px">
+    <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; overflow-x: auto">
+      <span style="font-size: 18px; font-weight: 600; white-space: nowrap; flex-shrink: 0">工序委外管理</span>
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: nowrap">
+        <a-input-search v-model:value="searchText" placeholder="搜索订单号/生产单/供应商/产品/工序" style="width: 360px" allow-clear @search="fetchList" @pressEnter="fetchList" />
+        <a-select v-model:value="approvalFilter" placeholder="审批状态" style="width: 120px" allow-clear @change="fetchList">
+          <a-select-option value="">全部</a-select-option>
+          <a-select-option value="草稿">草稿</a-select-option>
+          <a-select-option value="待审批">待审批</a-select-option>
+          <a-select-option value="已审批">已审批</a-select-option>
+        </a-select>
+        <a-select v-model:value="statusFilter" placeholder="执行状态" style="width: 120px" allow-clear @change="fetchList">
+          <a-select-option value="">全部</a-select-option>
+          <a-select-option value="待发出">待发出</a-select-option>
+          <a-select-option value="已发出">已发出</a-select-option>
+          <a-select-option value="部分收回">部分收回</a-select-option>
+          <a-select-option value="已完成">已完成</a-select-option>
+          <a-select-option value="已关闭">已关闭</a-select-option>
+        </a-select>
+        <a-button type="primary" @click="openCreate"><template #icon><PlusOutlined /></template>新建委外订单</a-button>
+        <a-button @click="handleExport"><template #icon><DownloadOutlined /></template>导出</a-button>
       </div>
+    </div>
 
       <a-table
         :columns="columns" :data-source="tableData" :loading="loading"
@@ -54,7 +52,6 @@
           </template>
         </template>
       </a-table>
-    </a-card>
 
     <!-- 新建/编辑弹窗 -->
     <a-modal v-model:open="formVisible" :title="formMode === 'create' ? '新建委外订单' : formMode === 'edit' ? '编辑委外订单' : '查看委外订单'" :footer="formMode === 'view' ? null : undefined" @ok="handleFormOk" okText="确认" cancelText="取消" width="700px">
@@ -359,8 +356,4 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.page-container { padding: 0; }
-.table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
-.table-header-left { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.table-header-right { display: flex; gap: 8px; }
 </style>

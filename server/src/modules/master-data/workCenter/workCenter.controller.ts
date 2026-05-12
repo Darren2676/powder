@@ -38,7 +38,7 @@ export const updateWorkCenter = async (req: Request, res: Response, next: NextFu
   try {
     const { id } = req.params;
     const b = req.body;
-    await sequelize.query(`UPDATE work_center SET work_cente_name = :work_cente_name, [condition] = :condition, remark = :remark WHERE work_cente_number = :id`, { replacements: { id, work_cente_name: b.work_cente_name, condition: b.condition || '', remark: b.remark } });
+    await sequelize.query(`UPDATE work_center SET work_cente_name = :work_cente_name, [condition] = :condition, remark = :remark WHERE work_cente_number = :id`, { replacements: { id, work_cente_name: b.work_cente_name || '', condition: b.condition || '', remark: b.remark || '' } });
     res.json(success(null, '更新工作中心成功'));
   } catch (err) { next(err); }
 };
