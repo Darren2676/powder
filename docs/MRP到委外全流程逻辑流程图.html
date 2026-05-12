@@ -28,10 +28,10 @@
 <div class="page">
 
 <h1>MRP到委外全流程逻辑流程图</h1>
-<div class="subtitle">睿信橡胶密封件MES系统 | 从生产计划到委外结算的完整业务链路 | 2026-04-29 来料检验分流版</div>
+<div class="subtitle">睿信橡胶密封件MES系统 | 从生产计划到委外结算的完整业务链路 | 2026-04-29 分批发料回收版</div>
 
 <div class="intro">
-  <strong>文档说明：</strong>本文档展示从MRP运算到委外结算的完整业务链路。<span class="update-badge">重构</span> 核心变更：委外订单审批后自动生成"待确认"单据（非已审核），全程使用material体系操作库存，新增待检仓→回收入库单环节，质检合格后才更新completed_quantity和order_status，增加报工阻断校验。<span class="update-badge">新增</span> 来料检验分流：根据 <code>item_master.incoming_inspection</code> 字段判断，'Y'走待检仓+质检流程，'N'免检直接入库到下道线边仓。
+  <strong>文档说明：</strong>本文档展示从MRP运算到委外结算的完整业务链路。<span class="update-badge">重构</span> 核心变更：委外订单审批后自动生成"待确认"单据（非已审核），全程使用material体系操作库存，新增待检仓→回收入库单环节，质检合格后才更新completed_quantity和order_status，增加报工阻断校验。<span class="update-badge">新增</span> 来料检验分流：根据 <code>item_master.incoming_inspection</code> 字段判断，'Y'走待检仓+质检流程，'N'免检直接入库到下道线边仓。<span class="update-badge">新增</span> 分批发料/分批回收：支持追加发料（appendIssue）和追加回收（appendReceipt），同一委外订单可创建多张出库/回收申请，累计校验不超过计划数量。
 </div>
 
 <!-- ==================== 一、MRP到委外全流程总览 ==================== -->
@@ -130,6 +130,15 @@ graph TB
     <li><code>incoming_inspection='N'</code> → <strong>免检直接入库</strong>：跳过待检仓和质检，直接创建回收入库单(已入库) + 入下道线边仓 + 更新completed_quantity + 更新order_status</li>
     <li>收回单 <code>inspection_status</code> 新增值：'免检'、'部分待检'（混合场景）</li>
   </ul>
+  <strong>分批发料/分批回收要点：</strong>
+  <ul>
+    <li>审批回调自动生成第一张全额出库/回收申请（status=待确认），适配最常见的单批场景</li>
+    <li>分批场景通过<strong>追加发料</strong>（<code>POST /outsourcing/issue/append</code>）和<strong>追加回收</strong>（<code>POST /outsourcing/receipt/append</code>）创建额外申请</li>
+    <li>追加发料：传入 <code>batch_quantity</code>，系统按 BOM × batch_quantity 预填明细</li>
+    <li>追加回收：传入 <code>receipt_quantity</code>，系统累计校验 received_quantity + receipt_quantity ≤ planned_quantity</li>
+    <li>同一委外订单可关联多张出库申请和多张回收申请，每张独立确认</li>
+    <li>移动端返回 <code>pending_issues</code>/<code>pending_receipts</code> 列表，支持指定 <code>issue_number</code>/<code>receipt_number</code> 确认</li>
+  </ul>
 </div>
 
 <!-- ==================== 二、MRP运算决策逻辑 ==================== -->
@@ -180,11 +189,14 @@ stateDiagram-v2
         已审批_申请 --> 已转单: 自动转委外订单
     }
 
-    state 委外订单 {
-        [*] --> 草稿_订单: 从申请转单
-        草稿_订单 --> 已审批_订单: 订单审批
-        已审批_订单 --> 待发出: 默认状态
-        待发出 --> 已发出: 发出确认
+    state 委外订单_approval_status {
+        [*] --> 草稿_审批: 创建订单
+        草稿_审批 --> 已审批: 审批通过
+    }
+
+    state 委外订单_order_status {
+        [*] --> 待发出: 创建时即设<br/>与approval_status独立
+        待发出 --> 已发出: 发出确认<br/>需approval_status=已审批
         已发出 --> 部分收回: 首批收回
         已发出 --> 已完成: 质检合格回收入库/免检直接入库
         部分收回 --> 已完成: qualified>=planned
@@ -236,9 +248,9 @@ stateDiagram-v2
   <strong>重构变更：</strong>
   <ul>
     <li>转单不再自动生成已审核的发料单/收回单</li>
-    <li>委外订单审批通过后 → 回调自动生成备料出库申请(status=待确认) + 委外回收申请(status=待确认)</li>
+    <li>委外订单审批通过后 → 回调自动生成备料出库申请(status=待确认) + 委外回收申请(status=待确认, inspection_status=空)</li>
     <li>备料出库：待确认 → 已出库（material体系FIFO扣减线边仓）</li>
-    <li>委外回收：待确认 → 根据<code>incoming_inspection</code>分流</li>
+    <li>委外回收：待确认 → 根据<code>incoming_inspection</code>分流，确认收回时才设置inspection_status</li>
   </ul>
   <strong>来料检验分流：</strong>
   <ul>
@@ -278,6 +290,62 @@ graph TB
   <tr><td>7</td><td>记录线边仓流水</td><td>lineside_movement_log</td><td>direction=OUT</td></tr>
   <tr><td>8</td><td>更新出库单状态</td><td>outsourcing_material_issue</td><td>status=已出库</td></tr>
 </table>
+
+<!-- ==================== 四B、分批发料与分批回收流程 ==================== -->
+<h2>四B、分批发料与分批回收流程 <span class="update-badge">分批</span></h2>
+<div class="mermaid">
+graph TB
+    subgraph 分批发料流程
+        A1([委外订单已审批]) --> A2{是否需要<br/>分批发料?}
+        A2 -->|否 整批发料| A3[使用审批回调自动生成的<br/>第一张全额出库申请<br/>status=待确认]
+        A2 -->|是 分批发料| A4[调用追加发料API<br/>POST /outsourcing/issue/append<br/>传入batch_quantity]
+        A4 --> A5[系统按BOM×batch_quantity<br/>预填发料明细]
+        A5 --> A6[创建新的出库申请<br/>status=待确认<br/>remark=追加发料]
+        A3 --> A7[仓库确认出库<br/>WEB/移动端]
+        A6 --> A7
+        A7 --> A8[FIFO扣减线边仓<br/>material体系]
+    end
+
+    subgraph 分批回收流程
+        B1([委外订单已发出]) --> B2{是否需要<br/>分批回收?}
+        B2 -->|否 整批回收| B3[使用审批回调自动生成的<br/>第一张全额回收申请<br/>status=待确认]
+        B2 -->|是 分批回收| B4[调用追加回收API<br/>POST /outsourcing/receipt/append<br/>传入receipt_quantity]
+        B4 --> B5[累计校验<br/>已回收+本次 ≤ 计划数量]
+        B5 --> B6[创建新的回收申请<br/>status=待确认<br/>remark=追加回收]
+        B3 --> B7[仓库确认收回<br/>来料检验分流]
+        B6 --> B7
+        B7 --> B8{incoming_inspection}
+        B8 -->|Y| B9[入待检仓+创建质检单]
+        B8 -->|N| B10[免检直接入库]
+    end
+
+    subgraph 多批累计
+        C1[第1批确认] --> C2[第2批确认]
+        C2 --> C3[第N批确认]
+        C3 --> C4{累计received_quantity<br/>≥ planned_quantity?}
+        C4 -->|是| C5[order_status=已完成]
+        C4 -->|否| C6[order_status=部分收回<br/>可继续追加]
+    end
+</div>
+
+<table>
+  <tr><th>API</th><th>方法</th><th>路径</th><th>参数</th><th>说明</th></tr>
+  <tr><td>追加发料</td><td>POST</td><td>/outsourcing/issue/append</td><td>outsourcing_order_number, batch_quantity</td><td>按BOM×batch_quantity预填明细，创建待确认出库申请</td></tr>
+  <tr><td>追加回收</td><td>POST</td><td>/outsourcing/receipt/append</td><td>outsourcing_order_number, receipt_quantity</td><td>累计校验≤计划数量，创建待确认回收申请</td></tr>
+</table>
+
+<div class="note">
+  <strong>分批规则：</strong>
+  <ul>
+    <li>审批回调自动生成第一张<strong>全额</strong>出库/回收申请（适配最常见的单批场景），用户可编辑减少数量</li>
+    <li>分批场景通过"追加发料/追加回收"API创建额外的<strong>部分数量</strong>申请</li>
+    <li>追加回收有累计校验：<code>已回收数量 + 本次数量 ≤ 计划数量</code></li>
+    <li>每张申请独立确认，确认后各自走完整的material体系库存操作</li>
+    <li>多张回收申请各自触发来料检验分流，每张独立走质检或免检路径</li>
+    <li>移动端返回 <code>pending_issues</code>/<code>pending_receipts</code> 列表，支持指定单号确认</li>
+    <li>所有批次累计的 <code>completed_quantity</code> 达到 <code>planned_quantity</code> 时，order_status 变为"已完成"</li>
+  </ul>
+</div>
 
 <!-- ==================== 五、委外回收→质检→回收入库流程 ==================== -->
 <h2>五、委外回收→来料检验分流→入库流程 <span class="update-badge">重构</span> <span class="update-badge">来料检验分流</span></h2>
@@ -568,26 +636,32 @@ graph LR
 <!-- ==================== 十、委外订单完整状态时序 ==================== -->
 <h2>十、委外订单完整状态时序 <span class="update-badge">重构</span></h2>
 <div class="mermaid">
-graph LR
-    A[草稿] -->|审批| B[已审批]
-    B -->|发出确认| C[已发出]
-    C -->|回收确认<br/>入待检仓| D[部分收回]
-    D -->|质检合格<br/>回收入库| E[已完成]
-    C -->|质检合格<br/>回收入库| E
-    E -->|关闭| F[已关闭]
-    B -->|取消| G[已取消]
+graph TB
+    subgraph approval_status维度
+        A1[草稿] -->|审批通过| A2[已审批]
+        A2 -->|反审| A1
+    end
 
-    style A fill:#f0f0f0,color:#666
-    style B fill:#e6f7ff,color:#1890ff
-    style C fill:#fff7e6,color:#fa8c16
-    style D fill:#fff7e6,color:#fa8c16
-    style E fill:#f6ffed,color:#52c41a
-    style F fill:#f0f0f0,color:#666
-    style G fill:#ffccc7,color:#ff4d4f
+    subgraph order_status维度
+        B1[待发出] -->|发出确认<br/>需approval_status=已审批| B2[已发出]
+        B2 -->|收回确认<br/>免检直接入库| B3[已完成]
+        B2 -->|收回确认<br/>入待检仓| B4[部分收回]
+        B4 -->|质检合格回收入库<br/>qualified>=planned| B3
+        B3 -->|关闭| B5[已关闭]
+        B1 -->|取消| B6[已取消]
+    end
+
+    A2 -.->|触发发出| B2
 </div>
 
 <div class="note">
-  <strong>重构变更：</strong>order_status 简化。旧流程：草稿→待发出→已发出→部分发料→已发料→部分收回→已收回→已质检→已结算。新流程：草稿→已审批→已发出→部分收回→已完成→已关闭。关键变化：<strong>order_status 在质检合格回收入库时直接变为"已完成"</strong>（当qualified_quantity >= planned_quantity时），不再经过"已收回→已质检"的中间状态。
+  <strong>重要说明：</strong>委外订单有<strong>两个独立的状态维度</strong>：
+  <ul>
+    <li><code>approval_status</code>（审批状态）：草稿 → 已审批。创建时为草稿，审批通过后变为已审批</li>
+    <li><code>order_status</code>（执行状态）：待发出 → 已发出 → 部分收回 → 已完成 → 已关闭。创建时即为"待发出"</li>
+    <li>发出确认需要 <code>approval_status='已审批'</code> AND <code>order_status='待发出'</code>，两个维度交叉约束</li>
+    <li><strong>order_status 在质检合格回收入库时直接变为"已完成"</strong>（当qualified_quantity >= planned_quantity时），不再经过"已收回→已质检"的中间状态</li>
+  </ul>
 </div>
 
 <!-- ==================== 十一、关键业务规则汇总 ==================== -->
@@ -667,6 +741,22 @@ graph LR
     <li>已审批的单据需先反审（撤回审批）才能删除</li>
     <li>已出库的发料单不能删除</li>
     <li>反审委外订单时，已自动生成的出库申请/回收申请需人工处理</li>
+  </ul>
+</div>
+
+<h3>11.7 分批发料与分批回收规则 <span class="update-badge">分批</span></h3>
+<div class="note">
+  <ul>
+    <li>审批回调自动生成第一张<strong>全额</strong>出库申请和回收申请（status=待确认），适配最常见的单批场景</li>
+    <li>分批发料：<code>POST /outsourcing/issue/append</code>，传入 <code>outsourcing_order_number</code> + <code>batch_quantity</code></li>
+    <li>分批回收：<code>POST /outsourcing/receipt/append</code>，传入 <code>outsourcing_order_number</code> + <code>receipt_quantity</code></li>
+    <li>追加发料按 <code>BOM标准用量 × batch_quantity</code> 预填明细，仓库可编辑后确认</li>
+    <li>追加回收累计校验：<code>received_quantity + receipt_quantity ≤ planned_quantity</code>，超出时返回400错误并提示可追加的最大数量</li>
+    <li>同一委外订单可关联多张出库申请和多张回收申请（1:N关系）</li>
+    <li>每张申请独立确认，各自走完整的material体系库存操作</li>
+    <li>多张回收申请各自触发来料检验分流（incoming_inspection判断），每张独立走质检或免检路径</li>
+    <li>移动端GET返回 <code>pending_issues</code>/<code>pending_receipts</code> 完整列表，POST支持指定 <code>issue_number</code>/<code>receipt_number</code> 确认特定批次</li>
+    <li>所有批次的 <code>completed_quantity</code> 累计达到 <code>planned_quantity</code> 时，<code>order_status</code> 自动变为"已完成"</li>
   </ul>
 </div>
 

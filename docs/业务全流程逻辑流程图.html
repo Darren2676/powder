@@ -405,6 +405,113 @@ graph TD
 <tr><td>已审批备料单</td><td>不可删除</td><td>需先反审</td></tr>
 </table>
 
+<h3>5.4 领料撤回流程（NEW）</h3>
+
+<h4>5.4.1 领料撤回状态回退</h4>
+<div class="mermaid">
+stateDiagram-v2
+    direction LR
+    state "生产单 plan_status" as po
+    state "备料单 preparation_status" as mp
+
+    [*] --> 已派发: 派发
+    已派发 --> 已备料: 首道工序全部领完
+    已备料 --> 已派发: 撤回领料（首道不再全部领完）
+
+    已派发 --> 生产中: 首次报工
+    已备料 --> 生产中: 直接报工
+    生产中 --> 已完成: 全部工序完成
+
+    state mp {
+        [*] --> 未领料: 派发自动生成
+        未领料 --> 部分领料: 部分物料领取
+        部分领料 --> 已领料: 全部物料领取
+        未领料 --> 已领料: 一次性全部领取
+
+        已领料 --> 部分领料: 撤回领料（还有剩余未领）
+        已领料 --> 未领料: 撤回全部领料
+        部分领料 --> 未领料: 撤回剩余领料
+    }
+</div>
+
+<h4>5.4.2 撤回操作时序图</h4>
+<div class="mermaid">
+sequenceDiagram
+    actor 操作员
+    participant WEP as PC端/APP
+    participant API as DELETE /material-issues/:id
+    participant DB as 数据库
+
+    操作员->>WEP: 点击"撤回"按钮
+    WEP->>WEP: 弹出确认对话框
+    操作员->>WEP: 确认撤回
+    WEP->>API: DELETE /material-issues/xxx
+
+    API->>DB: BEGIN TRANSACTION
+    API->>DB: 查询领料单主表+明细（含step_number）
+    API->>DB: B2.检查报工记录（step_number >= minStep）
+    alt 存在已报工记录（冲突）
+        API->>DB: ROLLBACK
+        API-->>WEP: 409 需先删除报工记录
+        WEP->>操作员: 提示冲突工序及报工单号
+    else 无冲突
+        API->>DB: 逐行回退物料库存（批次/汇总）
+        API->>DB: INSERT 对冲流水记录（入库/领料撤回）
+        API->>DB: UPDATE issued_quantity -= 领料数量
+        API->>DB: 重算 preparation_status
+        API->>DB: 重算 production_order.plan_status
+        API->>DB: INSERT 线边仓对冲记录（出线边）
+        API->>DB: DELETE material_issue_detail
+        API->>DB: DELETE material_issue
+        API->>DB: COMMIT
+        API->>WEP: 成功响应
+        WEP->>操作员: 刷新页面/状态
+    end
+</div>
+
+<h4>5.4.3 撤回操作数据影响表</h4>
+<table>
+<tr><th>表名</th><th>操作类型</th><th>说明</th></tr>
+<tr><td>material_issue</td><td>DELETE</td><td>删除领料单主表</td></tr>
+<tr><td>material_issue_detail</td><td>DELETE</td><td>删除领料单明细</td></tr>
+<tr><td>material_inventory</td><td>UPDATE</td><td>数量 +实际领料量（恢复库存）</td></tr>
+<tr><td>material_batch_inventory</td><td>UPDATE</td><td>数量 +实际领料量（批次恢复）</td></tr>
+<tr><td>material_inventory_transaction</td><td>INSERT</td><td>新写入库/领料撤回对冲流水</td></tr>
+<tr><td>material_preparation_detail</td><td>UPDATE</td><td>issued_quantity -= 实际领料量</td></tr>
+<tr><td>material_preparation</td><td>UPDATE</td><td>重算 preparation_status</td></tr>
+<tr><td>production_order</td><td>UPDATE</td><td>plan_status: 已备料→已派发（条件触发）</td></tr>
+<tr><td>lineside_inventory_transaction</td><td>INSERT</td><td>写入出线边对冲记录</td></tr>
+</table>
+
+<h4>5.4.3.1 报工记录拦截检查</h4>
+<div class="mermaid">
+graph TD
+    START([撤回领料单请求]) --> B1[查询领料单明细<br/>提取 step_number]
+    B1 --> B2{汇总已领料工序<br/>取最小 step_number}
+    B2 --> B3[查询 work_report<br/>WHERE step_number >= minStep]
+    B3 --> CHECK{是否存在报工记录？}
+    CHECK -->|是| REJECT[409 Conflict<br/>返回冲突工序名称+报工单号<br/>提示：需先删除报工记录]
+    CHECK -->|否| PROCEED[继续执行库存回退]
+    REJECT --> END1([撤回被阻止])
+    PROCEED --> END2([正常撤回])
+</div>
+<table>
+<tr><th>检查项</th><th>说明</th></tr>
+<tr><td>检查时机</td><td>DELETE /material-issues/:id 事务内，查询明细后、回退库存前（B2步骤）</td></tr>
+<tr><td>检查范围</td><td>生产单下所有 step_number >= 领料最小步骤号的 work_report 记录</td></tr>
+<tr><td>拦截返回</td><td>HTTP 409 + 列出冲突工序名称和报工单号的详细消息</td></tr>
+<tr><td>解除方式</td><td>先删除冲突的报工记录（work_report），再重新发起撤回</td></tr>
+</table>
+
+<h4>5.4.4 前端撤回入口与功能清单</h4>
+<table>
+<tr><th>端</th><th>页面</th><th>入口说明</th><th>特殊功能</th></tr>
+<tr><td>WEP</td><td>MaterialIssue.vue</td><td>搜索生产单后显示历史领料表格，每行有"撤回"按钮+确认弹窗</td><td>计划状态筛选、409报工拦截提示</td></tr>
+<tr><td>WEP</td><td>MaterialIssueByProcess.vue</td><td>同上，按工序备料页面的历史领料表格</td><td>按工序分组、409报工拦截提示</td></tr>
+<tr><td>APP</td><td>ProcessPrepAction.vue</td><td>按工序备料页底部历史领料列表，每行有红色"撤回"按钮</td><td>点击展开领料明细（物料编码/名称/数量/批次/仓库）、409报工拦截提示</td></tr>
+<tr><td>APP</td><td>ProcessPrepEntry.vue</td><td>生产单列表查询页，筛选已派发+已备料状态</td><td>多状态 IN 查询（plan_status=已派发,已备料）</td></tr>
+</table>
+
 <!-- ==================== 六、采购申请-订单-入库流程图 ==================== -->
 <h2 class="page-break">六、采购申请-订单-入库流程图</h2>
 
@@ -790,7 +897,7 @@ erDiagram
 </div>
 
 <div style="margin-top:40px;text-align:center;color:#888;font-size:12px;">
-  文档生成时间：2026年3月17日 | 基于系统代码版本自动生成
+  文档生成时间：2026年4月29日 | 基于系统代码版本自动生成（含报工拦截、APP明细展开、多状态筛选）
 </div>
 
 </div>

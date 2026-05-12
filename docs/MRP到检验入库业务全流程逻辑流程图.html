@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MRP到检验入库业务全流程逻辑流程图 - 睿信橡胶密封件MES系统</title>
+<script src="node_modules/mermaid/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:'default'});</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+  .page { max-width: 1300px; margin: 0 auto; padding: 32px; background: #fff; min-height: 100vh; }
+  h1 { text-align: center; font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 20px; color: #1a1a2e; margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 16px; color: #1a1a2e; margin: 20px 0 10px; }
+  .intro { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; padding: 16px; margin-bottom: 24px; font-size: 14px; }
+  .mermaid { text-align: center; margin: 16px 0; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 4px; }
+  .badge-blue { background: #e6f7ff; color: #1890ff; }
+  .badge-green { background: #f6ffed; color: #52c41a; }
+  .badge-red { background: #fff1f0; color: #f5222d; }
+  .badge-orange { background: #fff7e6; color: #fa8c16; }
+  .badge-purple { background: #f9f0ff; color: #722ed1; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>MRP到检验入库业务全流程逻辑流程图</h1>
+<div class="subtitle">睿信橡胶密封件MES系统 | 从MRP运算到生产检验/来料检验/入库的全链路业务流程</div>
+
+<div class="intro">
+  <strong>文档说明：</strong>本文档完整展示从MRP运算开始，分为生产线和采购线两条主链路：<br>
+  <strong>生产线：</strong>MRP → 生产单 → 工序任务 → 报工 → 生产检验 → 合格入库/不合格品处理<br>
+  <strong>采购线：</strong>MRP → 采购申请 → 采购订单 → 入库 → 来料检验 → 确认入库/不合格品处理<br>
+  涵盖状态流转、检验触发条件、8种不合格品处理方式及各环节的数据实体关系。
+</div>
+
+<!-- ==================== 一、全流程总览 ==================== -->
+<h2>一、MRP到检验入库全流程总览</h2>
+<div class="mermaid">
+graph TB
+    subgraph 计划层["📋 计划层"]
+        SO[销售订单/预测] --> MPS[MPS主计划]
+        MPS --> PP[生产计划<br/>production_plan<br/>approval_status=已审批]
+        PP -->|审批通过| MRP[MRP运算]
+    end
+
+    subgraph MRP决策["⚙️ MRP运算决策"]
+        MRP --> CHECK{检查物料<br/>business_scope + BOM}
+        CHECK -->|仅生产| PROD[生成生产单<br/>production_order]
+        CHECK -->|仅采购| PUR[生成采购申请<br/>purchase_req]
+        CHECK -->|生产+采购| DUAL[双源待决策]
+        DUAL -->|用户选择生产| PROD
+        DUAL -->|用户选择采购| PUR
+    end
+
+    subgraph 生产线["🏭 生产线"]
+        PROD --> APPROVE1[生产单审批<br/>草稿→已审批]
+        APPROVE1 --> DISPATCH[派发→工序任务<br/>process_task]
+        DISPATCH --> WORK[报工 work_report]
+        WORK --> AUTO_INSP1[自动创建检验单<br/>production_inspection]
+        AUTO_INSP1 --> INSP1[检验执行]
+    end
+
+    subgraph 采购线["🛒 采购线"]
+        PUR --> PR_APP[采购申请审批]
+        PR_APP --> PO[采购订单<br/>purchase_order]
+        PO --> DELIVERY[供应商送货]
+        DELIVERY --> SI[入库单 stock_in]
+        SI --> CHK_INSP{物料主数据<br/>incoming_inspection}
+        CHK_INSP -->|Y-需检验| PQI[创建来料检验单<br/>purchase_quality_inspection]
+        CHK_INSP -->|N-免检| DIRECT[直接确认入库]
+        PQI --> INSP2[来料检验执行]
+    end
+
+    subgraph 检验判定["🔬 检验判定"]
+        INSP1 --> R1{检验结果}
+        R1 -->|合格| DONE1[工序完成/完工入库]
+        R1 -->|不合格| NC1[创建NC待处理单]
+
+        INSP2 --> R2{检验结果}
+        R2 -->|合格| CONFIRM[确认入库→更新库存]
+        R2 -->|不合格| NC2[创建NC待处理单]
+    end
+
+    subgraph NC处理["⚠️ 不合格品处理"]
+        NC1 --> H1{生产检验处理}
+        H1 -->|返修| RW[返修单→返修→再检验]
+        H1 -->|报废| SC1[报废入库→仓库08]
+        H1 -->|让步接收| CC[调整数量→继续]
+
+        NC2 --> H2{来料检验处理}
+        H2 -->|挑选| ST[分拣合格/不合格]
+        H2 -->|拒收| RJ[拒收标记]
+        H2 -->|报废| SC2[报废入库→仓库08]
+        H2 -->|特采| SP[让步接收→指定仓库]
+        H2 -->|退货| RT[退货→校验退货单]
+    end
+
+    RW -->|再检验合格| DONE1
+    RW -->|再检验不合格| NCA[返修不合格→可再次选择]
+    NCA --> H1
+</div>
+
+<!-- ==================== 二、生产线详细流程 ==================== -->
+<h2>二、生产线：MRP→生产单→报工→生产检验</h2>
+<div class="mermaid">
+graph TB
+    subgraph MRP生成["1. MRP执行生成生产单"]
+        A1[MRP运算<br/>action_type=生产] --> A2[生成生产单<br/>production_order]
+        A2 --> A3["plan_status=未开始<br/>approval_status=草稿"]
+    end
+
+    subgraph 审批派发["2. 审批与派发"]
+        A3 --> B1[审批: 草稿→已审批]
+        B1 --> B2[plan_status→待加入任务]
+        B2 --> B3[派发: 生成工序任务<br/>process_task]
+        B3 --> B4["task_status=未开始<br/>inspect_type=专检/自检/无需检"]
+    end
+
+    subgraph 报工触发["3. 报工→触发检验"]
+        B4 --> C1[报工 work_report<br/>qualified + unqualified]
+        C1 --> C2[事件: WORK_REPORT_CREATED]
+        C2 --> C3{inspect_type?}
+        C3 -->|专检| C4[自动创建检验单<br/>production_inspection<br/>status=待检]
+        C3 -->|自检/无需检| C5[工序直接完成]
+    end
+
+    subgraph 检验执行["4. 检验执行与判定"]
+        C4 --> D1[录入检验结果<br/>qualified / unqualified]
+        D1 --> D2[完成检验<br/>status=已完成]
+        D2 --> D3{unqualified > 0?}
+        D3 -->|否-合格| D4[工序完成<br/>inspect_status=已处理]
+        D3 -->|是-不合格| D5[可进行缺陷处理]
+    end
+
+    subgraph 创建NC["5. 缺陷处理→创建NC单"]
+        D5 --> E1[点击缺陷处理按钮]
+        E1 --> E2["创建NC待处理单<br/>NC-YYYYMMDD-NNN<br/>handling_status=待处理"]
+        E2 --> E3["检验单defect_handling=待处理<br/>NC单source_type=生产检验"]
+    end
+</div>
+
+<!-- ==================== 三、采购线详细流程 ==================== -->
+<h2>三、采购线：MRP→采购申请→入库→来料检验</h2>
+<div class="mermaid">
+graph TB
+    subgraph MRP生成采购["1. MRP执行生成采购申请"]
+        A1[MRP运算<br/>action_type=采购] --> A2[生成采购申请<br/>purchase_req]
+        A2 --> A3["approval_status=草稿<br/>detail.status=未执行"]
+    end
+
+    subgraph 采购申请审批["2. 采购申请审批→采购订单"]
+        A3 --> B1[审批: 草稿→已审批]
+        B1 --> B2[创建采购订单<br/>purchase_order]
+        B2 --> B3["approval_status=草稿<br/>detail.status=未交货"]
+    end
+
+    subgraph 入库["3. 供应商送货→入库单"]
+        B3 --> C1[审批采购订单]
+        C1 --> C2[供应商送货]
+        C2 --> C3[创建入库单<br/>stock_in + stock_in_detail<br/>approval_status=草稿]
+    end
+
+    subgraph 检验分流["4. 来料检验分流"]
+        C3 --> D1{检查物料主数据<br/>incoming_inspection字段}
+        D1 -->|Y-需要检验| D2[自动创建来料检验单<br/>purchase_quality_inspection<br/>inspect_status=待检验]
+        D1 -->|N-免检| D3[直接确认入库<br/>更新material_inventory]
+    end
+
+    subgraph 来料检验执行["5. 来料检验执行"]
+        D2 --> E1[录入检验结果<br/>qualified / unqualified<br/>inspect_result=合格/不合格]
+        E1 --> E2[完成检验<br/>inspect_status=已完成]
+        E2 --> E3{inspect_result?}
+        E3 -->|合格| E4[确认入库<br/>更新库存]
+        E3 -->|不合格| E5[可进行缺陷处理]
+    end
+
+    subgraph 创建NC2["6. 缺陷处理→创建NC单"]
+        E5 --> F1[点击缺陷处理按钮]
+        F1 --> F2["创建NC待处理单<br/>NC-YYYYMMDD-NNN<br/>handling_status=待处理"]
+        F2 --> F3["检验单defect_handling=待处理<br/>NC单source_type=来料检验"]
+    end
+</div>
+
+<!-- ==================== 四、生产检验不合格品处理流程 ==================== -->
+<h2>四、生产检验不合格品处理（3种方式）</h2>
+<div class="mermaid">
+graph TB
+    NC["NC单<br/>source_type=生产检验<br/>handling_status=待处理"] --> CHOOSE{选择处理方式}
+
+    CHOOSE -->|返修| RW_FLOW
+    CHOOSE -->|报废| SCRAP_FLOW
+    CHOOSE -->|让步接收| CONC_FLOW
+
+    subgraph 返修流程["🔧 返修流程"]
+        RW_FLOW["1. 创建返修单<br/>RW-YYYYMMDD-NNN<br/>rework_status=待返修"] --> RW2["2. 回退目标工序<br/>process_task planned_quantity回加<br/>task_status=未开始"]
+        RW2 --> RW3["3. NC状态→处理中<br/>rework_order_number写入NC单"]
+        RW3 --> RW4["4. 返修执行<br/>rework_status→返修中→返修完成"]
+        RW4 --> RW5["5. 返修再检验"]
+        RW5 --> RW6{再检验结果}
+        RW6 -->|合格| RW7["NC→已完成<br/>工序inspect_status=已处理"]
+        RW6 -->|不合格| RW8["NC→返修不合格<br/>可再次选择处理方式"]
+        RW8 --> CHOOSE
+    end
+
+    subgraph 报废流程["💀 报废流程"]
+        SCRAP_FLOW["1. 查找报废仓库<br/>warehouse_type=报废仓库"] --> SCRAP2["2. 生成报废入库单<br/>SI-YYYYMMDD-NNN<br/>stock_in_type=报废入库<br/>approval_status=草稿"]
+        SCRAP2 --> SCRAP3["3. NC→已完成<br/>stock_in_number写入NC单<br/>工序inspect_status=已处理"]
+        SCRAP3 --> SCRAP4["4. 仓库管理员确认入库<br/>报废仓库08收货"]
+    end
+
+    subgraph 让步接收流程["✅ 让步接收流程"]
+        CONC_FLOW["1. 调整检验数量<br/>qualified += concession_qty<br/>unqualified -= concession_qty"] --> CONC2["2. 工序标记已处理<br/>inspect_status=已处理"]
+        CONC2 --> CONC3["3. NC→已完成<br/>concession_quantity记录"]
+    end
+</div>
+
+<!-- ==================== 五、来料检验不合格品处理流程 ==================== -->
+<h2>五、来料检验不合格品处理（5种方式）</h2>
+<div class="mermaid">
+graph TB
+    NC["NC单<br/>source_type=来料检验<br/>handling_status=待处理"] --> CHOOSE{选择处理方式}
+
+    CHOOSE -->|挑选| SORT_FLOW
+    CHOOSE -->|拒收| REJ_FLOW
+    CHOOSE -->|报废| SCRAP_FLOW
+    CHOOSE -->|特采| SPECIAL_FLOW
+    CHOOSE -->|退货| RETURN_FLOW
+
+    subgraph 挑选流程["🔍 挑选流程"]
+        SORT_FLOW["1. 输入挑选后数量<br/>qualified_after / unqualified_after"] --> SORT2["2. 更新检验单数量<br/>回写stock_in_detail<br/>inspect_status=已处理-挑选"]
+        SORT2 --> SORT3["3. NC→已完成"]
+    end
+
+    subgraph 拒收流程["🚫 拒收流程"]
+        REJ_FLOW["1. 标记拒收<br/>defect_handling=拒收"] --> REJ2["2. 回写stock_in_detail<br/>inspect_status=已处理-拒收"]
+        REJ2 --> REJ3["3. NC→已完成"]
+    end
+
+    subgraph 报废流程2["💀 报废流程"]
+        SCRAP_FLOW["1. 查找报废仓库<br/>warehouse_type=报废仓库"] --> SCRAP2["2. 生成报废入库单<br/>SI-YYYYMMDD-NNN<br/>stock_in_type=报废入库"]
+        SCRAP2 --> SCRAP3["3. 回写stock_in_detail<br/>inspect_status=已处理-报废"]
+        SCRAP3 --> SCRAP4["4. NC→已完成<br/>stock_in_number写入NC单"]
+    end
+
+    subgraph 特采流程["⭐ 特采流程"]
+        SPECIAL_FLOW["1. 调整数量（让步接收）<br/>qualified += special_qty<br/>inspect_result=让步接收"] --> SPECIAL2["2. 指定仓库<br/>special_warehouse"]
+        SPECIAL2 --> SPECIAL3["3. 回写stock_in_detail<br/>inspect_status=已处理-特采"]
+        SPECIAL3 --> SPECIAL4["4. NC→已完成"]
+    end
+
+    subgraph 退货流程["📦 退货流程"]
+        RETURN_FLOW["1. 校验退货单号<br/>return_order必须存在"] --> RETURN2["2. 标记退货<br/>return_order_number记录"]
+        RETURN2 --> RETURN3["3. 回写stock_in_detail<br/>inspect_status=已处理-退货"]
+        RETURN3 --> RETURN4["4. NC→已完成"]
+    end
+</div>
+
+<!-- ==================== 六、返修单全生命周期 ==================== -->
+<h2>六、返修单全生命周期状态流转</h2>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 待返修: 创建返修单
+    待返修 --> 返修中: 开始返修
+    返修中 --> 返修完成: 完成返修
+    返修完成 --> 合格: 再检验-合格
+    返修完成 --> 不合格: 再检验-不合格
+
+    合格 --> [*]: NC单已完成
+    不合格 --> 待返修: 可再次返修
+    不合格 --> 报废: 可改选报废
+    不合格 --> 让步接收: 可改选让步接收
+</div>
+
+<div class="note">
+  <strong>返修单编号规则：</strong>RW-YYYYMMDD-NNN（如 RW-20260430-001）<br>
+  <strong>返修不合格后：</strong>NC单状态变为"返修不合格"，可再次选择处理方式（返修/报废/让步接收），形成闭环处理。
+</div>
+
+<!-- ==================== 七、NC单状态流转 ==================== -->
+<h2>七、不合格品单（NC单）状态流转</h2>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 待处理: 检验不合格→缺陷处理创建NC单
+
+    待处理 --> 处理中: 选择返修→创建返修单
+    待处理 --> 已完成: 选择报废/让步接收/挑选/拒收/特采/退货
+
+    处理中 --> 已完成: 返修完成→再检验合格
+    处理中 --> 返修不合格: 返修完成→再检验不合格
+
+    返修不合格 --> 已完成: 再次选择报废/让步接收
+    返修不合格 --> 处理中: 再次选择返修
+
+    已完成 --> [*]
+</div>
+
+<h3>7.1 NC单编号与关联单号</h3>
+<table>
+<tr><th>字段</th><th>格式/值</th><th>说明</th></tr>
+<tr><td>nonconforming_number</td><td>NC-YYYYMMDD-NNN</td><td>不合格品单号，自动生成</td></tr>
+<tr><td>source_type</td><td>生产检验 / 来料检验 / 委外检验</td><td>来源类型</td></tr>
+<tr><td>handling_status</td><td>待处理 / 处理中 / 返修不合格 / 已完成</td><td>处理状态</td></tr>
+<tr><td>rework_order_number</td><td>RW-YYYYMMDD-NNN</td><td>返修时关联的返修单号</td></tr>
+<tr><td>stock_in_number</td><td>SI-YYYYMMDD-NNN</td><td>报废时关联的入库单号</td></tr>
+<tr><td>return_order_number</td><td>退货单号</td><td>退货时关联的退货单号</td></tr>
+</table>
+
+<!-- ==================== 八、关键数据实体关系 ==================== -->
+<h2>八、关键数据实体关系</h2>
+<div class="mermaid">
+erDiagram
+    PRODUCTION_PLAN ||--o{ MRP_RUN : "MRP运算"
+    MRP_RUN ||--o{ MRP_RUN_DETAIL : "运算明细"
+    MRP_RUN_DETAIL ||--o{ PRODUCTION_ORDER : "action_type=生产"
+    MRP_RUN_DETAIL ||--o{ PURCHASE_REQ : "action_type=采购"
+    PURCHASE_REQ ||--o{ PURCHASE_ORDER : "生成订单"
+    PURCHASE_ORDER ||--o{ STOCK_IN : "供应商送货"
+    STOCK_IN ||--o{ STOCK_IN_DETAIL : "入库明细"
+    STOCK_IN ||--o| PURCHASE_QUALITY_INSPECTION : "条件触发来料检验"
+    PURCHASE_QUALITY_INSPECTION ||--o| NONCONFORMING_PRODUCT : "不合格创建NC"
+
+    PRODUCTION_ORDER ||--o{ PROCESS_TASK : "派发生成"
+    PROCESS_TASK ||--o{ WORK_REPORT : "报工"
+    WORK_REPORT ||--o| PRODUCTION_INSPECTION : "条件触发生产检验"
+    PRODUCTION_INSPECTION ||--o| NONCONFORMING_PRODUCT : "不合格创建NC"
+
+    NONCONFORMING_PRODUCT ||--o| REWORK_ORDER : "处理方式返修"
+    NONCONFORMING_PRODUCT ||--o| STOCK_IN : "处理方式报废"
+</div>
+
+<!-- ==================== 九、核心业务规则汇总 ==================== -->
+<h2>九、核心业务规则汇总</h2>
+
+<h3>9.1 MRP运算决策规则</h3>
+<table>
+<tr><th>条件</th><th>action_type</th><th>生成单据</th></tr>
+<tr><td>business_scope含"生产"且不含"采购"</td><td><span class="badge badge-green">生产</span></td><td>production_order</td></tr>
+<tr><td>business_scope含"采购"且不含"生产"</td><td><span class="badge badge-blue">采购</span></td><td>purchase_req</td></tr>
+<tr><td>business_scope同时含"生产"和"采购"</td><td><span class="badge badge-orange">生产+采购</span></td><td>双源待用户决策</td></tr>
+<tr><td>business_scope为空</td><td>按BOM判断</td><td>有BOM→生产；无BOM→采购</td></tr>
+</table>
+
+<h3>9.2 生产检验触发条件</h3>
+<table>
+<tr><th>工序inspect_type</th><th>是否触发检验</th><th>说明</th></tr>
+<tr><td>专检</td><td><span class="badge badge-green">是</span></td><td>报工后自动创建production_inspection</td></tr>
+<tr><td>自检</td><td><span class="badge badge-orange">否</span></td><td>操作员自检，工序直接完成</td></tr>
+<tr><td>无需检</td><td><span class="badge badge-red">否</span></td><td>跳过检验，工序直接完成</td></tr>
+</table>
+
+<h3>9.3 来料检验触发条件</h3>
+<table>
+<tr><th>item_master.incoming_inspection</th><th>是否触发检验</th><th>说明</th></tr>
+<tr><td>Y</td><td><span class="badge badge-green">是</span></td><td>入库时自动创建purchase_quality_inspection</td></tr>
+<tr><td>N</td><td><span class="badge badge-orange">否</span></td><td>免检，直接确认入库</td></tr>
+</table>
+
+<h3>9.4 不合格品处理方式对照</h3>
+<table>
+<tr><th>来源类型</th><th>处理方式</th><th>核心动作</th><th>关联单号</th></tr>
+<tr><td rowspan="3">生产检验</td><td><span class="badge badge-blue">返修</span></td><td>创建返修单→回退工序→返修→再检验</td><td>RW-YYYYMMDD-NNN</td></tr>
+<tr><td><span class="badge badge-red">报废</span></td><td>查找报废仓库→创建报废入库单</td><td>SI-YYYYMMDD-NNN</td></tr>
+<tr><td><span class="badge badge-orange">让步接收</span></td><td>调整合格/不合格数量→工序标记已处理</td><td>-</td></tr>
+<tr><td rowspan="5">来料检验</td><td><span class="badge badge-blue">挑选</span></td><td>录入挑选后合格/不合格数量→回写入库单</td><td>-</td></tr>
+<tr><td><span class="badge badge-red">拒收</span></td><td>标记拒收→回写入库单inspect_status</td><td>-</td></tr>
+<tr><td><span class="badge badge-red">报废</span></td><td>查找报废仓库→创建报废入库单</td><td>SI-YYYYMMDD-NNN</td></tr>
+<tr><td><span class="badge badge-purple">特采</span></td><td>让步接收→指定仓库→回写入库单</td><td>-</td></tr>
+<tr><td><span class="badge badge-orange">退货</span></td><td>校验退货单→标记退货→回写入库单</td><td>return_order_number</td></tr>
+</table>
+
+<div style="margin-top:40px;text-align:center;color:#888;font-size:12px;">
+  文档生成时间：2026年4月30日 | 基于系统代码版本自动生成
+</div>
+
+</div>
+</body>
+</html>

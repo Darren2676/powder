@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>生产备料与倒冲出库全业务逻辑流程图</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; background: #f0f2f5; color: #333; line-height: 1.7; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  h1 { text-align: center; font-size: 28px; padding: 32px 0 8px; color: #1a1a2e; }
+  .subtitle { text-align: center; font-size: 14px; color: #888; margin-bottom: 32px; }
+  .toc { background: #fff; border-radius: 8px; padding: 24px 32px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .toc h2 { font-size: 18px; margin-bottom: 12px; color: #1a1a2e; }
+  .toc ol { padding-left: 20px; }
+  .toc li { margin: 4px 0; }
+  .toc a { color: #1890ff; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .section { background: #fff; border-radius: 8px; padding: 24px 32px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .section h2 { font-size: 20px; color: #1a1a2e; border-left: 4px solid #1890ff; padding-left: 12px; margin-bottom: 16px; }
+  .section h3 { font-size: 16px; color: #333; margin: 16px 0 8px; }
+  .section p, .section li { font-size: 14px; color: #555; }
+  .section ul, .section ol { padding-left: 20px; }
+  .mermaid { display: flex; justify-content: center; margin: 16px 0; overflow-x: auto; }
+  .note { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 4px; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #0050b3; }
+  .warning { background: #fff7e6; border: 1px solid #ffd591; border-radius: 4px; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #ad6800; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; color: #333; }
+  td { color: #555; }
+  .footer { text-align: center; font-size: 12px; color: #999; margin-top: 32px; padding-bottom: 24px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>生产备料与倒冲出库全业务逻辑流程图</h1>
+<div class="subtitle">MRP展开 → 派发 → 备料领料 → 报工 → 入库倒冲 | Seals MES System</div>
+
+<!-- 目录 -->
+<div class="toc">
+  <h2>目录</h2>
+  <ol>
+    <li><a href="#s1">总体业务流程总览</a></li>
+    <li><a href="#s2">派发阶段：工艺路线解析与任务分发生成</a></li>
+    <li><a href="#s3">备料领料出库流程</a></li>
+    <li><a href="#s4">倒冲物料线边仓移库流程</a></li>
+    <li><a href="#s5">入库触发倒冲扣减流程</a></li>
+    <li><a href="#s6">备料任务清单 vs 倒冲任务清单 对比</a></li>
+    <li><a href="#s7">倒冲任务状态流转图</a></li>
+    <li><a href="#s8">库存扣减与流水记录数据流</a></li>
+    <li><a href="#s9">核心业务规则汇总</a></li>
+  </ol>
+</div>
+
+<!-- 第1章 -->
+<div class="section" id="s1">
+  <h2>1. 总体业务流程总览</h2>
+  <p>从MRP展开到生产入库的完整链路，包含备料领料（普通物料）和倒冲扣减（倒冲物料）两条并行路线。</p>
+  <div class="mermaid">
+flowchart TB
+  subgraph MRP["MRP 展开阶段"]
+    A[MRP 运算] --> B[生成生产计划]
+    B --> C[生成生产单<br/>plan_status=未开始]
+  end
+
+  subgraph DISPATCH["派发阶段"]
+    C --> D{审批状态=已审批?}
+    D -- 否 --> X1[等待审批]
+    D -- 是 --> E[派发 dispatchAndGenerateCore]
+    E --> F[生成工序任务 process_task]
+    E --> G[解析工艺路线<br/>检查 flowing_backward]
+    G --> H{是否存在倒冲工序?}
+    H -- 是 --> I[生成倒冲任务清单<br/>backflush_task]
+    H -- 否 --> J[跳过倒冲任务生成]
+    E --> K[生成备料任务清单<br/>material_preparation]
+    I --> L[plan_status=已派发]
+    J --> L
+    K --> L
+  end
+
+  subgraph PREP["备料阶段 — 两条并行路线"]
+    L --> M{物料类型判断}
+
+    M -- 普通物料<br/>非首道倒冲工序 --> N[备料任务清单领料<br/>createMaterialIssue]
+    N --> N1[FIFO扣减 原料仓库存]
+    N1 --> N2[记录物料流水 出库]
+    N2 --> N3[记录线边仓入线]
+    N3 --> N4{首道工序齐套?}
+    N4 -- 是 --> N5[plan_status=已备料]
+    N4 -- 否 --> N6[继续等待领料]
+
+    M -- 倒冲物料<br/>首道工序 flowing_backward=是 --> O[倒冲物料移库<br/>原料仓→线边仓]
+    O --> O1[扣减 原料仓 汇总库存]
+    O1 --> O2[增加 线边仓 汇总库存]
+    O2 --> O3[记录物料流水 移库]
+    O3 --> O4[记录线边仓入线]
+    O4 --> P[跳过领料齐套检查<br/>直接允许报工]
+  end
+
+  subgraph WORK["生产报工阶段"]
+    N5 --> Q[工序报工<br/>更新 completed_quantity]
+    P --> Q
+    Q --> R{所有工序完成?}
+    R -- 否 --> S[继续下一工序报工]
+    R -- 是 --> T[准备入库]
+  end
+
+  subgraph INBOUND["入库阶段"]
+    T --> U[成品/半成品入库<br/>confirmProductionInbound]
+    U --> U1[创建成品批次库存]
+    U1 --> U2[记录入库流水]
+    U2 --> U3[记录线边仓出线]
+
+    U --> V[触发倒冲扣减<br/>executeBackflushDeduction]
+    V --> V0[齐套检查：逐一校验线边仓库存<br/>库存不足→抛BusinessError阻止入库]
+    V0 --> V1[计算扣减量=<br/>入库量 × BOM单耗/BOM基础量]
+    V1 --> V2[FIFO扣减 线边仓批次库存]
+    V2 --> V2CHECK{扣减成功?}
+    V2CHECK -- 失败:库存不足 --> V2FAIL[抛出BusinessError<br/>阻止入库 回滚事务<br/>提示:请先将材料移至线边仓]
+    V2CHECK -- 成功 --> V3[更新线边仓汇总库存]
+    V3 --> V4[记录倒冲出库流水]
+    V4 --> V5[记录线边仓出线]
+    V5 --> V6[更新倒冲任务状态]
+  end
+
+  style MRP fill:#e6f7ff,stroke:#1890ff
+  style DISPATCH fill:#f6ffed,stroke:#52c41a
+  style PREP fill:#fff7e6,stroke:#fa8c16
+  style WORK fill:#f9f0ff,stroke:#722ed1
+  style INBOUND fill:#fff1f0,stroke:#f5222d
+  style V2FAIL fill:#ff4d4f,stroke:#cf1322,color:#fff
+  style I fill:#ffccc7,stroke:#f5222d
+  style K fill:#d9f7be,stroke:#52c41a
+  style O fill:#ffe7ba,stroke:#fa8c16
+  style V0 fill:#ffe7ba,stroke:#fa8c16
+  style V fill:#ffccc7,stroke:#f5222d
+  </div>
+
+  <div class="note">
+    <strong>核心分流逻辑</strong>：派发时解析工艺路线，若首道工序 <code>flowing_backward='是'</code>，则该工序对应的物料走<strong>倒冲路线</strong>（先移库到线边仓，入库后自动扣减），其余物料走<strong>备料领料路线</strong>（先领料出库到线边仓，报工消耗）。倒冲物料仓库按三级优先级确定：routing_header.default_backflush_warehouse → routing_detail.default_repository → bom_detail.default_warehouse。入库倒冲前必须通过<strong>齐套检查</strong>，确认所有倒冲物料线边仓库存充足，否则阻止入库。
+  </div>
+</div>
+
+<!-- 第2章 -->
+<div class="section" id="s2">
+  <h2>2. 派发阶段：工艺路线解析与任务分发生成</h2>
+  <p>派发是整个流程的起点，在同一事务中完成工序任务、备料任务和倒冲任务的生成。</p>
+  <div class="mermaid">
+flowchart TB
+  START([生产单 plan_status=未开始<br/>approval_status=已审批]) --> CHECK{排产冲突检查}
+
+  CHECK -- 有冲突 --> ERR1[返回冲突信息]
+  CHECK -- 无冲突 --> DISPATCH[UPDATE production_order<br/>plan_status=已派发]
+
+  DISPATCH --> STEP1[第一步：生成工序任务<br/>generateProcessTasks]
+  STEP1 --> STEP1_DETAIL[遍历 routing_detail<br/>为每个工序创建 process_task<br/>标记 is_backflush=1 若 flowing_backward=是]
+
+  STEP1_DETAIL --> STEP2[第二步：生成备料任务清单<br/>generateMaterialPreparation]
+  STEP2 --> STEP2_DETAIL[展开 BOM 第一层<br/>计算 required_quantity =<br/>planned_qty/bom_base_qty × actual_qty<br/>为每个 BOM 物料创建备料明细]
+
+  STEP2_DETAIL --> STEP3{第三步：检查倒冲工序}
+  STEP3 -- routing_detail 中<br/>flowing_backward=是 --> STEP3_YES[生成倒冲任务清单<br/>generateBackflushTasks]
+  STEP3 -- 无倒冲工序 --> STEP3_NO[跳过]
+
+  STEP3_YES --> STEP3_DETAIL[遍历 flowing_backward=是 的工序<br/>匹配 BOM 物料 → backflush_task<br/>状态: 待扣减<br/>仓库优先级:<br/>1. routing_header.default_backflush_warehouse<br/>2. routing_detail.default_repository<br/>3. bom_detail.default_warehouse]
+
+  STEP3_DETAIL --> DONE([派发完成<br/>plan_status=已派发])
+  STEP3_NO --> DONE
+
+  style START fill:#e6f7ff,stroke:#1890ff
+  style DONE fill:#f6ffed,stroke:#52c41a
+  style STEP3_YES fill:#ffccc7,stroke:#f5222d
+  style STEP3_DETAIL fill:#ffccc7,stroke:#f5222d
+  style ERR1 fill:#ffccc7,stroke:#f5222d
+  </div>
+
+  <h3>关键条件判断</h3>
+  <table>
+    <tr><th>步骤</th><th>条件</th><th>结果</th></tr>
+    <tr><td>排产冲突检查</td><td>同设备同时间段已有排产</td><td>阻止派发</td></tr>
+    <tr><td>工序任务</td><td>已存在则跳过（幂等性）</td><td>避免重复生成</td></tr>
+    <tr><td>备料任务</td><td>已存在备料单则跳过</td><td>避免重复生成</td></tr>
+    <tr><td>倒冲任务</td><td>已存在倒冲任务则跳过</td><td>避免重复生成</td></tr>
+    <tr><td>倒冲任务</td><td>无 flowing_backward='是' 工序</td><td>跳过，不生成</td></tr>
+    <tr><td>倒冲任务仓库</td><td>routing_header.default_backflush_warehouse 有值</td><td>优先使用（1级）</td></tr>
+    <tr><td>倒冲任务仓库</td><td>routing_detail.default_repository 有值</td><td>次优先使用（2级）</td></tr>
+    <tr><td>倒冲任务仓库</td><td>以上均无值</td><td>使用 BOM 默认仓库（3级）</td></tr>
+    <tr><td>倒冲任务生成失败</td><td>try-catch 包裹</td><td>不阻塞派发主流程</td></tr>
+  </table>
+</div>
+
+<!-- 第3章 -->
+<div class="section" id="s3">
+  <h2>3. 备料领料出库流程</h2>
+  <p>非倒冲物料通过备料任务清单进行领料出库，物料从原料仓移动到线边仓。</p>
+  <div class="mermaid">
+flowchart TB
+  START([备料任务清单<br/>material_preparation]) --> SELECT[领料员选择备料单<br/>勾选物料行]
+  SELECT --> CREATE[POST /material-issues<br/>createMaterialIssue]
+
+  CREATE --> CHECK1{有批次号?}
+  CHECK1 -- 是 --> BATCH[FIFO扣减批次库存<br/>material_batch_inventory<br/>按 inbound_date ASC]
+  CHECK1 -- 否 --> SUMMARY[扣减汇总库存<br/>material_inventory]
+
+  BATCH --> CHECK2{批次库存充足?}
+  CHECK2 -- 是 --> DEDUCT_OK[UPDATE batch quantity -= actual_qty]
+  CHECK2 -- 否 --> FALLBACK[回退到汇总库存扣减]
+
+  SUMMARY --> SYNC[同步汇总库存<br/>upsertMaterialInventory]
+  DEDUCT_OK --> SYNC
+  FALLBACK --> SYNC
+
+  SYNC --> TXN1[记录物料流水<br/>material_inventory_transaction<br/>type=出库 source=领料出库]
+  TXN1 --> LINE1[记录线边仓入线<br/>lineside_inventory_transaction<br/>direction=IN source=领料入线]
+  LINE1 --> UPDATE1[更新备料明细 issued_quantity<br/>更新备料单状态]
+
+  UPDATE1 --> CHECK3{首道工序<br/>全部物料齐套?}
+  CHECK3 -- 是 --> STATUS1[UPDATE production_order<br/>plan_status=已备料<br/>回写销售订单 待生产]
+  CHECK3 -- 否 --> STATUS2[plan_status 保持 已派发<br/>继续等待领料]
+
+  style START fill:#f6ffed,stroke:#52c41a
+  style STATUS1 fill:#f6ffed,stroke:#52c41a
+  style STATUS2 fill:#fff7e6,stroke:#fa8c16
+  </div>
+
+  <h3>领料库存扣减优先级</h3>
+  <table>
+    <tr><th>优先级</th><th>场景</th><th>扣减对象</th></tr>
+    <tr><td>1</td><td>有批次号 + 有默认仓库</td><td>material_batch_inventory (FIFO)</td></tr>
+    <tr><td>2</td><td>无批次号 + 有默认仓库</td><td>material_inventory 汇总</td></tr>
+    <tr><td>3</td><td>无默认仓库</td><td>自动查找库存最多的仓库</td></tr>
+  </table>
+</div>
+
+<!-- 第4章 -->
+<div class="section" id="s4">
+  <h2>4. 倒冲物料线边仓移库流程</h2>
+  <p>倒冲物料在备料阶段不需要领料，而是直接从原料仓库移到对应的线边仓。这是倒冲路线与备料路线的关键区别。</p>
+  <div class="mermaid">
+flowchart TB
+  START([派发时生成的倒冲任务<br/>backflush_task<br/>status=待扣减<br/>warehouse=三级优先级取值<br/>1.routing_header.default_backflush_warehouse<br/>2.routing_detail.default_repository<br/>3.bom_detail.default_warehouse]) --> TRIGGER{何时执行移库?}
+
+  TRIGGER -- 方式A: 派发后自动 --> AUTO[派发完成后<br/>自动触发移库]
+  TRIGGER -- 方式B: 生产前手动 --> MANUAL[生产执行前<br/>手动触发移库]
+
+  AUTO --> MOVE
+  MANUAL --> MOVE
+
+  MOVE[倒冲物料移库<br/>原料仓→线边仓] --> STEP1[1. 扣减原料仓汇总库存<br/>material_inventory<br/>deltaQuantity = -required_quantity]
+  STEP1 --> STEP2[2. 增加线边仓汇总库存<br/>material_inventory<br/>deltaQuantity = +required_quantity]
+  STEP2 --> STEP3[3. 记录物料流水<br/>material_inventory_transaction<br/>type=移库 source=倒冲移库]
+  STEP3 --> STEP4[4. 记录线边仓入线<br/>lineside_inventory_transaction<br/>direction=IN source=倒冲移库]
+
+  STEP4 --> READY[物料已到线边仓<br/>等待入库时倒冲扣减]
+  READY --> GATE[报工门控: 跳过领料齐套检查<br/>is_backflush=1 直接允许报工]
+
+  GATE --> WORKING[工序报工进行中...]
+
+  style START fill:#fff7e6,stroke:#fa8c16
+  style MOVE fill:#ffe7ba,stroke:#fa8c16
+  style READY fill:#f6ffed,stroke:#52c41a
+  style GATE fill:#f9f0ff,stroke:#722ed1
+  </div>
+
+  <div class="warning">
+    <strong>待实现功能</strong>：当前系统中倒冲物料的"原料仓→线边仓移库"环节尚未实现。目前倒冲扣减直接从 <code>material_batch_inventory</code> 扣减（按三级仓库优先级确定仓库：routing_header.default_backflush_warehouse → routing_detail.default_repository → bom_detail.default_warehouse）。需要新增移库逻辑，确保倒冲物料在生产前已从原料仓转移到线边仓，入库时再从线边仓扣减。
+  </div>
+
+  <h3>倒冲移库涉及的数据操作</h3>
+  <table>
+    <tr><th>操作</th><th>表</th><th>字段变化</th><th>流水类型</th></tr>
+    <tr><td>原料仓出库</td><td>material_inventory</td><td>quantity -= required_qty</td><td>移库出</td></tr>
+    <tr><td>线边仓入库</td><td>material_inventory</td><td>quantity += required_qty</td><td>移库入</td></tr>
+    <tr><td>物料流水</td><td>material_inventory_transaction</td><td>记录出入库流水</td><td>移库</td></tr>
+    <tr><td>线边仓流水</td><td>lineside_inventory_transaction</td><td>记录入线</td><td>倒冲移库</td></tr>
+    <tr><td>倒冲任务更新</td><td>backflush_task</td><td>更新仓库为线边仓</td><td>-</td></tr>
+  </table>
+</div>
+
+<!-- 第5章 -->
+<div class="section" id="s5">
+  <h2>5. 入库触发倒冲扣减流程</h2>
+  <p>成品或半成品入库时，自动触发倒冲扣减。<strong>入库前必须通过齐套检查，确认所有倒冲物料线边仓库存充足；齐套检查不通过或倒冲扣减失败时阻止入库并回滚整个事务</strong>，保证账务平衡。</p>
+  <div class="mermaid">
+flowchart TB
+  START([成品/半成品入库<br/>confirmProductionInbound]) --> PRECHECK[入库前倒冲就绪检查<br/>checkBackflushReadiness<br/>校验线边仓库存是否充足]
+  PRECHECK --> PRECHECK_R{就绪检查通过?}
+  PRECHECK_R -- 否 --> PRECHECK_FAIL[返回缺料明细<br/>提示: 请先将材料移至线边仓]
+  PRECHECK_R -- 是 --> INB1[创建成品批次库存<br/>finished_batch_inventory]
+  INB1 --> INB2[同步成品汇总库存<br/>finished_goods_inventory]
+  INB2 --> INB3[记录入库流水<br/>inventory_transaction]
+  INB3 --> INB4[记录线边仓出线<br/>成品出线边]
+
+  INB4 --> BF[触发倒冲扣减<br/>executeBackflushDeduction<br/>同一事务内 失败则回滚]
+
+  BF --> QUERY[查询待扣减倒冲任务<br/>backflush_task<br/>status IN 待扣减, 部分扣减]
+
+  QUERY --> QC[齐套检查：逐一校验线边仓库存<br/>遍历每个倒冲任务<br/>1. 计算本次需扣减量<br/>2. 查询 material_inventory 汇总库存<br/>3. 仓库未指定→记录缺料<br/>4. 库存不足→记录缺料]
+  QC --> QC_R{所有物料齐套?}
+  QC_R -- 否: 存在缺料 --> QC_FAIL[抛出 BusinessError 400<br/>倒冲物料不齐套，无法入库<br/>列出每个缺料物料明细<br/>阻止入库 回滚整个事务]
+  QC_R -- 是: 全部齐套 --> LOOP{遍历每个倒冲任务<br/>执行FIFO扣减}
+  LOOP --> CALC[计算本次扣减量<br/>deductQty = inboundQty ×<br/>bomActualQty / bomBaseQty<br/>4位小数精度]
+  CALC --> CAP[封顶: 不超过<br/>required - deducted<br/>剩余量]
+
+  CAP --> CHECK_WH{仓库已指定?}
+  CHECK_WH -- 否 --> ERR1[记录失败信息<br/>加入 failedItems 列表]
+  CHECK_WH -- 是 --> FIFO[FIFO扣减线边仓批次库存<br/>material_batch_inventory<br/>ORDER BY inbound_date ASC]
+
+  FIFO --> CHECK_QTY{批次库存充足?}
+  CHECK_QTY -- 是 --> DEDUCT_OK[执行扣减<br/>1. 更新批次库存<br/>2. 更新汇总库存 material_inventory<br/>3. 记录出库流水 倒冲出库<br/>4. 记录线边仓出线<br/>5. 更新倒冲任务状态<br/>6. 写入扣减日志]
+  CHECK_QTY -- 否 --> ERR2[库存不足<br/>加入 failedItems 列表<br/>提示: 请先将材料移至线边仓]
+
+  DEDUCT_OK --> CHECK_DONE{deducted >= required?}
+  CHECK_DONE -- 是 --> DONE1[deduction_status=已完成]
+  CHECK_DONE -- 否 --> DONE2[deduction_status=部分扣减]
+
+  ERR1 --> LOOP
+  ERR2 --> LOOP
+  DONE1 --> LOOP
+  DONE2 --> LOOP
+  LOOP -- 遍历完成 --> CHECK_FAILED{failedItems > 0?}
+  CHECK_FAILED -- 是 --> BLOCK[抛出 BusinessError 400<br/>阻止入库 回滚整个事务<br/>错误信息: 倒冲扣减失败，无法入库<br/>+ 每个失败物料的明细]
+  CHECK_FAILED -- 否 --> END([入库成功<br/>返回 deductedCount])
+
+  style START fill:#fff1f0,stroke:#f5222d
+  style QC fill:#ffe7ba,stroke:#fa8c16
+  style QC_FAIL fill:#ff4d4f,stroke:#cf1322,color:#fff
+  style BF fill:#ffccc7,stroke:#f5222d
+  style FIFO fill:#ffe7ba,stroke:#fa8c16
+  style DONE1 fill:#f6ffed,stroke:#52c41a
+  style DONE2 fill:#fff7e6,stroke:#fa8c16
+  style ERR1 fill:#ffccc7,stroke:#f5222d
+  style ERR2 fill:#ffccc7,stroke:#f5222d
+  style BLOCK fill:#ff4d4f,stroke:#cf1322,color:#fff
+  style PRECHECK_FAIL fill:#ff4d4f,stroke:#cf1322,color:#fff
+  style END fill:#f6ffed,stroke:#52c41a
+  </div>
+
+  <h3>倒冲扣减量计算公式</h3>
+  <table>
+    <tr><th>参数</th><th>含义</th><th>来源</th></tr>
+    <tr><td>inboundQty</td><td>本次入库数量</td><td>入库接口传入</td></tr>
+    <tr><td>bomActualQty</td><td>BOM 单耗用量</td><td>backflush_task.bom_actual_quantity</td></tr>
+    <tr><td>bomBaseQty</td><td>BOM 基础量</td><td>backflush_task.bom_base_quantity</td></tr>
+    <tr><td>deductQty</td><td>本次扣减量 = 入库量 × 单耗/基础量</td><td>计算得出</td></tr>
+    <tr><td>remaining</td><td>剩余扣减量 = required - deducted</td><td>计算得出</td></tr>
+  </table>
+</div>
+
+<!-- 第6章 -->
+<div class="section" id="s6">
+  <h2>6. 备料任务清单 vs 倒冲任务清单 对比</h2>
+  <div class="mermaid">
+flowchart LR
+  subgraph MP["备料任务清单<br/>material_preparation"]
+    direction TB
+    MP1[生成时机: 派发时] --> MP2[适用物料: 所有BOM物料]
+    MP2 --> MP3[领料方式: 手动领料出库]
+    MP3 --> MP4[仓库: 原料仓]
+    MP4 --> MP5[门控: 必须齐套才能报工]
+    MP5 --> MP6[流水: 出库+线边入线]
+  end
+
+  subgraph BT["倒冲任务清单<br/>backflush_task"]
+    direction TB
+    BT1[生成时机: 派发时] --> BT2[适用物料: 倒冲工序的BOM物料]
+    BT2 --> BT3[扣减方式: 入库自动扣减]
+    BT3 --> BT4[仓库: 线边仓]
+    BT4 --> BT5[门控: 跳过齐套直接报工]
+    BT5 --> BT6[流水: 移库+倒冲出库+线边出线]
+  end
+
+  MP -.->|flowing_backward=否| BT
+  MP -.->|flowing_backward=是<br/>走倒冲路线| BT
+
+  style MP fill:#f6ffed,stroke:#52c41a
+  style BT fill:#fff1f0,stroke:#f5222d
+  </div>
+
+  <table>
+    <tr><th>维度</th><th>备料任务清单</th><th>倒冲任务清单</th></tr>
+    <tr><td>表名</td><td>material_preparation + detail</td><td>backflush_task + deduction_log</td></tr>
+    <tr><td>生成条件</td><td>所有派发的生产单</td><td>仅工艺路线有 flowing_backward='是'</td></tr>
+    <tr><td>物料范围</td><td>BOM 所有物料</td><td>仅倒冲工序关联的物料</td></tr>
+    <tr><td>出库方式</td><td>手动领料（createMaterialIssue）</td><td>入库自动扣减（executeBackflushDeduction）</td></tr>
+    <tr><td>库存扣减源</td><td>原料仓库</td><td>线边仓（三级仓库优先级）</td></tr>
+    <tr><td>报工门控</td><td>必须齐套领料</td><td>跳过领料齐套检查</td></tr>
+    <tr><td>扣减时机</td><td>领料时</td><td>成品/半成品入库时</td></tr>
+    <tr><td>扣减算法</td><td>FIFO / 指定批次</td><td>齐套检查 → FIFO</td></tr>
+    <tr><td>失败处理</td><td>阻止出库</td><td>齐套检查不通过→阻止入库，回滚事务</td></tr>
+    <tr><td>状态流转</td><td>未领料→部分领料→已领料</td><td>待扣减→部分扣减→已完成</td></tr>
+    <tr><td>前端页面</td><td>备料任务 / 按生产单备料</td><td>倒冲任务清单</td></tr>
+  </table>
+</div>
+
+<!-- 第7章 -->
+<div class="section" id="s7">
+  <h2>7. 倒冲任务状态流转图</h2>
+  <div class="mermaid">
+stateDiagram-v2
+  [*] --> 待扣减 : 派发时生成
+
+  待扣减 --> 部分扣减 : 入库扣减<br/>deducted < required
+  待扣减 --> 已完成 : 入库扣减<br/>deducted >= required
+  待扣减 --> 扣减失败 : 库存不足/仓库未指定
+
+  部分扣减 --> 部分扣减 : 再次入库扣减<br/>仍未完成
+  部分扣减 --> 已完成 : 再次入库扣减<br/>deducted >= required
+  部分扣减 --> 扣减失败 : 库存不足
+
+  扣减失败 --> 部分扣减 : 手动重试成功
+  扣减失败 --> 已完成 : 手动重试成功<br/>deducted >= required
+  扣减失败 --> 扣减失败 : 重试仍失败
+
+  已完成 --> [*]
+
+  note right of 待扣减 : 初始状态
+  note right of 部分扣减 : 中间状态
+  note right of 扣减失败 : error_message非空
+  note right of 已完成 : deducted >= required
+  </div>
+
+  <div class="note">
+    <strong>注意</strong>："扣减失败"不是一个独立状态，而是待扣减/部分扣减状态上附带了 <code>error_message</code>。前端通过 <code>error_message</code> 是否非空来显示重试按钮。
+  </div>
+</div>
+
+<!-- 第8章 -->
+<div class="section" id="s8">
+  <h2>8. 库存扣减与流水记录数据流</h2>
+  <p>展示备料领料和倒冲扣减两个场景下的数据表操作全景。</p>
+  <div class="mermaid">
+flowchart LR
+  subgraph SOURCE["数据源"]
+    BOM[bom_header / bom_detail<br/>BOM用量基础]
+    ROUTE[routing_header / routing_detail<br/>工艺路线 + 倒冲标记]
+    ORDER[production_order<br/>生产单信息]
+  end
+
+  BOM --> GEN
+  ROUTE --> GEN
+  ORDER --> GEN
+
+  subgraph GEN["派发生成"]
+    MP[material_preparation<br/>备料任务清单]
+    BT[backflush_task<br/>倒冲任务清单]
+  end
+
+  subgraph INV_OUT["备料领料出库"]
+    direction TB
+    A1[material_batch_inventory<br/>批次库存 -qty] --> A2[material_inventory<br/>汇总库存 -qty]
+    A2 --> A3[material_inventory_transaction<br/>出库流水]
+    A3 --> A4[lineside_inventory_transaction<br/>线边入线]
+  end
+
+  subgraph BF_OUT["倒冲扣减出库"]
+    direction TB
+    B1[material_batch_inventory<br/>线边仓批次库存 -qty] --> B2[material_inventory<br/>线边仓汇总库存 -qty]
+    B2 --> B3[material_inventory_transaction<br/>倒冲出库流水]
+    B3 --> B4[lineside_inventory_transaction<br/>线边出线]
+    B4 --> B5[backflush_deduction_log<br/>扣减日志]
+  end
+
+  MP --> INV_OUT
+  BT --> BF_OUT
+
+  subgraph RESULT["结果"]
+    STATUS1[备料明细 issued_quantity 更新]
+    STATUS2[倒冲任务 deducted_quantity +<br/>deduction_status 更新]
+  end
+
+  INV_OUT --> STATUS1
+  BF_OUT --> STATUS2
+
+  style SOURCE fill:#e6f7ff,stroke:#1890ff
+  style GEN fill:#f6ffed,stroke:#52c41a
+  style INV_OUT fill:#fff7e6,stroke:#fa8c16
+  style BF_OUT fill:#fff1f0,stroke:#f5222d
+  style RESULT fill:#f9f0ff,stroke:#722ed1
+  </div>
+</div>
+
+<!-- 第9章 -->
+<div class="section" id="s9">
+  <h2>9. 核心业务规则汇总</h2>
+
+  <h3>9.1 倒冲判定规则</h3>
+  <table>
+    <tr><th>条件</th><th>判定</th><th>影响</th></tr>
+    <tr><td>routing_detail.flowing_backward = '是'</td><td>该工序为倒冲工序</td><td>生成倒冲任务</td></tr>
+    <tr><td>routing_detail_material.is_backflush = 1</td><td>该物料为倒冲物料</td><td>物料走倒冲路线</td></tr>
+    <tr><td>process_task.is_backflush = 1</td><td>该工序任务标记倒冲</td><td>跳过领料齐套门控</td></tr>
+  </table>
+
+  <h3>9.2 倒冲仓库优先级规则</h3>
+  <p>生成倒冲任务时，扣减仓库按以下优先级确定：</p>
+  <div class="mermaid">
+flowchart LR
+  CHECK1{routing_header<br/>default_backflush_warehouse<br/>是否指定?}
+  CHECK1 -- 是 → USE1[使用工艺路线头<br/>默认倒冲仓库]
+  CHECK1 -- 否 → CHECK2{routing_detail<br/>default_repository<br/>是否指定?}
+  CHECK2 -- 是 → USE2[使用工序默认仓库]
+  CHECK2 -- 否 → USE3[使用 BOM 物料<br/>default_warehouse]
+
+  style USE1 fill:#f6ffed,stroke:#52c41a
+  style USE2 fill:#fff7e6,stroke:#fa8c16
+  style USE3 fill:#fff1f0,stroke:#f5222d
+  </div>
+  <table>
+    <tr><th>优先级</th><th>来源</th><th>字段</th><th>说明</th></tr>
+    <tr><td>1（最高）</td><td>routing_header</td><td>default_backflush_warehouse</td><td>工艺路线级别的默认倒冲仓库，优先级最高</td></tr>
+    <tr><td>2</td><td>routing_detail</td><td>default_repository</td><td>工序级别的默认仓库</td></tr>
+    <tr><td>3（最低）</td><td>bom_detail</td><td>default_warehouse</td><td>BOM 物料的默认仓库</td></tr>
+  </table>
+
+  <h3>9.3 报工门控规则</h3>
+  <div class="mermaid">
+flowchart LR
+  REPORT[工序报工请求] --> CHECK{is_backflush=1?}
+  CHECK -- 是 --> PASS[直接通过<br/>跳过领料齐套检查]
+  CHECK -- 否 --> GATE{首道工序物料<br/>全部齐套?}
+  GATE -- 是 --> PASS2[允许报工]
+  GATE -- 否 --> BLOCK[拒绝报工<br/>提示: 物料未齐套]
+
+  style PASS fill:#f6ffed,stroke:#52c41a
+  style PASS2 fill:#f6ffed,stroke:#52c41a
+  style BLOCK fill:#ffccc7,stroke:#f5222d
+  </div>
+
+  <h3>9.4 扣减公式与精度</h3>
+  <table>
+    <tr><th>项目</th><th>公式/规则</th></tr>
+    <tr><td>备料需求量</td><td>required = (planned_qty / bom_base_qty) × actual_qty</td></tr>
+    <tr><td>倒冲扣减量</td><td>deduct = inbound_qty × (bom_actual_qty / bom_base_qty)</td></tr>
+    <tr><td>精度</td><td>Math.round(value × 10000) / 10000（4位小数）</td></tr>
+    <tr><td>封顶</td><td>deductQty ≤ required - alreadyDeducted（不超过剩余量）</td></tr>
+    <tr><td>FIFO排序</td><td>ORDER BY inbound_date ASC, id ASC</td></tr>
+  </table>
+
+  <h3>9.5 入库前齐套检查规则</h3>
+  <div class="warning">
+    <strong>核心原则：齐套检查不通过 → 阻止入库 → 回滚事务</strong>。入库倒冲扣减前，必须先通过齐套检查，确认所有倒冲物料在对应线边仓的汇总库存均充足，否则抛出 BusinessError 阻止入库。
+  </div>
+  <div class="mermaid">
+flowchart TB
+  START([入库触发倒冲]) --> QUERY[查询所有待扣减倒冲任务]
+  QUERY --> LOOP{遍历每个倒冲任务}
+  LOOP --> CALC[计算本次需扣减量<br/>deductQty = inboundQty × bomActualQty/bomBaseQty]
+  CALC --> CHECK_WH{仓库已指定?}
+  CHECK_WH -- 否 --> SHORT1[记录缺料:<br/>扣减仓库未指定<br/>请先在工艺路线设置默认倒冲仓库]
+  CHECK_WH -- 是 --> CHECK_QTY{线边仓库存 ≥ 需扣减量?}
+  CHECK_QTY -- 否 --> SHORT2[记录缺料:<br/>需N 库存仅M<br/>请先将材料移至线边仓]
+  CHECK_QTY -- 是 --> PASS[该物料齐套 通过]
+  SHORT1 --> LOOP
+  SHORT2 --> LOOP
+  PASS --> LOOP
+  LOOP -- 遍历完成 --> RESULT{存在缺料项?}
+  RESULT -- 是 --> BLOCK[抛出 BusinessError 400<br/>倒冲物料不齐套，无法入库<br/>阻止入库 回滚事务]
+  RESULT -- 否 --> GO[齐套通过<br/>继续执行FIFO扣减]
+
+  style BLOCK fill:#ff4d4f,stroke:#cf1322,color:#fff
+  style GO fill:#f6ffed,stroke:#52c41a
+  style SHORT1 fill:#ffccc7,stroke:#f5222d
+  style SHORT2 fill:#ffccc7,stroke:#f5222d
+  style PASS fill:#f6ffed,stroke:#52c41a
+  </div>
+  <table>
+    <tr><th>检查项</th><th>校验逻辑</th><th>库存查询</th></tr>
+    <tr><td>仓库是否指定</td><td>task.warehouse_number 非空</td><td>-</td></tr>
+    <tr><td>线边仓库存是否充足</td><td>availableQty >= actualDeduct</td><td>SELECT SUM(quantity) FROM material_inventory WHERE item_number=? AND warehouse_number=?</td></tr>
+    <tr><td>扣减量计算</td><td>min(deductQty, required - deducted)</td><td>跳过已扣减完成的物料</td></tr>
+  </table>
+
+  <h3>9.6 倒冲扣减失败处理机制</h3>
+  <div class="warning">
+    <strong>核心原则：倒冲扣减失败 → 阻止入库 → 回滚事务</strong>。产品/半成品入库与倒冲物料消耗必须在同一事务中原子完成，否则会导致材料账务不平。
+  </div>
+  <table>
+    <tr><th>失败场景</th><th>处理方式</th><th>后续操作</th></tr>
+    <tr><td>仓库未指定</td><td>抛出 BusinessError 阻止入库，回滚事务</td><td>先设置线边仓，再重新入库</td></tr>
+    <tr><td>线边仓库存不足</td><td>抛出 BusinessError 阻止入库，回滚事务</td><td>先将材料从原料仓移至线边仓，再重新入库</td></tr>
+    <tr><td>批次不存在</td><td>抛出 BusinessError 阻止入库，回滚事务</td><td>先创建/移库批次到线边仓，再重新入库</td></tr>
+    <tr><td>扣减异常</td><td>抛出 BusinessError 阻止入库，回滚事务</td><td>排查原因后修复，再重新入库</td></tr>
+  </table>
+
+  <h3>9.7 入库前倒冲就绪检查接口</h3>
+  <p>入库操作前可调用 <code>GET /backflush-tasks/readiness/:orderNo?inboundQty=N</code> 预检线边仓库存是否充足，提前发现缺料问题。</p>
+  <table>
+    <tr><th>字段</th><th>含义</th></tr>
+    <tr><td>ready</td><td>是否就绪（全部物料库存充足）</td></tr>
+    <tr><td>items[].material_number</td><td>物料编号</td></tr>
+    <tr><td>items[].required_quantity</td><td>本次需扣减量</td></tr>
+    <tr><td>items[].available_quantity</td><td>线边仓可用库存</td></tr>
+    <tr><td>items[].sufficient</td><td>库存是否充足</td></tr>
+    <tr><td>items[].message</td><td>缺料提示信息</td></tr>
+  </table>
+
+  <h3>9.8 事务边界</h3>
+  <table>
+    <tr><th>操作</th><th>事务范围</th><th>失败影响</th></tr>
+    <tr><td>派发（4步）</td><td>同一事务</td><td>全部回滚</td></tr>
+    <tr><td>倒冲任务生成</td><td>派发事务内，但 try-catch</td><td>仅倒冲任务回滚，不阻塞派发</td></tr>
+    <tr><td>备料领料出库</td><td>同一事务</td><td>全部回滚</td></tr>
+    <tr><td>齐套检查 + 成品入库 + 倒冲扣减</td><td>同一事务，原子操作</td><td>齐套不通过/倒冲失败 → 入库也回滚，保证账务平衡</td></tr>
+    <tr><td>齐套检查 + 半成品入库 + 倒冲扣减</td><td>同一事务，原子操作</td><td>齐套不通过/倒冲失败 → 入库也回滚，保证账务平衡</td></tr>
+    <tr><td>手动重试扣减</td><td>独立事务</td><td>回滚重试操作</td></tr>
+  </table>
+</div>
+
+<div class="footer">
+  Seals MES System — 生产备料与倒冲出库全业务逻辑流程图 | 2026-05-08
+</div>
+
+</div>
+
+<!-- Mermaid CDN -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    securityLevel: 'loose',
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+    stateDiagram: { useMaxWidth: true }
+  });
+</script>
+</body>
+</html>
