@@ -10,6 +10,9 @@ import incomingInspectSpecRoutes from './incomingInspectSpec/incomingInspectSpec
 import inspectionPlanRoutes from './inspectionPlan/inspectionPlan.routes';
 import incomingInspectPlanRoutes from './incomingInspectPlan/incomingInspectPlan.routes';
 import productionInspectionRoutes from './productionInspection/productionInspection.routes';
+import nonconformingProductRoutes from './nonconformingProduct/nonconformingProduct.routes';
+import reworkOrderRoutes from './reworkOrder/reworkOrder.routes';
+import scrapOrderRoutes from './scrapOrder/scrapOrder.routes';
 
 const router = Router();
 
@@ -23,5 +26,8 @@ router.use('/incoming-inspect-specs', incomingInspectSpecRoutes);
 router.use('/inspection-plans', inspectionPlanRoutes);
 router.use('/incoming-inspect-plans', incomingInspectPlanRoutes);
 router.use('/production-inspections', productionInspectionRoutes);
+router.use('/nonconforming-products', nonconformingProductRoutes);
+router.use('/rework-orders', reworkOrderRoutes);
+router.use('/scrap-orders', scrapOrderRoutes);
 
 export default router;

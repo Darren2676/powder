@@ -302,6 +302,23 @@ export const generateOutsourcingSettlementNumber = async (transaction?: any): Pr
   return `${prefix}${String(seq).padStart(3, '0')}`;
 };
 
+// ==================== 倒冲任务编号 ====================
+
+export const generateBackflushTaskNumber = async (transaction?: any): Promise<string> => {
+  const today = dayjs().format('YYYYMMDD');
+  const prefix = `BT-${today}-`;
+  const [rows]: any = await sequelize.query(
+    `SELECT MAX(backflush_task_number) as max_num FROM backflush_task WHERE backflush_task_number LIKE :prefix`,
+    { replacements: { prefix: `${prefix}%` }, ...(transaction ? { transaction } : {}) }
+  );
+  let seq = 1;
+  if (rows[0]?.max_num) {
+    const lastSeq = parseInt(rows[0].max_num.substring(prefix.length));
+    if (!isNaN(lastSeq)) seq = lastSeq + 1;
+  }
+  return `${prefix}${String(seq).padStart(3, '0')}`;
+};
+
 // ==================== 委外回收入库单编号 ====================
 
 export const generateOutsourcingReturnStockinNumber = async (transaction?: any): Promise<string> => {

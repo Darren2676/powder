@@ -16,13 +16,14 @@ const sequelize = new Sequelize({
       encrypt: false,
       trustServerCertificate: true,
       tdsVersion: '7_2',  // 兼容 SQL Server 2008+
+      requestTimeout: 120000,  // 120秒请求超时
     }
   },
   pool: {
     max: 10,
-    min: 0,
+    min: 2,
     acquire: 30000,
-    idle: 10000
+    idle: 60000
   }
 });
 

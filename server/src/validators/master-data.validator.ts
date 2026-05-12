@@ -91,22 +91,22 @@ export const validateUpdateUnit = validateBody([
 
 // 创建工作中心
 export const validateCreateWorkCenter = validateBody([
-  { field: 'work_center_number', label: '工作中心编号', required: true, maxLength: 50 },
+  { field: 'work_cente_number', label: '工作中心编号', required: true, maxLength: 50 },
 ]);
 
 // 更新工作中心
 export const validateUpdateWorkCenter = validateBody([
-  { field: 'work_center_number', label: '工作中心编号', required: true, maxLength: 50 },
+  { field: 'work_cente_number', label: '工作中心编号', required: true, maxLength: 50 },
 ]);
 
 // 创建标准工序
 export const validateCreateProcedure = validateBody([
-  { field: 'procedure_number', label: '工序编号', required: true, maxLength: 50 },
+  { field: 'standard_process_number', label: '工序编号', required: true, maxLength: 50 },
 ]);
 
 // 更新标准工序
 export const validateUpdateProcedure = validateBody([
-  { field: 'procedure_number', label: '工序编号', required: true, maxLength: 50 },
+  { field: 'standard_process_number', label: '工序编号', required: true, maxLength: 50 },
 ]);
 
 // 创建物料主数据

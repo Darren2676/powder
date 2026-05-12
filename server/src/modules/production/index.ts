@@ -14,7 +14,10 @@ import outsourcingReceiptMobileRoutes from './outsourcingReceipt/outsourcingRece
 import outsourcingInspectionRoutes from './outsourcingInspection/outsourcingInspection.routes';
 import outsourcingSettlementRoutes from './outsourcingSettlement/outsourcingSettlement.routes';
 import outsourcingReturnStockinRoutes from './outsourcingReturnStockin/outsourcingReturnStockin.routes';
+import outsourcingPriceRoutes from './outsourcingPrice/outsourcingPrice.routes';
 import wipReportRoutes from './wipReport/wipReport.routes';
+import backflushTaskRoutes from './backflushTask/backflushTask.routes';
+import pieceRateWageRoutes from './pieceRateWage/pieceRateWage.routes';
 import * as mobileLabelController from './outsourcingIssue/outsourcingIssue.mobile.controller';
 import outsourcingInspectionMobileRoutes from './outsourcingInspection/outsourcingInspection.mobile.routes';
 
@@ -32,7 +35,10 @@ router.use('/outsourcing/receipt', outsourcingReceiptRoutes);
 router.use('/outsourcing/inspection', outsourcingInspectionRoutes);
 router.use('/outsourcing/settlement', outsourcingSettlementRoutes);
 router.use('/outsourcing/return-stockin', outsourcingReturnStockinRoutes);
+router.use('/outsourcing-prices', outsourcingPriceRoutes);
 router.use('/wip', wipReportRoutes);
+router.use('/backflush-tasks', backflushTaskRoutes);
+router.use('/piece-rate-wages', pieceRateWageRoutes);
 
 // 移动端委外路由
 router.use('/mobile/outsourcing/issue', outsourcingIssueMobileRoutes);

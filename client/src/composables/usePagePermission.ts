@@ -103,6 +103,7 @@ export function usePagePermission(pageCode: string) {
       'sales-prices': ['unit_price', 'price'],
       'purchase-prices': ['unit_price', 'price'],
       'piece-rate-prices': ['unit_price', 'price'],
+      'standard-costs': ['standard_cost', 'actual_cost', 'price'],
       'return-orders': ['unit_price', 'total_amount'],
     };
     const fields = CONTROLLED_FIELDS[pCode];

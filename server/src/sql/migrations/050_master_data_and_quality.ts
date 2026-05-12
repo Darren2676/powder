@@ -668,6 +668,14 @@ export async function runMigration(): Promise<void> {
     }
   } catch (e) { console.log('process_task 检验字段迁移跳过或已完成') }
 
+  // process_task 倒冲标记（首道倒冲允许跳过领料直接报工）
+  try {
+    await sequelize.query(`
+      IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('process_task') AND name = 'is_backflush')
+      ALTER TABLE process_task ADD is_backflush BIT NOT NULL DEFAULT 0
+    `)
+  } catch (e) { console.log('process_task is_backflush 迁移跳过或已完成') }
+
   // routing_detail 统一检验字段（inspect_type 三态设计）
   try {
     const newInspectFields = [
