@@ -19,3 +19,7 @@ export function getMaterialIssues(params?: { page?: number; limit?: number; sear
 export function getMaterialIssueDetail(issueNumber: string) {
   return request.get(`/material-issues/${encodeURIComponent(issueNumber)}`)
 }
+
+export function deleteMaterialIssue(issueNumber: string) {
+  return request.delete(`/material-issues/${encodeURIComponent(issueNumber)}`)
+}

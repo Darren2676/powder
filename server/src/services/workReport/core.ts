@@ -44,7 +44,7 @@ export const createWorkReport = async (params: {
 
     // 查询工序任务
     const [tasks]: any = await sequelize.query(
-      `SELECT process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, basic_unit, work_center_number, work_center_name, planned_quantity, completed_quantity, excess_reporting_ratio, task_status, approval_status FROM process_task WHERE process_task_number = :taskNo`,
+      `SELECT process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, basic_unit, work_center_number, work_center_name, planned_quantity, completed_quantity, excess_reporting_ratio, task_status, approval_status, ISNULL(is_backflush, 0) as is_backflush FROM process_task WHERE process_task_number = :taskNo`,
       { replacements: { taskNo: b.process_task_number }, transaction }
     );
     if (!tasks.length) throw new BusinessError(404, '工序任务不存在');
@@ -68,7 +68,10 @@ export const createWorkReport = async (params: {
       const isFirstStep = firstStep != null && task.step_number === firstStep;
 
       if (isFirstStep && (planStatus === '未开始' || planStatus === '已派发')) {
-        throw new BusinessError(400, '首道工序报工需先完成首道工序物料领料（当前状态：' + planStatus + '）');
+        // 首道倒冲（is_backflush=1）跳过领料门控，允许直接报工
+        if (parseInt(task.is_backflush) !== 1) {
+          throw new BusinessError(400, '首道工序报工需先完成首道工序物料领料（当前状态：' + planStatus + '）');
+        }
       }
       if (!isFirstStep) {
         const [matGateRows]: any = await sequelize.query(`
@@ -90,7 +93,7 @@ export const createWorkReport = async (params: {
     // 上一道工序如果是委外工序，必须等委外回收入库完成后才能报工
     if (task.production_order_number) {
       const [prevOutsourcingRows]: any = await sequelize.query(`
-        SELECT pt.process_task_number, pt.step_number, pt.process_type,
+        SELECT pt.process_task_number, pt.step_number, pt.is_outsourced,
                oo.outsourcing_order_number, oo.order_status
         FROM process_task pt
         LEFT JOIN outsourcing_order oo ON pt.process_task_number = oo.process_task_number
@@ -98,7 +101,7 @@ export const createWorkReport = async (params: {
           AND pt.step_number = :currentStep - 1
       `, { replacements: { orderNo: task.production_order_number, currentStep: task.step_number }, transaction });
 
-      if (prevOutsourcingRows.length && prevOutsourcingRows[0].process_type === '外协') {
+      if (prevOutsourcingRows.length && prevOutsourcingRows[0].is_outsourced === 1) {
         const ooStatus = prevOutsourcingRows[0].order_status;
         if (ooStatus !== '已完成') {
           throw new BusinessError(403, `上一道工序「${prevOutsourcingRows[0].step_number}」为委外工序，委外订单状态为"${ooStatus}"，需等待委外回收入库完成后方可报工`);
@@ -283,7 +286,7 @@ export const quickReport = async (params: {
 
     // 查询工序任务，自动填充字段
     const [tasks]: any = await sequelize.query(
-      `SELECT process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, basic_unit, work_center_number, work_center_name, planned_quantity, completed_quantity, excess_reporting_ratio, task_status, approval_status FROM process_task WHERE process_task_number = :taskNo`,
+      `SELECT process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, basic_unit, work_center_number, work_center_name, planned_quantity, completed_quantity, excess_reporting_ratio, task_status, approval_status, ISNULL(is_backflush, 0) as is_backflush FROM process_task WHERE process_task_number = :taskNo`,
       { replacements: { taskNo: b.process_task_number }, transaction }
     );
     if (!tasks.length) throw new BusinessError(404, '工序任务不存在');
@@ -307,7 +310,10 @@ export const quickReport = async (params: {
       const isFirstStep = firstStep != null && task.step_number === firstStep;
 
       if (isFirstStep && (planStatus === '未开始' || planStatus === '已派发')) {
-        throw new BusinessError(400, '首道工序报工需先完成首道工序物料领料（当前状态：' + planStatus + '）');
+        // 首道倒冲（is_backflush=1）跳过领料门控，允许直接报工
+        if (parseInt(task.is_backflush) !== 1) {
+          throw new BusinessError(400, '首道工序报工需先完成首道工序物料领料（当前状态：' + planStatus + '）');
+        }
       }
       if (!isFirstStep) {
         const [matGateRows]: any = await sequelize.query(`
@@ -328,7 +334,7 @@ export const quickReport = async (params: {
     // === 委外工序阻断校验（快速报工） ===
     if (task.production_order_number) {
       const [prevOutsourcingRows]: any = await sequelize.query(`
-        SELECT pt.process_task_number, pt.step_number, pt.process_type,
+        SELECT pt.process_task_number, pt.step_number, pt.is_outsourced,
                oo.outsourcing_order_number, oo.order_status
         FROM process_task pt
         LEFT JOIN outsourcing_order oo ON pt.process_task_number = oo.process_task_number
@@ -336,7 +342,7 @@ export const quickReport = async (params: {
           AND pt.step_number = :currentStep - 1
       `, { replacements: { orderNo: task.production_order_number, currentStep: task.step_number }, transaction });
 
-      if (prevOutsourcingRows.length && prevOutsourcingRows[0].process_type === '外协') {
+      if (prevOutsourcingRows.length && prevOutsourcingRows[0].is_outsourced === 1) {
         const ooStatus = prevOutsourcingRows[0].order_status;
         if (ooStatus !== '已完成') {
           throw new BusinessError(403, `上一道工序「${prevOutsourcingRows[0].step_number}」为委外工序，委外订单状态为"${ooStatus}"，需等待委外回收入库完成后方可报工`);

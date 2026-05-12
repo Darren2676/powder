@@ -10,6 +10,7 @@ import {
   syncMaterialInventorySummary,
 } from '@/services/inventory.service';
 import { withTransaction } from '@/shared/db/withTransaction';
+import { executeBackflushDeduction } from '@/services/backflushTask.service';
 import { upsertMaterialInventory, createMaterialTransaction, fifoDeductBatches, writeBatchTraceability } from './helpers';
 
 // ==================== 物料仓 - Main Exported Functions ====================
@@ -72,7 +73,7 @@ export const manualInboundMaterial = async (
       }, transaction);
 
       // 4. 记录流水
-      const txNum = await generateMaterialTxnNumber();
+      const txNum = await generateMaterialTxnNumber(transaction);
       transactionNumbers.push(txNum);
 
       await createMaterialTransaction({
@@ -150,7 +151,7 @@ export const productionInboundMaterial = async (
       }, transaction);
 
       // 4. 记录流水（含批次号）
-      const txNum = await generateMaterialTxnNumber();
+      const txNum = await generateMaterialTxnNumber(transaction);
       transactionNumbers.push(txNum);
 
       await createMaterialTransaction({
@@ -176,6 +177,11 @@ export const productionInboundMaterial = async (
         'UPDATE production_order SET inbound_quantity = :totalInbound, inbound_status = :status WHERE production_order_number = :pon',
         { replacements: { totalInbound, status: newInboundStatus, pon: item.production_order_number }, transaction }
       );
+
+      // 5.5 倒冲扣减：半成品入库时自动扣减倒冲物料库存（扣减失败则阻止入库，保证账务平衡）
+      if (item.production_order_number) {
+        await executeBackflushDeduction(item.production_order_number, inboundQty, operator, transaction);
+      }
 
       // 6. 写入追溯关联（半成品入库时，反查该生产单的领料批次）
       await writeBatchTraceability({
@@ -250,7 +256,7 @@ export const manualOutboundMaterial = async (
       );
 
       // 记录流水（每个批次一条）
-      const txNum = await generateMaterialTxnNumber();
+      const txNum = await generateMaterialTxnNumber(transaction);
       txNumbers.push(txNum);
 
       await createMaterialTransaction({
@@ -327,7 +333,7 @@ export const adjustMaterialInventory = async (
       );
     }
 
-    const txNum = await generateMaterialTxnNumber();
+    const txNum = await generateMaterialTxnNumber(transaction);
     const txType = adjustQty > 0 ? '入库' : '出库';
 
     await createMaterialTransaction({

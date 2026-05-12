@@ -218,7 +218,7 @@ export const submitReceipt = async (req: Request, res: Response) => {
         }, transaction);
 
         // 3. 记录 material_inventory_transaction 入库流水
-        const txNum = await generateMaterialTxnNumber();
+        const txNum = await generateMaterialTxnNumber(transaction);
         await createMaterialTransaction({
           transaction_number: txNum,
           transaction_type: '入库',
@@ -378,7 +378,7 @@ export const submitReceipt = async (req: Request, res: Response) => {
             deltaQuantity: recvQty,
           }, transaction);
 
-          const txNumIn = await generateMaterialTxnNumber();
+          const txNumIn = await generateMaterialTxnNumber(transaction);
           await createMaterialTransaction({
             transaction_number: txNumIn,
             transaction_type: '入库',

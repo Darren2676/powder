@@ -179,7 +179,7 @@ export const submitIssue = async (req: Request, res: Response) => {
         { replacements: { item_number: d.item_number, warehouse_number: warehouseNumber }, transaction }
       );
       const mat = matInfo.length > 0 ? matInfo[0] : {};
-      const txNum = await generateMaterialTxnNumber();
+      const txNum = await generateMaterialTxnNumber(transaction);
       await createMaterialTransaction({
         transaction_number: txNum,
         transaction_type: '出库',

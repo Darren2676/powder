@@ -303,7 +303,7 @@ export const completeInspection = async (req: Request, res: Response, next: Next
                 }, transaction);
                 await syncMaterialInventorySummary(itemNumber, warehouseFrom, transaction);
 
-                const txNumOut = await generateMaterialTxnNumber();
+                const txNumOut = await generateMaterialTxnNumber(transaction);
                 await createMaterialTransaction({
                   transaction_number: txNumOut,
                   transaction_type: '出库',
@@ -347,7 +347,7 @@ export const completeInspection = async (req: Request, res: Response, next: Next
                   deltaQuantity: lineQty,
                 }, transaction);
 
-                const txNumIn = await generateMaterialTxnNumber();
+                const txNumIn = await generateMaterialTxnNumber(transaction);
                 await createMaterialTransaction({
                   transaction_number: txNumIn,
                   transaction_type: '入库',

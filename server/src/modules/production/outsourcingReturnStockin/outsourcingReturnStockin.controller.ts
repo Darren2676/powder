@@ -96,7 +96,7 @@ export const confirmReturnStockin = async (req: Request, res: Response, next: Ne
           await syncMaterialInventorySummary(d.item_number, warehouseFrom, transaction);
 
           // 记录待检仓出库流水
-          const txNumOut = await generateMaterialTxnNumber();
+          const txNumOut = await generateMaterialTxnNumber(transaction);
           await createMaterialTransaction({
             transaction_number: txNumOut,
             transaction_type: '出库',
@@ -141,7 +141,7 @@ export const confirmReturnStockin = async (req: Request, res: Response, next: Ne
           }, transaction);
 
           // 记录线边仓入库流水
-          const txNumIn = await generateMaterialTxnNumber();
+          const txNumIn = await generateMaterialTxnNumber(transaction);
           await createMaterialTransaction({
             transaction_number: txNumIn,
             transaction_type: '入库',

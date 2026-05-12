@@ -56,6 +56,36 @@
       </a-row>
     </a-card>
 
+    <!-- 历史领料记录 -->
+    <a-card v-if="previousIssues.length > 0" :bordered="false" size="small" class="history-card">
+      <template #title>
+        <span style="font-size:13px;">历史领料记录（{{ previousIssues.length }} 次）</span>
+      </template>
+      <a-table
+        :columns="historyCols"
+        :data-source="previousIssues"
+        :pagination="false"
+        size="small"
+        row-key="issue_number"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'action'">
+            <a-popconfirm
+              title="确认要撤回此领料单吗？物料库存、备料单状态、生产单状态将同步回退。"
+              ok-text="确认撤回"
+              cancel-text="取消"
+              ok-type="danger"
+              @confirm="handleDeleteIssue(record)"
+            >
+              <a-button type="link" size="small" danger :loading="deletingIssue === record.issue_number">
+                <template #icon><DeleteOutlined /></template>撤回
+              </a-button>
+            </a-popconfirm>
+          </template>
+        </template>
+      </a-table>
+    </a-card>
+
     <!-- 无数据提示 -->
     <a-card v-if="orderInfo && !preparationHeader && !loading" :bordered="false" size="small" style="margin-top:8px;text-align:center;">
       <a-alert message="该生产单尚未生成备料单，请先派发生产单" type="warning" show-icon />
@@ -214,8 +244,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, PlusOutlined, DeleteOutlined, SettingOutlined } from '@ant-design/icons-vue'
-import { queryByOrder, createMaterialIssue } from '@/api/production/materialIssue'
+import { ReloadOutlined, PlusOutlined, DeleteOutlined, SettingOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
+import { queryByOrder, createMaterialIssue, deleteMaterialIssue } from '@/api/production/materialIssue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 
@@ -249,6 +279,7 @@ const scanInputRef = ref<any>(null)
 const orderInput = ref('')
 const loading = ref(false)
 const saving = ref(false)
+const deletingIssue = ref<string | null>(null)
 const modalVisible = ref(false)
 const issueRemark = ref('')
 const candidateVisible = ref(false)
@@ -285,6 +316,16 @@ const prepStatusColor = computed(() => {
   if (s === '部分领料') return 'orange'
   return 'blue'
 })
+
+const historyCols = [
+  { title: '领料单号', dataIndex: 'issue_number', key: 'issue_number', width: 150 },
+  { title: '物料种类', dataIndex: 'total_issue_items', key: 'total_issue_items', width: 80 },
+  { title: '状态', dataIndex: 'issue_status', key: 'issue_status', width: 80 },
+  { title: '备注', dataIndex: 'remark', key: 'remark', ellipsis: true },
+  { title: '创建人', dataIndex: 'creation_man', key: 'creation_man', width: 90 },
+  { title: '创建时间', dataIndex: 'creation_date', key: 'creation_date', width: 160 },
+  { title: '操作', key: 'action', width: 70, fixed: 'right' }
+]
 
 const defaultDetailColumns: any[] = [
   { title: '行号', dataIndex: 'line_number', key: 'line_number', width: 60, resizable: true },
@@ -488,6 +529,18 @@ const handleSave = async () => {
   } finally { saving.value = false }
 }
 
+const handleDeleteIssue = async (issue: any) => {
+  deletingIssue.value = issue.issue_number
+  try {
+    await deleteMaterialIssue(issue.issue_number)
+    message.success(`领料单 ${issue.issue_number} 已撤回，库存与状态已回退`)
+    // 刷新数据
+    await handleSearch(orderInput.value)
+  } catch (err: any) {
+    message.error(err?.response?.data?.message || '撤回失败')
+  } finally { deletingIssue.value = null }
+}
+
 onMounted(async () => {
   await Promise.all([loadCandidatePref(), loadDetailPref()])
   nextTick(() => { scanInputRef.value?.focus?.() })
@@ -502,6 +555,8 @@ onMounted(async () => {
 .top-card :deep(.ant-card-body) { padding: 8px 12px; }
 .prep-card { margin-bottom: 6px; }
 .prep-card :deep(.ant-card-body) { padding: 8px 12px; }
+.history-card { margin-bottom: 6px; }
+.history-card :deep(.ant-card-body) { padding: 8px 12px; }
 .info-item { font-size: 13px; color: #333; }
 :deep(.candidate-row) { cursor: pointer; }
 :deep(.candidate-row:hover td) { background: #e6f7ff !important; }

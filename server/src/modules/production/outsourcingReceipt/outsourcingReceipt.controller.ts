@@ -208,7 +208,7 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
           }, transaction);
 
           // 3. 记录 material_inventory_transaction 入库流水
-          const txNum = await generateMaterialTxnNumber();
+          const txNum = await generateMaterialTxnNumber(transaction);
           await createMaterialTransaction({
             transaction_number: txNum,
             transaction_type: '入库',
@@ -368,7 +368,7 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
               deltaQuantity: recvQty,
             }, transaction);
 
-            const txNumIn = await generateMaterialTxnNumber();
+            const txNumIn = await generateMaterialTxnNumber(transaction);
             await createMaterialTransaction({
               transaction_number: txNumIn,
               transaction_type: '入库',
@@ -506,13 +506,13 @@ export const appendReceipt = async (req: Request, res: Response, next: NextFunct
 
     // 查询工序任务和下一道工序信息
     const [tasks]: any = await sequelize.query(
-      `SELECT pt.*, wc.warehouse_number AS wc_warehouse_number, wc.warehouse_name AS wc_warehouse_name FROM process_task pt LEFT JOIN work_center wc ON pt.work_center_number = wc.work_center_number WHERE pt.process_task_number = :ptn`,
+      `SELECT pt.*, wc.warehouse_number AS wc_warehouse_number, wc.warehouse_name AS wc_warehouse_name FROM process_task pt LEFT JOIN work_center wc ON pt.work_center_number = wc.work_cente_number WHERE pt.process_task_number = :ptn`,
       { replacements: { ptn: order.process_task_number } }
     );
     const task = tasks.length > 0 ? tasks[0] : null;
 
     const [nextSteps]: any = await sequelize.query(
-      `SELECT pt.*, wc.warehouse_number AS wc_warehouse_number, wc.warehouse_name AS wc_warehouse_name FROM process_task pt LEFT JOIN work_center wc ON pt.work_center_number = wc.work_center_number WHERE pt.production_order_number = :orderNo AND pt.step_number > :step ORDER BY pt.step_number ASC`,
+      `SELECT pt.*, wc.warehouse_number AS wc_warehouse_number, wc.warehouse_name AS wc_warehouse_name FROM process_task pt LEFT JOIN work_center wc ON pt.work_center_number = wc.work_cente_number WHERE pt.production_order_number = :orderNo AND pt.step_number > :step ORDER BY pt.step_number ASC`,
       { replacements: { orderNo: order.production_order_number, step: order.step_number || task?.step_number || 0 } }
     );
     const nextStep = nextSteps.length > 0 ? nextSteps[0] : null;
@@ -547,7 +547,7 @@ export const appendReceipt = async (req: Request, res: Response, next: NextFunct
           :insp_wh_number, :insp_wh_name,
           :next_wh_number, :next_wh_name,
           :next_step_number, :next_wc_number, :next_wc_name,
-          N'待检验', N'待确认', N'追加回收', :creation_date, :creation_man
+          N'', N'待确认', N'追加回收', :creation_date, :creation_man
         )
       `, {
         replacements: {

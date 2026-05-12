@@ -13,6 +13,7 @@ import { useAuthStore } from '@/store/auth'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
+import ManualCloseModal from '@/components/Common/ManualCloseModal.vue'
 
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval, batchSubmitForApproval, batchApproveRecords, batchWithdrawApproval, batchReverseApproval } from '@/api/system/approval'
@@ -171,6 +172,8 @@ const defaultDataColumns: any[] = [
   { title: '生产单编号', dataIndex: 'production_order_number', key: 'production_order_number', resizable: true },
   { title: '生产计划编号', dataIndex: 'production_number', key: 'production_number', customFilterDropdown: true, resizable: true },
   { title: '状态', dataIndex: 'plan_status', key: 'plan_status', resizable: true },
+  { title: '完成状态', dataIndex: 'completion_status', key: 'completion_status', width: 100, resizable: true },
+  { title: '入库状态', dataIndex: 'inbound_status', key: 'inbound_status', width: 100, resizable: true },
   { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 100, resizable: true },
   { title: '产品编号', dataIndex: 'item_number', key: 'item_number', customFilterDropdown: true, resizable: true },
   { title: '产品名称', dataIndex: 'item_name', key: 'item_name', resizable: true },
@@ -589,6 +592,7 @@ onMounted(async () => {
 
 // ==================== 批量审批操作 ====================
 const batchLoading = ref(false)
+const manualCloseRef = ref()
 const handleBatchAction = (action: string) => {
   if (selectedRowKeys.value.length === 0) { message.warning('请先勾选记录'); return }
   const count = selectedRowKeys.value.length
@@ -1455,6 +1459,12 @@ const handleDispatchSubmit = () => {
           <template v-else-if="column.key === 'actual_daily_output'">
             {{ calcActualDailyOutput(record) }}
           </template>
+          <template v-else-if="column.key === 'completion_status'">
+            <a-tag :color="record.completion_status === '已完成' ? 'green' : 'orange'">{{ record.completion_status || '未完成' }}</a-tag>
+          </template>
+          <template v-else-if="column.key === 'inbound_status'">
+            <a-tag :color="record.inbound_status === '全部入库' ? 'green' : (record.inbound_status === '部分入库' ? 'blue' : 'default')">{{ record.inbound_status || '未入库' }}</a-tag>
+          </template>
           <template v-else-if="column.key === 'approval_status'">
             <ApprovalStatusTag :status="record.approval_status" />
           </template>
@@ -1485,6 +1495,7 @@ const handleDispatchSubmit = () => {
         <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('approve')">批量审批</a-button>
         <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('withdraw')">批量撤回</a-button>
         <a-button size="small" danger :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('reverse')">批量反审</a-button>
+        <a-button size="small" danger :disabled="selectedRowKeys.length === 0" @click="manualCloseRef?.open()">批量关闭</a-button>
         <a-button v-if="showSplitButton" size="small" type="primary" ghost :disabled="selectedRowKeys.length === 0" @click="handleOpenSplit">
           <template #icon><SplitCellsOutlined /></template>
           拆分 ({{ selectedRowKeys.length }})
@@ -2113,6 +2124,9 @@ const handleDispatchSubmit = () => {
       @save="saveColumnSetting"
       @reset="resetColumnSetting"
     />
+
+    <!-- 批量关闭弹窗 -->
+    <ManualCloseModal ref="manualCloseRef" module="production_order" :record-ids="selectedRowKeys" @success="fetchData" />
   </div>
 </template>
 

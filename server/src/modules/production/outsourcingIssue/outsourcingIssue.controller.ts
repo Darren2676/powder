@@ -288,7 +288,7 @@ export const confirmIssue = async (req: Request, res: Response, next: NextFuncti
           { replacements: { item_number: d.item_number, warehouse_number: warehouseNumber }, transaction }
         );
         const mat = matInfo.length > 0 ? matInfo[0] : {};
-        const txNum = await generateMaterialTxnNumber();
+        const txNum = await generateMaterialTxnNumber(transaction);
         await createMaterialTransaction({
           transaction_number: txNum,
           transaction_type: '出库',
@@ -362,7 +362,7 @@ export const appendIssue = async (req: Request, res: Response, next: NextFunctio
 
     // 查询工序任务信息
     const [tasks]: any = await sequelize.query(
-      `SELECT pt.*, wc.warehouse_number AS wc_warehouse_number, wc.warehouse_name AS wc_warehouse_name FROM process_task pt LEFT JOIN work_center wc ON pt.work_center_number = wc.work_center_number WHERE pt.process_task_number = :ptn`,
+      `SELECT pt.*, wc.warehouse_number AS wc_warehouse_number, wc.warehouse_name AS wc_warehouse_name FROM process_task pt LEFT JOIN work_center wc ON pt.work_center_number = wc.work_cente_number WHERE pt.process_task_number = :ptn`,
       { replacements: { ptn: order.process_task_number } }
     );
     if (!tasks.length) { res.status(400).json({ success: false, message: '工序任务不存在' }); return; }
@@ -370,7 +370,7 @@ export const appendIssue = async (req: Request, res: Response, next: NextFunctio
 
     // 查询制造BOM
     const [bomItems]: any = await sequelize.query(
-      `SELECT bd.material_number, im.item_name, im.specifications, bd.standard_quantity, im.unit
+      `SELECT bd.material_number, im.item_name, im.specifications, bd.standard_quantity, im.basic_unit AS unit
        FROM mfg_bom_detail bd
        INNER JOIN mfg_bom_header bh ON bd.mfg_bom_number = bh.mfg_bom_number
        LEFT JOIN item_master im ON bd.material_number = im.item_number

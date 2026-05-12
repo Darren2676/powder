@@ -60,16 +60,17 @@ export const generateTransactionNumber = async (transaction?: any): Promise<stri
   return prefix + String(seq).padStart(3, '0');
 };
 
-export const generateMaterialTxnNumber = async (): Promise<string> => {
+export const generateMaterialTxnNumber = async (transaction?: Transaction): Promise<string> => {
   const today = new Date();
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
   const prefix = `MT-${dateStr}-`;
 
+  const opts: any = transaction ? { replacements: { prefix: prefix + '%' }, transaction } : { replacements: { prefix: prefix + '%' } };
   const [rows]: any = await sequelize.query(
     `SELECT MAX(transaction_number) as max_num FROM material_inventory_transaction WHERE transaction_number LIKE :prefix`,
-    { replacements: { prefix: prefix + '%' } }
+    opts
   );
 
   let seq = 1;
@@ -115,11 +116,21 @@ export const syncFinishedGoodsSummary = async (
   const statusList = qualityStatus ? [qualityStatus] : ['合格品', '不合格品'];
 
   for (const qs of statusList) {
+    // 散装批次库存
     const [sumRows]: any = await sequelize.query(
       `SELECT ISNULL(SUM(quantity), 0) as total_qty FROM finished_batch_inventory WHERE item_number = :item_number AND warehouse_number = :warehouse_number AND quality_status = :qs AND status != N'冻结'`,
       { replacements: { ...baseReplacements, qs }, ...txOpt }
     );
-    const totalQty = Number(sumRows[0]?.total_qty) || 0;
+    const batchQty = Number(sumRows[0]?.total_qty) || 0;
+
+    // 箱装库存（在库状态的箱）
+    const [boxSumRows]: any = await sequelize.query(
+      `SELECT ISNULL(SUM(total_quantity), 0) as total_qty FROM packing_box_inventory WHERE item_number = :item_number AND warehouse_number = :warehouse_number AND status = N'在库'`,
+      { replacements: { ...baseReplacements }, ...txOpt }
+    );
+    const boxQty = Number(boxSumRows[0]?.total_qty) || 0;
+
+    const totalQty = batchQty + boxQty;
 
     const [existing]: any = await sequelize.query(
       `SELECT id FROM finished_goods_inventory WHERE item_number = :item_number AND warehouse_number = :warehouse_number AND quality_status = :qs`,
