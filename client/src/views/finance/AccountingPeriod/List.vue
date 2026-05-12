@@ -266,11 +266,11 @@ const summary = computed(() => {
 </script>
 
 <template>
-  <div class="page-header-title">会计期间管理</div>
-  <a-card>
+  <div style="padding: 20px">
     <!-- 工具栏 -->
-    <div class="toolbar">
-      <div class="toolbar-left">
+    <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;overflow-x:auto">
+      <span style="font-size:18px;font-weight:600;white-space:nowrap;flex-shrink:0">会计期间</span>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:nowrap">
         <a-select
           v-model:value="filterYear"
           placeholder="选择年度"
@@ -292,8 +292,6 @@ const summary = computed(() => {
           <a-select-option value="已关闭">已关闭</a-select-option>
         </a-select>
         <a-button @click="loadData">查询</a-button>
-      </div>
-      <div class="toolbar-right">
         <a-button type="primary" @click="handleShowGenerate">
           <template #icon><PlusOutlined /></template>
           生成年度期间
@@ -462,40 +460,10 @@ const summary = computed(() => {
         </a-form-item>
       </a-form>
     </a-modal>
-  </a-card>
+  </div>
 </template>
 
 <style scoped>
-.page-header-title {
-  font-size: 20px;
-  font-weight: 600;
-  margin-bottom: 16px;
-  color: rgba(0, 0, 0, 0.85);
-}
-
-.toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.toolbar-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 .summary-bar {
   margin-bottom: 12px;
   padding: 8px 12px;

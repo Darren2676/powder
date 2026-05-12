@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 
-export function getItems(params?: { page?: number; limit?: number; search?: string; item_type?: string; item_properties?: string }) {
+export function getItems(params?: { page?: number; limit?: number; search?: string; item_type?: string; item_properties?: string; business_scope?: string }) {
   return request.get('/item-masters', { params })
 }
 

@@ -7,6 +7,7 @@ import {
 } from '@ant-design/icons-vue'
 import { getWarehouses, getWarehouseDetail, createWarehouse, updateWarehouse, deleteWarehouse, exportWarehouses, importWarehouses, addWarehouseManager, removeWarehouseManager, approveWarehouse, withdrawWarehouse } from '@/api/master-data/warehouse'
 import { useTableList } from '@/composables/useTableList'
+import { useModalDrag } from '@/composables/useModalDrag'
 import dayjs from 'dayjs'
 import { APPROVAL_STATUS, CONDITION_STATUS } from '@/constants/statuses'
 import { generateExportFilename } from '@/utils/exportFilename'
@@ -58,6 +59,9 @@ const emptyForm = (): Warehouse => ({
 })
 
 const { loading, dataSource, searchText, pagination, rowSelection, fetchData, handleTableChange, handleSearch, handleReset } = useTableList<Warehouse>(getWarehouses)
+
+const { modalStyle, onDragStart, resetDrag } = useModalDrag()
+const { modalStyle: editModalStyle, onDragStart: editOnDragStart, resetDrag: editResetDrag } = useModalDrag()
 
 const editModalVisible = ref(false)
 const createModalVisible = ref(false)
@@ -111,6 +115,7 @@ const handleDetail = async (record: Warehouse) => {
   try {
     const res = await getWarehouseDetail(record.warehouse_number!)
     detailData.value = res.data
+    resetDrag()
     detailModalVisible.value = true
   } catch { message.error('获取详情失败') }
 }
@@ -124,6 +129,7 @@ const handleEdit = async (record: Warehouse) => {
     const res = await getWarehouseDetail(record.warehouse_number!)
     Object.assign(editForm, { ...emptyForm(), ...res.data })
     editManagers.value = res.data.managers || []
+    editResetDrag()
     editModalVisible.value = true
   } catch { message.error('获取数据失败') }
 }
@@ -306,7 +312,10 @@ onMounted(() => { fetchData() })
     </a-card>
 
     <!-- 详情弹窗 -->
-    <a-modal v-model:open="detailModalVisible" title="仓库详情" :footer="null" width="800px">
+    <a-modal v-model:open="detailModalVisible" :footer="null" width="800px" :style="modalStyle">
+      <template #title>
+        <div class="drag-handle" @mousedown="onDragStart">仓库详情</div>
+      </template>
       <a-descriptions bordered :column="3" size="small" style="margin-bottom: 16px;">
         <a-descriptions-item label="仓库编号">{{ detailData.warehouse_number }}</a-descriptions-item>
         <a-descriptions-item label="仓库名称">{{ detailData.warehouse_name }}</a-descriptions-item>
@@ -356,7 +365,10 @@ onMounted(() => { fetchData() })
     </a-modal>
 
     <!-- 编辑弹窗 -->
-    <a-modal v-model:open="editModalVisible" title="编辑仓库" @ok="handleEditOk" okText="确认" cancelText="取消" width="700px">
+    <a-modal v-model:open="editModalVisible" @ok="handleEditOk" okText="确认" cancelText="取消" width="700px" :style="editModalStyle">
+      <template #title>
+        <div class="drag-handle" @mousedown="editOnDragStart">编辑仓库</div>
+      </template>
       <a-form :label-col="{ span: 6 }" :wrapper-col="{ span: 16 }">
         <a-row :gutter="16">
           <a-col :span="12">
@@ -506,4 +518,5 @@ onMounted(() => { fetchData() })
 <style scoped>
 :deep(.ant-card-extra) { padding: 0; }
 :deep(.ant-descriptions-item-label) { font-weight: 500; white-space: nowrap; }
+.drag-handle { cursor: move; user-select: none; }
 </style>

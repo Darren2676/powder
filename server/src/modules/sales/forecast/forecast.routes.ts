@@ -1,11 +1,15 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { authenticate } from '../../../middleware/auth.middleware';
 import { validateCreateForecast, validateUpdateForecast } from '../../../validators/sales.validator';
-import { getForecasts, getForecastDetail, createForecast, updateForecast, deleteForecast, getForecastConsumptionLog, getForecastDetailsPage, exportForecastDetailsSelected, addForecastDetail, updateForecastDetail, deleteForecastDetail } from './forecast.controller';
+import { getForecasts, getForecastDetail, createForecast, updateForecast, deleteForecast, getForecastConsumptionLog, getForecastDetailsPage, exportForecastDetailsSelected, addForecastDetail, updateForecastDetail, deleteForecastDetail, exportForecasts, importForecasts } from './forecast.controller';
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 router.get('/', authenticate, getForecasts);
+router.get('/export', authenticate, exportForecasts);
+router.post('/import', authenticate, upload.single('file'), importForecasts);
 router.get('/details-page', authenticate, getForecastDetailsPage);
 router.post('/details-page/export-selected', authenticate, exportForecastDetailsSelected);
 router.post('/', authenticate, validateCreateForecast, createForecast);

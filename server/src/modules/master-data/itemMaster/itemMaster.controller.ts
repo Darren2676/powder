@@ -14,8 +14,8 @@ const UPLOAD_DIR = process.env.UPLOAD_DIR || 'uploads';
 const extConfig: Record<string, { table: string; fields: string[]; headers: string[] }> = {
   '成品': {
     table: 'product_ext',
-    fields: ['product_drawing_number', 'rubber_compound_number', 'batch_production_quota', 'standard_pass_rate'],
-    headers: ['产品图号', '胶料编号', '批次产量定额', '标准合格率']
+    fields: ['product_drawing_number', 'rubber_compound_number', 'batch_production_quota', 'standard_pass_rate', 'inner_pack_qty', 'outer_pack_qty', 'inner_pack_unit', 'outer_pack_unit'],
+    headers: ['产品图号', '胶料编号', '批次产量定额', '标准合格率', '内包装数量', '外包装数量', '内包装单位', '外包装单位']
   },
   '原材料': {
     table: 'material_ext',
@@ -76,6 +76,7 @@ export const getItems = async (req: Request, res: Response, next: NextFunction) 
     const search = (req.query.search as string) || '';
     const itemType = (req.query.item_type as string) || '';
     const itemProperties = (req.query.item_properties as string) || '';
+    const businessScope = (req.query.business_scope as string) || '';
 
     let whereClause = '';
     const conditions: string[] = [];
@@ -88,6 +89,10 @@ export const getItems = async (req: Request, res: Response, next: NextFunction) 
     if (itemType) {
       conditions.push(`im.item_type = :itemType`);
       replacements.itemType = itemType;
+    }
+    if (businessScope) {
+      conditions.push(`CHARINDEX(:business_scope, im.business_scope) > 0`);
+      replacements.business_scope = businessScope;
     }
     if (itemProperties) {
       const propList = itemProperties.split(',').map(s => s.trim()).filter(Boolean);

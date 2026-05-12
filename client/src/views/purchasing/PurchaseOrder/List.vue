@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, createVNode, h } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DownloadOutlined, DeleteOutlined, EyeOutlined, EditOutlined, ImportOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, DownloadOutlined, ExclamationCircleOutlined, DownOutlined, PrinterOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getPurchaseOrders, getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, exportPurchaseOrders, closePurchaseOrder, getReceivable } from '@/api/purchasing/purchaseOrder'
 import { createStockIn, confirmStockIn } from '@/api/warehouse/stockIn'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getSuppliers } from '@/api/master-data/supplier'
 import { getWarehouses } from '@/api/master-data/warehouse'
-import { submitForApproval, approveRecord, reverseApproval, withdrawApproval } from '@/api/system/approval'
+import { submitForApproval, approveRecord, reverseApproval, withdrawApproval, batchSubmitForApproval, batchApproveRecords, batchWithdrawApproval, batchReverseApproval } from '@/api/system/approval'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
+import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
+import ManualCloseModal from '@/components/Common/ManualCloseModal.vue'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
+import { useColumnPreference } from '@/composables/useColumnPreference'
 
 // ==================== 数据 ====================
 
@@ -23,6 +26,8 @@ const filterOrder = ref('')
 const modalVisible = ref(false)
 const modalTitle = ref('新建采购订单')
 const isView = ref(false)
+const manualCloseRef = ref()
+const selectedRowKeys = ref<string[]>([])
 const formData = ref<any>({})
 const detailRows = ref<any[]>([])
 
@@ -39,18 +44,26 @@ const stockInWarehouse = reactive({ warehouse_number: '', warehouse_name: '' })
 // ==================== 列定义 ====================
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getPurchaseOrders)
 
-const columns = [
-  { title: '采购订单号', dataIndex: 'purchase_order_number', key: 'purchase_order_number', width: 180 },
-  { title: '供应商', dataIndex: 'supplier_name', key: 'supplier_name', width: 150 },
-  { title: '采购负责人', dataIndex: 'procurement_manager', key: 'procurement_manager', width: 100 },
-  { title: '订单日期', dataIndex: 'order_date', key: 'order_date', width: 110, customRender: ({ text }: any) => text ? dayjs(text).format('YYYY-MM-DD') : '' },
-  { title: '交货日期', dataIndex: 'delivery_date', key: 'delivery_date', width: 110, customRender: ({ text }: any) => text ? dayjs(text).format('YYYY-MM-DD') : '' },
-  { title: '总金额', dataIndex: 'total_amount', key: 'total_amount', width: 110, customRender: ({ text }: any) => parseFloat(text || 0).toFixed(2) },
-  { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 100 },
-  { title: '执行状态', dataIndex: 'order_status', key: 'order_status', width: 100 },
-  { title: '来源申请', dataIndex: 'source_req_number', key: 'source_req_number', width: 160 },
-  { title: '操作', key: 'action', width: 350, fixed: 'right' as const }
+const defaultDataColumns: any[] = [
+  { title: '采购订单号', dataIndex: 'purchase_order_number', key: 'purchase_order_number', width: 180, sorter: (a: any, b: any) => (a.purchase_order_number || '').localeCompare(b.purchase_order_number || ''), resizable: true },
+  { title: '供应商', dataIndex: 'supplier_name', key: 'supplier_name', width: 150, resizable: true },
+  { title: '采购负责人', dataIndex: 'procurement_manager', key: 'procurement_manager', width: 100, resizable: true },
+  { title: '订单日期', dataIndex: 'order_date', key: 'order_date', width: 110, customRender: ({ text }: any) => text ? dayjs(text).format('YYYY-MM-DD') : '', resizable: true },
+  { title: '交货日期', dataIndex: 'delivery_date', key: 'delivery_date', width: 110, customRender: ({ text }: any) => text ? dayjs(text).format('YYYY-MM-DD') : '', resizable: true },
+  { title: '总金额', dataIndex: 'total_amount', key: 'total_amount', width: 110, customRender: ({ text }: any) => parseFloat(text || 0).toFixed(2), resizable: true },
+  { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 100, resizable: true },
+  { title: '执行状态', dataIndex: 'order_status', key: 'order_status', width: 100, resizable: true },
+  { title: '来源申请', dataIndex: 'source_req_number', key: 'source_req_number', width: 160, resizable: true }
 ]
+
+const {
+  columns, columnSettingVisible, columnSettingList, columnSettingSaving,
+  openColumnSetting, moveColumnUp, moveColumnDown, saveColumnSetting, resetColumnSetting,
+  loadColumnPreference, handleResizeColumn
+} = useColumnPreference('purchase_order_list', defaultDataColumns, {
+  fixedLeft: [{ title: '行号', key: 'rowIndex', width: 60, fixed: 'left' as const }],
+  fixedRight: [{ title: '操作', key: 'action', width: 140, fixed: 'right' as const }]
+})
 
 const detailColumns = [
   { title: '物料编码', dataIndex: 'item_number', key: 'item_number', width: 140 },
@@ -90,7 +103,7 @@ const loadDropdowns = async () => {
   } catch { /* ignore */ }
 }
 
-onMounted(() => { fetchList(); loadDropdowns() })
+onMounted(() => { loadColumnPreference(); fetchList(); loadDropdowns() })
 
 
 
@@ -116,12 +129,18 @@ const openEdit = async (record: any) => {
 
 const handleDelete = (record: any) => {
   Modal.confirm({
-    title: '确认删除', content: `确定删除采购订单 ${record.purchase_order_number}？`,
-    icon: () => null,
-    onOk: async () => {
-      await deletePurchaseOrder(record.purchase_order_number)
-      message.success('删除成功')
-      fetchList()
+    title: '确认删除',
+    icon: createVNode(ExclamationCircleOutlined),
+    content: `确定要删除采购订单「${(record.purchase_order_number || '').trim()}」吗？`,
+    okText: '确定',
+    okType: 'danger',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        const res: any = await deletePurchaseOrder(record.purchase_order_number)
+        if (res.success) { message.success('删除成功'); fetchList() }
+        else { message.error(res.message || '删除失败') }
+      } catch { message.error('删除失败') }
     }
   })
 }
@@ -177,12 +196,66 @@ const handleApprove = async (record: any) => { await approveRecord('purchase_ord
 const handleWithdraw = async (record: any) => { await withdrawApproval('purchase_order', record.purchase_order_number); message.success('撤回成功'); fetchList() }
 const handleReverse = async (record: any) => { await reverseApproval('purchase_order', record.purchase_order_number); message.success('反审批成功'); fetchList() }
 
+// ==================== 批量操作 ====================
+const MODULE_NAME = 'purchase_order'
+const batchLoading = ref(false)
+const handleBatchAction = (action: string) => {
+  if (selectedRowKeys.value.length === 0) { message.warning('请先勾选记录'); return }
+  const count = selectedRowKeys.value.length
+  const actionMap: Record<string, { title: string; desc: string; fn: () => Promise<any>; okType?: string }> = {
+    'submit': { title: '批量提交审核', desc: `确定要批量提交 ${count} 条记录吗？仅草稿状态的记录会被提交。`, fn: () => batchSubmitForApproval(MODULE_NAME, selectedRowKeys.value) },
+    'approve': { title: '批量审核通过', desc: `确定要批量审核 ${count} 条记录吗？仅待审批状态的记录会被审批。`, fn: () => batchApproveRecords(MODULE_NAME, selectedRowKeys.value) },
+    'withdraw': { title: '批量撤回', desc: `确定要批量撤回 ${count} 条记录吗？仅待审批状态的记录会被撤回。`, fn: () => batchWithdrawApproval(MODULE_NAME, selectedRowKeys.value) },
+    'reverse': { title: '批量反审', desc: `确定要批量反审 ${count} 条记录吗？已审批的记录将退回草稿。`, fn: () => batchReverseApproval(MODULE_NAME, selectedRowKeys.value), okType: 'danger' }
+  }
+  const cfg = actionMap[action]
+  if (!cfg) return
+  Modal.confirm({
+    title: cfg.title, icon: h(ExclamationCircleOutlined), content: cfg.desc,
+    okText: '确认', okType: (cfg.okType as any) || 'primary', cancelText: '取消',
+    onOk: async () => {
+      batchLoading.value = true
+      try {
+        const res = await cfg.fn()
+        if (res.success) {
+          const d = res.data; message.success(`${cfg.title}完成：成功 ${d.succeeded.length} 条，失败 ${d.failed.length} 条`)
+          if (d.failed.length > 0) d.failed.slice(0, 3).forEach((f: any) => message.warning(`${f.record_id}: ${f.message}`))
+          selectedRowKeys.value = []; fetchList()
+        } else { message.error(res.message || '操作失败') }
+      } catch { message.error('批量操作失败') }
+      finally { batchLoading.value = false }
+    }
+  })
+}
+
+const handlePrint = (record: any) => {
+  window.open(`/api/purchase-orders/${encodeURIComponent(record.purchase_order_number)}/print`, '_blank')
+}
+
 const handleClose = (record: any) => {
   Modal.confirm({
-    title: '确认关闭', content: `确定关闭采购订单 ${record.purchase_order_number}？关闭后不可再入库。`,
-    icon: () => null,
-    onOk: async () => { await closePurchaseOrder(record.purchase_order_number); message.success('关闭成功'); fetchList() }
+    title: '确认关闭',
+    icon: createVNode(ExclamationCircleOutlined),
+    content: `确定要关闭采购订单「${(record.purchase_order_number || '').trim()}」吗？关闭后不可再入库。`,
+    okText: '确定',
+    okType: 'danger',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        const res: any = await closePurchaseOrder(record.purchase_order_number)
+        if (res.success) { message.success('关闭成功'); fetchList() }
+        else { message.error(res.message || '关闭失败') }
+      } catch { message.error('关闭失败') }
+    }
   })
+}
+
+const openCreate = () => {
+  modalTitle.value = '新建采购订单'
+  isView.value = false
+  formData.value = {}
+  detailRows.value = []
+  modalVisible.value = true
 }
 
 // ==================== 创建入库单 ====================
@@ -244,6 +317,7 @@ const handleStockIn = async () => {
 }
 
 // ==================== 导出 ====================
+const handleRefresh = () => { fetchList() }
 const handleExport = async () => {
   const res: any = await exportPurchaseOrders(searchText.value)
   const url = window.URL.createObjectURL(new Blob([res.data]))
@@ -275,35 +349,78 @@ const handleExport = async () => {
         </a-select>
         <a-button @click="handleRefresh"><template #icon><ReloadOutlined /></template></a-button>
         <a-button @click="handleExport"><template #icon><DownloadOutlined /></template>导出</a-button>
+        <a-button @click="openColumnSetting"><template #icon><SettingOutlined /></template>列设置</a-button>
         <a-button type="primary" @click="openCreate"><template #icon><PlusOutlined /></template>新建</a-button>
       </div>
     </div>
 
-    <a-table :columns="columns" :data-source="dataList" :loading="loading" :pagination="{ current: pagination.current, pageSize: pagination.pageSize, total: pagination.total, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }" @change="handleTableChange" row-key="purchase_order_number" :scroll="{ x: 1400 }" size="small">
-      <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'approval_status'">
+    <a-table :columns="columns" :data-source="dataList" :loading="loading" :pagination="false" @change="handleTableChange" row-key="purchase_order_number" :scroll="{ x: 'max-content' }" size="small" @resizeColumn="handleResizeColumn" :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: (keys: any) => selectedRowKeys = keys, preserveSelectedRowKeys: true }">
+      <template #bodyCell="{ column, record, index }">
+        <template v-if="column.key === 'rowIndex'">
+          {{ (pagination.current - 1) * pagination.pageSize + index + 1 }}
+        </template>
+        <template v-else-if="column.key === 'approval_status'">
           <ApprovalStatusTag :status="record.approval_status" />
         </template>
         <template v-else-if="column.key === 'order_status'">
           <a-tag :color="record.order_status === '已完成' ? 'green' : record.order_status === '执行中' ? 'blue' : record.order_status === '已关闭' ? 'red' : 'default'">{{ record.order_status }}</a-tag>
         </template>
         <template v-else-if="column.key === 'action'">
-          <a-space size="small">
-            <a-button size="small" @click="openView(record)"><template #icon><EyeOutlined /></template></a-button>
-            <a-button size="small" @click="openEdit(record)" :disabled="record.approval_status !== '草稿'"><template #icon><EditOutlined /></template></a-button>
-            <a-button size="small" @click="handleSubmitApproval(record)" :disabled="record.approval_status !== '草稿'">提交</a-button>
-            <a-button size="small" @click="handleApprove(record)" :disabled="record.approval_status !== '待审批'">审批</a-button>
-            <a-button size="small" @click="handleWithdraw(record)" :disabled="record.approval_status !== '待审批'">撤回</a-button>
-            <a-button size="small" @click="handleReverse(record)" :disabled="record.approval_status !== '已审批'">反审</a-button>
-            <a-button size="small" type="primary" @click="openStockIn(record)" :disabled="record.approval_status !== '已审批' || record.order_status === '已完成' || record.order_status === '已关闭'"><template #icon><ImportOutlined /></template>入库</a-button>
-            <a-button size="small" @click="handleClose(record)" :disabled="record.order_status === '已关闭' || record.order_status === '已完成'">关闭</a-button>
-            <a-popconfirm title="确定删除？" @confirm="handleDelete(record)">
-              <a-button size="small" danger :disabled="record.approval_status !== '草稿'"><template #icon><DeleteOutlined /></template></a-button>
-            </a-popconfirm>
+          <a-space :size="4">
+            <a-button type="link" size="small" @click="openView(record)">查看</a-button>
+            <a-divider type="vertical" />
+            <a-dropdown :trigger="['click']">
+              <a-button type="link" size="small" @click.stop>
+                更多<DownOutlined style="font-size: 10px; margin-left: 2px;" />
+              </a-button>
+              <template #overlay>
+                <a-menu>
+                  <a-menu-item v-if="(record.approval_status || '').trim() === '草稿'" @click="openEdit(record)">编辑</a-menu-item>
+                  <a-menu-item v-if="(record.approval_status || '').trim() === '草稿'" @click="handleSubmitApproval(record)">提交审批</a-menu-item>
+                  <a-menu-item v-if="(record.approval_status || '').trim() === '待审批'" @click="handleApprove(record)">审批</a-menu-item>
+                  <a-menu-item v-if="(record.approval_status || '').trim() === '待审批'" @click="handleWithdraw(record)">撤回</a-menu-item>
+                  <a-menu-item v-if="(record.approval_status || '').trim() === '已审批'" @click="handleReverse(record)">反审批</a-menu-item>
+                  <a-menu-divider v-if="(record.approval_status || '').trim() !== '草稿'" />
+                  <a-menu-item v-if="(record.approval_status || '').trim() === '已审批'" @click="handlePrint(record)"><PrinterOutlined style="margin-right:4px" />打印</a-menu-item>
+                  <a-menu-item v-if="(record.approval_status || '').trim() === '已审批' && (record.order_status || '').trim() !== '已完成' && (record.order_status || '').trim() !== '已关闭'" @click="openStockIn(record)">入库</a-menu-item>
+                  <a-menu-item v-if="(record.order_status || '').trim() !== '已关闭' && (record.order_status || '').trim() !== '已完成'" @click="handleClose(record)">关闭</a-menu-item>
+                  <a-menu-divider />
+                  <a-menu-item v-if="(record.approval_status || '').trim() === '草稿'" @click="handleDelete(record)">
+                    <span style="color: #ff4d4f">删除</span>
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
           </a-space>
         </template>
       </template>
     </a-table>
+
+    <!-- 批量操作栏 + 分页（合并一行） -->
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: 8px; padding: 8px 0; border-top: 1px solid #f0f0f0; margin-top: 4px;">
+      <div style="display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; white-space: nowrap;">
+        <span style="color: #666; margin-right: 2px; flex-shrink: 0;">已选 <b style="color: #1890ff;">{{ selectedRowKeys.length }}</b> 项</span>
+        <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('submit')">批量提交</a-button>
+        <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('approve')">批量审批</a-button>
+        <a-button size="small" :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('withdraw')">批量撤回</a-button>
+        <a-button size="small" danger :disabled="selectedRowKeys.length === 0" :loading="batchLoading" @click="handleBatchAction('reverse')">批量反审</a-button>
+        <a-button size="small" danger :disabled="selectedRowKeys.length === 0" @click="manualCloseRef?.open()">批量关闭</a-button>
+        <a-button size="small" type="link" :disabled="selectedRowKeys.length === 0" @click="selectedRowKeys = []">清除选择</a-button>
+      </div>
+      <a-pagination
+        size="small"
+        :current="pagination.current"
+        :page-size="pagination.pageSize"
+        :total="pagination.total"
+        show-quick-jumper
+        :show-size-changer="true"
+        :show-total="(total: number) => `共 ${total} 条记录`"
+        @change="(page: number, pageSize: number) => { pagination.current = page; pagination.pageSize = pageSize; fetchList() }"
+      />
+    </div>
+
+    <!-- 批量关闭弹窗 -->
+    <ManualCloseModal ref="manualCloseRef" module="purchase_order" :record-ids="selectedRowKeys" @success="fetchList" />
 
     <!-- 编辑/查看弹窗 -->
     <a-modal v-model:open="modalVisible" :title="modalTitle" width="1100px" @ok="handleSave" :ok-button-props="{ style: isView ? { display: 'none' } : {} }" :cancel-text="isView ? '关闭' : '取消'">
@@ -391,5 +508,16 @@ const handleExport = async () => {
         </template>
       </a-table>
     </a-modal>
+
+    <ColumnSettingDrawer
+      :open="columnSettingVisible"
+      :settingList="columnSettingList"
+      :saving="columnSettingSaving"
+      @update:open="columnSettingVisible = $event"
+      @moveUp="moveColumnUp"
+      @moveDown="moveColumnDown"
+      @save="saveColumnSetting"
+      @reset="resetColumnSetting"
+    />
   </div>
 </template>

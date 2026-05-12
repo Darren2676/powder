@@ -245,16 +245,42 @@ export const deletePurchaseReq = async (req: Request, res: Response, next: NextF
   try {
     const { id } = req.params;
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM purchase_req WHERE purchase_req_number = :id`, { replacements: { id } }
+      `SELECT approval_status, production_number FROM purchase_req WHERE purchase_req_number = :id`, { replacements: { id } }
     );
     if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) {
       res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return;
     }
 
+    const productionNumbers = (chk[0]?.production_number || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`DELETE FROM purchase_req_detail WHERE purchase_req_number = :id`, { replacements: { id }, transaction });
       await sequelize.query(`DELETE FROM purchase_req WHERE purchase_req_number = :id`, { replacements: { id }, transaction });
+
+      // 检查每个关联的生产计划是否需要回退状态
+      for (const productionNumber of productionNumbers) {
+        // 检查该计划下是否还有生产单
+        const [otherOrders]: any = await sequelize.query(
+          `SELECT 1 FROM production_order WHERE production_number = :pn`,
+          { replacements: { pn: productionNumber }, transaction }
+        );
+
+        // 检查该计划下是否还有其他采购申请引用
+        const [otherReqs]: any = await sequelize.query(
+          `SELECT 1 FROM purchase_req WHERE CHARINDEX(:pn, production_number) > 0 AND purchase_req_number != :id AND purchase_req_number NOT LIKE N'MRP_TEMP%'`,
+          { replacements: { pn: productionNumber, id }, transaction }
+        );
+
+        if (otherOrders.length === 0 && otherReqs.length === 0) {
+          // 无其他任何关联单据，回退计划状态
+          await sequelize.query(
+            `UPDATE Production_plan SET plan_status = N'待加入任务', mrp_status = NULL WHERE production_number = :pn AND plan_status = N'已加入任务'`,
+            { replacements: { pn: productionNumber }, transaction }
+          );
+        }
+      }
+
       await transaction.commit();
       res.json(success(null, '删除采购申请成功'));
     } catch (e) {

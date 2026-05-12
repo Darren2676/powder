@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DownloadOutlined, UploadOutlined, DeleteOutlined, EyeOutlined, EditOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, DownloadOutlined, UploadOutlined, DeleteOutlined, EyeOutlined, EditOutlined, ExclamationCircleOutlined, DownOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getSalesPriceLists, getSalesPriceListDetail, createSalesPriceList, updateSalesPriceList, deleteSalesPriceList, exportSalesPriceLists, importSalesPriceList } from '@/api/sales/salesPrice'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getCustomers } from '@/api/master-data/customer'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval } from '@/api/system/approval'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
+import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
+import { useColumnPreference } from '@/composables/useColumnPreference'
 
 // ==================== 数据 ====================
 
@@ -32,21 +34,29 @@ const importFileRef = ref<HTMLInputElement | null>(null)
 // ==================== 列定义 ====================
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getSalesPriceLists)
 
-const columns = [
-  { title: '价目表编号', dataIndex: 'price_list_number', key: 'price_list_number', width: 180 },
-  { title: '价目表名称', dataIndex: 'price_list_name', key: 'price_list_name', width: 160 },
-  { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 160 },
-  { title: '客户编号', dataIndex: 'customer_number', key: 'customer_number', width: 120 },
-  { title: '客户分类', dataIndex: 'customer_category', key: 'customer_category', width: 100 },
-  { title: '有效期开始', dataIndex: 'effective_date', key: 'effective_date', width: 110, customRender: ({ text }: any) => text ? dayjs(text).format('YYYY-MM-DD') : '' },
-  { title: '有效期结束', dataIndex: 'expiration_date', key: 'expiration_date', width: 110, customRender: ({ text }: any) => text ? dayjs(text).format('YYYY-MM-DD') : '' },
-  { title: '单价类型', dataIndex: 'price_type', key: 'price_type', width: 90 },
-  { title: '币种', dataIndex: 'currency', key: 'currency', width: 70 },
-  { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 100 },
-  { title: '创建日期', dataIndex: 'creation_date', key: 'creation_date', width: 150 },
-  { title: '创建人', dataIndex: 'creation_man', key: 'creation_man', width: 90 },
-  { title: '操作', key: 'action', width: 320, fixed: 'right' as const }
+const defaultDataColumns: any[] = [
+  { title: '价目表编号', dataIndex: 'price_list_number', key: 'price_list_number', width: 180, resizable: true },
+  { title: '价目表名称', dataIndex: 'price_list_name', key: 'price_list_name', width: 160, resizable: true },
+  { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 160, resizable: true },
+  { title: '客户编号', dataIndex: 'customer_number', key: 'customer_number', width: 120, resizable: true },
+  { title: '客户分类', dataIndex: 'customer_category', key: 'customer_category', width: 100, resizable: true },
+  { title: '有效期开始', dataIndex: 'effective_date', key: 'effective_date', width: 110, customRender: ({ text }: any) => text ? dayjs(text).format('YYYY-MM-DD') : '', resizable: true },
+  { title: '有效期结束', dataIndex: 'expiration_date', key: 'expiration_date', width: 110, customRender: ({ text }: any) => text ? dayjs(text).format('YYYY-MM-DD') : '', resizable: true },
+  { title: '单价类型', dataIndex: 'price_type', key: 'price_type', width: 90, resizable: true },
+  { title: '币种', dataIndex: 'currency', key: 'currency', width: 70, resizable: true },
+  { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 100, resizable: true },
+  { title: '创建日期', dataIndex: 'creation_date', key: 'creation_date', width: 150, resizable: true },
+  { title: '创建人', dataIndex: 'creation_man', key: 'creation_man', width: 90, resizable: true }
 ]
+
+const {
+  columns, columnSettingVisible, columnSettingList, columnSettingSaving,
+  openColumnSetting, moveColumnUp, moveColumnDown, saveColumnSetting, resetColumnSetting,
+  loadColumnPreference, handleResizeColumn
+} = useColumnPreference('sales_price_list', defaultDataColumns, {
+  fixedLeft: [],
+  fixedRight: [{ title: '操作', key: 'action', width: 120, fixed: 'right' as const }]
+})
 
 const detailColumns = [
   { title: '行号', dataIndex: 'line_number', key: 'line_number', width: 60 },
@@ -89,11 +99,22 @@ const loadDropdowns = async () => {
   } catch { /* ignore */ }
 }
 
-onMounted(() => { fetchList(); loadDropdowns() })
+onMounted(() => { fetchList(); loadDropdowns(); loadColumnPreference() })
 
 
 
 
+
+const openCreate = () => {
+  modalTitle.value = '新建销售价目表'
+  isView.value = false
+  formData.value = {
+    price_list_name: '', customer_number: undefined, customer_name: '', customer_category: '',
+    price_type: '含税', currency: 'CNY', effective_date: '', expiration_date: '', remark: ''
+  }
+  detailRows.value = []
+  modalVisible.value = true
+}
 
 const openView = async (record: any) => {
   modalTitle.value = '查看销售价目表'
@@ -115,12 +136,15 @@ const openEdit = async (record: any) => {
 
 const handleDelete = (record: any) => {
   Modal.confirm({
-    title: '确认删除', content: `确定删除销售价目表 ${record.price_list_number}？`,
-    icon: () => null,
-    onOk: async () => {
-      await deleteSalesPriceList(record.price_list_number)
-      message.success('删除成功')
-      fetchList()
+    title: '确认删除', icon: createVNode(ExclamationCircleOutlined),
+    content: `确定要删除销售价目表「${(record.price_list_name || '').trim()}」吗？`,
+    okText: '确定', okType: 'danger', cancelText: '取消',
+    async onOk() {
+      try {
+        const res: any = await deleteSalesPriceList(record.price_list_number)
+        if (res.success) { message.success('删除成功'); fetchList() }
+        else { message.error(res.message || '删除失败') }
+      } catch { message.error('删除失败') }
     }
   })
 }
@@ -183,10 +207,62 @@ const handleSave = async () => {
 }
 
 // ==================== 审批 ====================
-const handleSubmitApproval = async (record: any) => { await submitForApproval('sales_price_list', record.price_list_number); message.success('提交审批成功'); fetchList() }
-const handleApprove = async (record: any) => { await approveRecord('sales_price_list', record.price_list_number); message.success('审批通过'); fetchList() }
-const handleWithdraw = async (record: any) => { await withdrawApproval('sales_price_list', record.price_list_number); message.success('撤回成功'); fetchList() }
-const handleReverse = async (record: any) => { await reverseApproval('sales_price_list', record.price_list_number); message.success('反审批成功'); fetchList() }
+const handleSubmitApproval = async (record: any) => {
+  Modal.confirm({
+    title: '确认提交', icon: createVNode(ExclamationCircleOutlined),
+    content: `确定要提交销售价目表「${(record.price_list_name || '').trim()}」进行审批吗？`,
+    okText: '确定', cancelText: '取消',
+    async onOk() {
+      try {
+        const res: any = await submitForApproval('sales_price_list', record.price_list_number)
+        if (res.success) { message.success('提交审批成功'); fetchList() }
+        else { message.error(res.message || '提交失败') }
+      } catch { message.error('提交失败') }
+    }
+  })
+}
+const handleApprove = async (record: any) => {
+  Modal.confirm({
+    title: '确认审批', icon: createVNode(ExclamationCircleOutlined),
+    content: `确定要审批通过销售价目表「${(record.price_list_name || '').trim()}」吗？`,
+    okText: '确定', cancelText: '取消',
+    async onOk() {
+      try {
+        const res: any = await approveRecord('sales_price_list', record.price_list_number)
+        if (res.success) { message.success('审批通过'); fetchList() }
+        else { message.error(res.message || '审批失败') }
+      } catch { message.error('审批失败') }
+    }
+  })
+}
+const handleWithdraw = async (record: any) => {
+  Modal.confirm({
+    title: '确认撤回', icon: createVNode(ExclamationCircleOutlined),
+    content: `确定要撤回销售价目表「${(record.price_list_name || '').trim()}」的审批吗？`,
+    okText: '确定', cancelText: '取消',
+    async onOk() {
+      try {
+        const res: any = await withdrawApproval('sales_price_list', record.price_list_number)
+        if (res.success) { message.success('撤回成功'); fetchList() }
+        else { message.error(res.message || '撤回失败') }
+      } catch { message.error('撤回失败') }
+    }
+  })
+}
+const handleReverse = async (record: any) => {
+  Modal.confirm({
+    title: '确认反审批', icon: createVNode(ExclamationCircleOutlined),
+    content: `确定要反审批销售价目表「${(record.price_list_name || '').trim()}」吗？`,
+    okText: '确定', cancelText: '取消',
+    async onOk() {
+      try {
+        const res: any = await reverseApproval('sales_price_list', record.price_list_number)
+        if (res.success) { message.success('反审批成功'); fetchList() }
+        else { message.error(res.message || '反审批失败') }
+      } catch { message.error('反审批失败') }
+    }
+  })
+}
 
 // ==================== 导出 ====================
 const handleExport = async () => {
@@ -227,30 +303,43 @@ const handleImportFile = async (e: Event) => {
           <a-select-option value="待审批">待审批</a-select-option>
           <a-select-option value="已审批">已审批</a-select-option>
         </a-select>
-        <a-button @click="handleRefresh"><template #icon><ReloadOutlined /></template></a-button>
+        <a-button @click="fetchList"><template #icon><ReloadOutlined /></template></a-button>
         <a-button @click="handleExport"><template #icon><DownloadOutlined /></template>导出</a-button>
         <a-button @click="triggerImport"><template #icon><UploadOutlined /></template>导入</a-button>
         <input ref="importFileRef" type="file" accept=".xlsx,.xls" style="display:none" @change="handleImportFile" />
+        <a-button @click="openColumnSetting"><template #icon><SettingOutlined /></template>列设置</a-button>
         <a-button type="primary" @click="openCreate"><template #icon><PlusOutlined /></template>新建</a-button>
       </div>
     </div>
 
-    <a-table :columns="columns" :data-source="dataList" :loading="loading" :pagination="{ current: pagination.current, pageSize: pagination.pageSize, total: pagination.total, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }" @change="handleTableChange" row-key="price_list_number" :scroll="{ x: 1800 }" size="small">
+    <a-table :columns="columns" :data-source="dataList" :loading="loading" :pagination="{ current: pagination.current, pageSize: pagination.pageSize, total: pagination.total, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }" @change="handleTableChange" @resizeColumn="handleResizeColumn" row-key="price_list_number" :scroll="{ x: 'max-content' }" size="small">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'approval_status'">
           <ApprovalStatusTag :status="record.approval_status" />
         </template>
         <template v-else-if="column.key === 'action'">
-          <a-space size="small">
-            <a-button size="small" @click="openView(record)"><template #icon><EyeOutlined /></template></a-button>
-            <a-button size="small" @click="openEdit(record)" :disabled="record.approval_status !== '草稿'"><template #icon><EditOutlined /></template></a-button>
-            <a-button size="small" @click="handleSubmitApproval(record)" :disabled="record.approval_status !== '草稿'">提交</a-button>
-            <a-button size="small" @click="handleApprove(record)" :disabled="record.approval_status !== '待审批'">审批</a-button>
-            <a-button size="small" @click="handleWithdraw(record)" :disabled="record.approval_status !== '待审批'">撤回</a-button>
-            <a-button size="small" @click="handleReverse(record)" :disabled="record.approval_status !== '已审批'">反审</a-button>
-            <a-popconfirm title="确定删除？" @confirm="handleDelete(record)">
-              <a-button size="small" danger :disabled="record.approval_status !== '草稿'"><template #icon><DeleteOutlined /></template></a-button>
-            </a-popconfirm>
+          <a-space :size="4">
+            <a-button type="link" size="small" @click="record.approval_status === '草稿' ? openEdit(record) : openView(record)">
+              {{ record.approval_status === '草稿' ? '编辑' : '查看' }}
+            </a-button>
+            <a-divider type="vertical" />
+            <a-dropdown :trigger="['click']">
+              <a-button type="link" size="small" @click.stop>
+                更多<DownOutlined style="font-size: 10px; margin-left: 2px;" />
+              </a-button>
+              <template #overlay>
+                <a-menu>
+                  <a-menu-item v-if="record.approval_status === '草稿'" @click="handleSubmitApproval(record)">提交审批</a-menu-item>
+                  <a-menu-item v-if="record.approval_status === '待审批'" @click="handleApprove(record)">审批通过</a-menu-item>
+                  <a-menu-item v-if="record.approval_status === '待审批'" @click="handleWithdraw(record)">撤回审批</a-menu-item>
+                  <a-menu-item v-if="record.approval_status === '已审批'" @click="handleReverse(record)">反审批</a-menu-item>
+                  <a-menu-divider v-if="record.approval_status === '草稿'" />
+                  <a-menu-item v-if="record.approval_status === '草稿'" @click="handleDelete(record)">
+                    <span style="color: #ff4d4f">删除</span>
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
           </a-space>
         </template>
       </template>
@@ -348,5 +437,16 @@ const handleImportFile = async (e: Event) => {
         </template>
       </a-table>
     </a-modal>
+
+    <ColumnSettingDrawer
+      :open="columnSettingVisible"
+      :settingList="columnSettingList"
+      :saving="columnSettingSaving"
+      @update:open="columnSettingVisible = $event"
+      @moveUp="moveColumnUp"
+      @moveDown="moveColumnDown"
+      @save="saveColumnSetting"
+      @reset="resetColumnSetting"
+    />
   </div>
 </template>

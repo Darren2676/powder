@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 
-export function getCustomerMaterialMappings(params?: { page?: number; limit?: number; search?: string; customer_number?: string; item_number?: string }) {
+export function getCustomerMaterialMappings(params?: { page?: number; limit?: number; search?: string; customer_number?: string; item_number?: string; approval_status?: string }) {
   return request.get('/customer-material-mappings', { params })
 }
 

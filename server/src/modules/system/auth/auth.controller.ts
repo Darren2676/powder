@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { User } from '../../../models';
 import { hashPassword, comparePassword } from '../../../utils/password.util';
-import { generateToken } from '../../../utils/jwt.util';
+import { generateToken, verifyRefreshableToken } from '../../../utils/jwt.util';
 import { success, error } from '../../../utils/response.util';
 import { getPasswordPolicy, validatePassword as validatePwd } from '../../../utils/passwordPolicy.util';
 import { recordLoginLog, getLockoutSettings } from '../../../utils/loginLog.util';
@@ -361,6 +361,66 @@ export const changePassword = async (req: Request, res: Response, next: NextFunc
 export const logout = async (req: Request, res: Response, next: NextFunction) => {
   try {
     res.json(success(null, '退出登录成功'));
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const refreshToken = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json(error('未提供认证令牌', 401));
+    }
+
+    const token = authHeader.substring(7);
+
+    // 验证token是否可刷新（过期但在刷新窗口内）
+    let decoded: any;
+    try {
+      decoded = verifyRefreshableToken(token);
+    } catch (err: any) {
+      return res.status(401).json(error(err.message || '令牌刷新失败', 401));
+    }
+
+    // 检查用户是否仍然有效
+    const user = await User.findByPk(decoded.id, {
+      attributes: { exclude: ['password'] }
+    });
+
+    if (!user) {
+      return res.status(401).json(error('用户不存在', 401));
+    }
+
+    if (user.status !== 'active') {
+      return res.status(401).json(error('用户已被禁用', 401));
+    }
+
+    // 生成新token
+    const newToken = generateToken({
+      id: user.id,
+      username: user.username,
+      role: user.role
+    });
+
+    // 获取最新权限信息
+    const permInfo = await getUserPermissions(user.id);
+
+    res.json(success({
+      token: newToken,
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        real_name: user.real_name,
+        role: user.role,
+        department: user.department,
+        phone: user.phone,
+        avatar: user.avatar,
+        status: user.status
+      },
+      permissions: permInfo
+    }, '令牌刷新成功'));
   } catch (err) {
     next(err);
   }

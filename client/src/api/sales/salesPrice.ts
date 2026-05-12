@@ -24,6 +24,10 @@ export function exportSalesPriceLists(search?: string) {
   return request.get('/sales-prices/export', { params: { search }, responseType: 'blob' })
 }
 
+export function getSalesPriceForOrder(params: { customer_number: string; item_number: string }) {
+  return request.get('/sales-prices/price-for-order', { params })
+}
+
 export function importSalesPriceList(formData: FormData) {
   return request.post('/sales-prices/import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }

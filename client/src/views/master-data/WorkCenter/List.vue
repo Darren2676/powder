@@ -7,7 +7,7 @@ import {
 } from '@ant-design/icons-vue'
 import { getWorkCenters, createWorkCenter, updateWorkCenter, deleteWorkCenter, exportWorkCenters, importWorkCenters, approveWorkCenter, withdrawWorkCenter } from '@/api/master-data/workCenter'
 import { useTableList } from '@/composables/useTableList'
-import { APPROVAL_STATUS } from '@/constants/statuses'
+import { APPROVAL_STATUS, CONDITION_STATUS } from '@/constants/statuses'
 import { generateExportFilename } from '@/utils/exportFilename'
 
 defineOptions({ name: 'WorkCenterList' })

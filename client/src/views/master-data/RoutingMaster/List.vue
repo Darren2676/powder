@@ -28,6 +28,7 @@ import { CONDITION_STATUS } from '@/constants/statuses'
 import { generateExportFilename } from '@/utils/exportFilename'
 import { uploadFile } from '@/api/upload'
 import { useColumnPreference } from '@/composables/useColumnPreference'
+import { useModalDrag } from '@/composables/useModalDrag'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 
 defineOptions({ name: 'RoutingMasterList' })
@@ -42,6 +43,7 @@ interface RoutingHeader {
   condition: string
   bom_number: string
   is_primary: string
+  default_backflush_warehouse: string
   creation_date: string
   creation_man: string
   approval_status: string
@@ -64,6 +66,7 @@ interface RoutingDetail {
   material_wastage_rate: string
   flowing_backward: string
   default_repository: string
+  default_repository_name: string
   operator: string
   is_outsourced: boolean
   inspect_type: string
@@ -97,6 +100,7 @@ const emptyHeader = (): RoutingHeader => ({
   condition: CONDITION_STATUS.ENABLED,
   bom_number: '',
   is_primary: '否',
+  default_backflush_warehouse: '',
   creation_date: '',
   creation_man: '',
   approval_status: '草稿'
@@ -119,6 +123,7 @@ const emptyDetail = (): RoutingDetail => ({
   material_wastage_rate: '',
   flowing_backward: '',
   default_repository: '',
+  default_repository_name: '',
   operator: '',
   is_outsourced: false,
   inspect_type: '无需检',
@@ -165,6 +170,10 @@ const headerDetailRecord = ref<RoutingHeader>(emptyHeader())
 const headerDetailTab = ref('info')
 const headerDetailDetails = ref<RoutingDetail[]>([])
 const headerDetailLoading = ref(false)
+
+// ==================== Modal Drag ====================
+const { modalStyle: detailModalStyle, onDragStart: detailOnDragStart, resetDrag: detailResetDrag } = useModalDrag()
+const { modalStyle: editModalStyle, onDragStart: editOnDragStart, resetDrag: editResetDrag } = useModalDrag()
 
 // ==================== 明细只读状态（跟随主表审批状态） ====================
 const selectedHeaderRecord = computed(() => {
@@ -280,7 +289,7 @@ const fetchWorkCenters = async () => {
 }
 const fetchProducts = async () => {
   try {
-    const res = await getItems({ item_properties: '产品,半成品,前处理骨架,混炼胶,预成型件', page: 1, limit: 9999 })
+    const res = await getItems({ business_scope: '生产', page: 1, limit: 9999 })
     const list = res.data.items || []
     productList.value = list
     productOptions.value = list.map((p: any) => ({ label: `${p.item_number} - ${p.item_name}`, value: p.item_number }))
@@ -351,6 +360,8 @@ const handleDetailWorkCenterChange = (form: RoutingDetail, val: string) => {
 }
 const handleDetailWarehouseChange = (form: RoutingDetail, val: string) => {
   form.default_repository = val
+  const found = warehouseList.value.find((w: any) => w.warehouse_number === val)
+  form.default_repository_name = found ? found.warehouse_name : ''
 }
 const handleInspectorChange = (form: RoutingDetail, val: string) => {
   form.inspector_number = val
@@ -408,7 +419,8 @@ const defaultDetailDataColumns: any[] = [
   { title: '配料方式', dataIndex: 'ingredient_addition_method', key: 'ingredient_addition_method', width: 100, resizable: true },
   { title: '投入物料', key: 'materials_summary', width: 200, resizable: true },
   { title: '倒冲', dataIndex: 'flowing_backward', key: 'flowing_backward', width: 80, resizable: true },
-  { title: '默认仓库', dataIndex: 'default_repository', key: 'default_repository', width: 100, resizable: true },
+  { title: '默认仓库编号', dataIndex: 'default_repository', key: 'default_repository', width: 120, resizable: true },
+  { title: '默认仓库名称', dataIndex: 'default_repository_name', key: 'default_repository_name', width: 120, resizable: true },
   { title: '操作员', dataIndex: 'operator', key: 'operator', width: 100, resizable: true },
   { title: '委外', dataIndex: 'is_outsourced', key: 'is_outsourced', width: 70, resizable: true },
   { title: '检验类型', dataIndex: 'inspect_type', key: 'inspect_type', width: 90, resizable: true },
@@ -450,7 +462,8 @@ const detailModalColumns = [
   { title: '投入物料', key: 'modal_materials_summary', width: 220 },
   { title: '超额报工', dataIndex: 'excess_reporting_ratio', key: 'excess_reporting_ratio', width: 90 },
   { title: '倒冲', dataIndex: 'flowing_backward', key: 'flowing_backward', width: 60 },
-  { title: '默认仓库', dataIndex: 'default_repository', key: 'default_repository', width: 100 },
+  { title: '默认仓库编号', dataIndex: 'default_repository', key: 'default_repository', width: 110 },
+  { title: '默认仓库名称', dataIndex: 'default_repository_name', key: 'default_repository_name', width: 110 },
   { title: '操作员', dataIndex: 'operator', key: 'operator', width: 80 },
   { title: '检验人', dataIndex: 'inspector_name', key: 'inspector_name', width: 100 },
   { title: '技术要求', dataIndex: 'technical_requirement', key: 'technical_requirement', width: 120 },
@@ -477,6 +490,7 @@ const handleHeaderDetail = async (record: RoutingHeader) => {
   headerDetailRecord.value = { ...record }
   headerDetailTab.value = 'info'
   headerDetailDetails.value = []
+  detailResetDrag()
   headerDetailVisible.value = true
   headerDetailLoading.value = true
   try {
@@ -504,10 +518,12 @@ const handleHeaderEdit = (record: RoutingHeader) => {
   headerEditForm.condition = record.condition || CONDITION_STATUS.ENABLED
   headerEditForm.bom_number = record.bom_number || ''
   headerEditForm.is_primary = record.is_primary || '否'
+  headerEditForm.default_backflush_warehouse = record.default_backflush_warehouse || ''
   headerEditForm.creation_date = record.creation_date || ''
   headerEditForm.creation_man = record.creation_man || ''
   headerEditForm.approval_status = record.approval_status || '草稿'
   console.log('[handleHeaderEdit] 赋值后 headerEditForm:', JSON.stringify(headerEditForm))
+  editResetDrag()
   headerEditVisible.value = true
 }
 const handleHeaderDelete = (record: RoutingHeader) => {
@@ -919,6 +935,14 @@ onMounted(() => {
           </a-col>
         </a-row>
         <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="默认倒冲仓库">
+              <a-select v-model:value="headerCreateForm.default_backflush_warehouse" show-search allow-clear placeholder="请选择倒冲仓库"
+                :options="warehouseOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())" />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="16">
           <a-col :span="12"><a-form-item label="生产自动入库规则"><a-select v-model:value="headerCreateForm.production_automatic_inventory_entry_rules"><a-select-option value="Y">Y</a-select-option><a-select-option value="N">N</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="12">
             <a-form-item label="状态"><a-select v-model:value="headerCreateForm.condition" placeholder="请选择"><a-select-option :value="CONDITION_STATUS.ENABLED">启用</a-select-option><a-select-option :value="CONDITION_STATUS.DISABLED">禁用</a-select-option></a-select></a-form-item>
@@ -928,7 +952,10 @@ onMounted(() => {
     </a-modal>
 
     <!-- ========== Header Edit Modal ========== -->
-    <a-modal v-model:open="headerEditVisible" title="编辑工艺路线" @ok="handleHeaderEditOk" okText="确认" cancelText="取消" width="700px">
+    <a-modal v-model:open="headerEditVisible" @ok="handleHeaderEditOk" okText="确认" cancelText="取消" width="700px" :style="editModalStyle">
+      <template #title>
+        <div class="drag-handle" @mousedown="editOnDragStart">编辑工艺路线</div>
+      </template>
       <a-form :label-col="{ span: 8 }" :wrapper-col="{ span: 14 }">
         <a-row :gutter="16">
           <a-col :span="12"><a-form-item label="工艺路线编号"><a-input v-model:value="headerEditForm.process_route_number" disabled /></a-form-item></a-col>
@@ -958,6 +985,12 @@ onMounted(() => {
           </a-col>
         </a-row>
         <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="默认倒冲仓库">
+              <a-select v-model:value="headerEditForm.default_backflush_warehouse" show-search allow-clear placeholder="请选择倒冲仓库"
+                :options="warehouseOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())" />
+            </a-form-item>
+          </a-col>
           <a-col :span="12"><a-form-item label="生产自动入库规则"><a-select v-model:value="headerEditForm.production_automatic_inventory_entry_rules"><a-select-option value="Y">Y</a-select-option><a-select-option value="N">N</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="12">
             <a-form-item label="状态"><a-select v-model:value="headerEditForm.condition" placeholder="请选择"><a-select-option :value="CONDITION_STATUS.ENABLED">启用</a-select-option><a-select-option :value="CONDITION_STATUS.DISABLED">禁用</a-select-option></a-select></a-form-item>
@@ -1028,11 +1061,14 @@ onMounted(() => {
           <a-col :span="12"><a-form-item label="倒冲"><a-input v-model:value="detailCreateForm.flowing_backward" /></a-form-item></a-col>
           <a-col :span="12">
             <a-form-item label="默认仓库">
-              <a-select v-model:value="detailCreateForm.default_repository" show-search allow-clear placeholder="请选择"
+              <a-select v-model:value="detailCreateForm.default_repository" show-search allow-clear placeholder="请选择仓库编号"
                 :options="warehouseOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())"
                 @change="(val: string) => handleDetailWarehouseChange(detailCreateForm, val)" />
             </a-form-item>
           </a-col>
+        </a-row>
+        <a-row :gutter="16">
+          <a-col :span="12"><a-form-item label="仓库名称"><a-input v-model:value="detailCreateForm.default_repository_name" disabled /></a-form-item></a-col>
         </a-row>
         <a-row :gutter="16">
           <a-col :span="12"><a-form-item label="操作员"><a-input v-model:value="detailCreateForm.operator" /></a-form-item></a-col>
@@ -1206,11 +1242,14 @@ onMounted(() => {
           <a-col :span="12"><a-form-item label="倒冲"><a-input v-model:value="detailEditForm.flowing_backward" /></a-form-item></a-col>
           <a-col :span="12">
             <a-form-item label="默认仓库">
-              <a-select v-model:value="detailEditForm.default_repository" show-search allow-clear placeholder="请选择"
+              <a-select v-model:value="detailEditForm.default_repository" show-search allow-clear placeholder="请选择仓库编号"
                 :options="warehouseOptions" :filter-option="(input: string, option: any) => option.label.toLowerCase().includes(input.toLowerCase())"
                 @change="(val: string) => handleDetailWarehouseChange(detailEditForm, val)" />
             </a-form-item>
           </a-col>
+        </a-row>
+        <a-row :gutter="16">
+          <a-col :span="12"><a-form-item label="仓库名称"><a-input v-model:value="detailEditForm.default_repository_name" disabled /></a-form-item></a-col>
         </a-row>
         <a-row :gutter="16">
           <a-col :span="12"><a-form-item label="操作员"><a-input v-model:value="detailEditForm.operator" /></a-form-item></a-col>
@@ -1327,7 +1366,10 @@ onMounted(() => {
     </a-modal>
 
     <!-- ========== Header Detail Modal (Tabs) ========== -->
-    <a-modal v-model:open="headerDetailVisible" :title="`工艺路线详情 - ${headerDetailRecord.process_route_number}`" :footer="null" width="1400px" :bodyStyle="{ padding: '12px 16px' }">
+    <a-modal v-model:open="headerDetailVisible" :footer="null" width="1400px" :bodyStyle="{ padding: '12px 16px' }" :style="detailModalStyle">
+      <template #title>
+        <div class="drag-handle" @mousedown="detailOnDragStart">工艺路线详情 - {{ headerDetailRecord.process_route_number }}</div>
+      </template>
       <a-spin :spinning="headerDetailLoading">
         <a-tabs v-model:activeKey="headerDetailTab" :animated="false">
           <!-- Tab 1: 基本信息 -->
@@ -1620,4 +1662,5 @@ onMounted(() => {
   align-items: center;
   min-width: 100%;
 }
+.drag-handle { cursor: move; user-select: none; }
 </style>

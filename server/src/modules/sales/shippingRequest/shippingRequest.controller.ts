@@ -28,7 +28,7 @@ const generateShippingRequestNumber = async (): Promise<string> => {
 // ==================== 待发货列表（来自销售订单明细） ====================
 export const getPendingShipments = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { page = 1, limit = 20, search = '' } = req.query;
+    const { page = 1, limit = 20, search = '', approval_status = '' } = req.query;
     const pageNum = Number(page);
     const pageSize = Number(limit);
     const offset = (pageNum - 1) * pageSize;
@@ -41,6 +41,16 @@ export const getPendingShipments = async (req: Request, res: Response, next: Nex
       whereClause += ` AND (d.item_number LIKE :search OR d.item_name LIKE :search OR h.sales_order_number LIKE :search OR h.customer_name LIKE :search)`;
       replacements.search = `%${search}%`;
     }
+    if (approval_status) {
+      const arr = String(approval_status).split(',').filter(Boolean);
+      if (arr.length === 1) {
+        whereClause = whereClause.replace(`AND h.approval_status = N'已审批'`, `AND h.approval_status = :approval_status`);
+        replacements.approval_status = arr[0];
+      } else if (arr.length > 1) {
+        whereClause = whereClause.replace(`AND h.approval_status = N'已审批'`, `AND h.approval_status IN (${arr.map((_: string, i: number) => `:aps${i}`).join(', ')})`);
+        arr.forEach((s: string, i: number) => { replacements[`aps${i}`] = s; });
+      }
+    }
 
     const [countResult]: any = await sequelize.query(
       `SELECT COUNT(*) as total FROM sales_order_detail d
@@ -50,15 +60,24 @@ export const getPendingShipments = async (req: Request, res: Response, next: Nex
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        Select d.*,
+        Select d.id, d.sales_order_number, d.line_number, d.item_number, d.item_name,
+               d.specifications, d.basic_unit, d.product_drawing_number,
+               d.order_quantity, d.unit_price, d.total_amount,
+               d.shipped_quantity, d.delivery_date, d.promised_delivery_date,
+               d.shipping_status, d.remark, d.refunded_quantity, d.status,
                h.customer_number, h.customer_name, h.delivery_date as header_delivery_date,
-               h.sales_order_number as order_number, h.head_of_sales,
+               h.sales_order_number as order_number, h.head_of_sales, h.linkman, h.contacts,
+               h.order_date, h.order_status, h.[condition], h.remark as header_remark,
+               h.creation_date, h.creation_man, h.customer_po_number, h.approval_status,
                ISNULL((SELECT SUM(srd.ship_quantity) FROM shipping_request_detail srd
                  INNER JOIN shipping_request sr ON sr.request_number = srd.request_number
                  WHERE srd.sales_detail_id = d.id AND sr.status != N'已取消'), 0) as applied_quantity,
+               COALESCE(NULLIF(d.customer_item_number, ''), cm.customer_item_number) as customer_item_number,
+               COALESCE(NULLIF(d.customer_item_description, ''), cm.customer_item_description) as customer_item_description,
                ROW_NUMBER() OVER (ORDER BY h.sales_order_number, d.line_number) AS _row_num
         FROM sales_order_detail d
         INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number
+        LEFT JOIN customer_material_mapping cm ON cm.customer_number = h.customer_number AND cm.item_number = d.item_number AND cm.approval_status = N'已审核'
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });

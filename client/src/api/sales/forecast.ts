@@ -24,7 +24,7 @@ export function getForecastConsumptionLog(id: string) {
   return request.get(`/forecasts/${encodeURIComponent(id)}/consumption`)
 }
 
-export function getForecastDetailsPage(params?: { page?: number; limit?: number; search?: string; consumption_status?: string }) {
+export function getForecastDetailsPage(params?: { page?: number; limit?: number; search?: string; consumption_status?: string; approval_status?: string }) {
   return request.get('/forecasts/details-page', { params })
 }
 
@@ -42,4 +42,13 @@ export function updateForecastDetail(detailId: number, data: any) {
 
 export function deleteForecastDetail(detailId: number) {
   return request.delete(`/forecasts/details/${detailId}`)
+}
+
+// ==================== 导出/导入 ====================
+export function exportForecasts() {
+  return request.get('/forecasts/export', { responseType: 'blob' })
+}
+
+export function importForecasts(data: FormData) {
+  return request.post('/forecasts/import', data)
 }
