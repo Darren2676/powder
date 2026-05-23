@@ -6,6 +6,8 @@ import stockInRoutes from './stockIn/stockIn.routes';
 import stockCountRoutes from './stockCount/stockCount.routes';
 import abnormalIORoutes from './abnormalIO/abnormalIO.routes';
 import packingOrderRoutes from './packingOrder/packingOrder.routes';
+import scrapDisposalRoutes from './scrapDisposal/scrapDisposal.routes';
+import scrapTransactionRoutes from './scrapTransaction/scrapTransaction.routes';
 
 const router = Router();
 
@@ -15,5 +17,7 @@ router.use('/stock-ins', stockInRoutes);
 router.use('/stock-counts', stockCountRoutes);
 router.use('/abnormal-io', abnormalIORoutes);
 router.use('/packing-orders', packingOrderRoutes);
+router.use('/scrap-disposal', scrapDisposalRoutes);
+router.use('/scrap-transactions', scrapTransactionRoutes);
 
 export default router;

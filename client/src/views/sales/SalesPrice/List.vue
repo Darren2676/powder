@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, createVNode } from 'vue'
+import { ref, reactive, computed, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined, DownloadOutlined, UploadOutlined, DeleteOutlined, EyeOutlined, EditOutlined, ExclamationCircleOutlined, DownOutlined, SettingOutlined } from '@ant-design/icons-vue'
-import { getSalesPriceLists, getSalesPriceListDetail, createSalesPriceList, updateSalesPriceList, deleteSalesPriceList, exportSalesPriceLists, importSalesPriceList } from '@/api/sales/salesPrice'
+import { getSalesPriceLists, getSalesPriceListDetail, createSalesPriceList, updateSalesPriceList, deleteSalesPriceList, exportSalesPriceLists, importSalesPriceList, downloadImportTemplate } from '@/api/sales/salesPrice'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getCustomers } from '@/api/master-data/customer'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval } from '@/api/system/approval'
@@ -11,6 +11,8 @@ import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
+import { useModalDrag } from '@/composables/useModalDrag'
+import { usePagePermission } from '@/composables/usePagePermission'
 
 // ==================== 数据 ====================
 
@@ -20,6 +22,7 @@ const dataList = ref<any[]>([])
 const filterApproval = ref('')
 
 const modalVisible = ref(false)
+const { modalStyle, onDragStart, resetDrag } = useModalDrag()
 const modalTitle = ref('新建销售价目表')
 const isView = ref(false)
 const formData = ref<any>({})
@@ -30,6 +33,9 @@ const customerOptions = ref<any[]>([])
 
 // 导入
 const importFileRef = ref<HTMLInputElement | null>(null)
+
+// ==================== 字段权限 ====================
+const { canViewField, filterColumns: filterPermColumns } = usePagePermission('sales-prices')
 
 // ==================== 列定义 ====================
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getSalesPriceLists)
@@ -49,32 +55,47 @@ const defaultDataColumns: any[] = [
   { title: '创建人', dataIndex: 'creation_man', key: 'creation_man', width: 90, resizable: true }
 ]
 
+// 根据字段权限过滤主表列（主表本身无价格列，此处预留扩展）
+const filteredDataColumns = filterPermColumns(defaultDataColumns).value
+
 const {
   columns, columnSettingVisible, columnSettingList, columnSettingSaving,
   openColumnSetting, moveColumnUp, moveColumnDown, saveColumnSetting, resetColumnSetting,
   loadColumnPreference, handleResizeColumn
-} = useColumnPreference('sales_price_list', defaultDataColumns, {
+} = useColumnPreference('sales_price_list', filteredDataColumns, {
   fixedLeft: [],
   fixedRight: [{ title: '操作', key: 'action', width: 120, fixed: 'right' as const }]
 })
 
-const detailColumns = [
-  { title: '行号', dataIndex: 'line_number', key: 'line_number', width: 60 },
-  { title: '物料编号', dataIndex: 'item_number', key: 'item_number', width: 150 },
-  { title: '物料名称', dataIndex: 'item_name', key: 'item_name', width: 140 },
-  { title: '物料分类', dataIndex: 'item_category', key: 'item_category', width: 100 },
-  { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 120 },
-  { title: '含税单价', dataIndex: 'tax_inclusive_price', key: 'tax_inclusive_price', width: 100 },
-  { title: '未税单价', dataIndex: 'tax_exclusive_price', key: 'tax_exclusive_price', width: 100 },
-  { title: '税率%', dataIndex: 'tax_rate', key: 'tax_rate', width: 80 },
-  { title: '分段价格', dataIndex: 'enable_tiered_pricing', key: 'enable_tiered_pricing', width: 90 },
-  { title: '起始数量', dataIndex: 'start_quantity', key: 'start_quantity', width: 100 },
-  { title: '结束数量', dataIndex: 'end_quantity', key: 'end_quantity', width: 100 },
-  { title: '计价单位', dataIndex: 'pricing_unit', key: 'pricing_unit', width: 90 },
-  { title: '含税最低价', dataIndex: 'min_price_inclusive', key: 'min_price_inclusive', width: 110 },
-  { title: '不含税最低价', dataIndex: 'min_price_exclusive', key: 'min_price_exclusive', width: 110 },
-  { title: '操作', key: 'action', width: 60 }
-]
+const detailColumns = computed(() => {
+  const base = [
+    { title: '行号', dataIndex: 'line_number', key: 'line_number', width: 60 },
+    { title: '物料编号', dataIndex: 'item_number', key: 'item_number', width: 150 },
+    { title: '物料名称', dataIndex: 'item_name', key: 'item_name', width: 140 },
+    { title: '物料分类', dataIndex: 'item_category', key: 'item_category', width: 100 },
+    { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 120 },
+    { title: '含税单价', dataIndex: 'tax_inclusive_price', key: 'tax_inclusive_price', width: 100 },
+    { title: '未税单价', dataIndex: 'tax_exclusive_price', key: 'tax_exclusive_price', width: 100 },
+    { title: '税率%', dataIndex: 'tax_rate', key: 'tax_rate', width: 80 },
+    { title: '分段价格', dataIndex: 'enable_tiered_pricing', key: 'enable_tiered_pricing', width: 90 },
+    { title: '起始数量', dataIndex: 'start_quantity', key: 'start_quantity', width: 100 },
+    { title: '结束数量', dataIndex: 'end_quantity', key: 'end_quantity', width: 100 },
+    { title: '计价单位', dataIndex: 'pricing_unit', key: 'pricing_unit', width: 90 },
+    { title: '含税最低价', dataIndex: 'min_price_inclusive', key: 'min_price_inclusive', width: 110 },
+    { title: '不含税最低价', dataIndex: 'min_price_exclusive', key: 'min_price_exclusive', width: 110 },
+    { title: '操作', key: 'action', width: 60 }
+  ]
+  // 根据字段权限过滤明细列中的敏感字段
+  if (typeof window !== 'undefined') {
+    return base.filter(col => {
+      const key = col.dataIndex || col.key
+      const sensitiveKeys = ['tax_inclusive_price', 'tax_exclusive_price', 'tax_rate', 'min_price_inclusive', 'min_price_exclusive']
+      if (sensitiveKeys.includes(key) && !canViewField(key)) return false
+      return true
+    })
+  }
+  return base
+})
 
 // ==================== 加载 ====================
 const fetchList = async () => {
@@ -114,6 +135,7 @@ const openCreate = () => {
   }
   detailRows.value = []
   modalVisible.value = true
+  resetDrag()
 }
 
 const openView = async (record: any) => {
@@ -123,6 +145,7 @@ const openView = async (record: any) => {
   formData.value = res.data?.header || {}
   detailRows.value = res.data?.details || []
   modalVisible.value = true
+  resetDrag()
 }
 
 const openEdit = async (record: any) => {
@@ -132,6 +155,7 @@ const openEdit = async (record: any) => {
   formData.value = res.data?.header || {}
   detailRows.value = (res.data?.details || []).map((d: any) => ({ ...d, enable_tiered_pricing: !!d.enable_tiered_pricing }))
   modalVisible.value = true
+  resetDrag()
 }
 
 const handleDelete = (record: any) => {
@@ -278,6 +302,19 @@ const handleExport = async () => {
 
 // ==================== 导入 ====================
 const triggerImport = () => { importFileRef.value?.click() }
+const handleDownloadTemplate = async () => {
+  try {
+    const res: any = await downloadImportTemplate()
+    const url = window.URL.createObjectURL(new Blob([res.data]))
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', '销售价目表导入模板.xlsx')
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    message.success('模板下载成功')
+  } catch { /* error handled by request interceptor */ }
+}
 const handleImportFile = async (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
@@ -306,6 +343,7 @@ const handleImportFile = async (e: Event) => {
         <a-button @click="fetchList"><template #icon><ReloadOutlined /></template></a-button>
         <a-button @click="handleExport"><template #icon><DownloadOutlined /></template>导出</a-button>
         <a-button @click="triggerImport"><template #icon><UploadOutlined /></template>导入</a-button>
+        <a-button @click="handleDownloadTemplate"><template #icon><DownloadOutlined /></template>下载模板</a-button>
         <input ref="importFileRef" type="file" accept=".xlsx,.xls" style="display:none" @change="handleImportFile" />
         <a-button @click="openColumnSetting"><template #icon><SettingOutlined /></template>列设置</a-button>
         <a-button type="primary" @click="openCreate"><template #icon><PlusOutlined /></template>新建</a-button>
@@ -346,7 +384,10 @@ const handleImportFile = async (e: Event) => {
     </a-table>
 
     <!-- 编辑/查看弹窗 -->
-    <a-modal v-model:open="modalVisible" :title="modalTitle" width="1200px" @ok="handleSave" :ok-button-props="{ style: isView ? { display: 'none' } : {} }" :cancel-text="isView ? '关闭' : '取消'">
+    <a-modal v-model:open="modalVisible" width="1200px" :style="modalStyle" @ok="handleSave" :ok-button-props="{ style: isView ? { display: 'none' } : {} }" :cancel-text="isView ? '关闭' : '取消'">
+      <template #title>
+        <div class="drag-handle" @mousedown="onDragStart">{{ modalTitle }}</div>
+      </template>
       <a-form layout="vertical">
         <a-row :gutter="16">
           <a-col :span="6"><a-form-item label="价目表名称" required>
@@ -450,3 +491,10 @@ const handleImportFile = async (e: Event) => {
     />
   </div>
 </template>
+
+<style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+</style>

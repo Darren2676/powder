@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>检验到报废仓处理全流程逻辑流程图 - MES系统</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+  .page { max-width: 1400px; margin: 0 auto; padding: 32px; background: #fff; min-height: 100vh; }
+  h1 { text-align: center; font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 20px; color: #1a1a2e; margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 16px; color: #1a1a2e; margin: 20px 0 10px; }
+  .intro { background: #fff7e6; border: 1px solid #ffd591; border-radius: 6px; padding: 16px; margin-bottom: 24px; font-size: 14px; }
+  .mermaid { text-align: center; margin: 16px 0; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>检验到报废仓处理全流程逻辑流程图</h1>
+<div class="subtitle">MES系统 | 从来料/生产/委外检验到报废仓处置的完整业务链路</div>
+
+<div class="intro">
+  <strong>文档说明：</strong>本文档完整展示了从质量检验开始，经过不合格品处理，选择报废方式生成报废入库单，审批后自动更新报废仓库存，再通过报废处置页面进行FIFO出库处置，最终生成各类统计报表的全流程。涵盖状态流转、库存联动、审批控制和数据实体关系。
+</div>
+
+<!-- ==================== 一、全流程总览 ==================== -->
+<h2>一、检验到报废仓处理全流程总览</h2>
+<div class="mermaid">
+graph TB
+    subgraph 检验阶段["🔍 检验阶段"]
+        ARRIVAL[采购收货/生产报工/委外收货] --> INSP[质量检验<br/>purchase_inspection / production_inspection]
+        INSP --> CHECK_QUAL{检验结果}
+        CHECK_QUAL -->|合格| PASS[正常入库合格品仓]
+        CHECK_QUAL -->|不合格| NC[自动生成不合格品单<br/>nonconforming_product<br/>handling_status=待处理]
+    end
+
+    subgraph NC处理["⚠️ 不合格品处理"]
+        NC --> METHOD{选择处理方式}
+        METHOD -->|挑选| SORT[挑选后合格入库]
+        METHOD -->|拒收| REJECT[退回供应商]
+        METHOD -->|报废| SCRAP[生成报废入库单<br/>stock_in type=报废入库<br/>approval_status=草稿]
+        METHOD -->|特采| SPECIAL[让步接收合格入库]
+        METHOD -->|退货| RETURN[退货入库待检仓]
+        METHOD -->|返修| REWORK[创建返修单<br/>rework_order]
+    end
+
+    subgraph 报废入库["📦 报废入库（自动）"]
+        SCRAP --> SI_APPROVE{报废入库单审批}
+        SI_APPROVE -->|审批通过| AUTO_INV[自动更新库存<br/>Phase 3核心]
+        SI_APPROVE -->|驳回| SI_DRAFT[返回草稿修改]
+        AUTO_INV --> BATCH[写入批次库存<br/>finished_batch_inventory<br/>quality_status=不合格品]
+        BATCH --> SUMMARY[更新汇总库存<br/>finished_goods_inventory]
+        SUMMARY --> TXN_IN[记录入库流水<br/>inventory_transaction<br/>source_type=报废入库]
+        TXN_IN --> NC_DONE[更新NC单状态=已完成]
+    end
+
+    subgraph 报废处置["🔧 报废处置出库"]
+        NC_DONE --> VIEW[查看报废仓库存<br/>按物料汇总/批次明细]
+        VIEW --> CREATE_SD[创建报废处置申请<br/>scrap_disposal<br/>单号=SD-YYYYMMDD-NNN]
+        CREATE_SD --> CONFIRM{确认处置}
+        CONFIRM -->|确认| FIFO[FIFO批次扣减<br/>按入库日期从早到晚]
+        FIFO --> DEDUCT[扣减批次库存<br/>finished_batch_inventory]
+        DEDUCT --> SYNC[同步汇总库存<br/>finished_goods_inventory]
+        SYNC --> TXN_OUT[记录出库流水<br/>inventory_transaction<br/>source_type=报废处置]
+        TXN_OUT --> DONE[处置完成<br/>scrap_disposal status=已确认]
+        CONFIRM -->|驳回| REJECT_SD[处置驳回]
+    end
+
+    subgraph 报表["📊 报表统计"]
+        DONE --> R1[报废单管理报表]
+        DONE --> R2[报废仓库存报表]
+        DONE --> R3[报废处置报表]
+        DONE --> R4[质量统计分析报表]
+    end
+</div>
+
+<div class="note">
+  <strong>流程概述：</strong>质量检验发现不合格品后自动生成NC单，选择"报废"处理方式后系统自动创建报废入库单（草稿状态）。入库单审批通过后，系统自动执行库存更新：写入报废批次库存（quality_status='不合格品'）→ 更新汇总库存 → 记录库存流水 → 更新NC单状态为已完成。后续在报废处置页面查看库存、创建处置申请、确认处置后系统自动执行FIFO批次扣减，完成报废仓出库。全流程数据可追溯，支持4类报表统计。
+</div>
+
+<!-- ==================== 二、检验与不合格品处理 ==================== -->
+<h2>二、检验与不合格品处理流程</h2>
+<div class="mermaid">
+graph TB
+    START([物料到货/生产完成]) --> TYPE{检验来源类型}
+
+    TYPE -->|来料检验| PUR_INSP[采购质检单<br/>purchase_quality_inspection]
+    TYPE -->|生产检验| PROD_INSP[生产质检单<br/>production_inspection]
+    TYPE -->|委外检验| OUT_INSP[委外质检单<br/>outsourcing_inspection]
+
+    PUR_INSP --> INSP_RESULT{检验结果}
+    PROD_INSP --> INSP_RESULT
+    OUT_INSP --> INSP_RESULT
+
+    INSP_RESULT -->|合格| PASS[inspect_result=合格<br/>正常入库]
+    INSP_RESULT -->|不合格| AUTO_NC[自动生成不合格品单]
+
+    AUTO_NC --> CREATE_NC[INSERT nonconforming_product<br/>source_type=来源类型<br/>source_number=检验单号<br/>unqualified_quantity=不合格数量<br/>handling_status=待处理]
+
+    CREATE_NC --> NC_LIST[不合格品列表<br/>quality/NonconformingProduct/List.vue]
+
+    NC_LIST --> HANDLING{选择处理方式<br/>根据来源类型校验}
+
+    HANDLING -->|来料: 挑选| SORT[挑选处理<br/>更新合格/不合格数量]
+    HANDLING -->|来料: 拒收| REJECT[拒收处理<br/>退回供应商]
+    HANDLING -->|来料/生产: 报废| SCRAP_IN[报废处理<br/>生成报废入库单]
+    HANDLING -->|来料: 特采| SPECIAL[特采处理<br/>让步接收合格入库]
+    HANDLING -->|来料: 退货| RETURN[退货处理<br/>退货入库待检仓]
+    HANDLING -->|生产: 返修| REWORK[返修处理<br/>创建返修单]
+    HANDLING -->|生产: 报废| SCRAP_IN
+    HANDLING -->|生产: 让步接收| CONCEDE[让步接收<br/>合格品入库]
+</div>
+
+<div class="note">
+  <strong>处理方式校验规则：</strong>
+  <ul>
+    <li><strong>来料检验</strong>：可选 挑选 / 拒收 / 报废 / 特采 / 退货（5种）</li>
+    <li><strong>生产检验</strong>：可选 返修 / 报废 / 让步接收（3种）</li>
+    <li><strong>委外检验</strong>：可用来料+生产的所有方式（8种）</li>
+    <li>返修必须指定返修工序号，退货必须指定退货单号</li>
+    <li>报废处理自动生成报废入库单（stock_in_type='报废入库'）</li>
+  </ul>
+</div>
+
+<!-- ==================== 三、报废入库单自动生成 ==================== -->
+<h2>三、报废入库单自动生成流程</h2>
+<div class="mermaid">
+graph TB
+    START([选择报废处理]) --> GET_WH[获取报废仓库信息<br/>warehouse_type='报废仓库'<br/>warehouse_number LIKE 'SCRAP%']
+
+    GET_WH --> CHECK_WH{报废仓库是否存在?}
+    CHECK_WH -->|否| ERR[错误：未找到报废仓库<br/>请先创建报废仓库]
+    CHECK_WH -->|是| GEN_SI_NO[生成报废入库单号<br/>SI-YYYYMMDD-NNN]
+
+    GEN_SI_NO --> INSERT_SI[INSERT stock_in<br/>stock_in_type='报废入库'<br/>warehouse_number=报废仓<br/>approval_status='草稿'<br/>remark='报废入库 - 来源不合格品单 NC号']
+
+    INSERT_SI --> INSERT_SI_D[INSERT stock_in_detail<br/>item_number/item_name<br/>stock_in_quantity=报废数量<br/>unqualified_quantity=报废数量]
+
+    INSERT_SI_D --> UPDATE_NC[UPDATE nonconforming_product<br/>handling_method='报废'<br/>handling_status='已完成'<br/>scrap_quantity=报废数量<br/>stock_in_number=入库单号<br/>handling_date=当前时间]
+
+    UPDATE_NC --> UPDATE_INSP[更新检验单<br/>defect_handling='报废'<br/>scrap_type/scrap_quantity]
+
+    UPDATE_INSP --> DONE[报废入库单创建完成<br/>等待审批]
+
+    style ERR fill:#fff1f0,color:#f5222d
+    style DONE fill:#f6ffed,color:#52c41a
+</div>
+
+<table>
+  <tr><th>步骤</th><th>操作</th><th>数据库表</th><th>关键逻辑</th></tr>
+  <tr><td>1</td><td>获取报废仓库</td><td>warehouse</td><td>warehouse_type='报废仓库'，取第一个</td></tr>
+  <tr><td>2</td><td>生成入库单号</td><td>-</td><td>SI-YYYYMMDD-NNN格式</td></tr>
+  <tr><td>3</td><td>创建入库单主表</td><td>stock_in</td><td>stock_in_type='报废入库'，approval_status='草稿'</td></tr>
+  <tr><td>4</td><td>创建入库明细</td><td>stock_in_detail</td><td>物料信息+报废数量</td></tr>
+  <tr><td>5</td><td>更新NC单</td><td>nonconforming_product</td><td>handling_method='报废'，status='已完成'，关联stock_in_number</td></tr>
+  <tr><td>6</td><td>更新检验单</td><td>purchase_quality_inspection / production_inspection</td><td>defect_handling='报废'</td></tr>
+</table>
+
+<!-- ==================== 四、报废入库审批与库存联动 ==================== -->
+<h2>四、报废入库审批与库存联动（核心）</h2>
+<div class="mermaid">
+graph TB
+    START([提交报废入库单审批]) --> SUBMIT[approval_status: 草稿 → 审批中]
+    SUBMIT --> LOG[记录审批日志<br/>approval_log]
+    LOG --> APPROVE_RESULT{审批结果}
+
+    APPROVE_RESULT -->|驳回| REJECT[approval_status: 审批中 → 草稿<br/>可修改后重新提交]
+    APPROVE_RESULT -->|审批通过| TRIGGER[触发审批回调<br/>scrapInventoryHandler.onStockInApproved]
+
+    TRIGGER --> CHECK_TYPE{检查入库类型<br/>stock_in_type='报废入库'?}
+    CHECK_TYPE -->|否| SKIP[跳过处理]
+    CHECK_TYPE -->|是| GEN_BATCH_NO[生成批次号<br/>FB-YYYYMMDD-###]
+
+    GEN_BATCH_NO --> INSERT_BATCH[INSERT finished_batch_inventory<br/>batch_number=批次号<br/>item_number/item_name<br/>quantity=报废数量<br/>inbound_date=当前日期<br/>quality_status='不合格品'<br/>warehouse_type='报废仓库']
+
+    INSERT_BATCH --> UPDATE_SUMMARY[UPDATE/INSERT finished_goods_inventory<br/>WHERE quality_status='不合格品'<br/>quantity=quantity+报废数量]
+
+    UPDATE_SUMMARY --> INSERT_TXN[INSERT inventory_transaction<br/>transaction_type='入库'<br/>source_type='报废入库'<br/>quantity=报废数量<br/>batch_number=批次号]
+
+    INSERT_TXN --> WRITE_BACK[回写stock_in_detail<br/>batch_number=批次号]
+
+    WRITE_BACK --> FINAL[审批完成<br/>approval_status='已审批'<br/>报废库存已更新]
+
+    style TRIGGER fill:#e6f7ff,color:#1890ff
+    style INSERT_BATCH fill:#f6ffed,color:#52c41a
+    style UPDATE_SUMMARY fill:#f6ffed,color:#52c41a
+    style INSERT_TXN fill:#f6ffed,color:#52c41a
+</div>
+
+<div class="note">
+  <strong>审批回调机制：</strong>
+  <ul>
+    <li>审批服务（approval.service.ts）在审批通过后调用注册的回调函数</li>
+    <li>stock_in 类型的回调注册在 scrapInventoryHandler.ts 中</li>
+    <li>仅处理 stock_in_type='报废入库' 的入库单</li>
+    <li>自动执行4步库存更新：批次库存 → 汇总库存 → 库存流水 → 回写批次号</li>
+    <li>报废入库的 quality_status 固定为 '不合格品'，与正常成品区分</li>
+  </ul>
+</div>
+
+<!-- ==================== 五、审批反审与库存回退 ==================== -->
+<h2>五、审批反审与库存回退</h2>
+<div class="mermaid">
+graph TB
+    START([反审报废入库单]) --> CHECK_STATUS{当前审批状态<br/>已审批?}
+    CHECK_STATUS -->|否| ERR_STATUS[错误：仅已审批单据可反审]
+    CHECK_STATUS -->|是| TRIGGER_REVERSE[触发反审回调<br/>scrapInventoryHandler.onStockInReversed]
+
+    TRIGGER_REVERSE --> QUERY_BATCH[查询关联批次<br/>WHERE stock_in_number=入库单号<br/>AND quality_status='不合格品']
+
+    QUERY_BATCH --> CHECK_CONSUMED{检查批次是否被消耗?<br/>finished_batch_inventory<br/>WHERE batch_number IN 批次列表<br/>AND quantity < 原始数量}
+
+    CHECK_CONSUMED -->|是| BLOCK[阻止反审<br/>错误：批次已被处置消耗，无法反审]
+    CHECK_CONSUMED -->|否| DELETE_BATCH[DELETE finished_batch_inventory<br/>WHERE batch_number IN 批次列表]
+
+    DELETE_BATCH --> UPDATE_SUMMARY_REV[UPDATE finished_goods_inventory<br/>quantity=quantity-报废数量<br/>WHERE quality_status='不合格品']
+
+    UPDATE_SUMMARY_REV --> MARK_TXN[UPDATE inventory_transaction<br/>status='已作废'<br/>WHERE batch_number IN 批次列表]
+
+    MARK_TXN --> UPDATE_SI_REV[UPDATE stock_in<br/>approval_status='已撤销']
+
+    UPDATE_SI_REV --> DONE_REV[反审完成<br/>库存已回退]
+
+    style BLOCK fill:#fff1f0,color:#f5222d
+    style DONE_REV fill:#f6ffed,color:#52c41a
+</div>
+
+<div class="note">
+  <strong>反审规则：</strong>
+  <ul>
+    <li>仅已审批状态的单据可执行反审</li>
+    <li>反审前检查批次是否已被报废处置消耗</li>
+    <li>若批次数量 < 原始入库数量（已被部分处置），阻止反审</li>
+    <li>回退操作：删除批次库存 → 扣减汇总库存 → 标记流水作废 → 更新单据状态为已撤销</li>
+    <li>反审后需重新提交审批才能再次入库</li>
+  </ul>
+</div>
+
+<!-- ==================== 六、报废处置出库流程 ==================== -->
+<h2>六、报废处置出库流程</h2>
+<div class="mermaid">
+graph TB
+    START([报废处置申请]) --> VIEW_INV[查看报废仓库存<br/>GET /scrap-disposal/inventory]
+
+    VIEW_INV --> QUERY[SELECT item_number, item_name,<br/>SUM(quantity) as total_quantity<br/>FROM finished_batch_inventory<br/>WHERE warehouse_type='报废仓库'<br/>AND quality_status='不合格品'<br/>GROUP BY item_number, item_name]
+
+    QUERY --> DISPLAY[前端展示：物料汇总列表<br/>可点击批次明细查看具体批次<br/>ScrapDisposal/List.vue]
+
+    DISPLAY --> CREATE_DISPOSAL[创建报废处置申请<br/>POST /scrap-disposal/disposals]
+
+    CREATE_DISPOSAL --> GEN_SD_NO[生成处置单号<br/>SD-YYYYMMDD-NNN]
+
+    GEN_SD_NO --> INSERT_SD[INSERT scrap_disposal<br/>disposal_number=处置单号<br/>item_number/item_name<br/>disposal_quantity=处置数量<br/>disposal_reason=处置原因<br/>status='待确认']
+
+    INSERT_SD --> INSERT_SD_D[INSERT scrap_disposal_detail<br/>明细行信息]
+
+    INSERT_SD_D --> WAIT_CONFIRM[等待确认<br/>可删除/驳回待确认处置单]
+
+    WAIT_CONFIRM --> CONFIRM_ACTION{确认处置<br/>POST /scrap-disposal/disposals/:number/confirm}
+
+    CONFIRM_ACTION --> CHECK_QTY{处置数量 ≤ 库存数量?}
+    CHECK_QTY -->|否| ERR_QTY[错误：处置数量超过库存数量]
+    CHECK_QTY -->|是| FIFO_START[FIFO批次扣减开始]
+
+    FIFO_START --> QUERY_BATCH[SELECT * FROM finished_batch_inventory<br/>WHERE item_number=物料编号<br/>AND warehouse_type='报废仓库'<br/>AND quality_status='不合格品'<br/>ORDER BY inbound_date ASC, id ASC]
+
+    QUERY_BATCH --> DEDUCT_LOOP{遍历批次扣减}
+    DEDUCT_LOOP -->|批次1| DEDUCT1[remaining=处置数量<br/>IF batch.quantity >= remaining:<br/>  batch.quantity -= remaining<br/>  remaining=0<br/>ELSE:<br/>  remaining -= batch.quantity<br/>  batch.quantity=0<br/>  DELETE batch]
+
+    DEDUCT1 --> DEDUCT2[批次2...重复扣减<br/>直到 remaining=0]
+    DEDUCT2 --> DEDUCT_LOOP
+
+    DEDUCT_LOOP -->|remaining=0| SYNC_SUMMARY[同步汇总库存<br/>UPDATE finished_goods_inventory<br/>quantity=quantity-处置数量]
+
+    SYNC_SUMMARY --> INSERT_OUT_TXN[INSERT inventory_transaction<br/>transaction_type='出库'<br/>source_type='报废处置'<br/>quantity=处置数量<br/>disposal_number=处置单号]
+
+    INSERT_OUT_TXN --> UPDATE_SD[UPDATE scrap_disposal<br/>status='已确认'<br/>confirm_man=确认人<br/>confirm_date=确认时间]
+
+    UPDATE_SD --> DISPOSAL_DONE[处置完成]
+
+    style FIFO_START fill:#e6f7ff,color:#1890ff
+    style DEDUCT1 fill:#f6ffed,color:#52c41a
+    style SYNC_SUMMARY fill:#f6ffed,color:#52c41a
+    style DISPOSAL_DONE fill:#f6ffed,color:#52c41a
+</div>
+
+<table>
+  <tr><th>步骤</th><th>操作</th><th>数据库表</th><th>关键逻辑</th></tr>
+  <tr><td>1</td><td>查看报废库存</td><td>finished_batch_inventory</td><td>按物料汇总，warehouse_type='报废仓库'</td></tr>
+  <tr><td>2</td><td>创建处置申请</td><td>scrap_disposal + scrap_disposal_detail</td><td>生成处置单号SD-YYYYMMDD-NNN，status='待确认'</td></tr>
+  <tr><td>3</td><td>确认处置</td><td>-</td><td>校验处置数量 ≤ 库存数量</td></tr>
+  <tr><td>4</td><td>FIFO批次扣减</td><td>finished_batch_inventory</td><td>按 inbound_date ASC, id ASC 顺序扣减，批次为0时DELETE</td></tr>
+  <tr><td>5</td><td>同步汇总库存</td><td>finished_goods_inventory</td><td>扣减不合格品汇总数量</td></tr>
+  <tr><td>6</td><td>记录出库流水</td><td>inventory_transaction</td><td>source_type='报废处置'，transaction_type='出库'</td></tr>
+  <tr><td>7</td><td>更新处置单状态</td><td>scrap_disposal</td><td>status='已确认'，记录确认人/时间</td></tr>
+</table>
+
+<div class="note">
+  <strong>FIFO扣减规则：</strong>
+  <ul>
+    <li>按入库日期从早到晚（inbound_date ASC）排序批次</li>
+    <li>同日期批次按ID升序（id ASC）排序</li>
+    <li>逐个批次扣减，直到处置数量全部扣完</li>
+    <li>批次数量扣减为0时，DELETE该批次记录</li>
+    <li>若批次已被其他处置单消耗，阻止该批次相关的入库单反审</li>
+  </ul>
+</div>
+
+<!-- ==================== 七、状态流转图 ==================== -->
+<h2>七、报废入库单与处置单状态流转</h2>
+<div class="mermaid">
+stateDiagram-v2
+    state 报废入库单 {
+        [*] --> 草稿: 选择报废处理自动生成
+        草稿 --> 审批中: 提交审批
+        审批中 --> 草稿: 审批驳回
+        审批中 --> 已审批: 审批通过
+        已审批 --> 已撤销: 反审
+        已撤销 --> 草稿: 重新提交
+    }
+
+    state 报废处置单 {
+        [*] --> 待确认: 创建处置申请
+        待确认 --> 已确认: 确认处置
+        待确认 --> 已驳回: 驳回处置
+        待确认 --> 已删除: 删除处置单
+        已驳回 --> 待确认: 重新提交
+    }
+
+    state 不合格品单 {
+        [*] --> 待处理: 检验不合格自动生成
+        待处理 --> 处理中: 选择返修处理
+        处理中 --> 已完成: 返修完成检验
+        待处理 --> 已完成: 其他处理方式(报废/挑选等)
+    }
+</div>
+
+<div class="note">
+  <strong>状态说明：</strong>
+  <ul>
+    <li><strong>报废入库单</strong>：草稿 → 审批中 → 已审批（触发库存更新）→ 可反审回已撤销 → 重新提交</li>
+    <li><strong>报废处置单</strong>：待确认 → 已确认（触发FIFO出库）/ 已驳回 / 已删除（仅待确认状态可删除）</li>
+    <li><strong>不合格品单</strong>：待处理 → 处理中（仅返修）→ 已完成 / 待处理 → 已完成（其他处理方式）</li>
+  </ul>
+</div>
+
+<!-- ==================== 八、数据实体关系 ==================== -->
+<h2>八、报废仓处理数据实体关系</h2>
+<div class="mermaid">
+erDiagram
+    purchase_quality_inspection ||--o| nonconforming_product : generates
+    production_inspection ||--o| nonconforming_product : generates
+    outsourcing_inspection ||--o| nonconforming_product : generates
+
+    nonconforming_product ||--o| stock_in : creates
+    stock_in ||--o{ stock_in_detail : contains
+
+    stock_in ||--o{ finished_batch_inventory : generates
+    stock_in ||--o{ inventory_transaction : generates
+
+    finished_batch_inventory ||--o{ finished_goods_inventory : aggregates
+
+    finished_batch_inventory ||--o{ scrap_disposal : consumes
+    scrap_disposal ||--o{ scrap_disposal_detail : contains
+    scrap_disposal ||--o{ inventory_transaction : generates
+
+    warehouse ||--o{ stock_in : stores
+
+    nonconforming_product {
+        int id PK
+        string nonconforming_number
+        string source_type
+        string source_number
+        string item_number
+        string item_name
+        decimal unqualified_quantity
+        string handling_method
+        string handling_status
+        string scrap_type
+        decimal scrap_quantity
+        string stock_in_number FK
+        datetime handling_date
+    }
+    stock_in {
+        int id PK
+        string stock_in_number
+        string warehouse_number FK
+        string warehouse_name
+        string stock_in_type
+        string stock_in_date
+        string approval_status
+        string operator
+        string remark
+        datetime creation_date
+    }
+    stock_in_detail {
+        int id PK
+        string stock_in_number FK
+        int line_number
+        string item_number
+        string item_name
+        string specifications
+        decimal stock_in_quantity
+        decimal unqualified_quantity
+        string batch_number
+    }
+    finished_batch_inventory {
+        int id PK
+        string batch_number
+        string item_number
+        string item_name
+        decimal quantity
+        string warehouse_type
+        string quality_status
+        date inbound_date
+    }
+    finished_goods_inventory {
+        int id PK
+        string item_number
+        string item_name
+        decimal quantity
+        string warehouse_type
+        string quality_status
+    }
+    inventory_transaction {
+        int id PK
+        string transaction_number
+        string transaction_type
+        string source_type
+        string item_number
+        decimal quantity
+        string batch_number
+        string disposal_number
+        datetime transaction_date
+    }
+    scrap_disposal {
+        int id PK
+        string disposal_number
+        string item_number
+        string item_name
+        decimal disposal_quantity
+        string disposal_reason
+        string status
+        string confirm_man
+        datetime confirm_date
+    }
+    scrap_disposal_detail {
+        int id PK
+        string disposal_number FK
+        int line_number
+        string item_number
+        decimal quantity
+    }
+</div>
+
+<!-- ==================== 九、报表统计 ==================== -->
+<h2>九、报表统计功能</h2>
+
+<h3>9.1 报废单管理报表</h3>
+<div class="note">
+  <ul>
+    <li><strong>数据源</strong>：stock_in (stock_in_type='报废入库') + stock_in_detail + nonconforming_product</li>
+    <li><strong>功能</strong>：报废入库单列表（草稿/审批中/已审批），按物料统计报废数量，按来源统计（来料/生产/委外）</li>
+    <li><strong>页面</strong>：/quality/scrap-orders (ScrapOrder/List.vue)</li>
+  </ul>
+</div>
+
+<h3>9.2 报废仓库存报表</h3>
+<div class="note">
+  <ul>
+    <li><strong>数据源</strong>：finished_batch_inventory + finished_goods_inventory + inventory_transaction</li>
+    <li><strong>功能</strong>：按物料汇总当前库存，批次明细查询（批次号/数量/入库日期），库存流水查询（入库→处置），库存预警（超期积压）</li>
+    <li><strong>页面</strong>：/warehouse/scrap-disposal (ScrapDisposal/List.vue) - 库存TAB页</li>
+  </ul>
+</div>
+
+<h3>9.3 报废处置报表</h3>
+<div class="note">
+  <ul>
+    <li><strong>数据源</strong>：scrap_disposal + scrap_disposal_detail</li>
+    <li><strong>功能</strong>：处置申请单列表（待确认/已确认/已驳回），按原因统计处置数量，处置效率统计（申请→确认时长），确认人/时间追踪</li>
+    <li><strong>页面</strong>：/warehouse/scrap-disposal (ScrapDisposal/List.vue) - 处置单TAB页</li>
+  </ul>
+</div>
+
+<h3>9.4 质量统计分析报表</h3>
+<div class="note">
+  <ul>
+    <li><strong>数据源</strong>：nonconforming_product + stock_in + inspection tables</li>
+    <li><strong>功能</strong>：
+      <ul>
+        <li>不合格品处理统计（5种方式占比饼图）</li>
+        <li>报废率分析（按物料/供应商/生产线柱状图）</li>
+        <li>月度报废趋势（12个月折线+柱状组合图）</li>
+        <li>物料报废TOP 10（横向柱状图）</li>
+        <li>KPI卡片（不合格品总数/已处理数量/报废总数/待处理数量）</li>
+      </ul>
+    </li>
+    <li><strong>页面</strong>：/quality/scrap-quality-stats (ScrapQualityStats/Index.vue)</li>
+  </ul>
+</div>
+
+<!-- ==================== 十、关键业务规则汇总 ==================== -->
+<h2>十、关键业务规则汇总</h2>
+
+<h3>10.1 检验不合格品处理规则</h3>
+<div class="note">
+  <ul>
+    <li>检验不合格时自动生成不合格品单（nonconforming_product），handling_status='待处理'</li>
+    <li>来料检验可选：挑选 / 拒收 / 报废 / 特采 / 退货（5种）</li>
+    <li>生产检验可选：返修 / 报废 / 让步接收（3种）</li>
+    <li>委外检验可选：来料+生产的所有方式（8种）</li>
+    <li>返修必须指定返修工序号，退货必须指定退货单号</li>
+    <li>报废处理自动生成报废入库单（stock_in_type='报废入库'）</li>
+  </ul>
+</div>
+
+<h3>10.2 报废入库审批规则</h3>
+<div class="note">
+  <ul>
+    <li>报废入库单自动生成时为草稿状态，需提交审批</li>
+    <li>审批通过后自动触发库存更新（scrapInventoryHandler.onStockInApproved）</li>
+    <li>库存更新4步：写入批次库存 → 更新汇总库存 → 记录库存流水 → 回写批次号</li>
+    <li>报废入库的 quality_status 固定为 '不合格品'</li>
+    <li>审批驳回返回草稿状态，可修改后重新提交</li>
+  </ul>
+</div>
+
+<h3>10.3 报废入库反审规则</h3>
+<div class="note">
+  <ul>
+    <li>仅已审批状态的单据可执行反审</li>
+    <li>反审前检查批次是否已被报废处置消耗</li>
+    <li>若批次数量 < 原始入库数量（已被部分处置），阻止反审</li>
+    <li>回退操作：删除批次库存 → 扣减汇总库存 → 标记流水作废 → 更新单据状态为已撤销</li>
+  </ul>
+</div>
+
+<h3>10.4 报废处置FIFO规则</h3>
+<div class="note">
+  <ul>
+    <li>按入库日期从早到晚（inbound_date ASC）排序批次</li>
+    <li>同日期批次按ID升序（id ASC）排序</li>
+    <li>逐个批次扣减，直到处置数量全部扣完</li>
+    <li>批次数量扣减为0时，DELETE该批次记录</li>
+    <li>处置数量不能超过库存数量</li>
+  </ul>
+</div>
+
+<h3>10.5 删除与取消规则</h3>
+<div class="note">
+  <ul>
+    <li>草稿状态的报废入库单可直接删除，已审批的需先反审</li>
+    <li>待确认状态的报废处置单可删除/驳回，已确认的不可删除</li>
+    <li>已审批的报废入库单在未处置前可反审，已处置的阻止反审</li>
+  </ul>
+</div>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: 'basis'
+    },
+    state: {
+      useMaxWidth: true
+    },
+    er: {
+      useMaxWidth: true
+    }
+  });
+</script>
+</body>
+</html>

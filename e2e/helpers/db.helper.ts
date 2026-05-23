@@ -165,11 +165,72 @@ export async function getPurchaseReqsBySourcePlan(productionNumber: string) {
 
 export async function getPurchaseReqDetails(purchaseReqNumber: string) {
   return await query<any>(
-    `SELECT id, line_number, item_number, item_name, request_quantity, expected_date, status
+    `SELECT id, line_number, item_number, item_name, request_quantity, ordered_quantity, expected_date, status
      FROM purchase_req_detail WHERE purchase_req_number = @no
      ORDER BY line_number`,
     { no: { type: T.NVarChar, value: purchaseReqNumber } }
   );
+}
+
+/** 查询采购申请主表（含审批/执行状态） */
+export async function getPurchaseReq(purchaseReqNumber: string) {
+  const rows = await query<any>(
+    `SELECT purchase_req_number, approval_status, order_status, remark
+     FROM purchase_req WHERE purchase_req_number = @no`,
+    { no: { type: T.NVarChar, value: purchaseReqNumber } }
+  );
+  return rows[0] || null;
+}
+
+/** 查询采购订单主表+明细 */
+export async function getPurchaseOrder(purchaseOrderNumber: string) {
+  const [headers, details] = await Promise.all([
+    query<any>(
+      `SELECT purchase_order_number, supplier_number, supplier_name, approval_status, order_status, source_req_number
+       FROM purchase_order WHERE purchase_order_number = @no`,
+      { no: { type: T.NVarChar, value: purchaseOrderNumber } }
+    ),
+    query<any>(
+      `SELECT id, line_number, item_number, item_name, order_quantity, source_req_number, source_req_detail_id
+       FROM purchase_order_detail WHERE purchase_order_number = @no
+       ORDER BY line_number`,
+      { no: { type: T.NVarChar, value: purchaseOrderNumber } }
+    )
+  ]);
+  return { header: headers[0] || null, details };
+}
+
+/** 按来源申请号查询最新采购订单 */
+export async function getLatestPurchaseOrderByReq(reqNumber: string) {
+  const rows = await query<any>(
+    `SELECT TOP 1 purchase_order_number, supplier_number, supplier_name, approval_status, order_status, source_req_number
+     FROM purchase_order WHERE source_req_number = @no
+     ORDER BY purchase_order_number DESC`,
+    { no: { type: T.NVarChar, value: reqNumber } }
+  );
+  return rows[0] || null;
+}
+
+/** 清理测试采购申请+关联采购订单 */
+export async function cleanupTestPurchaseReqs(testMarker: string) {
+  // 先找关联的采购订单
+  const reqRows = await query<any>(
+    `SELECT purchase_req_number FROM purchase_req WHERE remark = @m`,
+    { m: { type: T.NVarChar, value: testMarker } }
+  );
+  for (const r of reqRows) {
+    // 删除关联采购订单明细+主表
+    const poRows = await query<any>(
+      `SELECT purchase_order_number FROM purchase_order WHERE source_req_number = @rn`,
+      { rn: { type: T.NVarChar, value: r.purchase_req_number } }
+    );
+    for (const po of poRows) {
+      await query(`DELETE FROM purchase_order_detail WHERE purchase_order_number = @pon`, { pon: { type: T.NVarChar, value: po.purchase_order_number } });
+      await query(`DELETE FROM purchase_order WHERE purchase_order_number = @pon`, { pon: { type: T.NVarChar, value: po.purchase_order_number } });
+    }
+    await query(`DELETE FROM purchase_req_detail WHERE purchase_req_number = @rn`, { rn: { type: T.NVarChar, value: r.purchase_req_number } });
+    await query(`DELETE FROM purchase_req WHERE purchase_req_number = @rn`, { rn: { type: T.NVarChar, value: r.purchase_req_number } });
+  }
 }
 
 // ==================== 清理：全链路测试数据 ====================
@@ -2285,14 +2346,22 @@ export async function getWarehouse(warehouseNumber: string) {
 
 /** 清理生产入库撤回测试数据 */
 export async function cleanupProductionInboundWithdrawData(inboundOrderNumber: string) {
-  // 1. 查找入库单关联的生产单
+  // 1. 查找入库单头（获取 item_number / warehouse_number）
+  const header = await query<any>(
+    `SELECT item_number, warehouse_number FROM production_inbound_order WHERE inbound_order_number = @ion`,
+    { ion: { type: T.NVarChar, value: inboundOrderNumber } }
+  );
+  const itemNumber = header[0]?.item_number;
+  const warehouseNumber = header[0]?.warehouse_number;
+
+  // 2. 查找入库单关联的生产单
   const details = await query<any>(
     `SELECT production_order_number, batch_number, transaction_number
      FROM production_inbound_order_detail WHERE inbound_order_number = @ion`,
     { ion: { type: T.NVarChar, value: inboundOrderNumber } }
   );
 
-  // 2. 清理批次追溯
+  // 3. 清理批次追溯
   for (const d of details) {
     if (d.production_order_number) {
       await query(`DELETE FROM batch_traceability WHERE production_order_number = @pon`,
@@ -2300,7 +2369,7 @@ export async function cleanupProductionInboundWithdrawData(inboundOrderNumber: s
     }
   }
 
-  // 3. 清理库存流水批次
+  // 4. 清理库存流水批次
   for (const d of details) {
     if (d.transaction_number) {
       await query(`DELETE FROM inventory_transaction_batch WHERE transaction_number = @tn`,
@@ -2308,7 +2377,7 @@ export async function cleanupProductionInboundWithdrawData(inboundOrderNumber: s
     }
   }
 
-  // 4. 清理成品库存流水
+  // 5. 清理成品库存流水
   for (const d of details) {
     if (d.batch_number) {
       await query(`DELETE FROM inventory_transaction WHERE source_number = @bn`,
@@ -2316,7 +2385,7 @@ export async function cleanupProductionInboundWithdrawData(inboundOrderNumber: s
     }
   }
 
-  // 5. 清理成品批次库存
+  // 6. 清理成品批次库存
   for (const d of details) {
     if (d.batch_number) {
       await query(`DELETE FROM finished_batch_inventory WHERE batch_number = @bn`,
@@ -2324,7 +2393,7 @@ export async function cleanupProductionInboundWithdrawData(inboundOrderNumber: s
     }
   }
 
-  // 6. 回退生产单入库状态
+  // 7. 回退生产单入库状态
   for (const d of details) {
     if (d.production_order_number) {
       await query(
@@ -2335,7 +2404,7 @@ export async function cleanupProductionInboundWithdrawData(inboundOrderNumber: s
     }
   }
 
-  // 7. 清理倒冲扣减日志 + 回退倒冲任务
+  // 8. 清理倒冲扣减日志 + 回退倒冲任务
   for (const d of details) {
     if (d.production_order_number) {
       const logs = await query<any>(
@@ -2362,13 +2431,13 @@ export async function cleanupProductionInboundWithdrawData(inboundOrderNumber: s
     }
   }
 
-  // 8. 删除入库单明细 + 头
+  // 9. 删除入库单明细 + 头
   await query(`DELETE FROM production_inbound_order_detail WHERE inbound_order_number = @ion`,
     { ion: { type: T.NVarChar, value: inboundOrderNumber } });
   await query(`DELETE FROM production_inbound_order WHERE inbound_order_number = @ion`,
     { ion: { type: T.NVarChar, value: inboundOrderNumber } });
 
-  // 9. 重算成品汇总库存
+  // 10. 重算成品汇总库存
   await resyncFinishedGoodsInventory(itemNumber, warehouseNumber);
 }
 
@@ -2549,4 +2618,265 @@ export async function resyncFinishedGoodsInventory(itemNumber: string, warehouse
       );
     }
   }
+}
+
+// ==================== 销售发票 ====================
+
+/** 查询销售发票主表 */
+export async function getSalesInvoice(invoiceNumber: string) {
+  const rows = await query<any>(
+    `SELECT invoice_number, invoice_code, invoice_no, invoice_type,
+            customer_number, customer_name, invoice_title, tax_id,
+            invoice_address, invoice_phone, bank_name, bank_account_number,
+            invoice_date, tax_rate, amount_without_tax, tax_amount, amount_with_tax,
+            currency_code, remark, approval_status, created_by, created_at, updated_at
+     FROM sales_invoice WHERE invoice_number = @no`,
+    { no: { type: T.NVarChar, value: invoiceNumber } }
+  );
+  return rows[0] || null;
+}
+
+/** 查询销售发票明细行 */
+export async function getSalesInvoiceLines(invoiceNumber: string) {
+  return await query<any>(
+    `SELECT id, invoice_number, line_number, shipping_order_number, shipping_detail_id,
+            sales_order_number, sales_detail_id, item_number, item_name,
+            specifications, basic_unit, ship_quantity, invoice_quantity,
+            unit_price, amount_without_tax, tax_rate, tax_amount, amount_with_tax, remark
+     FROM sales_invoice_line WHERE invoice_number = @no ORDER BY line_number`,
+    { no: { type: T.NVarChar, value: invoiceNumber } }
+  );
+}
+
+/** 查询发货明细行开票状态 */
+export async function getShippingDetailInvoiceStatus(detailId: number) {
+  const rows = await query<any>(
+    `SELECT id, invoice_status, quantity FROM shipping_order_detail WHERE id = @id`,
+    { id: { type: T.Int, value: detailId } }
+  );
+  return rows[0] || null;
+}
+
+/** 查询销售订单明细行开票状态 */
+export async function getSalesDetailInvoiceStatus(detailId: number) {
+  const rows = await query<any>(
+    `SELECT id, invoice_status, order_quantity FROM sales_order_detail WHERE id = @id`,
+    { id: { type: T.Int, value: detailId } }
+  );
+  return rows[0] || null;
+}
+
+/** 清理销售发票数据 */
+export async function cleanupSalesInvoiceData(invoiceNumbers: string[]) {
+  let count = 0;
+  for (const inv of invoiceNumbers) {
+    await query(`DELETE FROM sales_invoice_line WHERE invoice_number = @no`, { no: { type: T.NVarChar, value: inv } });
+    await query(`DELETE FROM sales_invoice WHERE invoice_number = @no`, { no: { type: T.NVarChar, value: inv } });
+    count++;
+  }
+  return count;
+}
+
+// ==================== 备料退料补料与成本快照 DB 助手 ====================
+
+/** 查询备料明细行（含已领量） */
+export async function getMaterialPreparationDetails(preparationNumber: string) {
+  return await query<any>(
+    `SELECT id, preparation_number, line_number, material_number, material_name,
+          required_quantity, issued_quantity, step_number, default_warehouse
+   FROM material_preparation_detail
+   WHERE preparation_number = @pn ORDER BY line_number`,
+    { pn: { type: T.NVarChar, value: preparationNumber } }
+  );
+}
+
+/** 查询领料单（含 source_type） */
+export async function getMaterialIssueByNumber(issueNumber: string) {
+  const rows = await query<any>(
+    `SELECT issue_number, production_order_number, preparation_number,
+            issue_status, source_type, total_issue_items, remark
+     FROM material_issue WHERE issue_number = @id`,
+    { id: { type: T.NVarChar, value: issueNumber } }
+  );
+  return rows[0];
+}
+
+/** 查询领料单明细 */
+export async function getMaterialIssueDetails(issueNumber: string) {
+  return await query<any>(
+    `SELECT id, issue_number, line_number, material_number, material_name,
+            actual_quantity, batch_number, step_number, default_warehouse
+     FROM material_issue_detail WHERE issue_number = @id ORDER BY line_number`,
+    { id: { type: T.NVarChar, value: issueNumber } }
+  );
+}
+
+/** 查询退料单 */
+export async function getMaterialReturnByNumber(returnNumber: string) {
+  const rows = await query<any>(
+    `SELECT return_number, production_order_number, preparation_number,
+            issue_number, return_status, total_return_items, remark
+     FROM material_return WHERE return_number = @id`,
+    { id: { type: T.NVarChar, value: returnNumber } }
+  );
+  return rows[0];
+}
+
+/** 查询退料单明细 */
+export async function getMaterialReturnDetails(returnNumber: string) {
+  return await query<any>(
+    `SELECT id, return_number, line_number, material_number, material_name,
+            return_quantity, batch_number, step_number, default_warehouse
+     FROM material_return_detail WHERE return_number = @id ORDER BY line_number`,
+    { id: { type: T.NVarChar, value: returnNumber } }
+  );
+}
+
+/** 查询生产单的材料成本快照 */
+export async function getCostSnapshotsByOrder(orderNumber: string) {
+  return await query<any>(
+    `SELECT snapshot_number, production_order_number, preparation_number,
+            issue_number, material_number, material_name,
+            issued_quantity, standard_cost, material_cost,
+            source_type, source_number, cost_list_number
+     FROM production_material_cost_snapshot
+     WHERE production_order_number = @id
+     ORDER BY snapshot_number`,
+    { id: { type: T.NVarChar, value: orderNumber } }
+  );
+}
+
+/** 查询物料库存量 */
+export async function getMaterialInventoryQty(itemNumber: string, warehouseNumber: string) {
+  const rows = await query<any>(
+    `SELECT quantity FROM material_inventory
+     WHERE item_number = @item AND warehouse_number = @wh`,
+    { item: { type: T.NVarChar, value: itemNumber }, wh: { type: T.NVarChar, value: warehouseNumber } }
+  );
+  return rows[0]?.quantity ? parseFloat(rows[0].quantity) : 0;
+}
+
+/** 查询备料单状态 */
+export async function getMaterialPreparationStatus(preparationNumber: string) {
+  const rows = await query<any>(
+    `SELECT preparation_number, preparation_status FROM material_preparation
+     WHERE preparation_number = @pn`,
+    { pn: { type: T.NVarChar, value: preparationNumber } }
+  );
+  return rows[0]?.preparation_status;
+}
+
+/** 清理退料单数据 */
+export async function cleanupMaterialReturns(returnNumbers: string[]) {
+  let count = 0;
+  for (const rn of returnNumbers) {
+    await query(`DELETE FROM production_material_cost_snapshot WHERE source_number = @no AND source_type = N'退料'`, { no: { type: T.NVarChar, value: rn } });
+    await query(`DELETE FROM material_return_detail WHERE return_number = @no`, { no: { type: T.NVarChar, value: rn } });
+    await query(`DELETE FROM material_return WHERE return_number = @no`, { no: { type: T.NVarChar, value: rn } });
+    count++;
+  }
+  return count;
+}
+
+// ==================== 仓库流水 DB 助手 ====================
+
+/** 查询物料库存流水（按来源编号，含 source_type 过滤） */
+export async function getInventoryTxnsBySource(sourceNumber: string, sourceType?: string) {
+  const sql = sourceType
+    ? `SELECT transaction_number, transaction_type, source_type, source_number,
+              item_number, item_name, warehouse_number, warehouse_name,
+              quantity, before_quantity, after_quantity, batch_number, operator, remark
+       FROM material_inventory_transaction
+       WHERE source_number = @sn AND source_type = @st
+       ORDER BY transaction_number`
+    : `SELECT transaction_number, transaction_type, source_type, source_number,
+              item_number, item_name, warehouse_number, warehouse_name,
+              quantity, before_quantity, after_quantity, batch_number, operator, remark
+       FROM material_inventory_transaction
+       WHERE source_number = @sn
+       ORDER BY transaction_number`;
+  const params: Record<string, { type: any; value: any }> = { sn: { type: T.NVarChar, value: sourceNumber } };
+  if (sourceType) params.st = { type: T.NVarChar, value: sourceType };
+  return await query<any>(sql, params);
+}
+
+/** 查询物料库存流水（按物料+仓库） */
+export async function getInventoryTxnsByItem(itemNumber: string, warehouseNumber: string, sinceDate?: string) {
+  const sql = sinceDate
+    ? `SELECT transaction_number, transaction_type, source_type, source_number,
+              item_number, item_name, warehouse_number, warehouse_name,
+              quantity, before_quantity, after_quantity, batch_number, operator,
+              operation_date, remark
+       FROM material_inventory_transaction
+       WHERE item_number = @item AND warehouse_number = @wh AND operation_date >= @since
+       ORDER BY operation_date DESC, transaction_number DESC`
+    : `SELECT TOP 50 transaction_number, transaction_type, source_type, source_number,
+              item_number, item_name, warehouse_number, warehouse_name,
+              quantity, before_quantity, after_quantity, batch_number, operator,
+              operation_date, remark
+       FROM material_inventory_transaction
+       WHERE item_number = @item AND warehouse_number = @wh
+       ORDER BY operation_date DESC, transaction_number DESC`;
+  const params: Record<string, { type: any; value: any }> = {
+    item: { type: T.NVarChar, value: itemNumber },
+    wh: { type: T.NVarChar, value: warehouseNumber },
+  };
+  if (sinceDate) params.since = { type: T.NVarChar, value: sinceDate };
+  return await query<any>(sql, params);
+}
+
+/** 查询线边仓流水（按来源编号） */
+export async function getLinesideTxnsBySource(sourceNumber: string, sourceType?: string) {
+  const sql = sourceType
+    ? `SELECT transaction_number, transaction_type, source_type, source_number,
+              production_order_number, item_number, item_name,
+              step_number, work_center_name, quantity, direction, operator, remark
+       FROM lineside_inventory_transaction
+       WHERE source_number = @sn AND source_type = @st
+       ORDER BY transaction_number`
+    : `SELECT transaction_number, transaction_type, source_type, source_number,
+              production_order_number, item_number, item_name,
+              step_number, work_center_name, quantity, direction, operator, remark
+       FROM lineside_inventory_transaction
+       WHERE source_number = @sn
+       ORDER BY transaction_number`;
+  const params: Record<string, { type: any; value: any }> = { sn: { type: T.NVarChar, value: sourceNumber } };
+  if (sourceType) params.st = { type: T.NVarChar, value: sourceType };
+  return await query<any>(sql, params);
+}
+
+/** 查询线边仓流水（按生产单） */
+export async function getLinesideTxnsByOrder(orderNumber: string) {
+  return await query<any>(
+    `SELECT transaction_number, transaction_type, source_type, source_number,
+            production_order_number, item_number, item_name,
+            step_number, work_center_name, quantity, direction, operator, remark
+     FROM lineside_inventory_transaction
+     WHERE production_order_number = @on
+     ORDER BY transaction_number`,
+    { on: { type: T.NVarChar, value: orderNumber } }
+  );
+}
+
+/** 查询物料批次库存（含ID，去重用） */
+export async function getMaterialBatchInventoryWithId(itemNumber: string, warehouseNumber: string) {
+  return await query<any>(
+    `SELECT id, batch_number, item_number, item_name, warehouse_number, warehouse_name,
+            quantity, initial_quantity, status
+     FROM material_batch_inventory
+     WHERE item_number = @item AND warehouse_number = @wh AND status = N'正常'
+     ORDER BY inbound_date`,
+    { item: { type: T.NVarChar, value: itemNumber }, wh: { type: T.NVarChar, value: warehouseNumber } }
+  );
+}
+
+/** 查询物料汇总库存记录 */
+export async function getMaterialInventoryRecord(itemNumber: string, warehouseNumber: string) {
+  const rows = await query<any>(
+    `SELECT id, item_number, item_name, warehouse_number, warehouse_name, quantity, last_updated
+     FROM material_inventory
+     WHERE item_number = @item AND warehouse_number = @wh`,
+    { item: { type: T.NVarChar, value: itemNumber }, wh: { type: T.NVarChar, value: warehouseNumber } }
+  );
+  return rows[0];
 }

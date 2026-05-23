@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, createVNode } from 'vue'
+import { ref, reactive, onMounted, createVNode, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, ExclamationCircleOutlined, DownloadOutlined, UploadOutlined, PlusOutlined, DownOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getSuppliers, createSupplier, updateSupplier, deleteSupplier, exportSuppliers, importSuppliers, updateSupplierCondition, approveSupplier, withdrawSupplier } from '@/api/master-data/supplier'
+import { getEmployees } from '@/api/master-data/employee'
 import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
+import { useModalDrag } from '@/composables/useModalDrag'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { APPROVAL_STATUS, CONDITION_STATUS } from '@/constants/statuses'
 import { generateExportFilename } from '@/utils/exportFilename'
 
 const router = useRouter()
+
+// 弹窗拖拽
+const { modalStyle: createModalStyle, onDragStart: createDragStart, resetDrag: createResetDrag } = useModalDrag()
+const { modalStyle: editModalStyle, onDragStart: editDragStart, resetDrag: editResetDrag } = useModalDrag()
 
 interface Supplier {
   supplier_number: string
@@ -64,6 +70,14 @@ const createForm = reactive<Supplier>(emptyForm())
 
 const importLoading = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const employeeOptions = ref<any[]>([])
+
+const loadEmployees = async () => {
+  try {
+    const res: any = await getEmployees({ limit: 9999 })
+    employeeOptions.value = res.data?.items || []
+  } catch { /* ignore */ }
+}
 
 const defaultDataColumns: any[] = [
   { title: '供应商编号', dataIndex: 'supplier_number', key: 'supplier_number', width: 120, resizable: true },
@@ -88,7 +102,7 @@ const {
 
 const handleView = (record: Supplier) => { router.push(`/suppliers/${encodeURIComponent(record.supplier_number)}`) }
 
-const handleCreate = () => { Object.assign(createForm, emptyForm()); createModalVisible.value = true }
+const handleCreate = () => { Object.assign(createForm, emptyForm()); createModalVisible.value = true; createResetDrag() }
 const handleCreateSubmit = async () => {
   if (!createForm.supplier_number) { message.warning('请输入供应商编号'); return }
   createLoading.value = true
@@ -101,7 +115,7 @@ const handleEdit = (record: Supplier) => {
     message.warning('已审核的记录不允许编辑，请先撤消审核')
     return
   }
-  Object.assign(editForm, { ...emptyForm(), ...record }); editModalVisible.value = true
+  Object.assign(editForm, { ...emptyForm(), ...record }); editModalVisible.value = true; editResetDrag()
 }
 const handleEditSubmit = async () => {
   editLoading.value = true
@@ -183,9 +197,29 @@ const handleFileChange = async (e: Event) => {
   catch { message.error('导入失败') } finally { importLoading.value = false; target.value = '' }
 }
 
+// 采购经理模糊搜索选项（仅启用状态员工）
+const createProcurementManagerOptions = computed(() => {
+  const search = createForm.procurement_manager?.toLowerCase() || ''
+  const activeEmployees = employeeOptions.value.filter(e => (e.status || '').trim() === '启用')
+  if (!search) return activeEmployees.map(e => ({ value: e.employee_name }))
+  return activeEmployees
+    .filter(e => (e.employee_name || '').toLowerCase().includes(search) || (e.employee_number || '').toLowerCase().includes(search))
+    .map(e => ({ value: e.employee_name }))
+})
+
+const editProcurementManagerOptions = computed(() => {
+  const search = editForm.procurement_manager?.toLowerCase() || ''
+  const activeEmployees = employeeOptions.value.filter(e => (e.status || '').trim() === '启用')
+  if (!search) return activeEmployees.map(e => ({ value: e.employee_name }))
+  return activeEmployees
+    .filter(e => (e.employee_name || '').toLowerCase().includes(search) || (e.employee_number || '').toLowerCase().includes(search))
+    .map(e => ({ value: e.employee_name }))
+})
+
 onMounted(() => {
   loadColumnPreference()
   fetchData()
+  loadEmployees()
 })
 </script>
 
@@ -244,7 +278,10 @@ onMounted(() => {
     </a-card>
 
     <!-- 新建弹窗 -->
-    <a-modal v-model:open="createModalVisible" title="新建供应商" :confirm-loading="createLoading" @ok="handleCreateSubmit" width="1100px">
+    <a-modal v-model:open="createModalVisible" :style="createModalStyle" :confirm-loading="createLoading" @ok="handleCreateSubmit" width="1100px">
+      <template #title>
+        <div class="drag-handle" @mousedown="createDragStart">新建供应商</div>
+      </template>
       <a-form :label-col="{ span: 8 }" :wrapper-col="{ span: 16 }" class="compact-form">
         <a-divider orientation="left" style="margin: 8px 0 12px">基本信息</a-divider>
         <a-row :gutter="12">
@@ -257,7 +294,7 @@ onMounted(() => {
           <a-col :span="6"><a-form-item label="国家/地区"><a-input v-model:value="createForm.country" placeholder="请输入" /></a-form-item></a-col>
           <a-col :span="6"><a-form-item label="行业"><a-input v-model:value="createForm.industry" placeholder="请输入" /></a-form-item></a-col>
           <a-col :span="6"><a-form-item label="供应商负责人"><a-input v-model:value="createForm.supplier_manager" placeholder="请输入" /></a-form-item></a-col>
-          <a-col :span="6"><a-form-item label="采购经理"><a-input v-model:value="createForm.procurement_manager" placeholder="请输入" /></a-form-item></a-col>
+          <a-col :span="6"><a-form-item label="采购经理"><a-auto-complete v-model:value="createForm.procurement_manager" :options="createProcurementManagerOptions" placeholder="输入姓名搜索或直接录入" allow-clear /></a-form-item></a-col>
         </a-row>
         <a-row :gutter="12">
           <a-col :span="6"><a-form-item label="采购税率"><a-input-number v-model:value="createForm.purchase_tax_rate" :precision="4" style="width: 100%" /></a-form-item></a-col>
@@ -295,7 +332,10 @@ onMounted(() => {
     </a-modal>
 
     <!-- 编辑弹窗 -->
-    <a-modal v-model:open="editModalVisible" title="修改供应商" :confirm-loading="editLoading" @ok="handleEditSubmit" width="1100px">
+    <a-modal v-model:open="editModalVisible" :style="editModalStyle" :confirm-loading="editLoading" @ok="handleEditSubmit" width="1100px">
+      <template #title>
+        <div class="drag-handle" @mousedown="editDragStart">修改供应商</div>
+      </template>
       <a-form :label-col="{ span: 8 }" :wrapper-col="{ span: 16 }" class="compact-form">
         <a-divider orientation="left" style="margin: 8px 0 12px">基本信息</a-divider>
         <a-row :gutter="12">
@@ -308,7 +348,7 @@ onMounted(() => {
           <a-col :span="6"><a-form-item label="国家/地区"><a-input v-model:value="editForm.country" /></a-form-item></a-col>
           <a-col :span="6"><a-form-item label="行业"><a-input v-model:value="editForm.industry" /></a-form-item></a-col>
           <a-col :span="6"><a-form-item label="供应商负责人"><a-input v-model:value="editForm.supplier_manager" /></a-form-item></a-col>
-          <a-col :span="6"><a-form-item label="采购经理"><a-input v-model:value="editForm.procurement_manager" /></a-form-item></a-col>
+          <a-col :span="6"><a-form-item label="采购经理"><a-auto-complete v-model:value="editForm.procurement_manager" :options="editProcurementManagerOptions" placeholder="输入姓名搜索或直接录入" allow-clear /></a-form-item></a-col>
         </a-row>
         <a-row :gutter="12">
           <a-col :span="6"><a-form-item label="采购税率"><a-input-number v-model:value="editForm.purchase_tax_rate" :precision="4" style="width: 100%" /></a-form-item></a-col>
@@ -361,4 +401,5 @@ onMounted(() => {
 <style scoped>
 .supplier-page { padding: 0; }
 .compact-form :deep(.ant-form-item) { margin-bottom: 8px; }
+.drag-handle { cursor: move; user-select: none; }
 </style>

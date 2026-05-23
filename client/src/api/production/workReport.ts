@@ -59,3 +59,13 @@ export function completeOrderReport(data: any) {
 export function getWorkReportsByTask(processTaskNumber: string) {
   return request.get('/work-reports', { params: { process_task_number: processTaskNumber, limit: 100 } })
 }
+
+// 撤销重报 - 预览（查询从目标工序到末道工序需要删除的报工单列表）
+export function undoPreview(data: { production_order_number: string; target_step_number: number }) {
+  return request.post('/work-reports/undo-preview', data)
+}
+
+// 撤销重报 - 执行（批量删除从目标工序到末道工序的所有草稿报工单）
+export function undoExecute(data: { production_order_number: string; target_step_number: number }) {
+  return request.post('/work-reports/undo-execute', data)
+}

@@ -5,10 +5,20 @@ import {
   getPurchaseOrders, getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder,
   getPurchaseOrderDetails, addPurchaseOrderDetail, updatePurchaseOrderDetail, deletePurchaseOrderDetail,
   closePurchaseOrder, getReceivable, exportPurchaseOrders, printPurchaseOrder,
-  getPurchaseOrderDetailsPage, exportPurchaseOrderDetailsSelected
+  getPurchaseOrderDetailsPage, exportPurchaseOrderDetailsSelected,
+  getPurchaseOrderStats, getPurchaseOrderStatusDistribution, getPurchaseOrderSupplierRanking,
+  getPurchaseOrderMonthlyTrend, getPurchaseOrderRecentList, getPurchaseOrderDeliveryTrend
 } from './purchaseOrder.controller';
 
 const router = Router();
+
+// Dashboard stats (放在 /:id 之前)
+router.get('/stats', authenticate, getPurchaseOrderStats);
+router.get('/status-distribution', authenticate, getPurchaseOrderStatusDistribution);
+router.get('/supplier-ranking', authenticate, getPurchaseOrderSupplierRanking);
+router.get('/monthly-trend', authenticate, getPurchaseOrderMonthlyTrend);
+router.get('/recent-list', authenticate, getPurchaseOrderRecentList);
+router.get('/delivery-trend', authenticate, getPurchaseOrderDeliveryTrend);
 
 // Header
 router.get('/', authenticate, getPurchaseOrders);

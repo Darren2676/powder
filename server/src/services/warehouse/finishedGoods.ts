@@ -15,8 +15,9 @@ import { withTransaction } from '@/shared/db/withTransaction';
 import { syncLineStatus } from '@/services/salesOrderSync.service';
 import { checkAndAutoComplete } from '@/services/documentAutoComplete.service';
 import { executeBackflushDeduction } from '@/services/backflushTask.service';
-import { upsertFinishedGoodsInventory, createFinishedTransaction, fifoDeductBatches, writeBatchTraceability, createTransactionBatches } from './helpers';
+import { upsertFinishedGoodsInventory, createFinishedTransaction, fifoDeductBatches, writeBatchTraceability, createTransactionBatches, validateAccountingPeriodOpen } from './helpers';
 import { createLogger } from '@/config/logger';
+import { recalcYieldRate } from '../productionYield.service';
 
 const log = createLogger('warehouse-finished');
 
@@ -46,6 +47,7 @@ export const productionInboundFinished = async (
   const now1 = new Date();
   const defaultAP1 = now1.getFullYear() + '-' + String(now1.getMonth() + 1).padStart(2, '0');
   const accountingPeriod = b.accounting_period || defaultAP1;
+  await validateAccountingPeriodOpen(accountingPeriod);
 
   return await withTransaction(async (transaction) => {
     const transactionNumbers: string[] = [];
@@ -114,6 +116,11 @@ export const productionInboundFinished = async (
       // 尝试自动完成（需同时满足生产完成+入库完成）
       if (item.production_order_number) {
         await checkAndAutoComplete('production_order', item.production_order_number, transaction);
+      }
+
+      // 重算生产单综合合格率（入库量变化）
+      if (item.production_order_number) {
+        await recalcYieldRate(item.production_order_number, transaction);
       }
 
       // 5.5 线边仓流转：末道工序线边 OUT (can fail silently)
@@ -226,6 +233,7 @@ export const shippingOutbound = async (
   const now2 = new Date();
   const defaultAP2 = now2.getFullYear() + '-' + String(now2.getMonth() + 1).padStart(2, '0');
   const outboundAP = b.accounting_period || defaultAP2;
+  await validateAccountingPeriodOpen(outboundAP);
 
   return await withTransaction(async (transaction) => {
     const transactionNumbers: string[] = [];
@@ -547,6 +555,10 @@ export const returnInbound = async (
     throw new BusinessError(400, '该退货单已完成入库');
   }
 
+  // 校验会计期间
+  const returnAP = b.accounting_period || new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+  await validateAccountingPeriodOpen(returnAP);
+
   return await withTransaction(async (transaction) => {
     const transactionNumbers: string[] = [];
     const batchNumbers: string[] = [];
@@ -615,7 +627,7 @@ export const returnInbound = async (
           quantity: entry.quantity, before_quantity: beforeQty, after_quantity: afterQty,
           batch_number: batchNo, operator, remark: b.remark || '退货入库',
           quality_status: entry.qualityStatus,
-          accounting_period: b.accounting_period || new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0')
+          accounting_period: returnAP
         }, transaction);
       }
 
@@ -667,6 +679,8 @@ export const adjustFinishedInventory = async (
   }
 
   const qualityStatus = b.quality_status || '合格品';
+  const adjustAP = b.accounting_period || new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+  await validateAccountingPeriodOpen(adjustAP);
 
   return await withTransaction(async (transaction) => {
     const [existing]: any = await sequelize.query(
@@ -714,7 +728,7 @@ export const adjustFinishedInventory = async (
       quantity: Math.abs(adjustQty), before_quantity: beforeQty, after_quantity: afterQty,
       batch_number: '', operator, remark: b.remark || '手动调整',
       quality_status: qualityStatus,
-      accounting_period: b.accounting_period || new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0')
+      accounting_period: adjustAP
     }, transaction);
 
     return { transaction_number: txNum };
@@ -1055,6 +1069,11 @@ export const rollbackProductionInbound = async (inboundOrderNumber: string, oper
          WHERE production_order_number = :pon`,
         { replacements: { rollbackQty, rollbackQty2: rollbackQty, rollbackQty3: rollbackQty, pon }, transaction }
       );
+    }
+
+    // 8b. 重算各生产单综合合格率（入库量回退）
+    for (const pon of ponQtyMap.keys()) {
+      await recalcYieldRate(pon, transaction);
     }
 
     // 9. 反转倒冲扣减

@@ -234,20 +234,20 @@ export const deleteOrder = async (req: Request, res: Response, next: NextFunctio
 
       // 如果该生产单有关联的生产计划，检查是否需要回退计划状态
       if (productionNumber) {
-        // 检查该计划下是否还有其他生产单
-        const [otherOrders]: any = await sequelize.query(
-          `SELECT 1 FROM production_order WHERE production_number = :pn AND production_order_number != :id`,
-          { replacements: { pn: productionNumber, id }, transaction }
-        );
-
-        // 检查该计划下是否还有关联的采购申请（production_number 为逗号分隔的多值字段）
-        const [otherReqs]: any = await sequelize.query(
-          `SELECT 1 FROM purchase_req WHERE CHARINDEX(:pn, production_number) > 0 AND purchase_req_number NOT LIKE N'MRP_TEMP%'`,
+        // 只检查该计划下是否还有其他成品生产单（item_number与计划相同的是成品工单，子件工单不应阻止回退）
+        const [planInfo]: any = await sequelize.query(
+          `SELECT item_number FROM Production_plan WHERE production_number = :pn`,
           { replacements: { pn: productionNumber }, transaction }
         );
+        const planItemNumber = planInfo.length > 0 ? planInfo[0].item_number : '';
 
-        if (otherOrders.length === 0 && otherReqs.length === 0) {
-          // 无其他任何关联单据，回退计划状态
+        const [otherOrders]: any = await sequelize.query(
+          `SELECT 1 FROM production_order WHERE production_number = :pn AND production_order_number != :id AND item_number = :itemNum`,
+          { replacements: { pn: productionNumber, id, itemNum: planItemNumber }, transaction }
+        );
+
+        // 成品工单已无剩余时即回退计划状态（采购申请在MRP重算时作为供给自动扣减，不会重复生成）
+        if (otherOrders.length === 0) {
           await sequelize.query(
             `UPDATE Production_plan SET plan_status = N'待加入任务', mrp_status = NULL WHERE production_number = :pn AND plan_status = N'已加入任务'`,
             { replacements: { pn: productionNumber }, transaction }

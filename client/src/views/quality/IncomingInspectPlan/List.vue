@@ -52,7 +52,10 @@
     </a-card>
 
     <!-- 新建/编辑 Modal -->
-    <a-modal v-model:open="modalVisible" :title="modalMode === 'create' ? '新建收料检验方案' : '编辑收料检验方案'" @ok="handleOk" okText="确认" cancelText="取消" width="700px">
+    <a-modal v-model:open="modalVisible" @ok="handleOk" okText="确认" cancelText="取消" width="700px" :style="modalStyle">
+      <template #title>
+        <div class="drag-handle" @mousedown="onDragStart">{{ modalMode === 'create' ? '新建收料检验方案' : '编辑收料检验方案' }}</div>
+      </template>
       <a-form :label-col="{ span: 8 }" :wrapper-col="{ span: 15 }">
         <a-row :gutter="16">
           <a-col :span="12">
@@ -62,7 +65,9 @@
           </a-col>
           <a-col :span="12">
             <a-form-item label="检验员账号">
-              <a-input v-model:value="form.inspector_id" placeholder="请输入" />
+              <a-select v-model:value="form.inspector_id" mode="multiple" placeholder="选择用户" allowClear showSearch :filterOption="inspectorFilterOption" @change="onInspectorChange">
+                <a-select-option v-for="u in userOptions" :key="u.username" :value="u.username">{{ u.real_name || u.username }} ({{ u.username }})</a-select-option>
+              </a-select>
             </a-form-item>
           </a-col>
         </a-row>
@@ -74,14 +79,16 @@
           </a-col>
           <a-col :span="12">
             <a-form-item label="检验部门">
-              <a-input v-model:value="form.inspect_department" placeholder="请输入" />
+              <a-select v-model:value="form.inspect_department" placeholder="选择部门" allowClear showSearch :filterOption="deptFilterOption">
+                <a-select-option v-for="d in deptOptions" :key="d.dept_name" :value="d.dept_name">{{ d.dept_name }}</a-select-option>
+              </a-select>
             </a-form-item>
           </a-col>
         </a-row>
         <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item label="检验方法">
-              <a-select v-model:value="form.inspect_method" placeholder="选择" allowClear>
+              <a-select v-model:value="form.inspect_method" placeholder="选择" allowClear @change="onInspectMethodChange">
                 <a-select-option value="抽检">抽检</a-select-option>
                 <a-select-option value="全检">全检</a-select-option>
               </a-select>
@@ -89,7 +96,7 @@
           </a-col>
           <a-col :span="12">
             <a-form-item label="抽检方式">
-              <a-select v-model:value="form.sampling_method" placeholder="选择" allowClear>
+              <a-select v-model:value="form.sampling_method" placeholder="选择" allowClear :disabled="isFullInspection">
                 <a-select-option value="按数量">按数量</a-select-option>
                 <a-select-option value="按比例">按比例</a-select-option>
               </a-select>
@@ -98,13 +105,17 @@
         </a-row>
         <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item label="抽检数">
-              <a-input-number v-model:value="form.sampling_quantity" style="width: 100%" :min="0" :precision="0" />
+            <a-form-item v-if="!isByRatio" label="抽检数">
+              <a-input-number v-model:value="form.sampling_quantity" style="width: 100%" :min="0" :precision="0" :disabled="isFullInspection" />
+            </a-form-item>
+            <a-form-item v-else label="抽检比例">
+              <a-input-number v-model:value="form.sampling_ratio" style="width: 100%" :min="0" :max="100" :precision="2" :step="0.01" :disabled="isFullInspection" />
+              <span style="margin-left: 4px; color: #999;">%</span>
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="小数处理方式">
-              <a-select v-model:value="form.decimal_handling" placeholder="选择" allowClear>
+              <a-select v-model:value="form.decimal_handling" placeholder="选择" allowClear :disabled="isFullInspection">
                 <a-select-option value="向上取整">向上取整</a-select-option>
                 <a-select-option value="向下取整">向下取整</a-select-option>
                 <a-select-option value="四舍五入">四舍五入</a-select-option>
@@ -115,7 +126,7 @@
         <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item label="是否破坏性检验">
-              <a-select v-model:value="form.is_destructive" placeholder="选择" allowClear>
+              <a-select v-model:value="form.is_destructive" placeholder="选择" allowClear :disabled="isFullInspection">
                 <a-select-option value="非破坏性检验">非破坏性检验</a-select-option>
                 <a-select-option value="破坏性检验">破坏性检验</a-select-option>
               </a-select>
@@ -127,13 +138,23 @@
             </a-form-item>
           </a-col>
         </a-row>
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="启用质量特性">
+              <a-select v-model:value="form.enable_quality_chars" placeholder="选择" allowClear>
+                <a-select-option value="Y">启用</a-select-option>
+                <a-select-option value="N">不启用</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+        </a-row>
       </a-form>
     </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, createVNode } from 'vue'
+import { ref, reactive, computed, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, DownOutlined } from '@ant-design/icons-vue'
 import { APPROVAL_STATUS } from '@/constants/statuses'
@@ -143,45 +164,68 @@ import {
   approveIncomingInspectPlan, withdrawIncomingInspectPlan
 } from '@/api/quality/incomingInspectPlan'
 import { useTableList } from '@/composables/useTableList'
+import { useModalDrag } from '@/composables/useModalDrag'
+import { getActiveDepartments } from '@/api/system/department'
+import { getAssignableUsers } from '@/api/system/user'
 import { generateExportFilename } from '@/utils/exportFilename'
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getIncomingInspectPlans)
 
+const { modalStyle, onDragStart, resetDrag } = useModalDrag()
+
+// ===== 全检时禁用抽检相关字段 =====
+const isFullInspection = computed(() => form.inspect_method === '全检')
+const isByRatio = computed(() => form.sampling_method === '按比例')
+const onInspectMethodChange = (val: string) => {
+  if (val === '全检') {
+    form.sampling_method = ''
+    form.sampling_quantity = 0
+    form.sampling_ratio = 0
+    form.decimal_handling = ''
+    form.is_destructive = ''
+  }
+}
+
 // ===== Modal 状态 =====
 const modalVisible = ref(false)
 const modalMode = ref<'create' | 'edit'>('create')
 const form = reactive({
   plan_name: '',
-  inspector_id: '',
-  inspector_name: '',
+  inspector_id: [] as string[],
+  inspector_name: [] as string[],
   inspect_department: '',
   inspect_method: '',
   sampling_method: '',
   sampling_quantity: 0,
+  sampling_ratio: 0,
   decimal_handling: '',
   is_destructive: '',
-  applied_category: ''
+  applied_category: '',
+  enable_quality_chars: 'N'
 })
 
 const emptyForm = () => ({
   plan_name: '',
-  inspector_id: '',
-  inspector_name: '',
+  inspector_id: [] as string[],
+  inspector_name: [] as string[],
   inspect_department: '',
   inspect_method: '',
   sampling_method: '',
   sampling_quantity: 0,
+  sampling_ratio: 0,
   decimal_handling: '',
   is_destructive: '',
-  applied_category: ''
+  applied_category: '',
+  enable_quality_chars: 'N'
 })
 
 const openCreateModal = () => {
   modalMode.value = 'create'
   Object.assign(form, emptyForm())
   modalVisible.value = true
+  resetDrag()
 }
 
 const columns = [
@@ -196,6 +240,7 @@ const columns = [
   { title: '小数处理方式', dataIndex: 'decimal_handling', key: 'decimal_handling', width: 110 },
   { title: '是否破坏性检验', dataIndex: 'is_destructive', key: 'is_destructive', width: 120 },
   { title: '应用于分类', dataIndex: 'applied_category', key: 'applied_category', width: 100 },
+  { title: '启用质量特性', dataIndex: 'enable_quality_chars', key: 'enable_quality_chars', width: 110, customRender: ({ text }: any) => text === 'Y' ? '启用' : '不启用' },
   { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 100 },
   { title: '操作', key: 'action', width: 140, fixed: 'right' as const }
 ]
@@ -208,27 +253,35 @@ const handleEdit = (record: any) => {
   modalMode.value = 'edit'
   Object.assign(form, {
     plan_name: record.plan_name,
-    inspector_id: record.inspector_id || '',
-    inspector_name: record.inspector_name || '',
+    inspector_id: (record.inspector_id || '').split(',').filter(Boolean),
+    inspector_name: (record.inspector_name || '').split(',').filter(Boolean),
     inspect_department: record.inspect_department || '',
     inspect_method: record.inspect_method || '',
     sampling_method: record.sampling_method || '',
     sampling_quantity: record.sampling_quantity != null ? Number(record.sampling_quantity) : 0,
+    sampling_ratio: record.sampling_ratio != null ? Number(record.sampling_ratio) : 0,
     decimal_handling: record.decimal_handling || '',
     is_destructive: record.is_destructive || '',
-    applied_category: record.applied_category || ''
+    applied_category: record.applied_category || '',
+    enable_quality_chars: record.enable_quality_chars || 'N'
   })
   modalVisible.value = true
+  resetDrag()
 }
 
 const handleOk = async () => {
   if (!form.plan_name) { message.warning('请输入方案名称'); return }
   try {
+    const payload = {
+      ...form,
+      inspector_id: form.inspector_id.join(','),
+      inspector_name: form.inspector_name.join(','),
+    }
     if (modalMode.value === 'create') {
-      await createIncomingInspectPlan(form)
+      await createIncomingInspectPlan(payload)
       message.success('创建成功')
     } else {
-      await updateIncomingInspectPlan(form.plan_name, form)
+      await updateIncomingInspectPlan(form.plan_name, payload)
       message.success('更新成功')
     }
     modalVisible.value = false
@@ -310,9 +363,40 @@ const handleFileChange = async (event: Event) => {
   } catch { message.error('导入失败') } finally { target.value = '' }
 }
 
-onMounted(() => { fetchData() })
+onMounted(() => { fetchData(); loadDepts(); loadUsers() })
+
+// ===== 部门下拉 =====
+const deptOptions = ref<any[]>([])
+const loadDepts = async () => {
+  try {
+    const res: any = await getActiveDepartments()
+    deptOptions.value = res.data || []
+  } catch { /* ignore */ }
+}
+const deptFilterOption = (input: string, option: any) => {
+  return (option.key || '').toLowerCase().includes(input.toLowerCase())
+}
+
+// ===== 检验员下拉 =====
+const userOptions = ref<any[]>([])
+const loadUsers = async () => {
+  try {
+    const res: any = await getAssignableUsers()
+    userOptions.value = res.data || []
+  } catch { /* ignore */ }
+}
+const inspectorFilterOption = (input: string, option: any) => {
+  return (option.key || '').toLowerCase().includes(input.toLowerCase())
+}
+const onInspectorChange = (vals: string[]) => {
+  form.inspector_name = vals.map(v => {
+    const found = userOptions.value.find(u => u.username === v)
+    return found ? (found.real_name || found.username) : v
+  })
+}
 </script>
 
 <style scoped>
 :deep(.ant-card-extra) { padding: 0; }
+.drag-handle { cursor: move; user-select: none; }
 </style>

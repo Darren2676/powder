@@ -9,6 +9,7 @@ import { getUnits, getAllUnits, createUnit, updateUnit, deleteUnit, exportUnits,
 import { useTableList } from '@/composables/useTableList'
 import { APPROVAL_STATUS } from '@/constants/statuses'
 import { generateExportFilename } from '@/utils/exportFilename'
+import { useModalDrag } from '@/composables/useModalDrag'
 
 defineOptions({ name: 'UnitList' })
 
@@ -31,8 +32,11 @@ interface UnitForm {
 const { loading, dataSource, searchText, selectedRowKeys, pagination, rowSelection, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getUnits)
 
 const editModalVisible = ref(false)
+const { modalStyle: editModalStyle, onDragStart: editDragStart, resetDrag: editResetDrag } = useModalDrag()
 const createModalVisible = ref(false)
+const { modalStyle: createModalStyle, onDragStart: createDragStart, resetDrag: createResetDrag } = useModalDrag()
 const detailModalVisible = ref(false)
+const { modalStyle: detailModalStyle, onDragStart: detailDragStart, resetDrag: detailResetDrag } = useModalDrag()
 const modalLoading = ref(false)
 const detailData = ref<any>({})
 const detailConversions = ref<any[]>([])
@@ -62,6 +66,7 @@ const fetchAllUnits = async () => {
 const handleDetail = async (record: any) => {
   detailData.value = { ...record }
   detailConversions.value = []
+  detailResetDrag()
   detailModalVisible.value = true
   try {
     const res = await getUnitConversions(record.unit_code)
@@ -83,6 +88,7 @@ const handleEdit = async (record: any) => {
     default_material: !!record.default_material,
     conversions: []
   })
+  editResetDrag()
   editModalVisible.value = true
   // 加载该单位的换算关系
   try {
@@ -160,6 +166,7 @@ const resetCreateForm = () => {
 
 const handleOpenCreate = () => {
   resetCreateForm()
+  createResetDrag()
   createModalVisible.value = true
 }
 
@@ -287,7 +294,10 @@ onMounted(() => { fetchData(); fetchAllUnits() })
     </a-card>
 
     <!-- 详情查看模态框 -->
-    <a-modal v-model:open="detailModalVisible" :title="`单位详情 - ${detailData.unit_code}`" :footer="null" :width="600" destroyOnClose>
+    <a-modal v-model:open="detailModalVisible" :footer="null" :width="600" :style="detailModalStyle" destroyOnClose>
+      <template #title>
+        <div class="drag-handle" @mousedown="detailDragStart">单位详情 - {{ detailData.unit_code }}</div>
+      </template>
       <a-descriptions :column="2" bordered size="small" :labelStyle="{ fontWeight: 'bold', width: '120px' }">
         <a-descriptions-item label="单位编码">{{ detailData.unit_code }}</a-descriptions-item>
         <a-descriptions-item label="单位名称">{{ detailData.unit_name }}</a-descriptions-item>
@@ -314,8 +324,11 @@ onMounted(() => { fetchData(); fetchAllUnits() })
     </a-modal>
 
     <!-- 编辑模态框 -->
-    <a-modal v-model:open="editModalVisible" title="编辑" :width="600" @ok="handleEditOk"
+    <a-modal v-model:open="editModalVisible" :width="600" :style="editModalStyle" @ok="handleEditOk"
       okText="确定" cancelText="取消" :confirmLoading="modalLoading" destroyOnClose>
+      <template #title>
+        <div class="drag-handle" @mousedown="editDragStart">编辑</div>
+      </template>
       <div class="unit-modal-body">
         <a-form :label-col="{ span: 5 }" :wrapper-col="{ span: 18 }">
           <a-form-item label="单位名称" required>
@@ -352,8 +365,11 @@ onMounted(() => { fetchData(); fetchAllUnits() })
     </a-modal>
 
     <!-- 新建模态框 -->
-    <a-modal v-model:open="createModalVisible" title="新建" :width="600" @ok="handleCreateOk"
+    <a-modal v-model:open="createModalVisible" :width="600" :style="createModalStyle" @ok="handleCreateOk"
       okText="确定" cancelText="取消" :confirmLoading="modalLoading" destroyOnClose>
+      <template #title>
+        <div class="drag-handle" @mousedown="createDragStart">新建</div>
+      </template>
       <div class="unit-modal-body">
         <a-form :label-col="{ span: 5 }" :wrapper-col="{ span: 18 }">
           <a-form-item label="单位编码" required>
@@ -396,6 +412,11 @@ onMounted(() => { fetchData(); fetchAllUnits() })
 
 <style scoped>
 :deep(.ant-card-extra) { padding: 0; }
+
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
 
 .unit-modal-body {
   padding: 8px 0;

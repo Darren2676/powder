@@ -32,6 +32,7 @@ import { TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { CONDITION_STATUS } from '@/constants/statuses'
 import { generateExportFilename } from '@/utils/exportFilename'
+import { useModalDrag } from '@/composables/useModalDrag'
 
 use([TreeChart, TooltipComponent, CanvasRenderer])
 
@@ -132,6 +133,7 @@ const selectedHeaderKeys = ref<string[]>([])
 const headerEditVisible = ref(false)
 const headerCreateVisible = ref(false)
 const headerDetailVisible = ref(false)
+const { modalStyle: detailModalStyle, onDragStart: detailDragStart, resetDrag: detailResetDrag } = useModalDrag()
 const headerDetailRecord = ref<MfgBomHeader>(emptyHeader())
 const headerDetailTab = ref('info')
 const headerDetailDetails = ref<MfgBomDetail[]>([])
@@ -484,6 +486,7 @@ const handleHeaderDetail = async (record: MfgBomHeader) => {
   headerDetailTreeExpKeys.value = []
   headerDetailAllTreeKeys.value = []
   headerDetailTreeRaw.value = null
+  detailResetDrag()
   headerDetailVisible.value = true
   headerDetailLoading.value = true
   try {
@@ -1332,7 +1335,10 @@ onMounted(async () => {
     </a-modal>
 
     <!-- ========== Header Detail Modal (Tabs) ========== -->
-    <a-modal v-model:open="headerDetailVisible" :title="`制造BOM详情 - ${headerDetailRecord.mfg_bom_number}`" :footer="null" width="1500px" :bodyStyle="{ padding: '12px 16px' }">
+    <a-modal v-model:open="headerDetailVisible" :footer="null" width="1500px" :bodyStyle="{ padding: '12px 16px' }" :style="detailModalStyle" destroyOnClose>
+      <template #title>
+        <div class="drag-handle" @mousedown="detailDragStart">制造BOM详情 - {{ headerDetailRecord.mfg_bom_number }}</div>
+      </template>
       <a-spin :spinning="headerDetailLoading">
         <a-tabs v-model:activeKey="headerDetailTab" :animated="false">
           <a-tab-pane key="info" tab="基本信息">
@@ -1448,6 +1454,11 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+
 .mfg-bom-page {
   display: flex;
   flex-direction: column;

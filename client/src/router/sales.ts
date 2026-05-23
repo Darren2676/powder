@@ -13,9 +13,12 @@ const ShippingOrderList = () => import('@/views/sales/ShippingOrder/List.vue');
 const ShippingOrderDetails = () => import('@/views/sales/ShippingOrder/OrderDetails.vue');
 const ReturnOrderList = () => import('@/views/sales/ReturnOrder/List.vue');
 const ReturnOrderDetails = () => import('@/views/sales/ReturnOrder/Details.vue');
+const SalesInvoiceList = () => import('@/views/sales/SalesInvoice/List.vue');
 const SalesReport = () => import('@/views/sales/SalesReport/Index.vue');
 const ShippingWarning = () => import('@/views/sales/ShippingWarning/List.vue');
 const ShippingByOrderSummary = () => import('@/views/sales/ShippingByOrderSummary/List.vue');
+const OrderProductionSummary = () => import('@/views/sales/OrderProductionSummary/Index.vue');
+const SalesDashboard = () => import('@/views/Dashboard/Index.vue');
 
 export const salesRoutes: RouteRecordRaw[] = [
   { path: 'sales-orders', name: 'SalesOrderList', component: SalesOrderList, meta: {"title":"销售订单"} },
@@ -30,8 +33,11 @@ export const salesRoutes: RouteRecordRaw[] = [
   { path: 'shipping-order-details', name: 'ShippingOrderDetails', component: ShippingOrderDetails, meta: {"title":"发货单明细"} },
   { path: 'return-orders', name: 'ReturnOrderList', component: ReturnOrderList, meta: {"title":"退货管理"} },
   { path: 'return-order-details', name: 'ReturnOrderDetails', component: ReturnOrderDetails, meta: {"title":"退货单明细"} },
+  { path: 'sales-invoices', name: 'SalesInvoiceList', component: SalesInvoiceList, meta: {"title":"销售发票"} },
   { path: 'sales-report', name: 'SalesReport', component: SalesReport, meta: {"title":"销售退货报表"} },
   { path: 'shipping-warning', name: 'ShippingWarning', component: ShippingWarning, meta: {"title":"发货预警"} },
   { path: 'overdue-shipping', name: 'OverdueShipping', component: ShippingWarning, meta: {"title":"逾期发货报告"} },
   { path: 'shipping-by-order-summary', name: 'ShippingByOrderSummary', component: ShippingByOrderSummary, meta: {"title":"发货按订单汇总表"} },
+  { path: 'order-production-summary', name: 'OrderProductionSummary', component: OrderProductionSummary, meta: {"title":"订单维度生产单报表"} },
+  { path: 'sales-order-dashboard', name: 'SalesDashboard', component: SalesDashboard, meta: {"title":"销售订单仪表板" } },
 ];

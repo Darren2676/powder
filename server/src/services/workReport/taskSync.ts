@@ -5,6 +5,7 @@
 import sequelize from '@/config/database';
 import { syncProductionStatus } from '@/services/salesOrderSync.service';
 import { checkAndAutoComplete } from '@/services/documentAutoComplete.service';
+import { autoProductionInbound } from '@/services/workReport/autoInbound';
 import { createLogger } from '@/config/logger';
 
 const log = createLogger('taskSync');
@@ -82,6 +83,14 @@ export const syncTaskCompletion = async (taskNo: string, qtyDelta: number, trans
         await syncProductionStatus(orderNo, '生产完成', txOpt.transaction);
         // 尝试自动完成（需同时满足生产完成+入库完成）
         await checkAndAutoComplete('production_order', orderNo, txOpt.transaction);
+        // 自动生成生产入库单（成品→成品仓，半成品→原料仓）
+        // 延迟执行，确保当前事务先提交，避免死锁
+        const inboundOrderNo = orderNo;
+        setTimeout(async () => {
+          try {
+            await autoProductionInbound(inboundOrderNo);
+          } catch (e: any) { log.warn({ inboundOrderNo, error: e }, '自动入库失败'); }
+        }, 500);
       }
     }
   } catch (e) { log.warn({ taskNo, qtyDelta, error: e }, 'plan_status流转跳过'); }

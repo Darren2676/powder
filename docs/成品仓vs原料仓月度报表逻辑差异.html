@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>成品仓 vs 原料仓月度报表 — 计算逻辑差异</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif; background: #f5f7fa; color: #333; padding: 40px 20px; }
+  .container { max-width: 1100px; margin: 0 auto; }
+  h1 { text-align: center; font-size: 24px; margin-bottom: 8px; color: #1a1a1a; }
+  .subtitle { text-align: center; font-size: 13px; color: #999; margin-bottom: 36px; }
+  .section { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 24px; padding: 24px 28px; }
+  .section h2 { font-size: 16px; color: #1890ff; margin-bottom: 14px; padding-left: 10px; border-left: 3px solid #1890ff; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; color: #555; white-space: nowrap; }
+  td { color: #333; }
+  .col-dim { width: 160px; background: #fafafa; font-weight: 500; }
+  .highlight { background: #fffbe6; }
+  .tag-fg { display: inline-block; background: #e6f7ff; color: #1890ff; border-radius: 3px; padding: 1px 6px; font-size: 12px; margin: 1px 2px; }
+  .tag-mw { display: inline-block; background: #f6ffed; color: #52c41a; border-radius: 3px; padding: 1px 6px; font-size: 12px; margin: 1px 2px; }
+  .tag-same { display: inline-block; background: #f0f0f0; color: #666; border-radius: 3px; padding: 1px 6px; font-size: 12px; }
+  .formula { background: #f9f9f9; border: 1px solid #e8e8e8; border-radius: 4px; padding: 10px 16px; font-family: 'Consolas', 'Courier New', monospace; font-size: 14px; color: #d4380d; text-align: center; margin-top: 10px; }
+  .note { font-size: 12px; color: #999; margin-top: 8px; padding-left: 4px; }
+  .empty { color: #ccc; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>成品仓 vs 原料仓月度报表 — 计算逻辑差异</h1>
+<p class="subtitle">Seals MES System | 仓储模块月度出入库报表对比分析</p>
+
+<!-- 1. 报表入口方式 -->
+<div class="section">
+  <h2>1. 报表入口方式</h2>
+  <table>
+    <thead>
+      <tr><th>维度</th><th>成品仓</th><th>原料仓</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-dim">入口</td>
+        <td>选择盘点单 &rarr; 自动推算报表月份</td>
+        <td>选择仓库 + 会计期间 + 可选盘点单</td>
+      </tr>
+      <tr>
+        <td class="col-dim">报表月份确定</td>
+        <td><code>count_period + 1个月</code>（代码推算）</td>
+        <td>用户直接选择的 <code>accounting_period</code></td>
+      </tr>
+      <tr>
+        <td class="col-dim">盘点单依赖</td>
+        <td>必选，没有则无法生成报表</td>
+        <td>可选，默认取最近的；无盘点单则期初为 0</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 2. 数据分组维度 -->
+<div class="section">
+  <h2>2. 数据分组维度</h2>
+  <table>
+    <thead>
+      <tr><th>维度</th><th>成品仓</th><th>原料仓</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-dim">SQL GROUP BY</td>
+        <td><code>item_number, quality_status</code></td>
+        <td><code>item_number</code></td>
+      </tr>
+      <tr>
+        <td class="col-dim">Map Key</td>
+        <td><code>${item_number}|${quality_status}</code></td>
+        <td><code>item_number</code></td>
+      </tr>
+      <tr class="highlight">
+        <td class="col-dim">分类字段</td>
+        <td><span class="tag-fg">质量状态</span>（合格品 / 不合格品）</td>
+        <td><span class="tag-mw">物料类型</span>（原材料 / 半成品）</td>
+      </tr>
+      <tr>
+        <td class="col-dim">同物料多行</td>
+        <td>是 — 同一物料按质量状态拆行</td>
+        <td>否 — 同一物料仅一行</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 3. 流水表 -->
+<div class="section">
+  <h2>3. 流水表来源</h2>
+  <table>
+    <thead>
+      <tr><th>维度</th><th>成品仓</th><th>原料仓</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-dim">流水表</td>
+        <td><code>inventory_transaction</code></td>
+        <td><code>material_inventory_transaction</code></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 4. 入库分类 -->
+<div class="section">
+  <h2>4. 入库分类对比</h2>
+  <table>
+    <thead>
+      <tr><th>成品仓入库分类</th><th>字段</th><th>原料仓入库分类</th><th>字段</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>生产入库</td><td><code>in_production</code></td>
+        <td>采购入库</td><td><code>in_purchase</code></td>
+      </tr>
+      <tr>
+        <td>退货入库</td><td><code>in_return</code></td>
+        <td>生产入库</td><td><code>in_production</code></td>
+      </tr>
+      <tr>
+        <td><span class="tag-same">盘盈</span></td><td><code>in_surplus</code></td>
+        <td><span class="tag-same">盘盈</span></td><td><code>in_surplus</code></td>
+      </tr>
+      <tr>
+        <td><span class="tag-same">其他入库</span></td><td><code>in_other</code></td>
+        <td><span class="tag-same">其他入库</span></td><td><code>in_other</code></td>
+      </tr>
+      <tr>
+        <td><span class="tag-same">入库合计</span></td><td><code>in_total</code></td>
+        <td><span class="tag-same">入库合计</span></td><td><code>in_total</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="note">* 成品仓无"采购入库"（成品不采购）；原料仓无"退货入库"（原材料不涉及客户退货）</p>
+</div>
+
+<!-- 5. 出库分类 -->
+<div class="section">
+  <h2>5. 出库分类对比</h2>
+  <table>
+    <thead>
+      <tr><th>成品仓出库分类</th><th>字段</th><th>原料仓出库分类</th><th>字段</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>发货出库</td><td><code>out_shipping</code></td>
+        <td>领料出库</td><td><code>out_issue</code></td>
+      </tr>
+      <tr>
+        <td class="empty">—</td><td class="empty">—</td>
+        <td>倒冲出库</td><td><code>out_backflush</code></td>
+      </tr>
+      <tr>
+        <td class="empty">—</td><td class="empty">—</td>
+        <td>委外备料出库</td><td><code>out_outsourcing</code></td>
+      </tr>
+      <tr>
+        <td><span class="tag-same">盘亏</span></td><td><code>out_shortage</code></td>
+        <td><span class="tag-same">盘亏</span></td><td><code>out_shortage</code></td>
+      </tr>
+      <tr>
+        <td><span class="tag-same">其他出库</span></td><td><code>out_other</code></td>
+        <td><span class="tag-same">其他出库</span></td><td><code>out_other</code></td>
+      </tr>
+      <tr>
+        <td><span class="tag-same">出库合计</span></td><td><code>out_total</code></td>
+        <td><span class="tag-same">出库合计</span></td><td><code>out_total</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="note">* 成品仓出库仅 3 类（发货/盘亏/其他）；原料仓出库 5 类（领料/倒冲/委外/盘亏/其他）</p>
+</div>
+
+<!-- 6. 期末计算公式 -->
+<div class="section">
+  <h2>6. 期末计算公式</h2>
+  <div class="formula">closing_qty = opening_qty + in_total - out_total</div>
+  <p class="note" style="margin-top: 12px;">两者完全相同，按行逐条计算后再汇总合计行。</p>
+</div>
+
+<!-- 7. 表格列数 -->
+<div class="section">
+  <h2>7. 表格列数</h2>
+  <table>
+    <thead>
+      <tr><th>维度</th><th>成品仓</th><th>原料仓</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-dim">总列数</td>
+        <td>16 列</td>
+        <td>18 列</td>
+      </tr>
+      <tr>
+        <td class="col-dim">基础信息列</td>
+        <td>5（编号/名称/规格/单位/<strong>质量状态</strong>）</td>
+        <td>5（编号/名称/规格/单位/<strong>物料类型</strong>）</td>
+      </tr>
+      <tr>
+        <td class="col-dim">入库子列</td>
+        <td>5（生产/退货/盘盈/其他/合计）</td>
+        <td>5（采购/生产/盘盈/其他/合计）</td>
+      </tr>
+      <tr>
+        <td class="col-dim">出库子列</td>
+        <td>4（发货/盘亏/其他/合计）</td>
+        <td>6（领料/倒冲/委外/盘亏/其他/合计）</td>
+      </tr>
+      <tr>
+        <td class="col-dim">期初 + 期末</td>
+        <td>2 列</td>
+        <td>2 列</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 8. 期初数据筛选 -->
+<div class="section">
+  <h2>8. 期初数据与交易筛选</h2>
+  <table>
+    <thead>
+      <tr><th>维度</th><th>成品仓</th><th>原料仓</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="col-dim">期初来源</td>
+        <td><code>stock_count_detail</code> 按 <code>item_number, quality_status</code> 汇总</td>
+        <td><code>stock_count_detail</code> 按 <code>item_number</code> 汇总</td>
+      </tr>
+      <tr>
+        <td class="col-dim">交易筛选条件</td>
+        <td colspan="2" style="text-align: center;">
+          <code>accounting_period = :reportMonth OR (ISNULL(accounting_period, '') = '' AND operation_date BETWEEN ...)</code>
+        </td>
+      </tr>
+      <tr>
+        <td class="col-dim">交易 GROUP BY</td>
+        <td><code>item_number, quality_status</code></td>
+        <td><code>item_number</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="note">两者交易筛选 SQL 结构相同，均优先使用 accounting_period 字段，兼容无该字段的历史数据。</p>
+</div>
+
+</div>
+</body>
+</html>

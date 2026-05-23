@@ -124,6 +124,8 @@ const soImportColumns = [
   { title: '交货/结束日期', dataIndex: 'delivery_date', key: 'delivery_date', width: 110 },
   { title: '发货状态', dataIndex: 'shipping_status', key: 'shipping_status', width: 90 },
   { title: '生产状态', dataIndex: 'production_status', key: 'production_status', width: 90 },
+  { title: '客户物料号', dataIndex: 'customer_item_number', key: 'customer_item_number', width: 120, ellipsis: true },
+  { title: '客户物料描述', dataIndex: 'customer_item_description', key: 'customer_item_description', width: 140, ellipsis: true },
 ]
 
 const handleRowSelectionChange = (keys: string[]) => {

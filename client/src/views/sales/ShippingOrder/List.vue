@@ -10,10 +10,12 @@ import {
   updateShippingOrderLogistics, updateShippingOrderStatus,
   getShippingOrderPrintData
 } from '@/api/sales/shippingOrder'
+import { getInvoicesByShippingDetail } from '@/api/sales/salesInvoice'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
+import { useModalDrag } from '@/composables/useModalDrag'
 
 
 
@@ -56,6 +58,7 @@ const formatDateTime = (date: any) => date ? dayjs(date).format('YYYY-MM-DD HH:m
 
 // ==================== 详情弹窗 ====================
 const detailVisible = ref(false)
+const { modalStyle: detailModalStyle, onDragStart: detailDragStart, resetDrag: detailResetDrag } = useModalDrag()
 const detailLoading = ref(false)
 const detailHeader = ref<any>({})
 const detailItems = ref<any[]>([])
@@ -68,7 +71,8 @@ const detailColumns = [
   { title: '产品名称', dataIndex: 'item_name', width: 160, resizable: true },
   { title: '规格', dataIndex: 'specifications', width: 130, resizable: true },
   { title: '单位', dataIndex: 'basic_unit', width: 70, resizable: true },
-  { title: '发货数量', dataIndex: 'quantity', width: 100, resizable: true }
+  { title: '发货数量', dataIndex: 'quantity', width: 100, resizable: true },
+  { title: '开票状态', dataIndex: 'invoice_status', key: 'invoice_status', width: 100 }
 ]
 
 const batchColumns = [
@@ -78,6 +82,7 @@ const batchColumns = [
 ]
 
 const handleViewDetail = async (record: any) => {
+  detailResetDrag()
   detailVisible.value = true
   detailLoading.value = true
   try {
@@ -92,6 +97,40 @@ const handleViewDetail = async (record: any) => {
     detailLoading.value = false
   }
 }
+
+// ==================== 开票状态双向查询 ====================
+const invoiceStatusColors: Record<string, string> = {
+  '未开票': 'default',
+  '部分开票': 'orange',
+  '已开票': 'green'
+}
+const relatedInvoicesVisible = ref(false)
+const relatedInvoicesLoading = ref(false)
+const relatedInvoices = ref<any[]>([])
+const relatedInvoicesDetailId = ref(0)
+
+const handleViewRelatedInvoices = async (detailId: number) => {
+  relatedInvoicesDetailId.value = detailId
+  relatedInvoicesVisible.value = true
+  relatedInvoicesLoading.value = true
+  try {
+    const res: any = await getInvoicesByShippingDetail(detailId)
+    if (res?.success) relatedInvoices.value = res.data || []
+  } catch { message.error('获取关联发票失败') }
+  finally { relatedInvoicesLoading.value = false }
+}
+
+const relatedInvoiceColumns = [
+  { title: '发票编号', dataIndex: 'invoice_number', width: 170 },
+  { title: '发票代码', dataIndex: 'invoice_code', width: 120 },
+  { title: '发票号码', dataIndex: 'invoice_no', width: 120 },
+  { title: '开票日期', dataIndex: 'invoice_date', width: 110 },
+  { title: '客户名称', dataIndex: 'customer_name', width: 140 },
+  { title: '开票数量', dataIndex: 'invoice_quantity', width: 90 },
+  { title: '单价', dataIndex: 'unit_price', width: 90 },
+  { title: '不含税金额', dataIndex: 'amount_without_tax', width: 110 },
+  { title: '审批状态', dataIndex: 'approval_status', width: 90 }
+]
 
 // ==================== 物流信息编辑 ====================
 const logisticsVisible = ref(false)
@@ -366,8 +405,12 @@ onMounted(async () => {
     </a-table>
 
     <!-- 详情弹窗 -->
-    <a-modal v-model:open="detailVisible" title="发货单详情" width="1100px" :footer="null"
+    <a-modal v-model:open="detailVisible" width="1100px" :footer="null"
+      :style="detailModalStyle"
       :bodyStyle="{ maxHeight: '75vh', overflowY: 'auto' }">
+      <template #title>
+        <div class="drag-handle" @mousedown="detailDragStart">发货单详情</div>
+      </template>
       <a-spin :spinning="detailLoading">
         <a-descriptions bordered :column="3" size="small" style="margin-bottom: 16px">
           <a-descriptions-item label="发货单号">{{ detailHeader.shipping_order_number }}</a-descriptions-item>
@@ -400,6 +443,11 @@ onMounted(async () => {
           <template #bodyCell="{ column, record }">
             <template v-if="column.dataIndex === 'quantity'">
               <span style="color: #fa541c; font-weight: 600">{{ record.quantity }}</span>
+            </template>
+            <template v-else-if="column.key === 'invoice_status'">
+              <a-tag :color="invoiceStatusColors[record.invoice_status] || 'default'" style="cursor: pointer" @click="handleViewRelatedInvoices(record.id)">
+                {{ record.invoice_status || '未开票' }}
+              </a-tag>
             </template>
           </template>
           <template #expandedRowRender="{ record }">
@@ -444,6 +492,33 @@ onMounted(async () => {
       </a-form>
     </a-modal>
 
+    <!-- 关联发票弹窗 -->
+    <a-modal v-model:open="relatedInvoicesVisible" title="关联发票列表" width="900px" :footer="null">
+      <a-spin :spinning="relatedInvoicesLoading">
+        <a-table
+          :columns="relatedInvoiceColumns"
+          :data-source="relatedInvoices"
+          :pagination="false"
+          row-key="invoice_number"
+          size="small"
+          bordered
+          :scroll="{ y: 350 }"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.dataIndex === 'approval_status'">
+              <a-tag :color="record.approval_status === '已审批' ? 'green' : 'orange'">{{ record.approval_status }}</a-tag>
+            </template>
+            <template v-else-if="column.dataIndex === 'invoice_date'">
+              {{ formatDate(record.invoice_date) }}
+            </template>
+          </template>
+        </a-table>
+        <div v-if="!relatedInvoicesLoading && relatedInvoices.length === 0" style="text-align: center; color: #999; padding: 20px">
+          该发货明细行暂无关联发票
+        </div>
+      </a-spin>
+    </a-modal>
+
     <ColumnSettingDrawer
       v-model:open="columnSettingVisible"
       :settingList="columnSettingList"
@@ -455,3 +530,10 @@ onMounted(async () => {
     />
   </div>
 </template>
+
+<style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+</style>

@@ -10,6 +10,7 @@ import { getShippingRequests, getShippingRequestDetail, updateShippingRequest, u
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import { useTableList } from '@/composables/useTableList'
+import { useModalDrag } from '@/composables/useModalDrag'
 import dayjs from 'dayjs'
 import { APPROVAL_STATUS } from '@/constants/statuses'
 
@@ -46,6 +47,7 @@ const rowSelection = computed(() => ({
 
 // 详情弹窗
 const detailVisible = ref(false)
+const { modalStyle: detailModalStyle, onDragStart: detailDragStart, resetDrag: detailResetDrag } = useModalDrag()
 const detailLoading = ref(false)
 const detailHeader = ref<any>({})
 const detailItems = ref<any[]>([])
@@ -121,6 +123,7 @@ const formatDateTime = (date: any) => {
 
 const handleViewDetail = async (record: ShippingRequest) => {
   detailLoading.value = true
+  detailResetDrag()
   detailVisible.value = true
   try {
     const res: any = await getShippingRequestDetail(record.request_number)
@@ -440,10 +443,13 @@ onMounted(async () => {
     <!-- 详情弹窗 -->
     <a-modal
       v-model:open="detailVisible"
-      title="发货申请详情"
       width="1100px"
+      :style="detailModalStyle"
       :bodyStyle="{ maxHeight: '75vh', overflowY: 'auto' }"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="detailDragStart">发货申请详情</div>
+      </template>
       <template #footer>
         <a-button v-if="detailHeader.status === '待审核'" type="primary" @click="handleEditFromDetail"><EditOutlined /> 修改</a-button>
         <a-button @click="detailVisible = false">关闭</a-button>
@@ -538,3 +544,10 @@ onMounted(async () => {
     />
   </div>
 </template>
+
+<style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+</style>

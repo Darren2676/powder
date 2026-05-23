@@ -22,6 +22,9 @@ const WipByWorkCenter = () => import('@/views/production/WIP/ByWorkCenter.vue');
 const WipLinesideTransactions = () => import('@/views/production/WIP/LinesideTransactions.vue');
 const OutsourcingPriceList = () => import('@/views/production/OutsourcingPrice/List.vue');
 const PieceRateWageList = () => import('@/views/production/PieceRateWage/List.vue');
+const ProductionMaterialCost = () => import('@/views/production/MaterialCost/Index.vue');
+const ProgressDashboard = () => import('@/views/production/ProgressDashboard/Index.vue');
+const ProcessKanban = () => import('@/views/production/ProcessKanban/Index.vue');
 
 export const productionRoutes: RouteRecordRaw[] = [
   { path: 'orders', name: 'OrderList', component: OrderList, meta: {"title":"生产单管理"} },
@@ -44,5 +47,8 @@ export const productionRoutes: RouteRecordRaw[] = [
   { path: 'wip-by-work-center', name: 'WipByWorkCenter', component: WipByWorkCenter, meta: {"title":"WIP报告(按工作中心)"} },
   { path: 'wip-lineside-transactions', name: 'WipLinesideTransactions', component: WipLinesideTransactions, meta: {"title":"线边仓流水"} },
   { path: 'outsourcing-prices', name: 'OutsourcingPriceList', component: OutsourcingPriceList, meta: {"title":"委外价目表"} },
-  { path: 'piece-rate-wages', name: 'PieceRateWageList', component: PieceRateWageList, meta: {"title":"计件工资管理"} },
+  { path: 'piece-rate-wages', name: 'PieceRateWageList', component: PieceRateWageList, meta: {"title":"计件工资计算"} },
+  { path: 'production-material-cost', name: 'ProductionMaterialCost', component: ProductionMaterialCost, meta: {"title":"生产单材料成本"} },
+  { path: 'progress-dashboard', name: 'ProgressDashboard', component: ProgressDashboard, meta: {"title":"生产工单仪表板" } },
+  { path: 'process-kanban', name: 'ProcessKanban', component: ProcessKanban, meta: {"title":"生产单进度看板" } },
 ];

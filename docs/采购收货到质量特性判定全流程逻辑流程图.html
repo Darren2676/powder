@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>采购收货到质量特性判定全流程逻辑流程图 - 睿信橡胶密封件MES系统</title>
+<script src="../../node_modules/mermaid/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:'default'});</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+  .page { max-width: 1300px; margin: 0 auto; padding: 32px; background: #fff; min-height: 100vh; }
+  h1 { text-align: center; font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 20px; color: #1a1a2e; margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 16px; color: #1a1a2e; margin: 20px 0 10px; }
+  .intro { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; padding: 16px; margin-bottom: 24px; font-size: 14px; }
+  .mermaid { text-align: center; margin: 16px 0; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  .warn { background: #fff1f0; border-left: 4px solid #f5222d; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 4px; }
+  .badge-blue { background: #e6f7ff; color: #1890ff; }
+  .badge-green { background: #f6ffed; color: #52c41a; }
+  .badge-red { background: #fff1f0; color: #f5222d; }
+  .badge-orange { background: #fff7e6; color: #fa8c16; }
+  .badge-purple { background: #f9f0ff; color: #722ed1; }
+  .badge-cyan { background: #e6fffb; color: #13c2c2; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>采购收货到质量特性判定全流程逻辑流程图</h1>
+<div class="subtitle">睿信橡胶密封件MES系统 | 采购收货 → 来料检验判定 → 质量特性启用 → 自动判定合格/不合格 → NC分流处理的全链路业务流程</div>
+
+<div class="intro">
+  <strong>文档说明：</strong>本文档完整展示采购收货到质量特性判定的7个阶段：<br>
+  <strong>阶段1 采购收货通知：</strong>供应商送货 → 创建入库单 → 自动报检<br>
+  <strong>阶段2 检验判定与入库分流：</strong>是否需检验 → 免检入默认仓 / 待检入待检仓<br>
+  <strong>阶段3 质量特性启用判定：</strong>物料主数据优先 → 方案次之 → 确定是否启用质量特性录入<br>
+  <strong>阶段4 质量特性录入与自动判定：</strong>计量型上下限判定 / 计件型标准值判定 / 全部合格→检验合格<br>
+  <strong>阶段5 检验结论与NC创建：</strong>合格品转仓入库 / 不合格品创建NC单<br>
+  <strong>阶段6 NC分流处理：</strong>挑选 / 拒收 / 报废 / 特采 / 退货 5种处理方式<br>
+  <strong>阶段7 撤销回退：</strong>安全检查 → 反转关联单据 → 状态回退<br>
+  涵盖状态流转、数据变更矩阵、关键业务规则及各环节的数据实体关系。
+</div>
+
+<!-- ==================== 一、全流程总览 ==================== -->
+<h2>一、采购收货到质量特性判定全流程总览</h2>
+<div class="mermaid">
+graph TB
+    subgraph 收货通知["📋 阶段1：采购收货通知"]
+        VENDOR[供应商送货到厂] --> CREATE_SI[创建采购入库单<br/>stock_in / stock_in_detail<br/>approval_status=草稿]
+        CREATE_SI --> AUTO_INSP{遍历明细行<br/>item_master<br/>.incoming_inspection}
+        AUTO_INSP -->|Y 需检验| CREATE_PQI[自动创建来料检验单<br/>purchase_quality_inspection<br/>inspect_status=待检验]
+        AUTO_INSP -->|N 免检| NO_INSP[不创建检验单]
+    end
+
+    subgraph 检验分流["🏭 阶段2：检验判定与入库分流"]
+        NO_INSP --> FREE_PATH[免检入库流程<br/>直接入默认仓库]
+        CREATE_PQI --> CHK_PATH[待检入库流程<br/>入待检仓]
+    end
+
+    subgraph 免检入库["✅ 免检物料直接入库"]
+        FREE_PATH --> F1[生成批次号 MB-]
+        F1 --> F2[写入批次库存→默认仓库]
+        F2 --> F3[同步汇总库存]
+        F3 --> F4[写入库存流水<br/>source_type=采购入库]
+        F4 --> F5[回写PO received_quantity]
+        F5 --> SI_DONE1[入库单→已入库]
+    end
+
+    subgraph 待检入库["🔬 待检物料入待检仓"]
+        CHK_PATH --> C1[生成批次号 MB-]
+        C1 --> C2[写入批次库存→待检仓]
+        C2 --> C3[同步汇总库存]
+        C3 --> C4[写入库存流水<br/>source_type=来料待检]
+        C4 --> C5["⚠ 不回写PO<br/>等待检验完成后回写"]
+        C5 --> SI_DONE2[入库单→已入库]
+    end
+
+    subgraph 特性启用判定["🔍 阶段3：质量特性启用判定"]
+        SI_DONE2 --> EQC_CHECK{是否启用<br/>质量特性<br/>enable_quality_chars}
+        EQC_CHECK -->|"物料主数据=Y<br/>(优先)"| EQC_YES[启用质量特性<br/>加载检验规范明细行]
+        EQC_CHECK -->|"方案=Y"| EQC_YES
+        EQC_CHECK -->|"均为N"| EQC_NO[不启用质量特性<br/>仅通过缺陷分类判定]
+    end
+
+    subgraph 特性录入判定["⚖️ 阶段4：质量特性录入与自动判定"]
+        EQC_YES --> INPUT_CHARS[逐项录入实测值<br/>actual_value]
+        INPUT_CHARS --> AUTO_JUDGE{自动判定逻辑<br/>autoJudge}
+        AUTO_JUDGE -->|计量型| MEASURE_JUDGE[实测值 vs<br/>lower_limit / upper_limit]
+        AUTO_JUDGE -->|计件型/计点型| COUNT_JUDGE[实测值 vs<br/>standard_value]
+        MEASURE_JUDGE --> JUDGE_RESULT[判定结果]
+        COUNT_JUDGE --> JUDGE_RESULT
+        JUDGE_RESULT --> ALL_CHECK{全部特性行<br/>判定完成?}
+        ALL_CHECK -->|是| CONCLUSION[自动生成检验结论<br/>全部合格→合格<br/>任一不合格→不合格]
+        EQC_NO --> DEFECT_JUDGE[通过缺陷分类<br/>和不合格数量直接判定]
+    end
+
+    subgraph NC创建["🔎 阶段5：检验结论与NC创建"]
+        CONCLUSION --> INSP_RESULT{检验结论}
+        DEFECT_JUDGE --> INSP_RESULT
+        INSP_RESULT -->|合格| QUALIFIED[合格品转仓入库<br/>待检仓→默认仓库]
+        INSP_RESULT -->|不合格| NC_CREATE[创建NC待处理单<br/>NC-YYYYMMDD-NNN]
+    end
+
+    subgraph NC分流["⚠️ 阶段6：NC分流处理"]
+        NC_CREATE --> NC_CHOOSE{选择处理方式}
+        NC_CHOOSE -->|挑选| SORTING[分拣合格/不合格]
+        NC_CHOOSE -->|拒收| REJECT[拒收标记]
+        NC_CHOOSE -->|报废| SCRAP[报废入库→仓库08]
+        NC_CHOOSE -->|特采| SPECIAL[让步接收→指定仓库]
+        NC_CHOOSE -->|退货| RETURN[退货→校验退货单]
+    end
+
+    subgraph 撤销回退["↩️ 阶段7：撤销回退"]
+        SI_DONE3[入库单 approval_status=已入库] --> WITHDRAW[发起撤回]
+        WITHDRAW --> SAFE_CHECK{安全检查}
+        SAFE_CHECK -->|通过| ROLLBACK[7步反转事务]
+        SAFE_CHECK -->|不通过| REJECT_W[拒绝撤回]
+    end
+</div>
+
+<!-- ==================== 二、阶段1：采购收货通知 ==================== -->
+<h2>二、阶段1：采购收货通知详细流程</h2>
+<div class="mermaid">
+graph TB
+    subgraph 供应商送货["1. 供应商送货"]
+        A1[采购员收到供应商送货信息<br/>送货单号/物料/数量/批次] --> A2[核对采购订单<br/>purchase_order]
+    end
+
+    subgraph 创建入库单["2. 创建采购入库单"]
+        A2 --> B1[选择采购订单号<br/>系统自动带入供应商信息]
+        B1 --> B2[自动带入物料明细<br/>订单数量/已入库数量/未交数量]
+        B2 --> B3[填写本次入库数量<br/>stock_in_quantity]
+        B3 --> B4["保存入库单<br/>stock_in.approval_status=草稿<br/>stock_in_detail写入明细行"]
+    end
+
+    subgraph 自动报检["3. 系统自动报检"]
+        B4 --> C1{遍历明细行<br/>item_master<br/>.incoming_inspection}
+        C1 -->|"= 'Y'"| C2[自动创建来料检验单<br/>purchase_quality_inspection<br/>inspect_status=待检验]
+        C2 --> C3["回写明细行<br/>inspection_number=检验单号<br/>inspect_status=待检验<br/>qualified_quantity=0"]
+        C1 -->|"≠ 'Y'"| C4[免检物料<br/>不创建检验单]
+        C4 --> C5["明细行<br/>inspection_number=NULL<br/>inspect_status=NULL"]
+    end
+</div>
+
+<!-- ==================== 三、阶段2：检验判定与入库分流 ==================== -->
+<h2>三、阶段2：检验判定与入库分流</h2>
+<div class="mermaid">
+graph TB
+    subgraph 点数核对["1. 仓管员点数核对"]
+        A1[根据送货单清点物料<br/>核对物料编码/规格/数量] --> A2{核对结果}
+        A2 -->|数量一致| A3[确认入库]
+        A2 -->|数量不符| A4[调整数量后确认]
+        A4 --> A3
+    end
+
+    subgraph 检验标志分流["2. 系统按检验标志分流处理"]
+        A3 --> B1{item_master<br/>.incoming_inspection}
+        B1 -->|免检物料| B2[免检入库流程]
+        B1 -->|需检验物料| B3[待检入库流程]
+    end
+
+    subgraph 免检入库["3. 免检物料入库流程"]
+        B2 --> C1["生成批次号<br/>MB-YYYYMMDD-NNN"]
+        C1 --> C2["写入批次库存→默认仓库<br/>material_batch_inventory<br/>warehouse_name=默认仓库"]
+        C2 --> C3["同步汇总库存<br/>material_inventory"]
+        C3 --> C4["写入库存流水<br/>source_type=采购入库"]
+        C4 --> C5["回写明细行<br/>inspect_status=免检<br/>qualified_quantity=入库数量"]
+        C5 --> C6["回写PO已收货数量<br/>purchase_order_detail<br/>.received_quantity += 入库数量"]
+    end
+
+    subgraph 待检入库["4. 待检物料入库流程"]
+        B3 --> D1["生成批次号<br/>MB-YYYYMMDD-NNN"]
+        D1 --> D2["写入批次库存→待检仓<br/>material_batch_inventory<br/>warehouse_name=待检仓"]
+        D2 --> D3["同步汇总库存<br/>material_inventory<br/>待检仓维度"]
+        D3 --> D4["写入库存流水<br/>source_type=来料待检"]
+        D4 --> D5["回写明细行<br/>inspect_status=待检验<br/>qualified_quantity=0"]
+        D5 --> D6["⚠ 不回写PO<br/>等待检验完成后回写"]
+    end
+</div>
+
+<div class="note">
+  <strong>免检 vs 待检核心差异：</strong><br>
+  ① 仓库不同：免检入默认仓库，待检入待检仓<br>
+  ② PO回写：免检立即回写 received_quantity，待检不回写（等检验完成）<br>
+  ③ 合格数量：免检=入库数量，待检=0（等检验结果）<br>
+  ④ 检验状态：免检→'免检'，待检→'待检验'
+</div>
+
+<!-- ==================== 四、阶段3：质量特性启用判定 ==================== -->
+<h2>四、阶段3：质量特性启用判定详细流程</h2>
+<div class="mermaid">
+graph TB
+    subgraph 检验单创建["1. 来料检验单创建"]
+        A1["创建检验单<br/>createInspectionForStockIn()"] --> A2["查询物料主数据<br/>item_master<br/>enable_quality_chars"]
+        A2 --> A3["查询来料检验方案<br/>incoming_inspect_plan<br/>enable_quality_chars"]
+    end
+
+    subgraph 优先级判定["2. enable_quality_chars 优先级判定"]
+        A3 --> B1{"物料主数据<br/>enable_quality_chars<br/>= 'Y' ?"}
+        B1 -->|是| B2["✅ 物料级别启用<br/>enable_quality_chars = 'Y'<br/>(最高优先级)"]
+        B1 -->|否/空| B3{"方案<br/>enable_quality_chars<br/>= 'Y' ?"}
+        B3 -->|是| B4["✅ 方案级别启用<br/>enable_quality_chars = 'Y'"]
+        B3 -->|否| B5["❌ 不启用<br/>enable_quality_chars = 'N'"]
+    end
+
+    subgraph 写入检验单["3. 写入检验单"]
+        B2 --> C1["INSERT purchase_quality_inspection<br/>enable_quality_chars = 'Y'"]
+        B4 --> C1
+        B5 --> C2["INSERT purchase_quality_inspection<br/>enable_quality_chars = 'N'"]
+    end
+
+    subgraph 条件加载["4. 条件加载检验规范明细行"]
+        C1 --> D1{"检验规范名称<br/>inspect_spec_name<br/>非空 ?"}
+        D1 -->|是| D2["✅ 加载检验规范特性明细<br/>incoming_inspect_spec_detail<br/>→ purchase_quality_inspection_detail<br/>写入: char_name / data_type<br/>lower_limit / upper_limit<br/>standard_value / inspect_requirement"]
+        D1 -->|否| D3["⚠ 无关联检验规范<br/>检验单无特性明细行<br/>仅通过缺陷分类判定"]
+        C2 --> D3
+    end
+</div>
+
+<div class="note">
+  <strong>enable_quality_chars 优先级规则：</strong><br>
+  ① <strong>物料主数据 > 检验方案：</strong>若 item_master.enable_quality_chars = 'Y'，则不论方案设置如何，均启用<br>
+  ② <strong>方案次之：</strong>物料主数据非'Y'时，看方案 enable_quality_chars 是否为'Y'<br>
+  ③ <strong>默认不启用：</strong>两者均非'Y'时，enable_quality_chars = 'N'<br>
+  ④ <strong>兼容回填：</strong>已有检验规范的物料，数据库迁移时自动设为'Y'，确保功能向前兼容
+</div>
+
+<!-- ==================== 五、阶段4：质量特性录入与自动判定 ==================== -->
+<h2>五、阶段4：质量特性录入与自动判定详细流程</h2>
+<div class="mermaid">
+graph TB
+    subgraph 执行检验["1. 打开检验单执行页面"]
+        A1["采购质量检验页面<br/>PurchaseInspection.vue"] --> A2{"检验单<br/>enable_quality_chars<br/>= 'Y' ?"}
+        A2 -->|是| A3["📋 显示质量特性检测区域<br/>特性明细表 + 实测值录入"]
+        A2 -->|否| A4["📋 不显示特性检测区域<br/>仅显示缺陷记录与检验结论<br/>提示: 未启用质量特性"]
+    end
+
+    subgraph 录入实测值["2. 逐项录入实测值"]
+        A3 --> B1["逐行输入 actual_value<br/>触发 onActualValueChange()"]
+        B1 --> B2["调用 autoJudgedetail<br/>自动判定 is_qualified"]
+    end
+
+    subgraph 计量型判定["3. 计量型自动判定"]
+        B2 --> C1{"data_type<br/>= '计量型' ?"}
+        C1 -->|是| C2["解析 actual_value<br/>为数值 val"]
+        C2 --> C3{"存在<br/>lower_limit ?"}
+        C3 -->|是| C4["val < lower_limit ?"]
+        C4 -->|是| C5["❌ 不合格<br/>is_qualified = '否'"]
+        C4 -->|否| C6{"存在<br/>upper_limit ?"}
+        C6 -->|是| C7["val > upper_limit ?"]
+        C7 -->|是| C5
+        C7 -->|否| C8["✅ 合格<br/>is_qualified = '是'"]
+        C6 -->|否| C8
+        C3 -->|否| C6
+    end
+
+    subgraph 计件型判定["4. 计件型/计点型自动判定"]
+        C1 -->|否| D1{"data_type<br/>= '计件型'<br/>或 '计点型' ?"}
+        D1 -->|是| D2["解析 actual_value<br/>为数值 val"]
+        D2 --> D3{"standard_value<br/>存在且 val > std ?"}
+        D3 -->|是| D4["❌ 不合格<br/>is_qualified = '否'"]
+        D3 -->|否| D5["✅ 合格<br/>is_qualified = '是'"]
+        D1 -->|否| D6["⚠ 未知类型<br/>is_qualified = 空<br/>需人工判定"]
+    end
+
+    subgraph 汇总判定["5. 自动汇总检验结论"]
+        C8 --> E1["autoCalcQuantities()"]
+        D5 --> E1
+        E1 --> E2{"全部特性行<br/>is_qualified = '是' ?"}
+        E2 -->|是| E3["✅ inspect_result = '合格'<br/>qualified_quantity = received_quantity<br/>unqualified_quantity = 0"]
+        E2 -->|否-有不合格行| E4["❌ inspect_result = '不合格'<br/>不合格数量由缺陷明细汇总"]
+    end
+
+    subgraph 完成检查["6. 完成检验前置检查"]
+        E3 --> F1["点击'完成检验'"]
+        E4 --> F1
+        F1 --> F2{"enable_quality_chars<br/>= 'Y' ?"}
+        F2 -->|是| F3{"所有特性行<br/>actual_value 已填写 ?"}
+        F3 -->|否| F4["❌ 拒绝完成<br/>提示: 以下质量特性未填写实测值: xxx"]
+        F3 -->|是| F5["后端 completePurchaseInspection<br/>再次校验必填"]
+        F2 -->|否| F5
+        F5 --> F6["✅ 检验完成<br/>inspect_status → 已完成"]
+    end
+</div>
+
+<div class="note">
+  <strong>自动判定规则说明：</strong><br>
+  ① <strong>计量型：</strong>实测值必须在 [lower_limit, upper_limit] 区间内，超出任一边界即为不合格<br>
+  ② <strong>计件型/计点型：</strong>实测值 ≤ standard_value 为合格，超出标准值为不合格<br>
+  ③ <strong>空白实测值：</strong>不自动判定，is_qualified 保持空，需人工填写<br>
+  ④ <strong>结论汇总：</strong>启用质量特性时，所有特性行全部合格才判定检验合格，任一不合格即判定检验不合格<br>
+  ⑤ <strong>完成检验必填：</strong>启用质量特性时，所有特性行必须填写实测值才能完成检验（前端+后端双重校验）
+</div>
+
+<!-- ==================== 六、阶段5：检验结论与NC创建 ==================== -->
+<h2>六、阶段5：检验结论与NC创建</h2>
+<div class="mermaid">
+graph TB
+    subgraph 检验完成["1. 提交检验结果"]
+        A1["purchase_quality_inspection<br/>inspect_status → 已完成"] --> A2["写入检验明细<br/>purchase_quality_inspection_detail<br/>保存 actual_value / is_qualified"]
+        A1 --> A3{检验结论判断}
+    end
+
+    subgraph 合格处理["2. 检验合格处理"]
+        A3 -->|"合格"| B1["更新明细行<br/>inspect_status=已完成<br/>qualified_quantity=检验合格数"]
+        B1 --> B2["通知仓管员<br/>可执行检验后入库"]
+        B2 --> B3["合格品转仓<br/>待检仓→默认仓库"]
+        B3 --> B4["① 待检仓批次库存扣减<br/>② 默认仓库批次库存增加<br/>③ 汇总库存双向同步<br/>④ 写入出入库流水<br/>⑤ 回写PO received_quantity<br/>⑥ 更新PO order_status"]
+    end
+
+    subgraph 不合格处理["3. 检验不合格处理 - NC单创建"]
+        A3 -->|"不合格"| C1["执行不合格品处理<br/>defectHandlingPurchaseInspection()"]
+        C1 --> C2["遍历缺陷明细行<br/>filter: inspect_result='不合格'"]
+        C2 --> C3["为每个不合格缺陷行<br/>创建独立NC单"]
+        C3 --> C4["NC-YYYYMMDD-NNN<br/>nonconforming_product<br/>handling_status=待处理<br/>source_type=来料检验<br/>defect_handling=NC单号"]
+        C4 --> C5["提示用户<br/>在'待处理不合格品'页面<br/>分别选择处理方式"]
+    end
+</div>
+
+<!-- ==================== 七、阶段6：NC分流处理 ==================== -->
+<h2>七、阶段6：NC分流处理详细流程</h2>
+<div class="mermaid">
+graph TB
+    subgraph NC列表["1. 待处理不合格品列表"]
+        A1["质量管理→待处理不合格品<br/>列出 handling_status=待处理 的NC单"] --> A2["每个NC单对应一个不合格缺陷行<br/>含缺陷分类/缺陷名称/不合格数量"]
+    end
+
+    subgraph 分流选择["2. 选择处理方式"]
+        A2 --> B1{选择处理方式}
+        B1 -->|挑选| B2[分拣合格/不合格]
+        B1 -->|拒收| B3[拒收标记]
+        B1 -->|报废| B4[报废入库→仓库08]
+        B1 -->|特采| B5[让步接收→指定仓库]
+        B1 -->|退货| B6[退货→校验退货单]
+    end
+
+    subgraph 挑选处理["3a. 挑选"]
+        B2 --> S1["分拣出合格品与不合格品<br/>记录合格数量与不合格数量"]
+        S1 --> S2["合格品: 入默认仓库<br/>不合格品: 继续处理或报废"]
+        S2 --> S3["回写 stock_in_detail<br/>inspect_status=已处理-挑选"]
+    end
+
+    subgraph 拒收处理["3b. 拒收"]
+        B3 --> R1["标记拒收<br/>物料退回供应商"]
+        R1 --> R2["待检仓出库<br/>创建出库流水"]
+        R2 --> R3["回写 stock_in_detail<br/>inspect_status=已处理-拒收"]
+    end
+
+    subgraph 报废处理["3c. 报废"]
+        B4 --> SC1["创建报废入库单<br/>转入报废仓库08"]
+        SC1 --> SC2["待检仓→报废仓<br/>批次库存转仓"]
+        SC2 --> SC3["回写 stock_in_detail<br/>inspect_status=已处理-报废"]
+    end
+
+    subgraph 特采处理["3d. 特采(让步接收)"]
+        B5 --> SP1["让步接收<br/>qualified_quantity += special_qty"]
+        SP1 --> SP2["按让步数量入库<br/>指定仓库"]
+        SP2 --> SP3["回写 stock_in_detail<br/>inspect_status=已处理-特采"]
+    end
+
+    subgraph 退货处理["3e. 退货"]
+        B6 --> RT1["校验退货单号<br/>return_order_number"]
+        RT1 --> RT2["待检仓出库<br/>退回供应商"]
+        RT2 --> RT3["回写 stock_in_detail<br/>inspect_status=已处理-退货"]
+    end
+</div>
+
+<div class="note">
+  <strong>NC分流处理说明：</strong><br>
+  ① 每个不合格缺陷行创建独立的NC单，实现精细化处理<br>
+  ② 不同缺陷行可选择不同处理方式（如A缺陷选拒收，B缺陷选特采）<br>
+  ③ 让步接收行不需要创建NC单（inspect_result='让步接收'）<br>
+  ④ 处理完成后 NC单 handling_status → 已完成，defect_handling 记录实际处理方式
+</div>
+
+<!-- ==================== 八、单据状态流转 ==================== -->
+<h2>八、单据状态流转图</h2>
+
+<h3>8.1 来料检验单（purchase_quality_inspection）状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 待检验: 自动报检创建
+
+    待检验 --> 检验中: 填写检验数据
+
+    state 检验中分支 {
+        检验中 --> 已完成: 确认提交
+        检验中 --> 已完成: 完成检验
+    }
+
+    已完成 --> [*]
+
+    待检验 --> 已作废: 入库撤回
+
+    已作废 --> [*]
+</div>
+
+<h3>8.2 入库明细（stock_in_detail）检验状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 空: 创建明细行
+
+    state 免检路径 {
+        空 --> 免检: 确认入库(免检物料)
+    }
+
+    state 待检路径 {
+        空 --> 待检验: 确认入库(待检物料)
+        待检验 --> 检验中: 填写检验数据
+        检验中 --> 已完成: 确认提交
+        已完成 --> 已处理_挑选: NC处理-挑选
+        已完成 --> 已处理_拒收: NC处理-拒收
+        已完成 --> 已处理_报废: NC处理-报废
+        已完成 --> 已处理_特采: NC处理-特采
+        已完成 --> 已处理_退货: NC处理-退货
+    }
+
+    空 --> [*]: 入库撤回
+    待检验 --> 空: 入库撤回
+</div>
+
+<h3>8.3 NC不合格品单状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 待处理: 检验不合格→缺陷处理创建NC单
+
+    待处理 --> 已完成: 选择挑选/拒收/报废/特采/退货
+    待处理 --> 处理中: 退货流程中的中间状态
+
+    处理中 --> 已完成: 处理完成
+
+    已完成 --> [*]
+</div>
+
+<!-- ==================== 九、关键数据实体关系 ==================== -->
+<h2>九、关键数据实体关系</h2>
+<div class="mermaid">
+erDiagram
+    ITEM_MASTER ||--o{ PURCHASE_QUALITY_INSPECTION : "enable_quality_chars"
+    INCOMING_INSPECT_PLAN ||--o{ PURCHASE_QUALITY_INSPECTION : "enable_quality_chars"
+    ITEM_MASTER ||--o{ STOCK_IN_DETAIL : "物料信息"
+    STOCK_IN ||--o{ STOCK_IN_DETAIL : "入库明细"
+    STOCK_IN_DETAIL ||--o| PURCHASE_QUALITY_INSPECTION : "条件触发来料检验"
+    PURCHASE_QUALITY_INSPECTION ||--o{ PURCHASE_QUALITY_INSPECTION_DETAIL : "检验特性明细"
+    PURCHASE_QUALITY_INSPECTION ||--o| NONCONFORMING_PRODUCT : "不合格创建NC"
+
+    STOCK_IN_DETAIL ||--o| MATERIAL_BATCH_INVENTORY : "写入批次库存"
+    MATERIAL_BATCH_INVENTORY }o--|| MATERIAL_INVENTORY : "汇总库存"
+    STOCK_IN_DETAIL ||--o| MATERIAL_INVENTORY_TRANSACTION : "写入库存流水"
+
+    INCOMING_INSPECT_SPEC ||--o{ PURCHASE_QUALITY_INSPECTION_DETAIL : "特性来源规范"
+    INCOMING_INSPECT_SPEC ||--o{ INCOMING_INSPECT_SPEC_DETAIL : "规范特性定义"
+    INCOMING_INSPECT_SPEC_DETAIL ||--o{ PURCHASE_QUALITY_INSPECTION_DETAIL : "明细行来源"
+
+    NONCONFORMING_PRODUCT ||--o| STOCK_IN : "报废关联入库单"
+    NONCONFORMING_PRODUCT ||--o| RETURN_ORDER : "退货关联"
+
+    WAREHOUSE ||--o{ MATERIAL_BATCH_INVENTORY : "仓库维度"
+    WAREHOUSE ||--o{ MATERIAL_INVENTORY : "仓库维度"
+</div>
+
+<!-- ==================== 十、数据变更矩阵 ==================== -->
+<h2>十、数据变更矩阵</h2>
+
+<h3>10.1 各操作对数据库表的影响</h3>
+<table>
+<tr>
+  <th>数据库表</th>
+  <th>创建入库单</th>
+  <th>自动报检</th>
+  <th>确认入库(免检)</th>
+  <th>确认入库(待检)</th>
+  <th>执行检验<br/>(含质量特性)</th>
+  <th>完成检验</th>
+  <th>NC分流处理</th>
+  <th>入库撤回</th>
+</tr>
+<tr>
+  <td><span class="badge badge-blue">stock_in</span></td>
+  <td>写入(草稿)</td>
+  <td>—</td>
+  <td>→已入库</td>
+  <td>→已入库</td>
+  <td>—</td>
+  <td>—</td>
+  <td>—</td>
+  <td>→已撤回</td>
+</tr>
+<tr>
+  <td><span class="badge badge-blue">stock_in_detail</span></td>
+  <td>写入明细</td>
+  <td>检验单号+状态</td>
+  <td>批次号+免检</td>
+  <td>批次号+待检验</td>
+  <td>—</td>
+  <td>—</td>
+  <td>inspect_status<br/>更新处理方式</td>
+  <td>清空批次号+状态</td>
+</tr>
+<tr>
+  <td><span class="badge badge-green">material_batch_inventory</span></td>
+  <td>—</td>
+  <td>—</td>
+  <td>+默认仓库存</td>
+  <td>+待检仓库存</td>
+  <td>—</td>
+  <td>—</td>
+  <td>-待检 +目标仓库</td>
+  <td>扣减/删除</td>
+</tr>
+<tr>
+  <td><span class="badge badge-green">material_inventory</span></td>
+  <td>—</td>
+  <td>—</td>
+  <td>+默认仓汇总</td>
+  <td>+待检仓汇总</td>
+  <td>—</td>
+  <td>—</td>
+  <td>-待检 +目标仓库</td>
+  <td>重新同步</td>
+</tr>
+<tr>
+  <td><span class="badge badge-cyan">material_inventory_transaction</span></td>
+  <td>—</td>
+  <td>—</td>
+  <td>采购入库流水</td>
+  <td>来料待检流水</td>
+  <td>—</td>
+  <td>—</td>
+  <td>出入库流水</td>
+  <td>remark标记作废</td>
+</tr>
+<tr>
+  <td><span class="badge badge-orange">purchase_quality_inspection</span></td>
+  <td>—</td>
+  <td>写入(待检验)<br/>enable_quality_chars</td>
+  <td>—</td>
+  <td>—</td>
+  <td>→检验中</td>
+  <td>→已完成<br/>inspect_result</td>
+  <td>—</td>
+  <td>→已作废</td>
+</tr>
+<tr>
+  <td><span class="badge badge-orange">purchase_quality_inspection<br/>_detail</span></td>
+  <td>—</td>
+  <td>条件写入<br/>(仅enable=Y时<br/>从规范加载)</td>
+  <td>—</td>
+  <td>—</td>
+  <td>录入actual_value<br/>autoJudge判定</td>
+  <td>保存is_qualified</td>
+  <td>—</td>
+  <td>—</td>
+</tr>
+<tr>
+  <td><span class="badge badge-purple">purchase_order_detail</span></td>
+  <td>—</td>
+  <td>—</td>
+  <td>+received_qty</td>
+  <td style="color:#fa8c16;font-weight:700;">⚠ 不回写</td>
+  <td>—</td>
+  <td>—</td>
+  <td>+received_qty</td>
+  <td>-received_qty</td>
+</tr>
+<tr>
+  <td><span class="badge badge-red">nonconforming_product</span></td>
+  <td>—</td>
+  <td>—</td>
+  <td>—</td>
+  <td>—</td>
+  <td>—</td>
+  <td>—</td>
+  <td>创建NC单<br/>→处理→完成</td>
+  <td>—</td>
+</tr>
+</table>
+
+<!-- ==================== 十一、核心业务规则汇总 ==================== -->
+<h2>十一、核心业务规则汇总</h2>
+
+<h3>11.1 来料检验触发条件</h3>
+<table>
+<tr><th>条件</th><th>是否触发检验</th><th>说明</th></tr>
+<tr><td>item_master.incoming_inspection = 'Y'</td><td><span class="badge badge-green">是</span></td><td>创建入库单时自动创建来料检验单</td></tr>
+<tr><td>item_master.incoming_inspection ≠ 'Y'</td><td><span class="badge badge-orange">否</span></td><td>免检物料，直接确认入库到默认仓库</td></tr>
+</table>
+
+<h3>11.2 质量特性启用判定规则</h3>
+<table>
+<tr><th>判定维度</th><th>优先级</th><th>条件</th><th>结果</th></tr>
+<tr><td><span class="badge badge-blue">item_master</span></td><td>1 最高</td><td>enable_quality_chars = 'Y'</td><td><span class="badge badge-green">启用</span></td></tr>
+<tr><td><span class="badge badge-blue">incoming_inspect_plan</span></td><td>2 次之</td><td>物料非Y + 方案enable_quality_chars = 'Y'</td><td><span class="badge badge-green">启用</span></td></tr>
+<tr><td>默认</td><td>3 最低</td><td>物料非Y + 方案非Y</td><td><span class="badge badge-red">不启用</span></td></tr>
+</table>
+
+<h3>11.3 质量特性自动判定规则</h3>
+<table>
+<tr><th>数据类型</th><th>判定逻辑</th><th>合格条件</th><th>不合格条件</th></tr>
+<tr><td><span class="badge badge-blue">计量型</span></td><td>实测值 vs [lower_limit, upper_limit]</td><td>lower_limit ≤ val ≤ upper_limit</td><td>val &lt; lower_limit 或 val &gt; upper_limit</td></tr>
+<tr><td><span class="badge badge-orange">计件型</span></td><td>实测值 vs standard_value</td><td>val ≤ standard_value</td><td>val &gt; standard_value</td></tr>
+<tr><td><span class="badge badge-orange">计点型</span></td><td>实测值 vs standard_value</td><td>val ≤ standard_value</td><td>val &gt; standard_value</td></tr>
+<tr><td>空值</td><td>未录入实测值</td><td>不自动判定</td><td>需人工填写</td></tr>
+</table>
+
+<h3>11.4 检验结论自动汇总规则</h3>
+<table>
+<tr><th>场景</th><th>条件</th><th>自动结论</th><th>合格数量</th></tr>
+<tr><td><span class="badge badge-green">全部合格</span></td><td>启用特性 + 所有行 is_qualified='是'</td><td>合格</td><td>= 到货数量</td></tr>
+<tr><td><span class="badge badge-red">有不合格</span></td><td>启用特性 + 任一行 is_qualified='否'</td><td>不合格</td><td>由缺陷明细汇总</td></tr>
+<tr><td><span class="badge badge-orange">未启用特性</span></td><td>enable_quality_chars ≠ 'Y'</td><td>人工判定</td><td>人工填写</td></tr>
+</table>
+
+<h3>11.5 完成检验前置校验</h3>
+<table>
+<tr><th>校验项</th><th>校验条件</th><th>不通过处理</th><th>校验位置</th></tr>
+<tr><td>检验结论必填</td><td>inspect_result 非空</td><td>提示"请先填写检验结论"</td><td>前端</td></tr>
+<tr><td>特性实测值必填</td><td>enable_quality_chars='Y' + 所有行 actual_value 非空</td><td>提示"以下质量特性未填写实测值: xxx"</td><td>前端+后端</td></tr>
+</table>
+
+<h3>11.6 NC分流处理方式对照</h3>
+<table>
+<tr><th>处理方式</th><th>核心动作</th><th>库存影响</th><th>明细行状态</th></tr>
+<tr><td><span class="badge badge-blue">挑选</span></td><td>分拣合格/不合格，更新数量</td><td>待检仓数量调整</td><td>已处理-挑选</td></tr>
+<tr><td><span class="badge badge-red">拒收</span></td><td>标记拒收，物料退回</td><td>待检仓出库</td><td>已处理-拒收</td></tr>
+<tr><td><span class="badge badge-red">报废</span></td><td>创建报废入库单，入报废仓库08</td><td>待检仓→报废仓</td><td>已处理-报废</td></tr>
+<tr><td><span class="badge badge-purple">特采</span></td><td>让步接收，合格数+=特采数量</td><td>待检仓→指定仓库</td><td>已处理-特采</td></tr>
+<tr><td><span class="badge badge-orange">退货</span></td><td>校验退货单号，标记退货</td><td>待检仓出库退回</td><td>已处理-退货</td></tr>
+</table>
+
+<h3>11.7 关键数据库字段说明</h3>
+<table>
+<tr><th>表名</th><th>字段</th><th>值域</th><th>说明</th></tr>
+<tr><td>item_master</td><td>enable_quality_chars</td><td>Y / N</td><td>物料级质量特性启用标志（优先级最高）</td></tr>
+<tr><td>incoming_inspect_plan</td><td>enable_quality_chars</td><td>Y / N</td><td>方案级质量特性启用标志</td></tr>
+<tr><td>purchase_quality_inspection</td><td>enable_quality_chars</td><td>Y / N</td><td>检验单级质量特性启用标志（由物料/方案确定）</td></tr>
+<tr><td>purchase_quality_inspection_detail</td><td>actual_value</td><td>字符串</td><td>实测值（启用特性时必填）</td></tr>
+<tr><td>purchase_quality_inspection_detail</td><td>is_qualified</td><td>是 / 否 / 空</td><td>自动判定结果</td></tr>
+<tr><td>purchase_quality_inspection_detail</td><td>data_type</td><td>计量型 / 计件型 / 计点型</td><td>判定逻辑选择依据</td></tr>
+<tr><td>purchase_quality_inspection_detail</td><td>lower_limit</td><td>数值</td><td>计量型下限</td></tr>
+<tr><td>purchase_quality_inspection_detail</td><td>upper_limit</td><td>数值</td><td>计量型上限</td></tr>
+<tr><td>purchase_quality_inspection_detail</td><td>standard_value</td><td>数值</td><td>计件型/计点型标准值</td></tr>
+</table>
+
+<div style="margin-top:40px;text-align:center;color:#888;font-size:12px;">
+  文档生成时间：2026年5月15日 | 基于系统代码版本自动生成 | 采购收货到质量特性判定全流程逻辑流程图
+</div>
+
+</div>
+</body>
+</html>

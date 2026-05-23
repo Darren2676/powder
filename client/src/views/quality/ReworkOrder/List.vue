@@ -10,6 +10,7 @@ import {
   completeRework, reworkReInspect, exportReworkOrders
 } from '@/api/quality/reworkOrder'
 import { generateExportFilename } from '@/utils/exportFilename'
+import { useModalDrag } from '@/composables/useModalDrag'
 
 defineOptions({ name: 'ReworkOrderList' })
 
@@ -23,6 +24,7 @@ const stats = ref<any>({})
 
 // ==================== Detail Modal ====================
 const detailVisible = ref(false)
+const { modalStyle: detailModalStyle, onDragStart: detailDragStart, resetDrag: detailResetDrag } = useModalDrag()
 const detailRecord = ref<any>({})
 
 // ==================== Re-inspect Modal ====================
@@ -79,6 +81,7 @@ const handleTableChange = (pag: any) => {
 // ==================== Detail ====================
 const handleDetail = async (record: any) => {
   try {
+    detailResetDrag()
     const res = await getReworkOrderDetail(record.rework_order_number)
     detailRecord.value = res.data || {}
     detailVisible.value = true
@@ -221,7 +224,10 @@ onMounted(() => { fetchList() })
     </a-card>
 
     <!-- ========== Detail Modal ========== -->
-    <a-modal v-model:open="detailVisible" title="返修单详情" :footer="null" width="800px">
+    <a-modal v-model:open="detailVisible" :footer="null" width="800px" :style="detailModalStyle">
+      <template #title>
+        <div class="drag-handle" @mousedown="detailDragStart">返修单详情</div>
+      </template>
       <a-descriptions :column="3" bordered size="small" :labelStyle="{ fontWeight: 'bold', width: '110px' }">
         <a-descriptions-item label="返修单号">{{ detailRecord.rework_order_number }}</a-descriptions-item>
         <a-descriptions-item label="不合格品单号">{{ detailRecord.nonconforming_number }}</a-descriptions-item>
@@ -271,6 +277,10 @@ onMounted(() => { fetchList() })
 </template>
 
 <style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
 :deep(.ant-descriptions-item-label) {
   white-space: nowrap;
 }

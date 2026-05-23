@@ -12,11 +12,13 @@ import {
 import { getWarehouseOptions } from '@/api/warehouse/finishedGoods'
 import { getItemOptions } from '@/api/warehouse/materialWarehouse'
 import { useModalDrag } from '@/composables/useModalDrag'
+import { useOpenAccountingPeriods } from '@/composables/useOpenAccountingPeriods'
 import dayjs from 'dayjs'
 
 const { modalStyle, onDragStart, resetDrag } = useModalDrag()
 const { modalStyle: detailModalStyle, onDragStart: onDetailDragStart, resetDrag: resetDetailDrag } = useModalDrag()
 const { modalStyle: confirmModalStyle, onDragStart: onConfirmDragStart, resetDrag: resetConfirmDrag } = useModalDrag()
+const { openPeriodOptions, openPeriodLoading, noOpenPeriod, fetchOpenPeriods, getDefaultPeriod } = useOpenAccountingPeriods()
 
 const loading = ref(false)
 const dataSource = ref<any[]>([])
@@ -160,8 +162,10 @@ const handleCreate = () => {
   form.target_warehouse_name = ''
   form.reason = ''
   form.remark = ''
-  const now = new Date()
-  form.accounting_period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  form.accounting_period = getDefaultPeriod()
+  if (noOpenPeriod.value) {
+    message.warning('当前没有已开启的会计期间，请联系财务开启后再操作')
+  }
   form.details = []
   resetDrag()
   formVisible.value = true
@@ -468,6 +472,7 @@ const handleConfirmAction = async () => {
 }
 
 onMounted(() => {
+  fetchOpenPeriods()
   fetchWarehouseOptions()
   fetchData()
 })
@@ -630,7 +635,11 @@ onMounted(() => {
         <a-row :gutter="16">
           <a-col :span="6">
             <a-form-item label="会计期间">
-              <a-input v-model:value="form.accounting_period" placeholder="YYYY-MM" />
+              <a-select v-model:value="form.accounting_period" placeholder="请选择会计期间"
+                :loading="openPeriodLoading" style="width: 100%">
+                <a-select-option v-for="opt in openPeriodOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</a-select-option>
+                <a-select-option v-if="noOpenPeriod" disabled value="">无已开启期间</a-select-option>
+              </a-select>
             </a-form-item>
           </a-col>
         </a-row>

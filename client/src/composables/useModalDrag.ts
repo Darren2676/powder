@@ -10,7 +10,9 @@ export function useModalDrag() {
   const dragState = reactive({ dragging: false, startX: 0, startY: 0, offsetX: 0, offsetY: 0 })
 
   const modalStyle = computed(() => ({
-    transform: `translate(${dragState.offsetX}px, ${dragState.offsetY}px)`,
+    top: `${dragState.offsetY}px`,
+    left: `${dragState.offsetX}px`,
+    transform: 'none',
   }))
 
   function onDragStart(e: MouseEvent) {

@@ -5,14 +5,17 @@ import multer from 'multer';
 import {
   getPurchasePriceLists, getPurchasePriceListDetail, createPurchasePriceList,
   updatePurchasePriceList, deletePurchasePriceList,
-  exportPurchasePriceLists, importPurchasePriceList
+  exportPurchasePriceLists, importPurchasePriceList,
+  queryPurchasePrice, downloadImportTemplate
 } from './purchasePrice.controller';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 router.get('/', authenticate, getPurchasePriceLists);
+router.get('/query-price', authenticate, queryPurchasePrice);
 router.get('/export', authenticate, exportPurchasePriceLists);
+router.get('/import-template', authenticate, downloadImportTemplate);
 router.post('/import', authenticate, upload.single('file'), importPurchasePriceList);
 router.post('/', authenticate, validateCreatePurchasePriceList, createPurchasePriceList);
 router.get('/:id', authenticate, getPurchasePriceListDetail);

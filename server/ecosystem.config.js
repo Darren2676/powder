@@ -2,8 +2,8 @@ module.exports = {
   apps: [{
     name: 'seals-mes-api',
     script: './dist/server.js',
-    instances: 2,
-    exec_mode: 'cluster',
+    instances: 1,
+    exec_mode: 'fork',
     max_memory_restart: '1G',
     env: {
       NODE_ENV: 'production',

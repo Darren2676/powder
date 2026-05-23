@@ -441,3 +441,31 @@ export const exportPieceRateWages = async (req: Request, res: Response, next: Ne
     exportToExcel(items, exportFields, exportHeaders, 'piece_rate_wages', res);
   } catch (err) { next(err); }
 };
+
+export const exportPieceRateWagesSelected = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ success: false, message: '请提供要导出的记录ID' }); return;
+    }
+    const placeholders = ids.map((_: any, i: number) => `@id${i}`).join(',');
+    const replacements: any = {};
+    ids.forEach((id: string, i: number) => { replacements[`id${i}`] = id; });
+    const [items]: any = await sequelize.query(`
+      SELECT h.wage_number, h.wage_name,
+             d.employee_number, d.employee_name,
+             d.item_number, d.item_name, d.standard_process_number, d.standard_process_name,
+             d.equipment_number, d.equipment_name, d.report_date,
+             d.qualified_quantity, d.unqualified_quantity,
+             d.qualified_piece_rate, d.defective_piece_rate,
+             d.qualified_wage, d.defective_wage, d.line_wage,
+             d.work_report_number, d.production_order_number,
+             h.approval_status
+      FROM piece_rate_wage_header h
+      INNER JOIN piece_rate_wage_detail d ON d.wage_number = h.wage_number
+      WHERE h.wage_number IN (${placeholders})
+      ORDER BY h.wage_number, d.line_number
+    `, { replacements });
+    exportToExcel(items, exportFields, exportHeaders, 'piece_rate_wages_selected', res);
+  } catch (err) { next(err); }
+};

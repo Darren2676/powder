@@ -16,7 +16,7 @@ const headers = ['方案名称', '检验类型', '是否全检', '是否抽检',
 export const getInspectionPlans = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const limit = parseInt(req.query.limit as string) || 50;
     const search = (req.query.search as string) || '';
     const inspect_type = (req.query.inspect_type as string) || '';
 
@@ -38,10 +38,24 @@ export const getInspectionPlans = async (req: Request, res: Response, next: Next
     );
     const total = countResult[0].total;
 
+    const planOrderCase = `CASE plan_name
+      WHEN N'硫化自检' THEN 1
+      WHEN N'生产抽检' THEN 2
+      WHEN N'生产全检' THEN 3
+      WHEN N'生产过程检' THEN 4
+      WHEN N'包装自检' THEN 5
+      WHEN N'巡检' THEN 6
+      WHEN N'机加自检' THEN 7
+      WHEN N'机加全检' THEN 8
+      WHEN N'机加抽检' THEN 9
+      WHEN N'机加巡检' THEN 10
+      ELSE 99
+    END`;
+
     const offset = (page - 1) * limit;
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY plan_name) AS _row_num
+        SELECT *, ROW_NUMBER() OVER (ORDER BY ${planOrderCase}, plan_name) AS _row_num
         FROM inspection_plan ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
@@ -147,9 +161,22 @@ export const deleteInspectionPlan = async (req: Request, res: Response, next: Ne
   } catch (err) { next(err); }
 };
 
+const planOrderCaseExport = `CASE plan_name
+  WHEN N'硫化自检' THEN 1
+  WHEN N'生产抽检' THEN 2
+  WHEN N'生产全检' THEN 3
+  WHEN N'生产过程检' THEN 4
+  WHEN N'包装自检' THEN 5
+  WHEN N'巡检' THEN 6
+  WHEN N'机加自检' THEN 7
+  WHEN N'机加全检' THEN 8
+  WHEN N'机加抽检' THEN 9
+  WHEN N'机加巡检' THEN 10
+  ELSE 99 END`;
+
 export const exportInspectionPlans = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [items]: any = await sequelize.query(`SELECT * FROM inspection_plan ORDER BY inspect_type, plan_name`);
+    const [items]: any = await sequelize.query(`SELECT * FROM inspection_plan ORDER BY ${planOrderCaseExport}, plan_name`);
     exportToExcel(items, fields, headers, 'inspection_plans', res);
   } catch (err) { next(err); }
 };

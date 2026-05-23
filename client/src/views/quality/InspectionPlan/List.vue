@@ -218,6 +218,7 @@ const filterType = ref<string | undefined>(undefined)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getInspectionPlans)
+pagination.pageSize = 50
 
 // ===== Modal 状态 =====
 const modalVisible = ref(false)

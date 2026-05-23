@@ -6,13 +6,14 @@ import {
   ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined,
   DownloadOutlined, UploadOutlined, PlusOutlined, HistoryOutlined, CopyOutlined,
   ApartmentOutlined, DownOutlined, UnorderedListOutlined, WarningOutlined,
-  ExpandAltOutlined, ShrinkOutlined, SettingOutlined, SearchOutlined
+  ExpandAltOutlined, ShrinkOutlined, SettingOutlined, SearchOutlined,
+  DollarOutlined, PieChartOutlined
 } from '@ant-design/icons-vue'
 import {
   getBomHeaders, getBomHeaderDetail, createBomHeader, updateBomHeader, deleteBomHeader,
   addBomDetail, updateBomDetail, deleteBomDetail,
   exportBomData, importBomData, copyBomAsNewVersion,
-  getBomTree
+  getBomTree, getAvailableCostLists, getCostBom, exportCostBomData
 } from '@/api/master-data/bom'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getWarehouses } from '@/api/master-data/warehouse'
@@ -31,6 +32,7 @@ import { TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { CONDITION_STATUS } from '@/constants/statuses'
 import { generateExportFilename } from '@/utils/exportFilename'
+import { useModalDrag } from '@/composables/useModalDrag'
 
 use([TreeChart, TooltipComponent, CanvasRenderer])
 
@@ -130,6 +132,7 @@ const selectedHeaderKey = ref<string | null>(null)
 const headerEditVisible = ref(false)
 const headerCreateVisible = ref(false)
 const headerDetailVisible = ref(false)
+const { modalStyle: detailModalStyle, onDragStart: detailDragStart, resetDrag: detailResetDrag } = useModalDrag()
 const headerDetailRecord = ref<BomHeader>(emptyHeader())
 const headerDetailTab = ref('info')
 const headerDetailDetails = ref<BomDetail[]>([])
@@ -138,6 +141,11 @@ const headerDetailTreeExpKeys = ref<string[]>([])
 const headerDetailAllTreeKeys = ref<string[]>([])
 const headerDetailTreeRaw = ref<any>(null)
 const headerDetailLoading = ref(false)
+// Cost BOM
+const costBomLoading = ref(false)
+const costBomData = ref<any>(null)
+const costBomCostLists = ref<any[]>([])
+const costBomSelectedList = ref<string>('')
 const headerEditForm = reactive<BomHeader>(emptyHeader())
 const headerCreateForm = reactive<BomHeader>(emptyHeader())
 const fileInputRef = ref<HTMLInputElement>()
@@ -271,6 +279,13 @@ const handleTreeCollapseAll = () => { treeExpandedKeys.value = [] }
 watch(detailViewMode, (newMode) => {
   if (newMode === 'tree' && selectedHeaderKey.value) {
     loadBomTree()
+  }
+})
+
+// 成本BOM页签切换监听
+watch(headerDetailTab, (newTab) => {
+  if (newTab === 'cost' && headerDetailRecord.value.bom_number && !costBomData.value) {
+    loadCostBom(headerDetailRecord.value.bom_number)
   }
 })
 
@@ -461,6 +476,21 @@ const detailModalColumns = [
   { title: '子BOM', dataIndex: 'matched_bom_number', key: 'matched_bom_number', width: 120 }
 ]
 
+const costBomColumns = [
+  { title: '物料编号', dataIndex: 'material_number', key: 'material_number', width: 150 },
+  { title: '物料名称', dataIndex: 'material_name', key: 'material_name', width: 130 },
+  { title: '物料类型', dataIndex: 'material_type', key: 'material_type', width: 90 },
+  { title: '类型', dataIndex: 'is_semi_finished', key: 'is_semi_finished', width: 90 },
+  { title: '标准用量', dataIndex: 'standard_quantity', key: 'standard_quantity', width: 90 },
+  { title: '累计用量', dataIndex: 'accumulated_quantity', key: 'accumulated_quantity', width: 100 },
+  { title: '单位', dataIndex: 'unit', key: 'unit', width: 60 },
+  { title: '标准单价', dataIndex: 'unit_cost', key: 'unit_cost', width: 100 },
+  { title: '成本金额', dataIndex: 'total_cost', key: 'total_cost', width: 110 },
+  { title: '成本占比', dataIndex: 'cost_ratio', key: 'cost_ratio', width: 140 },
+  { title: '子BOM', dataIndex: 'matched_bom_number', key: 'matched_bom_number', width: 140 },
+  { title: 'BOM路径', dataIndex: 'bom_path', key: 'bom_path', width: 200, ellipsis: true }
+]
+
 const materialTypeColorMap: Record<string, string> = {
   '成品': 'blue',
   '半成品': 'cyan',
@@ -494,6 +524,10 @@ const handleHeaderDetail = async (record: BomHeader) => {
   headerDetailTreeExpKeys.value = []
   headerDetailAllTreeKeys.value = []
   headerDetailTreeRaw.value = null
+  costBomData.value = null
+  costBomSelectedList.value = ''
+  costBomCostLists.value = []
+  detailResetDrag()
   headerDetailVisible.value = true
   headerDetailLoading.value = true
   try {
@@ -532,6 +566,77 @@ const handleHeaderDetail = async (record: BomHeader) => {
 }
 const handleDetailTreeExpandAll = () => { headerDetailTreeExpKeys.value = [...headerDetailAllTreeKeys.value] }
 const handleDetailTreeCollapseAll = () => { headerDetailTreeExpKeys.value = [] }
+
+// Cost BOM
+const assignCostBomKeys = (details: any[], prefix = ''): any[] => {
+  return details.map((d: any, i: number) => {
+    const key = prefix ? `${prefix}-${i}` : `${i}`
+    const item = { ...d, _cost_key: key }
+    if (d.children && d.children.length > 0) {
+      item.children = assignCostBomKeys(d.children, key)
+    }
+    return item
+  })
+}
+
+const loadCostBom = async (bomNumber: string) => {
+  costBomLoading.value = true
+  costBomData.value = null
+  try {
+    const [listsRes, costRes]: any[] = await Promise.all([
+      getAvailableCostLists(),
+      getCostBom(bomNumber, costBomSelectedList.value || undefined)
+    ])
+    if (listsRes?.success) costBomCostLists.value = listsRes.data || []
+    if (costRes?.success) {
+      const data = costRes.data
+      if (data.tree?.details) data.tree.details = assignCostBomKeys(data.tree.details)
+      costBomData.value = data
+      if (costRes.data.cost_list_number && !costBomSelectedList.value) {
+        costBomSelectedList.value = costRes.data.cost_list_number
+      }
+    }
+  } catch (e: any) {
+    console.error('[成本BOM] 加载失败:', e)
+    message.error('加载成本BOM失败')
+  } finally {
+    costBomLoading.value = false
+  }
+}
+
+const handleCostListChange = async () => {
+  if (!headerDetailRecord.value.bom_number) return
+  costBomLoading.value = true
+  costBomData.value = null
+  try {
+    const res: any = await getCostBom(headerDetailRecord.value.bom_number!, costBomSelectedList.value || undefined)
+    if (res?.success) {
+      const data = res.data
+      if (data.tree?.details) data.tree.details = assignCostBomKeys(data.tree.details)
+      costBomData.value = data
+    }
+  } catch (e: any) {
+    message.error('加载成本BOM失败')
+  } finally {
+    costBomLoading.value = false
+  }
+}
+
+const handleExportCostBom = async () => {
+  if (!headerDetailRecord.value.bom_number) return
+  try {
+    const res: any = await exportCostBomData(headerDetailRecord.value.bom_number!, costBomSelectedList.value || undefined)
+    const blob = new Blob([res], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `成本BOM_${headerDetailRecord.value.bom_number}.xlsx`
+    a.click()
+    window.URL.revokeObjectURL(url)
+  } catch (e: any) {
+    message.error('导出成本BOM失败')
+  }
+}
 
 // ECharts 树形图转换
 function transformToEChartsData(tree: any): any {
@@ -1251,7 +1356,10 @@ onMounted(async () => {
     </a-modal>
 
     <!-- ========== Header Detail Modal (Tabs) ========== -->
-    <a-modal v-model:open="headerDetailVisible" :title="`BOM详情 - ${headerDetailRecord.bom_number}`" :footer="null" width="1500px" :bodyStyle="{ padding: '12px 16px' }">
+    <a-modal v-model:open="headerDetailVisible" :footer="null" width="1500px" :bodyStyle="{ padding: '12px 16px' }" :style="detailModalStyle" destroyOnClose>
+      <template #title>
+        <div class="drag-handle" @mousedown="detailDragStart">BOM详情 - {{ headerDetailRecord.bom_number }}</div>
+      </template>
       <a-spin :spinning="headerDetailLoading">
         <a-tabs v-model:activeKey="headerDetailTab" :animated="false">
           <!-- Tab 1: 基本信息 -->
@@ -1345,6 +1453,103 @@ onMounted(async () => {
             </div>
             <a-empty v-else-if="!headerDetailLoading && !headerDetailTreeRaw" description="暂无图表数据" />
           </a-tab-pane>
+
+          <!-- Tab 5: 成本BOM -->
+          <a-tab-pane key="cost" tab="成本BOM">
+            <a-spin :spinning="costBomLoading">
+              <!-- 成本单价表选择 -->
+              <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 12px;">
+                <span style="white-space: nowrap; font-weight: 500;">标准成本单价表：</span>
+                <a-select
+                  v-model:value="costBomSelectedList"
+                  placeholder="选择成本单价表"
+                  style="width: 280px;"
+                  allow-clear
+                  @change="handleCostListChange"
+                >
+                  <a-select-option v-for="cl in costBomCostLists" :key="cl.cost_list_number" :value="cl.cost_list_number">
+                    {{ cl.cost_list_number }} - {{ cl.effective_date?.substring(0, 10) }}
+                  </a-select-option>
+                </a-select>
+                <a-button type="primary" size="small" :loading="costBomLoading" @click="loadCostBom(headerDetailRecord.bom_number!)">
+                  <ReloadOutlined /> 刷新
+                </a-button>
+                <a-button size="small" @click="handleExportCostBom" :disabled="!costBomData">
+                  <DownloadOutlined /> 导出Excel
+                </a-button>
+              </div>
+
+              <!-- 汇总卡片 -->
+              <template v-if="costBomData">
+                <a-row :gutter="12" style="margin-bottom: 12px;">
+                  <a-col :span="6">
+                    <a-card size="small" :bordered="true">
+                      <a-statistic title="成本单价表" :value="costBomData.cost_list_number || '-'" :value-style="{ fontSize: '16px' }" />
+                    </a-card>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-card size="small" :bordered="true">
+                      <a-statistic title="BOM总成本" :value="costBomData.total_cost ?? 0" :precision="2" :value-style="{ fontSize: '16px', color: '#cf1322' }">
+                        <template #prefix><DollarOutlined /></template>
+                      </a-statistic>
+                    </a-card>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-card size="small" :bordered="true">
+                      <a-statistic title="物料行数" :value="costBomData.material_count ?? 0" :value-style="{ fontSize: '16px' }" />
+                    </a-card>
+                  </a-col>
+                  <a-col :span="6">
+                    <a-card size="small" :bordered="true">
+                      <a-statistic title="已匹配成本" :value="costBomData.priced_count ?? 0" :value-style="{ fontSize: '16px', color: '#389e0d' }" />
+                    </a-card>
+                  </a-col>
+                </a-row>
+
+                <!-- 成本BOM树形表格 -->
+                <a-table
+                  :columns="costBomColumns"
+                  :data-source="costBomData.tree?.details || []"
+                  childrenColumnName="children"
+                  :pagination="false"
+                  :scroll="{ x: 1400, y: 400 }"
+                  size="small"
+                  bordered
+                  rowKey="_cost_key"
+                  :default-expand-all-rows="true"
+                >
+                  <template #bodyCell="{ column, record }">
+                    <template v-if="column.key === 'material_type'">
+                      <a-tag :color="materialTypeColorMap[record.material_type] || 'default'">{{ record.material_type }}</a-tag>
+                    </template>
+                    <template v-else-if="column.key === 'accumulated_quantity'">
+                      <span style="font-weight: 500;">{{ record.accumulated_quantity }}</span>
+                    </template>
+                    <template v-else-if="column.key === 'unit_cost'">
+                      <span v-if="record.is_semi_finished" style="color: #1890ff;">（子件合计）</span>
+                      <span v-else-if="record.has_cost" style="color: #389e0d;">{{ record.unit_cost?.toFixed(2) }}</span>
+                      <span v-else style="color: #ff4d4f;">未定价</span>
+                    </template>
+                    <template v-else-if="column.key === 'total_cost'">
+                      <span v-if="record.has_cost" style="color: #cf1322; font-weight: 600;">{{ record.total_cost?.toFixed(2) }}</span>
+                      <span v-else style="color: #ff4d4f;">0.00</span>
+                    </template>
+                    <template v-else-if="column.key === 'cost_ratio'">
+                      <template v-if="costBomData.total_cost > 0 && record.has_cost">
+                        <a-progress :percent="Math.round(record.total_cost / costBomData.total_cost * 10000) / 100" :size="'small'" :stroke-color="record.total_cost / costBomData.total_cost > 0.2 ? '#cf1322' : '#1890ff'" />
+                      </template>
+                      <span v-else style="color: #ccc;">-</span>
+                    </template>
+                    <template v-else-if="column.key === 'is_semi_finished'">
+                      <a-tag v-if="record.is_semi_finished" color="blue"><ApartmentOutlined /> 半成品</a-tag>
+                      <a-tag v-else color="green">原材料</a-tag>
+                    </template>
+                  </template>
+                </a-table>
+              </template>
+              <a-empty v-else-if="!costBomLoading" description="请选择成本单价表后点击刷新" />
+            </a-spin>
+          </a-tab-pane>
         </a-tabs>
       </a-spin>
     </a-modal>
@@ -1359,6 +1564,11 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+
 .bom-page {
   display: flex;
   flex-direction: column;

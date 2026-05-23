@@ -3,7 +3,7 @@ import request from '@/utils/request'
 // ==================== 生产质量报告 ====================
 
 export function getProductionQualityReport(production_order_number: string) {
-  return request.get(`/quality-report/production/${production_order_number}`)
+  return request.get(`/quality/quality-report/production/${production_order_number}`)
 }
 
 export function getQualitySummary(params?: {
@@ -14,7 +14,7 @@ export function getQualitySummary(params?: {
   end_date?: string
   item_number?: string
 }) {
-  return request.get('/quality-report/summary', { params })
+  return request.get('/quality/quality-report/summary', { params })
 }
 
 export function getDefectAnalysis(params?: {
@@ -23,7 +23,7 @@ export function getDefectAnalysis(params?: {
   item_number?: string
   defect_class_name?: string
 }) {
-  return request.get('/quality-report/defect-analysis', { params })
+  return request.get('/quality/quality-report/defect-analysis', { params })
 }
 
 export function getProcessQuality(params?: {
@@ -31,7 +31,7 @@ export function getProcessQuality(params?: {
   end_date?: string
   standard_process_name?: string
 }) {
-  return request.get('/quality-report/process-quality', { params })
+  return request.get('/quality/quality-report/process-quality', { params })
 }
 
 // ==================== 按产品质量汇总 ====================
@@ -43,7 +43,35 @@ export function getProductQualitySummary(params?: {
   start_date?: string
   end_date?: string
 }) {
-  return request.get('/quality-report/product-summary', { params })
+  return request.get('/quality/quality-report/product-summary', { params })
+}
+
+// ==================== 综合合格率报表 ====================
+
+export function getYieldRateReport(params?: {
+  page?: number
+  limit?: number
+  search?: string
+  start_date?: string
+  end_date?: string
+  item_number?: string
+  plan_status?: string
+}) {
+  return request.get('/quality/quality-report/yield-rate', { params })
+}
+
+// ==================== 生产单质量透视报表 ====================
+
+export function getProductionOrderQualityPivot(params?: {
+  page?: number
+  limit?: number
+  search?: string
+  start_date?: string
+  end_date?: string
+  item_number?: string
+  plan_status?: string
+}) {
+  return request.get('/quality/quality-report/production-order-pivot', { params })
 }
 
 // ==================== 采购质量检验 ====================
@@ -60,7 +88,7 @@ export function createPurchaseInspection(data: {
   received_quantity?: number
   batch_number?: string
 }) {
-  return request.post('/quality-report/purchase-inspection', data)
+  return request.post('/quality/quality-report/purchase-inspection', data)
 }
 
 export function getPurchaseInspections(params?: {
@@ -72,11 +100,11 @@ export function getPurchaseInspections(params?: {
   start_date?: string
   end_date?: string
 }) {
-  return request.get('/quality-report/purchase-inspections', { params })
+  return request.get('/quality/quality-report/purchase-inspections', { params })
 }
 
 export function getPurchaseInspectionDetail(inspection_number: string) {
-  return request.get(`/quality-report/purchase-inspections/${inspection_number}`)
+  return request.get(`/quality/quality-report/purchase-inspections/${inspection_number}`)
 }
 
 export function updatePurchaseInspection(inspection_number: string, data: {
@@ -93,8 +121,16 @@ export function updatePurchaseInspection(inspection_number: string, data: {
     is_qualified: string
     remark?: string
   }>
+  defects?: Array<{
+    defect_class_name: string
+    defect_name: string
+    defect_reason_name: string
+    unqualified_quantity: number
+    inspect_result: string
+    remark?: string
+  }>
 }) {
-  return request.put(`/quality-report/purchase-inspections/${inspection_number}`, data)
+  return request.put(`/quality/quality-report/purchase-inspections/${inspection_number}`, data)
 }
 
 export function completePurchaseInspection(inspection_number: string, data: {
@@ -102,7 +138,7 @@ export function completePurchaseInspection(inspection_number: string, data: {
   qualified_quantity: number
   unqualified_quantity: number
 }) {
-  return request.put(`/quality-report/purchase-inspections/${inspection_number}/complete`, data)
+  return request.put(`/quality/quality-report/purchase-inspections/${inspection_number}/complete`, data)
 }
 
 export function getPurchaseInspectionSummary(params?: {
@@ -110,7 +146,7 @@ export function getPurchaseInspectionSummary(params?: {
   end_date?: string
   supplier_number?: string
 }) {
-  return request.get('/quality-report/purchase-inspection-summary', { params })
+  return request.get('/quality/quality-report/purchase-inspection-summary', { params })
 }
 
 export function defectHandlingPurchaseInspection(
@@ -123,7 +159,16 @@ export function defectHandlingPurchaseInspection(
     special_warehouse?: string
     qualified_quantity?: number
     unqualified_quantity?: number
+    defect_items?: Array<{
+      id: number
+      defect_handling: string
+    }>
   }
 ) {
-  return request.put(`/quality-report/purchase-inspections/${inspection_number}/defect-handling`, data)
+  return request.put(`/quality/quality-report/purchase-inspections/${inspection_number}/defect-handling`, data)
+}
+
+// 撤销不合格品处理
+export function cancelDefectHandlingPurchaseInspection(inspection_number: string) {
+  return request.put(`/quality/quality-report/purchase-inspections/${inspection_number}/cancel-defect-handling`)
 }

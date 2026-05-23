@@ -4,11 +4,12 @@ import { message, Modal } from 'ant-design-vue'
 import {
   ReloadOutlined, DownloadOutlined, SearchOutlined,
   CheckCircleOutlined, CloseCircleOutlined, ExclamationCircleOutlined,
-  EyeOutlined
+  EyeOutlined, DeleteOutlined
 } from '@ant-design/icons-vue'
 import {
   getProductionInspections, getProductionInspectionDetail,
   updateProductionInspection, completeInspection, defectHandling,
+  deleteProductionInspection,
   exportProductionInspections
 } from '@/api/quality/productionInspection'
 import { generateExportFilename } from '@/utils/exportFilename'
@@ -192,6 +193,27 @@ const handleDefectOk = async () => {
   }
 }
 
+// ==================== Delete Inspection ====================
+const handleDelete = (record: any) => {
+  Modal.confirm({
+    title: '删除检验记录',
+    icon: createVNode(ExclamationCircleOutlined),
+    content: `确定要删除检验单「${record.inspection_number}」吗？删除后关联工序的检验状态将被清除。仅允许删除「待检」或「检验中」状态的记录。`,
+    okText: '确认删除',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        await deleteProductionInspection(record.inspection_number)
+        message.success('检验记录已删除')
+        fetchList()
+      } catch (e: any) {
+        message.error(e.response?.data?.message || '删除失败')
+      }
+    }
+  })
+}
+
 // ==================== Export ====================
 const handleExport = async () => {
   try {
@@ -282,6 +304,7 @@ onMounted(() => { fetchList() })
               <a-button v-if="record.status === '待检' || record.status === '检验中'" type="link" size="small" @click="openInspect(record)"><SearchOutlined />检验</a-button>
               <a-button v-if="record.status === '检验中'" type="link" size="small" @click="handleComplete(record)"><CheckCircleOutlined />完成</a-button>
               <a-button v-if="record.inspection_result === '不合格' && record.status === '已完成'" type="link" danger size="small" @click="openDefectHandling(record)"><CloseCircleOutlined />处理</a-button>
+              <a-button v-if="record.status === '待检' || record.status === '检验中'" type="link" danger size="small" @click="handleDelete(record)"><DeleteOutlined />删除</a-button>
             </a-space>
           </template>
         </template>

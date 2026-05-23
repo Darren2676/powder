@@ -3,6 +3,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { SearchOutlined, ReloadOutlined, ImportOutlined } from '@ant-design/icons-vue'
 import { getPendingInbound, productionInbound, getWarehouseOptions } from '@/api/warehouse/finishedGoods'
+import { useOpenAccountingPeriods } from '@/composables/useOpenAccountingPeriods'
 import dayjs from 'dayjs'
 
 const loading = ref(false)
@@ -92,6 +93,8 @@ const inboundWarehouse = reactive({ warehouse_number: '', warehouse_name: '' })
 const inboundRemark = ref('')
 const inboundAccountingPeriod = ref('')
 
+const { openPeriodOptions, openPeriodLoading, noOpenPeriod, fetchOpenPeriods, getDefaultPeriod } = useOpenAccountingPeriods()
+
 const handleInbound = () => {
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先选择需要入库的生产单'); return
@@ -104,8 +107,10 @@ const handleInbound = () => {
   inboundWarehouse.warehouse_number = ''
   inboundWarehouse.warehouse_name = ''
   inboundRemark.value = ''
-  const now = new Date()
-  inboundAccountingPeriod.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  inboundAccountingPeriod.value = getDefaultPeriod()
+  if (noOpenPeriod.value) {
+    message.warning('当前没有已开启的会计期间，请联系财务开启后再操作')
+  }
   inboundVisible.value = true
 }
 
@@ -178,6 +183,7 @@ const handleInboundSubmit = async () => {
 }
 
 onMounted(() => {
+  fetchOpenPeriods()
   fetchWarehouseOptions()
   fetchData()
 })
@@ -272,7 +278,11 @@ onMounted(() => {
           <a-input v-model:value="inboundRemark" placeholder="可选" style="width: 300px" />
         </a-form-item>
         <a-form-item label="会计期间">
-          <a-input v-model:value="inboundAccountingPeriod" placeholder="YYYY-MM" style="width: 150px" />
+          <a-select v-model:value="inboundAccountingPeriod" style="width: 150px"
+            :loading="openPeriodLoading" placeholder="请选择会计期间">
+            <a-select-option v-for="opt in openPeriodOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</a-select-option>
+            <a-select-option v-if="noOpenPeriod" disabled value="">无已开启期间</a-select-option>
+          </a-select>
         </a-form-item>
       </a-form>
 

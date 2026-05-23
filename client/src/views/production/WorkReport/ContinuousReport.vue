@@ -117,14 +117,23 @@
               <a-button type="primary" danger size="small" :loading="completing" :disabled="!task.input_qualified_qty || task.input_qualified_qty <= 0">完成</a-button>
             </a-popconfirm>
             <a-button size="small" @click="toggleHistory(task)" :loading="task.historyLoading">{{ task.showHistory ? '收起' : '历史' }}</a-button>
+            <a-tooltip title="撤销从此工序到末道工序的所有报工，便于修正后重报">
+              <a-button v-if="task.report_count > 0" size="small" danger @click="handleUndoPreview(task)" :loading="undoLoading && undoTargetTask?.process_task_number === task.process_task_number"><template #icon><UndoOutlined /></template>撤销重报</a-button>
+            </a-tooltip>
           </template>
           <template v-else-if="task.task_status === '已完成'">
             <span style="color:#52c41a;font-size:13px;">已完成 {{ task.completed_quantity }} {{ task.basic_unit || '' }}</span>
             <a-button size="small" @click="toggleHistory(task)" :loading="task.historyLoading" style="margin-left:8px;">{{ task.showHistory ? '收起' : '历史' }}</a-button>
+            <a-tooltip title="撤销从此工序到末道工序的所有报工，便于修正后重报">
+              <a-button v-if="task.report_count > 0" size="small" danger @click="handleUndoPreview(task)" :loading="undoLoading && undoTargetTask?.process_task_number === task.process_task_number"><template #icon><UndoOutlined /></template>撤销重报</a-button>
+            </a-tooltip>
           </template>
           <template v-else>
             <span style="color:#fa8c16;font-size:13px;">{{ getDisableReason(task) }}</span>
             <a-button size="small" @click="toggleHistory(task)" :loading="task.historyLoading" style="margin-left:8px;">{{ task.showHistory ? '收起' : '历史' }}</a-button>
+            <a-tooltip title="撤销从此工序到末道工序的所有报工，便于修正后重报">
+              <a-button v-if="task.report_count > 0" size="small" danger @click="handleUndoPreview(task)" :loading="undoLoading && undoTargetTask?.process_task_number === task.process_task_number"><template #icon><UndoOutlined /></template>撤销重报</a-button>
+            </a-tooltip>
           </template>
         </div>
         <!-- 历史报工记录（展开） -->
@@ -155,15 +164,95 @@
         </a-button>
       </div>
     </div>
+
+    <!-- 撤销重报弹窗 -->
+    <a-modal v-model:open="undoModalVisible" title="撤销重报 - 确认" width="800px" :confirm-loading="undoLoading" @ok="handleUndoConfirm" @cancel="undoModalVisible = false">
+      <template v-if="undoPreviewData">
+        <a-alert
+          :message="undoPreviewData.can_delete_all ? '即将删除以下报工记录，被删除工序的完成数量将回退。' : undoPreviewData.delete_warning"
+          :type="undoPreviewData.can_delete_all ? 'warning' : 'error'"
+          show-icon
+          style="margin-bottom: 16px;"
+        />
+
+        <a-descriptions :column="2" bordered size="small" style="margin-bottom: 16px;">
+          <a-descriptions-item label="生产单编号">{{ undoPreviewData.production_order_number }}</a-descriptions-item>
+          <a-descriptions-item label="目标工序">{{ undoTargetTask?.step_number }}-{{ undoTargetTask?.standard_process_name }}</a-descriptions-item>
+          <a-descriptions-item label="总工序数">{{ undoPreviewData.total_step_count }}</a-descriptions-item>
+          <a-descriptions-item label="受影响工序数">
+            <span style="color: #ff4d4f; font-weight: 600;">{{ undoPreviewData.affected_step_count }}</span>
+            （工序{{ undoPreviewData.target_step_number }} ~ 工序{{ undoPreviewData.max_step_number }}）
+          </a-descriptions-item>
+        </a-descriptions>
+
+        <h4 style="margin-bottom: 8px;">受影响工序状态</h4>
+        <a-table
+          v-if="undoPreviewData.affected_steps?.length"
+          :columns="[
+            { title: '工序', key: 'step', width: 120 },
+            { title: '工序名称', dataIndex: 'standard_process_name', key: 'name' },
+            { title: '当前状态', dataIndex: 'task_status', key: 'status', width: 90 },
+            { title: '已完成数', dataIndex: 'completed_quantity', key: 'qty', width: 100 }
+          ]"
+          :data-source="undoPreviewData.affected_steps"
+          :pagination="false"
+          size="small"
+          row-key="step_number"
+          style="margin-bottom: 16px;"
+        >
+          <template #bodyCell="{ record, column }">
+            <template v-if="column.key === 'step'">{{ record.step_number }}-{{ record.standard_process_name }}</template>
+            <template v-if="column.key === 'status'">
+              <a-tag :color="record.task_status === '已完成' ? 'green' : record.task_status === '进行中' ? 'orange' : 'default'">{{ record.task_status }}</a-tag>
+            </template>
+          </template>
+        </a-table>
+
+        <h4 style="margin-bottom: 8px;">将被删除的报工单（{{ undoPreviewData.reports_to_delete?.length || 0 }} 条）<span style="font-size:12px;color:#999;">按工序号降序排列</span></h4>
+        <a-table
+          v-if="undoPreviewData.reports_to_delete?.length"
+          :columns="[
+            { title: '报工单号', dataIndex: 'work_report_number', key: 'wr', width: 170 },
+            { title: '工序', key: 'step', width: 120 },
+            { title: '合格数量', dataIndex: 'qualified_quantity', key: 'q', width: 90 },
+            { title: '不合格', dataIndex: 'unqualified_quantity', key: 'u', width: 80 },
+            { title: '审批状态', dataIndex: 'approval_status', key: 'as', width: 90 },
+            { title: '报工日期', dataIndex: 'creation_date', key: 'cd', width: 110 }
+          ]"
+          :data-source="undoPreviewData.reports_to_delete"
+          :pagination="false"
+          size="small"
+          row-key="work_report_number"
+          style="margin-bottom: 16px;"
+        >
+          <template #bodyCell="{ record, column }">
+            <template v-if="column.key === 'step'">{{ record.step_number }}-{{ record.standard_process_name }}</template>
+            <template v-if="column.key === 'as'">
+              <a-tag :color="record.approval_status === '草稿' ? 'blue' : 'red'">{{ record.approval_status }}</a-tag>
+            </template>
+          </template>
+        </a-table>
+        <a-empty v-else description="没有需要删除的报工单" :image-style="{ height: '30px' }" />
+
+        <div v-if="undoPreviewData.related_inspections?.length" style="margin-top: 8px;">
+          <a-alert
+            :message="`关联 ${undoPreviewData.related_inspections.length} 条检验记录，需手动处理`"
+            type="info"
+            show-icon
+          />
+        </div>
+      </template>
+      <a-spin v-else :spinning="true" tip="加载中..." />
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined } from '@ant-design/icons-vue'
+import { ReloadOutlined, UndoOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
-import { getTasksByOrder, quickReport, completeOrderReport, getWorkReportsByTask, getSchedules, getTeams, getEmployees } from '@/api/production/workReport'
+import { getTasksByOrder, quickReport, completeOrderReport, getWorkReportsByTask, getSchedules, getTeams, getEmployees, undoPreview, undoExecute } from '@/api/production/workReport'
 import { getDefectClasses } from '@/api/quality/defectClass'
 import { getDefects } from '@/api/quality/defect'
 import { useAuthStore } from '@/store/auth'
@@ -216,6 +305,56 @@ const completing = ref(false)
 const orderInfo = ref<any>(null)
 const tasks = ref<TaskWithReport[]>([])
 const quickQty = ref<number | null>(null)
+
+// ==================== 撤销重报 ====================
+const undoModalVisible = ref(false)
+const undoLoading = ref(false)
+const undoPreviewData = ref<any>(null)
+const undoTargetTask = ref<any>(null)
+
+const handleUndoPreview = async (task: TaskWithReport) => {
+  if (!orderInfo.value?.production_order_number) { message.warning('缺少生产单编号'); return }
+  undoLoading.value = true
+  undoTargetTask.value = task
+  try {
+    const res: any = await undoPreview({
+      production_order_number: orderInfo.value.production_order_number,
+      target_step_number: task.step_number
+    })
+    if (res.success) {
+      undoPreviewData.value = res.data
+      undoModalVisible.value = true
+    } else {
+      message.error(res.message || '预览失败')
+    }
+  } catch (err: any) {
+    message.error(err?.response?.data?.message || '预览失败')
+  } finally { undoLoading.value = false }
+}
+
+const handleUndoConfirm = async () => {
+  if (!orderInfo.value?.production_order_number || !undoTargetTask.value) return
+  if (!undoPreviewData.value?.can_delete_all) {
+    message.warning(undoPreviewData.value?.delete_warning || '无法执行撤销')
+    return
+  }
+  undoLoading.value = true
+  try {
+    const res: any = await undoExecute({
+      production_order_number: orderInfo.value.production_order_number,
+      target_step_number: undoTargetTask.value.step_number
+    })
+    if (res.success) {
+      message.success(res.message || `成功删除 ${res.data?.deleted_count || 0} 条报工单，请重新报工`)
+      undoModalVisible.value = false
+      await refreshTasks()
+    } else {
+      message.error(res.message || '撤销失败')
+    }
+  } catch (err: any) {
+    message.error(err?.response?.data?.message || '撤销失败')
+  } finally { undoLoading.value = false }
+}
 
 const commonParams = reactive({
   report_date: dayjs().format('YYYY/MM/DD'),

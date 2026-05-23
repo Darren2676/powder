@@ -18,5 +18,11 @@ export const deletePieceRatePrice = (id: string) =>
 export const exportPieceRatePrices = (search?: string, approval_status?: string) =>
   request.get('/piece-rate-prices/export', { params: { search, approval_status }, responseType: 'blob' })
 
+export const exportPieceRatePricesSelected = (data: { ids: string[] }) =>
+  request.post('/piece-rate-prices/export-selected', data, { responseType: 'blob' })
+
 export const importPieceRatePrice = (formData: FormData) =>
   request.post('/piece-rate-prices/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+
+export const downloadImportTemplate = () =>
+  request.get('/piece-rate-prices/import-template', { responseType: 'blob' })

@@ -12,7 +12,11 @@ import incomingInspectPlanRoutes from './incomingInspectPlan/incomingInspectPlan
 import productionInspectionRoutes from './productionInspection/productionInspection.routes';
 import nonconformingProductRoutes from './nonconformingProduct/nonconformingProduct.routes';
 import reworkOrderRoutes from './reworkOrder/reworkOrder.routes';
-import scrapOrderRoutes from './scrapOrder/scrapOrder.routes';
+import scrapOrderReportRoutes from './scrapOrderReport/scrapOrderReport.routes';
+import scrapInventoryReportRoutes from './scrapInventoryReport/scrapInventoryReport.routes';
+import scrapDisposalReportRoutes from './scrapDisposalReport/scrapDisposalReport.routes';
+import scrapQualityStatsReportRoutes from './scrapQualityStatsReport/scrapQualityStatsReport.routes';
+import scrapInboundOrderRoutes from './scrapInboundOrder/scrapInboundOrder.routes';
 
 const router = Router();
 
@@ -28,6 +32,10 @@ router.use('/incoming-inspect-plans', incomingInspectPlanRoutes);
 router.use('/production-inspections', productionInspectionRoutes);
 router.use('/nonconforming-products', nonconformingProductRoutes);
 router.use('/rework-orders', reworkOrderRoutes);
-router.use('/scrap-orders', scrapOrderRoutes);
+router.use('/scrap-order-report', scrapOrderReportRoutes);
+router.use('/scrap-inventory-report', scrapInventoryReportRoutes);
+router.use('/scrap-disposal-report', scrapDisposalReportRoutes);
+router.use('/scrap-quality-stats-report', scrapQualityStatsReportRoutes);
+router.use('/scrap-inbound-orders', scrapInboundOrderRoutes);
 
 export default router;

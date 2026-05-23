@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons-vue'
 import { createVNode } from 'vue'
 import { getMRPRuns, getMRPRunDetail, cancelMRPRun, deleteMRPRun } from '@/api/planning/mrp'
+import { useModalDrag } from '@/composables/useModalDrag'
 
 const router = useRouter()
 const loading = ref(false)
@@ -23,6 +24,7 @@ const filterForm = reactive({
 
 // 详情弹窗
 const detailVisible = ref(false)
+const { modalStyle: detailModalStyle, onDragStart: detailDragStart, resetDrag: detailResetDrag } = useModalDrag()
 const detailLoading = ref(false)
 const detailRun = ref<any>(null)
 const detailList = ref<any[]>([])
@@ -102,6 +104,7 @@ const formatDateTime = (val: any) => {
 }
 
 const viewDetail = async (record: any) => {
+  detailResetDrag()
   detailVisible.value = true
   detailLoading.value = true
   detailActiveTab.value = 'all'
@@ -224,10 +227,13 @@ onMounted(() => { loadList() })
     <!-- 详情弹窗 -->
     <a-modal
       v-model:open="detailVisible"
-      :title="detailRun ? `MRP运算详情 - ${detailRun.mrp_run_number}` : 'MRP运算详情'"
       width="1200px"
+      :style="detailModalStyle"
       :footer="null"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="detailDragStart">{{ detailRun ? `MRP运算详情 - ${detailRun.mrp_run_number}` : 'MRP运算详情' }}</div>
+      </template>
       <a-spin :spinning="detailLoading">
         <template v-if="detailRun">
           <a-descriptions :column="4" size="small" bordered style="margin-bottom: 12px">
@@ -282,6 +288,10 @@ onMounted(() => { loadList() })
 </template>
 
 <style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
 .mrp-history-page {
   padding: 0;
 }

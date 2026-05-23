@@ -19,6 +19,7 @@ import { useColumnPreference } from '@/composables/useColumnPreference'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval, batchSubmitForApproval, batchApproveRecords, batchWithdrawApproval, batchReverseApproval } from '@/api/system/approval'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
+import { useModalDrag } from '@/composables/useModalDrag'
 import { generateExportFilename } from '@/utils/exportFilename'
 
 interface Order {
@@ -580,6 +581,7 @@ const handleImportFromPlan = async () => {
 
 onMounted(async () => {
   await loadColumnPreference()
+  await loadDispatchColPreference()
   fetchData(getFilterParams())
   // 加载班次列表用于列表显示
   try {
@@ -650,6 +652,8 @@ interface SplitRow {
   _selected: boolean
 }
 
+const { modalStyle: splitModalStyle, onDragStart: onSplitDragStart, resetDrag: resetSplitDrag } = useModalDrag()
+
 const splitModalVisible = ref(false)
 const splitLoading = ref(false)
 const splitRows = ref<SplitRow[]>([])
@@ -707,6 +711,7 @@ const handleOpenSplit = () => {
     }
   }
   splitModalVisible.value = true
+  resetSplitDrag()
 }
 
 // 在某行后面增加新行
@@ -843,6 +848,37 @@ interface DispatchRow {
   schedule_id: string
   _selected: boolean
 }
+
+const { modalStyle: dispatchModalStyle, onDragStart: onDispatchDragStart, resetDrag: resetDispatchDrag } = useModalDrag()
+
+// 派发表格列个性化
+const defaultDispatchColumns: any[] = [
+  { title: '生产单编号', dataIndex: 'production_order_number', key: 'production_order_number', width: 140, resizable: true },
+  { title: '生产计划编号', dataIndex: 'production_number', key: 'production_number', width: 130, resizable: true },
+  { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 110, resizable: true },
+  { title: '产品名称', dataIndex: 'item_name', key: 'item_name', width: 120, resizable: true },
+  { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 100, resizable: true },
+  { title: '计划数量', dataIndex: 'planned_quantity', key: 'planned_quantity', width: 90, align: 'right' as const, resizable: true },
+  { title: '实际班产', dataIndex: 'actual_daily_output', key: 'actual_daily_output', width: 90, resizable: true },
+  { title: '设备编号', dataIndex: 'equipment_number', key: 'equipment_number', width: 130, resizable: true },
+  { title: '生产日期', dataIndex: 'production_date', key: 'production_date', width: 130, resizable: true },
+  { title: '班次', dataIndex: 'schedule_id', key: 'schedule_id', width: 110, resizable: true },
+  { title: '设备名称', dataIndex: 'equipment_name', key: 'equipment_name', width: 110, resizable: true },
+  { title: '模具编号', dataIndex: 'mould_number', key: 'mould_number', width: 130, resizable: true },
+  { title: '成型件规格', dataIndex: 'formed_part_specifications', key: 'formed_part_specifications', width: 120, resizable: true },
+  { title: '成型件单耗', dataIndex: 'formed_part_unit_consumption', key: 'formed_part_unit_consumption', width: 110, resizable: true },
+  { title: '实际模腔数', dataIndex: 'actual_cavity_count', key: 'actual_cavity_count', width: 100, resizable: true },
+  { title: '实际模穴数', dataIndex: 'actual_hole_count', key: 'actual_hole_count', width: 100, resizable: true }
+]
+
+const {
+  columns: dispatchColumns, columnSettingVisible: dispatchColSettingVisible, columnSettingList: dispatchColSettingList, columnSettingSaving: dispatchColSettingSaving,
+  openColumnSetting: openDispatchColSetting, moveColumnUp: dispatchColMoveUp, moveColumnDown: dispatchColMoveDown, saveColumnSetting: dispatchColSave, resetColumnSetting: dispatchColReset,
+  loadColumnPreference: loadDispatchColPreference, handleResizeColumn: handleDispatchResizeColumn
+} = useColumnPreference('dispatch_modal', defaultDispatchColumns, {
+  fixedLeft: [],
+  fixedRight: []
+})
 
 const dispatchModalVisible = ref(false)
 const dispatchLoading = ref(false)
@@ -1002,6 +1038,10 @@ const handleDispatchRowMouldChange = (value: string, row: DispatchRow) => {
 const dispatchSelectedCount = computed(() => dispatchRows.value.filter(r => r._selected).length)
 const dispatchAllSelected = computed(() => dispatchRows.value.length > 0 && dispatchRows.value.every(r => r._selected))
 const dispatchIndeterminate = computed(() => dispatchRows.value.some(r => r._selected) && !dispatchAllSelected.value)
+const dispatchSelectedKeys = computed(() => dispatchRows.value.filter(r => r._selected).map(r => r._uid))
+const onDispatchSelectChange = (keys: string[]) => {
+  dispatchRows.value.forEach(r => { r._selected = keys.includes(r._uid) })
+}
 const handleDispatchSelectAll = (e: any) => {
   const checked = e.target.checked
   dispatchRows.value.forEach(r => r._selected = checked)
@@ -1160,6 +1200,7 @@ const handleOpenDispatch = async () => {
     }
   }
   dispatchModalVisible.value = true
+  resetDispatchDrag()
 }
 
 // 批量应用到勾选行
@@ -1760,11 +1801,14 @@ const handleDispatchSubmit = () => {
     <!-- 拆分对话框 -->
     <a-modal
       v-model:open="splitModalVisible"
-      title="任务拆分"
       width="1200px"
       :footer="null"
       :maskClosable="false"
+      :style="splitModalStyle"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="onSplitDragStart">任务拆分</div>
+      </template>
       <div class="split-header">
         <span style="color: #666;">原始行将更新计划数量，新增行将创建新生产单</span>
         <div class="split-stats">
@@ -1865,11 +1909,14 @@ const handleDispatchSubmit = () => {
     <!-- 派发对话框 -->
     <a-modal
       v-model:open="dispatchModalVisible"
-      title="派发生产调度单"
       width="95%"
       :footer="null"
       :maskClosable="false"
+      :style="dispatchModalStyle"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="onDispatchDragStart">派发生产调度单</div>
+      </template>
       <div class="dispatch-header">
         <span style="color: #fa8c16;">编辑后提交，状态将自动更改为"已派发"</span>
         <a-tag color="blue">共 {{ dispatchRows.length }} 条待派发</a-tag>
@@ -1932,105 +1979,98 @@ const handleDispatchSubmit = () => {
       </div>
 
       <!-- 派发编辑表格 -->
-      <div class="dispatch-table-wrapper">
-        <table class="dispatch-table">
-          <thead>
-            <tr>
-              <th style="width: 40px;">
-                <a-checkbox :checked="dispatchAllSelected" :indeterminate="dispatchIndeterminate" @change="handleDispatchSelectAll" />
-              </th>
-              <th style="width: 40px;">行号</th>
-              <th>生产单编号</th>
-              <th>生产计划编号</th>
-              <th>产品编号</th>
-              <th style="min-width: 120px;">产品名称</th>
-              <th>规格</th>
-              <th style="width: 80px;">计划数量</th>
-              <th>实际班产</th>
-              <th style="width: 40px;">设备编号</th>
-              <th style="width: 160px;">生产日期</th>
-              <th style="width: 120px;">班次</th>
-              <th style="width: 100px;">设备名称</th>
-              <th style="width: 110px;">模具编号</th>
-              <th>成型件规格</th>
-              <th>成型件单耗</th>
-              <th>实际模腔数</th>
-              <th>实际模穴数</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(row, index) in dispatchRows" :key="row._uid">
-              <td>
-                <a-checkbox :checked="row._selected" @change="(e: any) => row._selected = e.target.checked" />
-              </td>
-              <td style="text-align: center;">{{ index + 1 }}</td>
-              <td>{{ row.production_order_number }}</td>
-              <td>{{ row.production_number }}</td>
-              <td>{{ row.item_number }}</td>
-              <td>{{ row.item_name }}</td>
-              <td>{{ row.specifications }}</td>
-              <td style="text-align: right;">{{ row.planned_quantity }}</td>
-              <td><span style="color: #999;">{{ row.actual_daily_output || '-' }}</span></td>
-              <td>
-                <a-auto-complete
-                  v-model:value="row.equipment_number"
-                  :options="dispatchRowEquipmentAutoOptions"
-                  placeholder="搜索设备"
-                  size="small"
-                  @search="handleDispatchRowEquipmentSearch"
-                  @select="(v: string) => handleDispatchRowEquipmentSelect(v, row)"
-                  @change="(v: string) => handleDispatchRowEquipmentChange(v, row)"
-                  allow-clear
-                  style="width: 100%;"
-                />
-              </td>
-              <td>
-                <a-date-picker
-                  v-model:value="row.production_date"
-                  placeholder="选择日期"
-                  size="small"
-                  style="width: 110px;"
-                  allow-clear
-                  valueFormat="YYYY-MM-DD"
-                />
-              </td>
-              <td>
-                <a-select
-                  v-model:value="row.schedule_id"
-                  placeholder="选择班次"
-                  size="small"
-                  style="width: 100%;"
-                  allow-clear
-                >
-                  <a-select-option v-for="s in scheduleList" :key="s.schedules_id" :value="s.schedules_id">
-                    {{ s.schedules_name || s.schedules_id }}
-                  </a-select-option>
-                </a-select>
-              </td>
-              <td>
-                <span style="color: #999;">{{ row.equipment_name || '-' }}</span>
-              </td>
-              <td>
-                <a-auto-complete
-                  v-model:value="row.mould_number"
-                  :options="dispatchRowMouldAutoOptions"
-                  placeholder="搜索模具"
-                  size="small"
-                  @search="handleDispatchRowMouldSearch"
-                  @select="(v: string) => handleDispatchRowMouldSelect(v, row)"
-                  @change="(v: string) => handleDispatchRowMouldChange(v, row)"
-                  allow-clear
-                  style="width: 100%;"
-                />
-              </td>
-              <td><span style="color: #999;">{{ row.formed_part_specifications || '-' }}</span></td>
-              <td><span style="color: #999;">{{ row.formed_part_unit_consumption || '-' }}</span></td>
-              <td><span style="color: #999;">{{ row.actual_cavity_count || '-' }}</span></td>
-              <td><span style="color: #999;">{{ row.actual_hole_count || '-' }}</span></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <a-table
+        :columns="dispatchColumns"
+        :data-source="dispatchRows"
+        :pagination="false"
+        :scroll="{ x: 'max-content' }"
+        row-key="_uid"
+        size="small"
+        bordered
+        :row-selection="{ selectedRowKeys: dispatchSelectedKeys, onChange: onDispatchSelectChange }"
+        @resizeColumn="handleDispatchResizeColumn"
+      >
+        <template #title>
+          <div style="display: flex; justify-content: flex-end; align-items: center; padding: 0 0 8px;">
+            <a-button size="small" @click="openDispatchColSetting"><SettingOutlined /> 列设置</a-button>
+          </div>
+        </template>
+        <template #bodyCell="{ column, record, index }">
+          <template v-if="column.key === 'production_order_number'">
+            {{ record.production_order_number }}
+          </template>
+          <template v-else-if="column.key === 'planned_quantity'">
+            <span style="text-align: right;">{{ record.planned_quantity }}</span>
+          </template>
+          <template v-else-if="column.key === 'actual_daily_output'">
+            <span style="color: #999;">{{ record.actual_daily_output || '-' }}</span>
+          </template>
+          <template v-else-if="column.key === 'equipment_number'">
+            <a-auto-complete
+              v-model:value="record.equipment_number"
+              :options="dispatchRowEquipmentAutoOptions"
+              placeholder="搜索设备"
+              size="small"
+              @search="handleDispatchRowEquipmentSearch"
+              @select="(v: string) => handleDispatchRowEquipmentSelect(v, record)"
+              @change="(v: string) => handleDispatchRowEquipmentChange(v, record)"
+              allow-clear
+              style="width: 100%;"
+            />
+          </template>
+          <template v-else-if="column.key === 'production_date'">
+            <a-date-picker
+              v-model:value="record.production_date"
+              placeholder="选择日期"
+              size="small"
+              style="width: 110px;"
+              allow-clear
+              valueFormat="YYYY-MM-DD"
+            />
+          </template>
+          <template v-else-if="column.key === 'schedule_id'">
+            <a-select
+              v-model:value="record.schedule_id"
+              placeholder="选择班次"
+              size="small"
+              style="width: 100%;"
+              allow-clear
+            >
+              <a-select-option v-for="s in scheduleList" :key="s.schedules_id" :value="s.schedules_id">
+                {{ s.schedules_name || s.schedules_id }}
+              </a-select-option>
+            </a-select>
+          </template>
+          <template v-else-if="column.key === 'equipment_name'">
+            <span style="color: #999;">{{ record.equipment_name || '-' }}</span>
+          </template>
+          <template v-else-if="column.key === 'mould_number'">
+            <a-auto-complete
+              v-model:value="record.mould_number"
+              :options="dispatchRowMouldAutoOptions"
+              placeholder="搜索模具"
+              size="small"
+              @search="handleDispatchRowMouldSearch"
+              @select="(v: string) => handleDispatchRowMouldSelect(v, record)"
+              @change="(v: string) => handleDispatchRowMouldChange(v, record)"
+              allow-clear
+              style="width: 100%;"
+            />
+          </template>
+          <template v-else-if="column.key === 'formed_part_specifications'">
+            <span style="color: #999;">{{ record.formed_part_specifications || '-' }}</span>
+          </template>
+          <template v-else-if="column.key === 'formed_part_unit_consumption'">
+            <span style="color: #999;">{{ record.formed_part_unit_consumption || '-' }}</span>
+          </template>
+          <template v-else-if="column.key === 'actual_cavity_count'">
+            <span style="color: #999;">{{ record.actual_cavity_count || '-' }}</span>
+          </template>
+          <template v-else-if="column.key === 'actual_hole_count'">
+            <span style="color: #999;">{{ record.actual_hole_count || '-' }}</span>
+          </template>
+        </template>
+      </a-table>
 
       <div class="dispatch-footer">
         <div></div>
@@ -2123,6 +2163,16 @@ const handleDispatchSubmit = () => {
       @moveDown="moveColumnDown"
       @save="saveColumnSetting"
       @reset="resetColumnSetting"
+    />
+
+    <ColumnSettingDrawer
+      v-model:open="dispatchColSettingVisible"
+      :settingList="dispatchColSettingList"
+      :saving="dispatchColSettingSaving"
+      @moveUp="dispatchColMoveUp"
+      @moveDown="dispatchColMoveDown"
+      @save="dispatchColSave"
+      @reset="dispatchColReset"
     />
 
     <!-- 批量关闭弹窗 -->
@@ -2271,5 +2321,10 @@ const handleDispatchSubmit = () => {
 .dispatch-actions {
   display: flex;
   gap: 8px;
+}
+
+.drag-handle {
+  cursor: move;
+  user-select: none;
 }
 </style>

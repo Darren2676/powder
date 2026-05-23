@@ -4,6 +4,7 @@ import {
   getNonconformingProducts,
   getNonconformingProductDetail,
   handleNonconforming,
+  cancelHandleNonconforming,
   exportNonconformingProducts
 } from './nonconformingProduct.controller';
 
@@ -22,5 +23,8 @@ router.get('/:id', getNonconformingProductDetail);
 
 // 不合格品处理
 router.put('/:id/handle', handleNonconforming);
+
+// 撤销不合格品处理
+router.put('/:id/cancel-handle', cancelHandleNonconforming);
 
 export default router;

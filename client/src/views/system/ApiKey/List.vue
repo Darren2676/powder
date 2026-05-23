@@ -97,11 +97,14 @@
     <!-- 新建/编辑弹窗 -->
     <a-modal
       v-model:open="modalVisible"
-      :title="editingKey ? '编辑API密钥' : '新建API密钥'"
+      :style="apiKeyModalStyle"
       @ok="handleModalOk"
       :confirm-loading="modalLoading"
       width="600px"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="apiKeyDragStart">{{ editingKey ? '编辑API密钥' : '新建API密钥' }}</div>
+      </template>
       <a-form :model="formState" :label-col="{ span: 5 }" :wrapper-col="{ span: 18 }" style="margin-top: 16px;">
         <a-form-item label="密钥名称" required>
           <a-input v-model:value="formState.key_name" placeholder="如：ERP系统对接" />
@@ -233,6 +236,7 @@ import {
 import * as apiKeyApi from '@/api/system/apiKey';
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
+import { useModalDrag } from '@/composables/useModalDrag'
 
 const loading = ref(false);
 const dataList = ref<any[]>([]);
@@ -285,6 +289,7 @@ const permissionModules = [
 
 // 新建/编辑
 const modalVisible = ref(false);
+const { modalStyle: apiKeyModalStyle, onDragStart: apiKeyDragStart, resetDrag: apiKeyResetDrag } = useModalDrag();
 const modalLoading = ref(false);
 const editingKey = ref<any>(null);
 
@@ -364,6 +369,7 @@ const handleTableChange = (pag: any) => {
 const handleCreate = () => {
   editingKey.value = null;
   Object.assign(formState, getDefaultForm());
+  apiKeyResetDrag();
   modalVisible.value = true;
 };
 
@@ -386,6 +392,7 @@ const handleEdit = (record: any) => {
     expires_at: record.expires_at || null,
     is_active: !!record.is_active
   });
+  apiKeyResetDrag();
   modalVisible.value = true;
 };
 
@@ -507,3 +514,10 @@ onMounted(() => {
   fetchData();
 });
 </script>
+
+<style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+</style>

@@ -50,7 +50,17 @@
         <a-col>
           <a-space>
             <span v-if="previousIssues.length > 0" class="info-item" style="color:#888;">已领料 {{ previousIssues.length }} 次</span>
-            <a-button type="primary" size="small" @click="openIssueModal">开始备料</a-button>
+            <a-dropdown>
+              <template #overlay>
+                <a-menu @click="({ key }: any) => { currentSourceType = key; openIssueModal() }">
+                  <a-menu-item key="领料">开始备料</a-menu-item>
+                  <a-menu-item key="补料">补料</a-menu-item>
+                </a-menu>
+              </template>
+              <a-button type="primary" size="small">
+                开始备料 <DownOutlined />
+              </a-button>
+            </a-dropdown>
           </a-space>
         </a-col>
       </a-row>
@@ -70,17 +80,22 @@
       >
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'action'">
-            <a-popconfirm
-              title="确认要撤回此领料单吗？物料库存、备料单状态、生产单状态将同步回退。"
-              ok-text="确认撤回"
-              cancel-text="取消"
-              ok-type="danger"
-              @confirm="handleDeleteIssue(record)"
-            >
-              <a-button type="link" size="small" danger :loading="deletingIssue === record.issue_number">
-                <template #icon><DeleteOutlined /></template>撤回
+            <a-space :size="4">
+              <a-popconfirm
+                title="确认要撤回此领料单吗？物料库存、备料单状态、生产单状态将同步回退。"
+                ok-text="确认撤回"
+                cancel-text="取消"
+                ok-type="danger"
+                @confirm="handleDeleteIssue(record)"
+              >
+                <a-button type="link" size="small" danger :loading="deletingIssue === record.issue_number">
+                  <template #icon><DeleteOutlined /></template>撤回
+                </a-button>
+              </a-popconfirm>
+              <a-button type="link" size="small" @click="openReturnModal(record)">
+                <template #icon><RollbackOutlined /></template>退料
               </a-button>
-            </a-popconfirm>
+            </a-space>
           </template>
         </template>
       </a-table>
@@ -126,7 +141,7 @@
       destroy-on-close
     >
       <template #title>
-        <span>按生产单备料清单备料 - {{ preparationHeader?.preparation_number || '' }}</span>
+        <span>{{ currentSourceType === '补料' ? '补料' : '按生产单备料清单备料' }} - {{ preparationHeader?.preparation_number || '' }}</span>
         <a-button type="text" size="small" @click="openDetailSetting" style="margin-left:8px;">
           <SettingOutlined />
         </a-button>
@@ -215,6 +230,71 @@
       </div>
     </a-modal>
 
+    <!-- 退料弹窗 -->
+    <a-modal
+      v-model:open="returnModalVisible"
+      :width="1000"
+      :footer="null"
+      :mask-closable="false"
+      destroy-on-close
+    >
+      <template #title>
+        <span>退料 - 领料单 {{ returnIssueRecord?.issue_number || '' }}</span>
+      </template>
+      <a-alert
+        message="选择需要退回的物料，填写退料数量。退料后物料将回退到仓库，备料已领量同步减少。"
+        type="info"
+        show-icon
+        style="margin-bottom:12px;"
+      />
+      <a-table
+        :columns="[
+          { title: '物料编号', dataIndex: 'material_number', key: 'material_number', width: 120 },
+          { title: '物料名称', dataIndex: 'material_name', key: 'material_name', width: 140 },
+          { title: '单位', dataIndex: 'unit', key: 'unit', width: 60 },
+          { title: '已领数量', dataIndex: 'actual_quantity', key: 'actual_quantity', width: 90 },
+          { title: '可退数量', key: 'max_return', width: 90 },
+          { title: '退料数量', key: 'return_quantity', width: 120 },
+          { title: '工序', dataIndex: 'step_number', key: 'step_number', width: 60 },
+          { title: '工作中心', dataIndex: 'work_center_name', key: 'work_center_name', width: 110 },
+        ]"
+        :data-source="returnDetailList"
+        :pagination="false"
+        size="small"
+        row-key="id"
+        bordered
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'max_return'">
+            <span style="color:#fa8c16;font-weight:600;">{{ record.max_return }}</span>
+          </template>
+          <template v-if="column.key === 'return_quantity'">
+            <a-input-number
+              v-model:value="record.return_quantity"
+              :min="0"
+              :max="record.max_return"
+              size="small"
+              placeholder="退料数"
+              style="width:100px;"
+            />
+          </template>
+        </template>
+      </a-table>
+      <div style="display:flex; justify-content:flex-end; align-items:center; margin-top:12px; gap:8px;">
+        <a-button size="small" @click="returnModalVisible = false">取消</a-button>
+        <a-button
+          type="primary"
+          size="small"
+          danger
+          :loading="savingReturn"
+          :disabled="returnDetailList.filter(d => (d.return_quantity || 0) > 0).length === 0"
+          @click="handleSaveReturn"
+        >
+          确认退料 ({{ returnDetailList.filter(d => (d.return_quantity || 0) > 0).length }} 项)
+        </a-button>
+      </div>
+    </a-modal>
+
     <!-- 候选表格列设置抽屉 -->
     <ColumnSettingDrawer
       :open="candidateSettingVisible"
@@ -244,8 +324,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, PlusOutlined, DeleteOutlined, SettingOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
-import { queryByOrder, createMaterialIssue, deleteMaterialIssue } from '@/api/production/materialIssue'
+import { ReloadOutlined, PlusOutlined, DeleteOutlined, SettingOutlined, ExclamationCircleOutlined, DownOutlined, RollbackOutlined } from '@ant-design/icons-vue'
+import { queryByOrder, createMaterialIssue, deleteMaterialIssue, getMaterialIssueDetail } from '@/api/production/materialIssue'
+import { createMaterialReturn } from '@/api/production/materialReturn'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 
@@ -280,6 +361,11 @@ const orderInput = ref('')
 const loading = ref(false)
 const saving = ref(false)
 const deletingIssue = ref<string | null>(null)
+const currentSourceType = ref<string>('领料')
+const returnModalVisible = ref(false)
+const returnIssueRecord = ref<any>(null)
+const returnDetailList = ref<any[]>([])
+const savingReturn = ref(false)
 const modalVisible = ref(false)
 const issueRemark = ref('')
 const candidateVisible = ref(false)
@@ -319,12 +405,13 @@ const prepStatusColor = computed(() => {
 
 const historyCols = [
   { title: '领料单号', dataIndex: 'issue_number', key: 'issue_number', width: 150 },
+  { title: '来源', dataIndex: 'source_type', key: 'source_type', width: 70 },
   { title: '物料种类', dataIndex: 'total_issue_items', key: 'total_issue_items', width: 80 },
   { title: '状态', dataIndex: 'issue_status', key: 'issue_status', width: 80 },
   { title: '备注', dataIndex: 'remark', key: 'remark', ellipsis: true },
   { title: '创建人', dataIndex: 'creation_man', key: 'creation_man', width: 90 },
   { title: '创建时间', dataIndex: 'creation_date', key: 'creation_date', width: 160 },
-  { title: '操作', key: 'action', width: 70, fixed: 'right' }
+  { title: '操作', key: 'action', width: 130, fixed: 'right' }
 ]
 
 const defaultDetailColumns: any[] = [
@@ -501,7 +588,8 @@ const handleSave = async () => {
     const payload = {
       preparation_number: preparationHeader.value.preparation_number,
       production_order_number: orderInfo.value.production_order_number,
-      remark: issueRemark.value,
+      source_type: currentSourceType.value,
+      remark: issueRemark.value || (currentSourceType.value === '补料' ? '补料' : ''),
       items: validItems.map(d => ({
         preparation_detail_id: d.id,
         material_number: d.material_number,
@@ -519,7 +607,7 @@ const handleSave = async () => {
     }
 
     const res: any = await createMaterialIssue(payload)
-    message.success(`领料保存成功，领料单号: ${res?.data?.issue_number || ''}`)
+    message.success(`${currentSourceType.value}保存成功，领料单号: ${res?.data?.issue_number || ''}`)
     modalVisible.value = false
 
     // 刷新数据
@@ -539,6 +627,71 @@ const handleDeleteIssue = async (issue: any) => {
   } catch (err: any) {
     message.error(err?.response?.data?.message || '撤回失败')
   } finally { deletingIssue.value = null }
+}
+
+const openReturnModal = async (issue: any) => {
+  returnIssueRecord.value = issue
+  try {
+    const res: any = await getMaterialIssueDetail(issue.issue_number)
+    const data = res?.data
+    if (!data || !data.details) {
+      message.error('获取领料单明细失败')
+      return
+    }
+    // 初始化每行的退料数量和可退数量
+    returnDetailList.value = data.details.map((d: any) => ({
+      ...d,
+      return_quantity: 0,
+      max_return: parseFloat(d.actual_quantity) || 0,
+    }))
+    returnModalVisible.value = true
+  } catch (err: any) {
+    message.error(err?.response?.data?.message || '获取领料单明细失败')
+  }
+}
+
+const handleSaveReturn = async () => {
+  if (!returnIssueRecord.value) return
+  const validItems = returnDetailList.value.filter(d => (d.return_quantity || 0) > 0)
+  if (validItems.length === 0) {
+    message.warning('请至少填写一行退料数量')
+    return
+  }
+
+  // 校验退料数量不超过可退量
+  for (const item of validItems) {
+    if (item.return_quantity > item.max_return) {
+      message.warning(`物料 ${item.material_number} 退料数量 ${item.return_quantity} 超过可退量 ${item.max_return}`)
+      return
+    }
+  }
+
+  savingReturn.value = true
+  try {
+    const payload = {
+      issue_number: returnIssueRecord.value.issue_number,
+      items: validItems.map(d => ({
+        material_number: d.material_number,
+        material_name: d.material_name,
+        material_type: d.material_type,
+        unit: d.unit,
+        return_quantity: d.return_quantity,
+        batch_number: d.batch_number || '',
+        step_number: d.step_number,
+        work_center_name: d.work_center_name || '',
+        default_warehouse: d.default_warehouse || '',
+      })),
+    }
+
+    const res: any = await createMaterialReturn(payload)
+    message.success(`退料单 ${res?.data?.return_number || ''} 创建成功`)
+    returnModalVisible.value = false
+
+    // 刷新数据
+    await handleSearch(orderInput.value)
+  } catch (err: any) {
+    message.error(err?.response?.data?.message || '退料失败')
+  } finally { savingReturn.value = false }
 }
 
 onMounted(async () => {

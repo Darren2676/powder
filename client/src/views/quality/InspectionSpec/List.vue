@@ -1,96 +1,111 @@
 <template>
   <div>
-    <!-- 上部: 主表 -->
-    <a-card :title="pageTitle" :bordered="false">
-      <template #extra>
-        <a-space>
-          <a-input-search v-model:value="searchText" placeholder="搜索规范名/缺陷分类" style="width: 220px" @search="handleSearch" allowClear @change="(e: any) => { if (!e.target.value) handleSearch() }" />
-          <a-button @click="handleReset"><ReloadOutlined />重置</a-button>
-          <a-button @click="handleExport"><DownloadOutlined />导出</a-button>
-          <a-button type="primary" @click="openCreateModal"><PlusOutlined />新建</a-button>
-        </a-space>
-      </template>
+    <a-card :bordered="false" :body-style="{ padding: '0 12px 8px' }">
+      <a-tabs v-model:activeKey="pageTab" size="small">
+        <!-- ========== Tab 1: 检验规范 ========== -->
+        <a-tab-pane key="header" :tab="pageTitle">
+          <div class="tab-toolbar">
+            <div></div>
+            <a-space>
+              <a-input-search v-model:value="searchText" placeholder="搜索规范名/缺陷分类" style="width: 220px" @search="handleSearch" allowClear @change="(e: any) => { if (!e.target.value) handleSearch() }" />
+              <a-button @click="handleReset"><ReloadOutlined />重置</a-button>
+              <a-button @click="handleExport"><DownloadOutlined />导出</a-button>
+              <a-button type="primary" @click="openCreateModal"><PlusOutlined />新建</a-button>
+            </a-space>
+          </div>
 
-      <a-table
-        :columns="headerColumns"
-        :data-source="headerData"
-        :loading="headerLoading"
-        row-key="spec_name"
-        :pagination="headerPagination"
-        :scroll="{ y: 'calc(38vh - 120px)' }"
-        :row-class-name="(record: any) => record.spec_name === selectedSpecName ? 'ant-table-row-selected' : ''"
-        :custom-row="(record: any) => ({ onClick: () => handleSelectSpec(record) })"
-        @change="handleHeaderTableChange"
-        size="small"
-      >
-        <template #bodyCell="{ column, record, index }">
-          <template v-if="column.key === 'rowIndex'">
-            {{ (headerPagination.current - 1) * headerPagination.pageSize + index + 1 }}
+          <a-table
+            :columns="headerColumns"
+            :data-source="headerData"
+            :loading="headerLoading"
+            row-key="spec_name"
+            :pagination="headerPagination"
+            :scroll="{ y: 'calc(72vh - 200px)' }"
+            :row-class-name="(record: any) => record.spec_name === selectedSpecName ? 'ant-table-row-selected' : ''"
+            :custom-row="(record: any) => ({ onClick: () => handleSelectSpec(record) })"
+            @change="handleHeaderTableChange"
+            size="small"
+          >
+            <template #bodyCell="{ column, record, index }">
+              <template v-if="column.key === 'rowIndex'">
+                {{ (headerPagination.current - 1) * headerPagination.pageSize + index + 1 }}
+              </template>
+              <template v-else-if="column.key === 'approval_status'">
+                <a-tag :color="(record.approval_status || '').trim() === APPROVAL_STATUS.APPROVED ? 'blue' : 'default'">{{ (record.approval_status || '').trim() || APPROVAL_STATUS.UNAPPROVED }}</a-tag>
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <a-space :size="4">
+                  <a-button type="link" size="small" @click.stop="handleEditSpec(record)">编辑</a-button>
+                  <a-divider type="vertical" />
+                  <a-dropdown :trigger="['click']">
+                    <a-button type="link" size="small" @click.stop>
+                      更多<DownOutlined style="font-size: 10px; margin-left: 2px;" />
+                    </a-button>
+                    <template #overlay>
+                      <a-menu>
+                        <a-menu-item v-if="(record.approval_status || '').trim() !== APPROVAL_STATUS.APPROVED" @click="handleApprove(record)">审核</a-menu-item>
+                        <a-menu-item v-else @click="handleWithdraw(record)">撤消</a-menu-item>
+                        <a-menu-item @click="handleDeleteSpec(record)">删除</a-menu-item>
+                      </a-menu>
+                    </template>
+                  </a-dropdown>
+                </a-space>
+              </template>
+            </template>
+          </a-table>
+        </a-tab-pane>
+
+        <!-- ========== Tab 2: 检验规范明细 ========== -->
+        <a-tab-pane key="detail">
+          <template #tab>
+            <span>检验规范明细</span>
+            <a-tag v-if="selectedSpecName" color="blue" style="margin-left: 8px">{{ selectedSpecName }}</a-tag>
           </template>
-          <template v-else-if="column.key === 'approval_status'">
-            <a-tag :color="(record.approval_status || '').trim() === APPROVAL_STATUS.APPROVED ? 'blue' : 'default'">{{ (record.approval_status || '').trim() || APPROVAL_STATUS.UNAPPROVED }}</a-tag>
-          </template>
-          <template v-else-if="column.key === 'action'">
-            <a-space :size="4">
-              <a-button type="link" size="small" @click.stop="handleEditSpec(record)">编辑</a-button>
-              <a-divider type="vertical" />
-              <a-dropdown :trigger="['click']">
-                <a-button type="link" size="small" @click.stop>
-                  更多<DownOutlined style="font-size: 10px; margin-left: 2px;" />
-                </a-button>
-                <template #overlay>
-                  <a-menu>
-                    <a-menu-item v-if="(record.approval_status || '').trim() !== APPROVAL_STATUS.APPROVED" @click="handleApprove(record)">审核</a-menu-item>
-                    <a-menu-item v-else @click="handleWithdraw(record)">撤消</a-menu-item>
-                    <a-menu-item @click="handleDeleteSpec(record)">删除</a-menu-item>
-                  </a-menu>
+          <div v-if="!selectedSpecName" style="text-align: center; padding: 40px 0; color: #aaa;">
+            <a-empty description="请在「检验规范」页签中点击一行以查看明细" />
+          </div>
+          <template v-else>
+            <div class="tab-toolbar">
+              <div>
+                <a-tag v-if="selectedSpecApproved" color="orange" style="font-size: 12px;">只读（已审核）</a-tag>
+              </div>
+              <a-space>
+                <a-button @click="pageTab = 'header'">返回主表</a-button>
+                <a-button type="primary" size="small" :disabled="selectedSpecApproved" @click="openCreateItemModal"><PlusOutlined />新增明细</a-button>
+              </a-space>
+            </div>
+
+            <a-table
+              :columns="detailColumns"
+              :data-source="detailData"
+              :loading="detailLoading"
+              row-key="id"
+              :pagination="false"
+              :scroll="{ x: 1600, y: 'calc(72vh - 240px)' }"
+              size="small"
+            >
+              <template #bodyCell="{ column, record, index }">
+                <template v-if="column.key === 'rowIndex'">{{ index + 1 }}</template>
+                <template v-else-if="column.key === 'upper_limit'">{{ fmtNum(record.upper_limit) }}</template>
+                <template v-else-if="column.key === 'standard_value'">{{ fmtNum(record.standard_value) }}</template>
+                <template v-else-if="column.key === 'lower_limit'">{{ fmtNum(record.lower_limit) }}</template>
+                <template v-else-if="column.key === 'default_result'">
+                  <a-tag v-if="record.default_result === '合格'" color="green">合格</a-tag>
+                  <a-tag v-else-if="record.default_result === '不合格'" color="red">不合格</a-tag>
+                  <span v-else>{{ record.default_result }}</span>
                 </template>
-              </a-dropdown>
-            </a-space>
+                <template v-else-if="column.key === 'action'">
+                  <a-space v-if="!selectedSpecApproved">
+                    <a-button type="link" size="small" @click="handleEditItem(record)"><EditOutlined />编辑</a-button>
+                    <a-button type="link" danger size="small" @click="handleDeleteItem(record)"><DeleteOutlined />删除</a-button>
+                  </a-space>
+                  <span v-else style="color: #999; font-size: 12px">已审核</span>
+                </template>
+              </template>
+            </a-table>
           </template>
-        </template>
-      </a-table>
-    </a-card>
-
-    <!-- 下部: 明细 -->
-    <a-card :bordered="false" style="margin-top: 8px">
-      <template #title>
-        <span>检验规范明细</span>
-        <a-tag v-if="selectedSpecName" color="blue" style="margin-left: 8px">{{ selectedSpecName }}</a-tag>
-        <span v-else style="color: #999; font-size: 12px; margin-left: 8px">请选择上方检验规范</span>
-      </template>
-      <template #extra>
-        <a-button type="primary" size="small" :disabled="!selectedSpecName || selectedSpecApproved" @click="openCreateItemModal"><PlusOutlined />新增明细</a-button>
-      </template>
-
-      <a-table
-        :columns="detailColumns"
-        :data-source="detailData"
-        :loading="detailLoading"
-        row-key="id"
-        :pagination="false"
-        :scroll="{ x: 1600, y: 'calc(42vh - 120px)' }"
-        size="small"
-      >
-        <template #bodyCell="{ column, record, index }">
-          <template v-if="column.key === 'rowIndex'">{{ index + 1 }}</template>
-          <template v-else-if="column.key === 'upper_limit'">{{ fmtNum(record.upper_limit) }}</template>
-          <template v-else-if="column.key === 'standard_value'">{{ fmtNum(record.standard_value) }}</template>
-          <template v-else-if="column.key === 'lower_limit'">{{ fmtNum(record.lower_limit) }}</template>
-          <template v-else-if="column.key === 'default_result'">
-            <a-tag v-if="record.default_result === '合格'" color="green">合格</a-tag>
-            <a-tag v-else-if="record.default_result === '不合格'" color="red">不合格</a-tag>
-            <span v-else>{{ record.default_result }}</span>
-          </template>
-          <template v-else-if="column.key === 'action'">
-            <a-space v-if="!selectedSpecApproved">
-              <a-button type="link" size="small" @click="handleEditItem(record)"><EditOutlined />编辑</a-button>
-              <a-button type="link" danger size="small" @click="handleDeleteItem(record)"><DeleteOutlined />删除</a-button>
-            </a-space>
-            <span v-else style="color: #999; font-size: 12px">已审核</span>
-          </template>
-        </template>
-      </a-table>
+        </a-tab-pane>
+      </a-tabs>
     </a-card>
 
     <!-- 主表 新建/编辑 Modal -->
@@ -100,7 +115,15 @@
           <a-input v-model:value="specForm.spec_name" :disabled="specModalMode === 'edit'" placeholder="请输入检验规范名" />
         </a-form-item>
         <a-form-item label="缺陷分类">
-          <a-input v-model:value="specForm.defect_categories" placeholder="多个用分号分隔，如: 尺寸;外观" />
+          <a-select
+            v-model:value="specForm.defect_categories"
+            mode="multiple"
+            :options="defectClassOptions"
+            :filter-option="filterDefectClassOption"
+            placeholder="请选择缺陷分类（可多选）"
+            allowClear
+            style="width: 100%"
+          />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -111,12 +134,26 @@
         <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item label="质量特性" required>
-              <a-input v-model:value="itemForm.char_name" placeholder="请输入" />
+              <a-select
+                v-model:value="itemForm.char_name"
+                show-search
+                :options="charOptions"
+                :filter-option="filterCharOption"
+                placeholder="请输入质量特性搜索"
+                @change="onCharNameChange"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="分类">
-              <a-input v-model:value="itemForm.char_category" placeholder="请输入" />
+              <a-select
+                v-model:value="itemForm.char_category"
+                show-search
+                :options="defectClassOptions"
+                :filter-option="filterDefectClassOption"
+                placeholder="请输入分类搜索"
+                allowClear
+              />
             </a-form-item>
           </a-col>
         </a-row>
@@ -222,6 +259,8 @@ import {
   approveInspectionSpec,
   withdrawInspectionSpec
 } from '@/api/quality/inspectionSpec'
+import { getQualityCharacteristics } from '@/api/quality/qualityCharacteristic'
+import { getDefectClasses } from '@/api/quality/defectClass'
 import { useTableList } from '@/composables/useTableList'
 import { APPROVAL_STATUS } from '@/constants/statuses'
 import { generateExportFilename } from '@/utils/exportFilename'
@@ -239,11 +278,13 @@ const fetchHeaderList = () => fetchList({ spec_type: specType.value })
 
 const selectedSpecName = ref<string | null>(null)
 const selectedSpecApproved = ref(false)
+const pageTab = ref('header')
 
 const handleSelectSpec = (record: any) => {
   selectedSpecName.value = record.spec_name
   selectedSpecApproved.value = (record.approval_status || '').trim() === APPROVAL_STATUS.APPROVED
   fetchDetailList(record.spec_name)
+  pageTab.value = 'detail'
 }
 
 const headerColumns = [
@@ -287,15 +328,58 @@ const fetchDetailList = async (specName: string) => {
 
 const fmtNum = (v: any) => (v != null && v !== '' ? Number(v) : '')
 
+// ===== 质量特性下拉选项 =====
+const charList = ref<any[]>([])
+const charOptions = computed(() => charList.value.map((c: any) => ({ label: c.char_name, value: c.char_name })))
+
+const filterCharOption = (input: string, option: any) => {
+  return option.label?.toLowerCase().includes(input.toLowerCase())
+}
+
+const onCharNameChange = (val: string) => {
+  const found = charList.value.find((c: any) => c.char_name === val)
+  if (found) {
+    itemForm.data_type = found.data_type || '文本型'
+    itemForm.inspect_requirement = found.inspect_requirement || ''
+    itemForm.allow_multiple = found.allow_multiple || '否'
+    itemForm.upper_limit = found.upper_limit != null ? Number(found.upper_limit) : null
+    itemForm.standard_value = found.standard_value != null ? Number(found.standard_value) : null
+    itemForm.lower_limit = found.lower_limit != null ? Number(found.lower_limit) : null
+    itemForm.default_value = found.default_value || ''
+  }
+}
+
+const fetchCharList = async () => {
+  try {
+    const res: any = await getQualityCharacteristics({ limit: 9999 })
+    charList.value = res.data?.items || res.data || []
+  } catch { /* ignore */ }
+}
+
+// ===== 缺陷分类下拉选项 =====
+const defectClassList = ref<any[]>([])
+const defectClassOptions = computed(() => defectClassList.value.map((d: any) => ({ label: d.defect_class_name, value: d.defect_class_name })))
+
+const filterDefectClassOption = (input: string, option: any) => {
+  return option.label?.toLowerCase().includes(input.toLowerCase())
+}
+
+const fetchDefectClassList = async () => {
+  try {
+    const res: any = await getDefectClasses({ limit: 9999 })
+    defectClassList.value = res.data?.items || res.data || []
+  } catch { /* ignore */ }
+}
+
 // ===== 主表 Modal =====
 const specModalVisible = ref(false)
 const specModalMode = ref<'create' | 'edit'>('create')
-const specForm = reactive({ spec_name: '', defect_categories: '' })
+const specForm = reactive({ spec_name: '', defect_categories: [] as string[] })
 
 const openCreateModal = () => {
   specModalMode.value = 'create'
   specForm.spec_name = ''
-  specForm.defect_categories = ''
+  specForm.defect_categories = []
   specModalVisible.value = true
 }
 
@@ -306,7 +390,7 @@ const handleEditSpec = (record: any) => {
   }
   specModalMode.value = 'edit'
   specForm.spec_name = record.spec_name
-  specForm.defect_categories = record.defect_categories || ''
+  specForm.defect_categories = (record.defect_categories || '').split(';').filter((s: string) => s.trim())
   specModalVisible.value = true
 }
 
@@ -314,10 +398,10 @@ const handleSpecOk = async () => {
   if (!specForm.spec_name) { message.warning('请输入检验规范名'); return }
   try {
     if (specModalMode.value === 'create') {
-      await createInspectionSpec({ spec_name: specForm.spec_name, defect_categories: specForm.defect_categories, spec_type: specType.value || '来料' })
+      await createInspectionSpec({ spec_name: specForm.spec_name, defect_categories: specForm.defect_categories.join(';'), spec_type: specType.value || '来料' })
       message.success('创建成功')
     } else {
-      await updateInspectionSpec(specForm.spec_name, { defect_categories: specForm.defect_categories })
+      await updateInspectionSpec(specForm.spec_name, { defect_categories: specForm.defect_categories.join(';') })
       message.success('更新成功')
     }
     specModalVisible.value = false
@@ -483,7 +567,7 @@ watch(() => itemForm.data_type, (val) => {
   }
 })
 
-onMounted(() => { fetchHeaderList() })
+onMounted(() => { fetchHeaderList(); fetchCharList(); fetchDefectClassList() })
 
 // 路由切换时（同组件不同 specType）重新加载数据
 watch(specType, () => {
@@ -498,4 +582,10 @@ watch(specType, () => {
 :deep(.ant-card-extra) { padding: 0; }
 :deep(.ant-table-row) { cursor: pointer; }
 :deep(.ant-table-row-selected) td { background-color: #e6f7ff !important; }
+.tab-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+}
 </style>

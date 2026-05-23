@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, createVNode, h } from 'vue'
+import { ref, reactive, onMounted, createVNode, h, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, DownloadOutlined, ExclamationCircleOutlined, DownOutlined, PrinterOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, DownloadOutlined, ExclamationCircleOutlined, DownOutlined, PrinterOutlined, SettingOutlined, SwapOutlined } from '@ant-design/icons-vue'
 import { getPurchaseOrders, getPurchaseOrderDetail, createPurchaseOrder, updatePurchaseOrder, deletePurchaseOrder, exportPurchaseOrders, closePurchaseOrder, getReceivable } from '@/api/purchasing/purchaseOrder'
 import { createStockIn, confirmStockIn } from '@/api/warehouse/stockIn'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getSuppliers } from '@/api/master-data/supplier'
 import { getWarehouses } from '@/api/master-data/warehouse'
+import { getAssignableUsers } from '@/api/system/user'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval, batchSubmitForApproval, batchApproveRecords, batchWithdrawApproval, batchReverseApproval } from '@/api/system/approval'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -16,6 +18,8 @@ import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 
 // ==================== 数据 ====================
+
+const router = useRouter()
 
 const dataList = ref<any[]>([])
 
@@ -30,10 +34,12 @@ const manualCloseRef = ref()
 const selectedRowKeys = ref<string[]>([])
 const formData = ref<any>({})
 const detailRows = ref<any[]>([])
+const returnRecords = ref<any[]>([])
 
 const itemOptions = ref<any[]>([])
 const supplierOptions = ref<any[]>([])
 const warehouseOptions = ref<any[]>([])
+const userOptions = ref<any[]>([])
 
 // 入库弹窗
 const stockInVisible = ref(false)
@@ -53,6 +59,7 @@ const defaultDataColumns: any[] = [
   { title: '总金额', dataIndex: 'total_amount', key: 'total_amount', width: 110, customRender: ({ text }: any) => parseFloat(text || 0).toFixed(2), resizable: true },
   { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 100, resizable: true },
   { title: '执行状态', dataIndex: 'order_status', key: 'order_status', width: 100, resizable: true },
+  { title: '退货状态', dataIndex: 'return_count', key: 'return_status', width: 110, resizable: true },
   { title: '来源申请', dataIndex: 'source_req_number', key: 'source_req_number', width: 160, resizable: true }
 ]
 
@@ -79,6 +86,17 @@ const detailColumns = [
   { title: '操作', key: 'action', width: 80 }
 ]
 
+const returnColumns = [
+  { title: '退货单号', dataIndex: 'return_number', key: 'return_number', width: 160 },
+  { title: '退货类型', dataIndex: 'return_type', key: 'return_type', width: 90 },
+  { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 90 },
+  { title: '退货状态', dataIndex: 'return_status', key: 'return_status', width: 80 },
+  { title: '换货状态', dataIndex: 'exchange_status', key: 'exchange_status', width: 80 },
+  { title: '退货数量', dataIndex: 'total_return_quantity', key: 'total_return_quantity', width: 90 },
+  { title: '退货金额', dataIndex: 'total_return_amount', key: 'total_return_amount', width: 100 },
+  { title: '创建日期', dataIndex: 'creation_date', key: 'creation_date', width: 140 }
+]
+
 // ==================== 加载 ====================
 const fetchList = async () => {
   loading.value = true
@@ -94,12 +112,13 @@ const fetchList = async () => {
 
 const loadDropdowns = async () => {
   try {
-    const [itemRes, supRes, whRes]: any = await Promise.all([
-      getItems({ limit: 9999 }), getSuppliers({ limit: 9999 }), getWarehouses({ limit: 9999 })
+    const [itemRes, supRes, whRes, userRes]: any = await Promise.all([
+      getItems({ limit: 9999 }), getSuppliers({ limit: 9999 }), getWarehouses({ limit: 9999 }), getAssignableUsers()
     ])
     itemOptions.value = itemRes.data?.items || []
     supplierOptions.value = supRes.data?.items || []
     warehouseOptions.value = whRes.data?.items || []
+    userOptions.value = userRes.data || []
   } catch { /* ignore */ }
 }
 
@@ -115,6 +134,7 @@ const openView = async (record: any) => {
   const res: any = await getPurchaseOrderDetail(record.purchase_order_number)
   formData.value = res.data?.header || {}
   detailRows.value = res.data?.details || []
+  returnRecords.value = res.data?.returns || []
   modalVisible.value = true
 }
 
@@ -124,6 +144,7 @@ const openEdit = async (record: any) => {
   const res: any = await getPurchaseOrderDetail(record.purchase_order_number)
   formData.value = res.data?.header || {}
   detailRows.value = (res.data?.details || []).map((d: any) => ({ ...d }))
+  returnRecords.value = res.data?.returns || []
   modalVisible.value = true
 }
 
@@ -155,6 +176,15 @@ const onSupplierSelect = (val: string) => {
     formData.value.contacts = sup.contacts || ''
   }
 }
+
+// 采购负责人模糊搜索选项
+const poManagerOptions = computed(() => {
+  const search = formData.value.procurement_manager?.toLowerCase() || ''
+  if (!search) return userOptions.value.map(u => ({ value: u.real_name || u.username }))
+  return userOptions.value
+    .filter(u => (u.real_name || '').toLowerCase().includes(search) || (u.username || '').toLowerCase().includes(search))
+    .map(u => ({ value: u.real_name || u.username }))
+})
 
 const addDetailRow = () => {
   detailRows.value.push({ item_number: '', item_name: '', specifications: '', basic_unit: '', order_quantity: 0, unit_price: 0, total_amount: 0, received_quantity: 0, delivery_date: null, receive_status: '未到货', remark: '' })
@@ -255,6 +285,7 @@ const openCreate = () => {
   isView.value = false
   formData.value = {}
   detailRows.value = []
+  returnRecords.value = []
   modalVisible.value = true
 }
 
@@ -262,14 +293,47 @@ const openCreate = () => {
 const openStockIn = async (record: any) => {
   stockInPON.value = record.purchase_order_number
   const res: any = await getReceivable(record.purchase_order_number)
-  stockInItems.value = (res.data?.items || []).map((d: any) => ({
-    ...d,
-    stock_in_quantity: parseFloat(d.remaining) || 0,
-    qualified_quantity: parseFloat(d.remaining) || 0,
-    unqualified_quantity: 0
-  }))
-  stockInWarehouse.warehouse_number = ''
-  stockInWarehouse.warehouse_name = ''
+  stockInItems.value = (res.data?.items || []).map((d: any) => {
+    const needsInspection = d.incoming_inspection === 'Y'
+    return {
+      ...d,
+      incoming_inspection: d.incoming_inspection || 'N',
+      stock_in_quantity: parseFloat(d.remaining) || 0,
+      qualified_quantity: needsInspection ? 0 : (parseFloat(d.remaining) || 0),
+      unqualified_quantity: 0
+    }
+  })
+  // 根据物料来料检验标志自动默认仓库
+  const allNeedInspection = stockInItems.value.every((d: any) => d.incoming_inspection === 'Y')
+  const allNoInspection = stockInItems.value.every((d: any) => d.incoming_inspection !== 'Y')
+
+  if (allNeedInspection || !allNoInspection) {
+    // 全部需检验 或 混合 → 默认待检仓
+    const inspWh = warehouseOptions.value.find((w: any) => w.warehouse_name === '待检仓' || w.warehouse_type === '待检仓')
+    if (inspWh) {
+      stockInWarehouse.warehouse_number = inspWh.warehouse_number
+      stockInWarehouse.warehouse_name = inspWh.warehouse_name
+    } else {
+      stockInWarehouse.warehouse_number = ''
+      stockInWarehouse.warehouse_name = ''
+    }
+  } else {
+    // 全部免检 → 默认第一个物料的默认仓库
+    const firstItem = stockInItems.value[0]
+    if (firstItem?.default_warehouse) {
+      const wh = warehouseOptions.value.find((w: any) => w.warehouse_number === firstItem.default_warehouse)
+      if (wh) {
+        stockInWarehouse.warehouse_number = wh.warehouse_number
+        stockInWarehouse.warehouse_name = wh.warehouse_name
+      } else {
+        stockInWarehouse.warehouse_number = firstItem.default_warehouse
+        stockInWarehouse.warehouse_name = firstItem.default_warehouse
+      }
+    } else {
+      stockInWarehouse.warehouse_number = ''
+      stockInWarehouse.warehouse_name = ''
+    }
+  }
   stockInVisible.value = true
 }
 
@@ -279,6 +343,12 @@ const onWarehouseSelect = (val: string) => {
     stockInWarehouse.warehouse_number = wh.warehouse_number
     stockInWarehouse.warehouse_name = wh.warehouse_name
   }
+}
+
+const getWarehouseName = (warehouseNumber: string) => {
+  if (!warehouseNumber) return '-'
+  const wh = warehouseOptions.value.find((w: any) => w.warehouse_number === warehouseNumber)
+  return wh ? `${wh.warehouse_number} ${wh.warehouse_name}` : warehouseNumber
 }
 
 const handleStockIn = async () => {
@@ -311,13 +381,22 @@ const handleStockIn = async () => {
     await confirmStockIn(siNumber)
   }
 
-  message.success('入库成功')
+  if (createRes.data?.auto_inspections?.length > 0) {
+    message.success(`入库成功，已自动创建检验单：${createRes.data.auto_inspections.join(', ')}`)
+  } else {
+    message.success('入库成功')
+  }
   stockInVisible.value = false
   fetchList()
 }
 
 // ==================== 导出 ====================
 const handleRefresh = () => { fetchList() }
+
+// ==================== 退货 ====================
+const handleReturn = (record: any) => {
+  router.push({ name: 'PurchaseReturnList', query: { po: record.purchase_order_number } })
+}
 const handleExport = async () => {
   const res: any = await exportPurchaseOrders(searchText.value)
   const url = window.URL.createObjectURL(new Blob([res.data]))
@@ -365,6 +444,14 @@ const handleExport = async () => {
         <template v-else-if="column.key === 'order_status'">
           <a-tag :color="record.order_status === '已完成' ? 'green' : record.order_status === '执行中' ? 'blue' : record.order_status === '已关闭' ? 'red' : 'default'">{{ record.order_status }}</a-tag>
         </template>
+        <template v-else-if="column.key === 'return_status'">
+          <template v-if="record.return_count > 0">
+            <a-tag v-if="record.pending_return_count > 0" color="orange">待退货({{ record.return_count }})</a-tag>
+            <a-tag v-else-if="record.pending_exchange_count > 0" color="blue">换货中({{ record.pending_exchange_count }})</a-tag>
+            <a-tag v-else-if="record.completed_return_count > 0" color="green">已退货({{ record.completed_return_count }})</a-tag>
+            <a-tag v-else color="default">有退货({{ record.return_count }})</a-tag>
+          </template>
+        </template>
         <template v-else-if="column.key === 'action'">
           <a-space :size="4">
             <a-button type="link" size="small" @click="openView(record)">查看</a-button>
@@ -383,6 +470,7 @@ const handleExport = async () => {
                   <a-menu-divider v-if="(record.approval_status || '').trim() !== '草稿'" />
                   <a-menu-item v-if="(record.approval_status || '').trim() === '已审批'" @click="handlePrint(record)"><PrinterOutlined style="margin-right:4px" />打印</a-menu-item>
                   <a-menu-item v-if="(record.approval_status || '').trim() === '已审批' && (record.order_status || '').trim() !== '已完成' && (record.order_status || '').trim() !== '已关闭'" @click="openStockIn(record)">入库</a-menu-item>
+                  <a-menu-item v-if="(record.approval_status || '').trim() === '已审批' && (record.order_status || '').trim() !== '待执行' && (record.order_status || '').trim() !== '已关闭'" @click="handleReturn(record)"><SwapOutlined style="margin-right:4px" />退货</a-menu-item>
                   <a-menu-item v-if="(record.order_status || '').trim() !== '已关闭' && (record.order_status || '').trim() !== '已完成'" @click="handleClose(record)">关闭</a-menu-item>
                   <a-menu-divider />
                   <a-menu-item v-if="(record.approval_status || '').trim() === '草稿'" @click="handleDelete(record)">
@@ -431,7 +519,7 @@ const handleExport = async () => {
               <a-select-option v-for="s in supplierOptions" :key="s.supplier_number" :value="s.supplier_number" :label="s.supplier_number + ' ' + s.supplier_name">{{ s.supplier_name }}</a-select-option>
             </a-select>
           </a-form-item></a-col>
-          <a-col :span="6"><a-form-item label="采购负责人"><a-input v-model:value="formData.procurement_manager" :disabled="isView" /></a-form-item></a-col>
+          <a-col :span="6"><a-form-item label="采购负责人"><a-auto-complete v-model:value="formData.procurement_manager" :options="poManagerOptions" placeholder="输入姓名搜索或直接录入" style="width:100%" allow-clear :disabled="isView" /></a-form-item></a-col>
           <a-col :span="6"><a-form-item label="订单日期"><a-date-picker v-model:value="formData.order_date" :disabled="isView" style="width:100%" value-format="YYYY-MM-DD" /></a-form-item></a-col>
           <a-col :span="6"><a-form-item label="交货日期"><a-date-picker v-model:value="formData.delivery_date" :disabled="isView" style="width:100%" value-format="YYYY-MM-DD" /></a-form-item></a-col>
         </a-row>
@@ -468,6 +556,28 @@ const handleExport = async () => {
           </template>
         </template>
       </a-table>
+
+      <!-- 关联退货单 -->
+      <div v-if="returnRecords.length > 0" style="margin-top: 16px">
+        <h4 style="margin: 0 0 8px">关联退货单</h4>
+        <a-table :columns="returnColumns" :data-source="returnRecords" :pagination="false" row-key="return_number" size="small" :scroll="{ x: 900 }">
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'approval_status'">
+              <ApprovalStatusTag :status="record.approval_status" />
+            </template>
+            <template v-else-if="column.key === 'return_status'">
+              <a-tag :color="record.return_status === '已退货' ? 'green' : 'blue'">{{ record.return_status }}</a-tag>
+            </template>
+            <template v-else-if="column.key === 'exchange_status'">
+              <a-tag v-if="record.return_type === '退货换货'" :color="record.exchange_status === '已换货' ? 'green' : 'orange'">{{ record.exchange_status }}</a-tag>
+              <span v-else>-</span>
+            </template>
+            <template v-else-if="column.key === 'total_return_amount'">
+              {{ record.total_return_amount ? Number(record.total_return_amount).toFixed(2) : '-' }}
+            </template>
+          </template>
+        </a-table>
+      </div>
     </a-modal>
 
     <!-- 入库弹窗 -->
@@ -488,6 +598,8 @@ const handleExport = async () => {
         { title: '物料名称', dataIndex: 'item_name', width: 150 },
         { title: '规格', dataIndex: 'specifications', width: 100 },
         { title: '单位', dataIndex: 'basic_unit', width: 60 },
+        { title: '来料检验', dataIndex: 'incoming_inspection', width: 80, customRender: ({ text }: any) => text === 'Y' ? '是' : '否' },
+        { title: '入库仓库', key: 'target_warehouse', width: 90 },
         { title: '订单数量', dataIndex: 'order_quantity', width: 90 },
         { title: '已入库', dataIndex: 'received_quantity', width: 80 },
         { title: '可入库', dataIndex: 'remaining', width: 80 },
@@ -496,14 +608,18 @@ const handleExport = async () => {
         { title: '不合格数量', key: 'unqualified_quantity', width: 100 }
       ]" :data-source="stockInItems" :pagination="false" row-key="id" size="small">
         <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'target_warehouse'">
+            <a-tag v-if="record.incoming_inspection === 'Y'" color="orange">待检仓</a-tag>
+            <span v-else>{{ getWarehouseName(record.default_warehouse) }}</span>
+          </template>
           <template v-if="column.key === 'stock_in_quantity'">
-            <a-input-number v-model:value="record.stock_in_quantity" :min="0" :max="parseFloat(record.remaining)" style="width:100%" size="small" @change="record.qualified_quantity = record.stock_in_quantity; record.unqualified_quantity = 0" />
+            <a-input-number v-model:value="record.stock_in_quantity" :min="0" :max="parseFloat(record.remaining)" style="width:100%" size="small" @change="record.incoming_inspection !== 'Y' && (record.qualified_quantity = record.stock_in_quantity); record.unqualified_quantity = 0" />
           </template>
           <template v-else-if="column.key === 'qualified_quantity'">
-            <a-input-number v-model:value="record.qualified_quantity" :min="0" :max="record.stock_in_quantity" style="width:100%" size="small" @change="record.unqualified_quantity = record.stock_in_quantity - record.qualified_quantity" />
+            <a-input-number v-model:value="record.qualified_quantity" :min="0" :max="record.stock_in_quantity" style="width:100%" size="small" :disabled="record.incoming_inspection === 'Y'" @change="record.unqualified_quantity = record.stock_in_quantity - record.qualified_quantity" />
           </template>
           <template v-else-if="column.key === 'unqualified_quantity'">
-            <a-input-number v-model:value="record.unqualified_quantity" :min="0" :max="record.stock_in_quantity" style="width:100%" size="small" @change="record.qualified_quantity = record.stock_in_quantity - record.unqualified_quantity" />
+            <a-input-number v-model:value="record.unqualified_quantity" :min="0" :max="record.stock_in_quantity" style="width:100%" size="small" :disabled="record.incoming_inspection === 'Y'" @change="record.qualified_quantity = record.stock_in_quantity - record.unqualified_quantity" />
           </template>
         </template>
       </a-table>

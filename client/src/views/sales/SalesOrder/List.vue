@@ -17,6 +17,7 @@ import dayjs from 'dayjs'
 import { CONDITION_STATUS } from '@/constants/statuses'
 import { useTableList } from '@/composables/useTableList'
 import { generateExportFilename } from '@/utils/exportFilename'
+import { useModalDrag } from '@/composables/useModalDrag'
 
 // ==================== 类型定义 ====================
 interface SalesOrderHeader {
@@ -164,6 +165,8 @@ const detailViewLoading = ref(false)
 const detailViewRecord = ref<SalesOrderHeader>(emptyHeader())
 const detailViewDetails = ref<SalesOrderDetail[]>([])
 const detailViewTab = ref('info')
+const { modalStyle: detailModalStyle, onDragStart: detailDragStart, resetDrag: detailResetDrag } = useModalDrag()
+const { modalStyle: createModalStyle, onDragStart: createDragStart, resetDrag: createResetDrag } = useModalDrag()
 
 // 详情弹窗 - 明细编辑（草稿和已审批状态可用）
 const detailViewEditable = computed(() => detailViewRecord.value.approval_status === '草稿' || detailViewRecord.value.approval_status === '已审批')
@@ -405,6 +408,7 @@ const handleCreate = () => {
   createDetails.value = []
   createOrderDate.value = null
   createDeliveryDate.value = null
+  createResetDrag()
   createModalVisible.value = true
 }
 
@@ -456,6 +460,7 @@ const handleViewDetail = async (record: SalesOrderHeader) => {
   detailViewTab.value = 'info'
   detailViewDetails.value = []
   detailViewVisible.value = true
+  detailResetDrag()
   detailViewLoading.value = true
   try {
     const res: any = await getSalesOrderDetail(record.sales_order_number)
@@ -865,12 +870,15 @@ const handleBatchAction = (action: string) => {
     <!-- ==================== 新建弹窗 ==================== -->
     <a-modal
       v-model:open="createModalVisible"
-      title="新建销售订单"
       :confirm-loading="createLoading"
       @ok="handleCreateSubmit"
       width="1200px"
+      :style="createModalStyle"
       :bodyStyle="{ maxHeight: '78vh', overflowY: 'auto' }"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="createDragStart">新建销售订单</div>
+      </template>
       <a-divider orientation="left" style="margin-top: 0; margin-bottom: 2px; font-size: 13px;">客户信息</a-divider>
       <a-form :label-col="{ span: 8 }" :wrapper-col="{ span: 16 }" class="compact-form">
         <a-row :gutter="12">
@@ -1286,11 +1294,14 @@ const handleBatchAction = (action: string) => {
     <!-- ==================== 详情弹窗 ==================== -->
     <a-modal
       v-model:open="detailViewVisible"
-      :title="`销售订单详情 - ${detailViewRecord.sales_order_number}`"
       :footer="null"
       width="1300px"
+      :style="detailModalStyle"
       :bodyStyle="{ padding: '12px 16px', maxHeight: '82vh', overflowY: 'auto' }"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="detailDragStart">销售订单详情 - {{ detailViewRecord.sales_order_number }}</div>
+      </template>
       <a-spin :spinning="detailViewLoading">
         <a-tabs v-model:activeKey="detailViewTab" :animated="false">
           <!-- Tab 1: 基本信息 -->
@@ -1656,6 +1667,10 @@ const handleBatchAction = (action: string) => {
 </template>
 
 <style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
 .compact-form :deep(.ant-form-item) {
   margin-bottom: 2px;
 }

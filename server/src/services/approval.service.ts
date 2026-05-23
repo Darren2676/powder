@@ -11,6 +11,7 @@ import { hasActiveWorkflow, startWorkflow } from '@/services/workflow.engine';
 import { onWorkReportApproved, onWorkReportReversed } from '@/services/workReport.service';
 import { consumeForecastOnOrderApproval, recoverForecastOnOrderReversal } from '@/services/forecast.service';
 import { onSalesOrderApproved, onSalesOrderReversed } from '@/services/salesOrderSync.service';
+import { onStockInApproved, onStockInReversed } from '@/modules/warehouse/stockIn/scrapInventoryHandler';
 import { withTransaction } from '@/shared/db/withTransaction';
 import { createLogger } from '@/config/logger';
 
@@ -174,7 +175,7 @@ registerApprovalHandler('process_task', { onApprove: noopCallback('process_task'
 registerApprovalHandler('material_preparation', { onApprove: noopCallback('material_preparation', 'onApprove'), onReverse: noopCallback('material_preparation', 'onReverse') });
 registerApprovalHandler('purchase_req', { onApprove: noopCallback('purchase_req', 'onApprove'), onReverse: noopCallback('purchase_req', 'onReverse') });
 registerApprovalHandler('purchase_order', { onApprove: noopCallback('purchase_order', 'onApprove'), onReverse: noopCallback('purchase_order', 'onReverse') });
-registerApprovalHandler('stock_in', { onApprove: noopCallback('stock_in', 'onApprove'), onReverse: noopCallback('stock_in', 'onReverse') });
+registerApprovalHandler('stock_in', { onApprove: onStockInApproved, onReverse: onStockInReversed });
 registerApprovalHandler('sales_forecast', { onApprove: noopCallback('sales_forecast', 'onApprove'), onReverse: noopCallback('sales_forecast', 'onReverse') });
 registerApprovalHandler('return_order', { onApprove: noopCallback('return_order', 'onApprove'), onReverse: noopCallback('return_order', 'onReverse') });
 registerApprovalHandler('mfg_bom_header', { onApprove: noopCallback('mfg_bom_header', 'onApprove'), onReverse: noopCallback('mfg_bom_header', 'onReverse') });

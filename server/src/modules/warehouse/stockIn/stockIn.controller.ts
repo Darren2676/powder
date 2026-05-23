@@ -140,6 +140,8 @@ export const createStockIn = async (req: Request, res: Response, next: NextFunct
         transaction
       });
 
+      const autoInspections: string[] = [];
+
       if (b.details && Array.isArray(b.details)) {
         for (let i = 0; i < b.details.length; i++) {
           const d = b.details[i];
@@ -171,8 +173,7 @@ export const createStockIn = async (req: Request, res: Response, next: NextFunct
           });
         }
 
-        // 自动报检：遍历明细行，对“需要检验”的物料自动创建采购质量检验单
-        const autoInspections: string[] = [];
+        // 自动报检：遍历明细行，对"需要检验"的物料自动创建采购质量检验单
         for (const d of b.details) {
           if (!d.item_number) continue;
           const [itemRows]: any = await sequelize.query(
@@ -194,9 +195,9 @@ export const createStockIn = async (req: Request, res: Response, next: NextFunct
                 creation_man
               }, transaction);
               autoInspections.push(inspNo);
-              // 回写检验单号到入库明细行
+              // 回写检验单号到入库明细行，同时将合格数量置0（等待检验结果）
               await sequelize.query(
-                `UPDATE stock_in_detail SET inspection_number = :inspNo, inspect_status = N'待检验'
+                `UPDATE stock_in_detail SET inspection_number = :inspNo, inspect_status = N'待检验', qualified_quantity = 0
                  WHERE stock_in_number = :stock_in_number AND item_number = :item_number`,
                 { replacements: { inspNo, stock_in_number, item_number: d.item_number }, transaction }
               );
@@ -205,7 +206,7 @@ export const createStockIn = async (req: Request, res: Response, next: NextFunct
       }
 
       await transaction.commit();
-      res.json(success({ stock_in_number }, '创建入库单成功'));
+      res.json(success({ stock_in_number, auto_inspections: autoInspections }, '创建入库单成功'));
     } catch (e) {
       await transaction.rollback();
       throw e;
@@ -283,11 +284,14 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
       }
 
       for (const d of details) {
+        const needsInspection = itemInspectionMap[d.item_number || ''] === true;
         const qualifiedQty = parseFloat(d.qualified_quantity) || 0;
-        if (qualifiedQty <= 0) continue;
+        const stockInQty = parseFloat(d.stock_in_quantity) || 0;
+        // 需检验物料用 stock_in_quantity 入库，非检验物料用 qualified_quantity
+        const entryQty = needsInspection ? stockInQty : qualifiedQty;
+        if (entryQty <= 0) continue;
 
         // 根据物料来料检验标志分流仓库
-        const needsInspection = itemInspectionMap[d.item_number || ''] === true;
         const whNumber = needsInspection ? inspWhNumber : header.warehouse_number;
         const whName = needsInspection ? inspWhName : header.warehouse_name;
         const sourceType = needsInspection ? '来料待检' : '采购入库';
@@ -313,7 +317,7 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
             basic_unit: d.basic_unit || '',
             warehouse_number: whNumber,
             warehouse_name: whName,
-            quantity: qualifiedQty,
+            quantity: entryQty,
             supplier_number: header.supplier_number || '',
             supplier_name: header.supplier_name || ''
           },
@@ -326,13 +330,12 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
         );
 
         // 4. 写入库存流水
-        // 获取当前汇总库存（入库后）
         const [invRows]: any = await sequelize.query(
           `SELECT quantity FROM material_inventory WHERE item_number = :itemNo AND warehouse_number = :whNo`,
           { replacements: { itemNo: d.item_number, whNo: whNumber }, transaction }
         );
-        const afterQty = invRows.length ? parseFloat(invRows[0].quantity) : qualifiedQty;
-        const beforeQty = afterQty - qualifiedQty;
+        const afterQty = invRows.length ? parseFloat(invRows[0].quantity) : entryQty;
+        const beforeQty = afterQty - entryQty;
 
         const txnNo = await generateMaterialTxnNumber(transaction);
         await sequelize.query(`
@@ -355,7 +358,7 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
             basic_unit: d.basic_unit || '',
             warehouse_number: whNumber,
             warehouse_name: whName,
-            quantity: qualifiedQty,
+            quantity: entryQty,
             beforeQty,
             afterQty,
             batchNo,
@@ -373,8 +376,16 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
           { replacements: { batchNo, inspectStatus, detailId: d.id }, transaction }
         );
 
-        // 6. 回写采购订单明细 received_quantity
-        if (d.purchase_detail_id) {
+        // 5b. 回写检验单批次号（需检验物料在创建入库单时检验单的batch_number为空，确认入库后需更新）
+        if (needsInspection && d.inspection_number) {
+          await sequelize.query(
+            `UPDATE purchase_quality_inspection SET batch_number = :batchNo WHERE inspection_number = :inspNo`,
+            { replacements: { batchNo, inspNo: d.inspection_number }, transaction }
+          );
+        }
+
+        // 6. 回写采购订单明细 received_quantity（需检验物料跳过，等检验完成后回写）
+        if (!needsInspection && d.purchase_detail_id) {
           await sequelize.query(`
             UPDATE purchase_order_detail SET
               received_quantity = received_quantity + :qty,
@@ -412,6 +423,216 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
 
       await transaction.commit();
       res.json(success(null, '确认入库成功'));
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
+    }
+  } catch (err) { next(err); }
+};
+
+// ==================== 撤回入库 ====================
+
+export const withdrawStockIn = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const operator = (req as any).user?.username || '';
+
+    // 1. 校验入库单存在且状态为"已入库"
+    const [siHeader]: any = await sequelize.query(
+      `SELECT * FROM stock_in WHERE stock_in_number = :id`, { replacements: { id } }
+    );
+    if (!siHeader.length) { res.status(404).json({ success: false, message: '入库单不存在' }); return; }
+    const header = siHeader[0];
+    if (header.approval_status !== '已入库') {
+      res.status(403).json({ success: false, message: '仅已入库的单据可撤回' }); return;
+    }
+
+    // 2. 获取入库明细
+    const [details]: any = await sequelize.query(
+      `SELECT * FROM stock_in_detail WHERE stock_in_number = :id ORDER BY line_number`,
+      { replacements: { id } }
+    );
+    if (!details.length) { res.status(400).json({ success: false, message: '入库单无明细行' }); return; }
+
+    // 3. 安全检查：批次库存是否已被消耗
+    for (const d of details) {
+      if (!d.batch_number) continue;
+      // 根据物料来料检验标志确定仓库
+      const [itemRows]: any = await sequelize.query(
+        `SELECT incoming_inspection FROM item_master WHERE item_number = :item_number`,
+        { replacements: { item_number: d.item_number } }
+      );
+      const needsInspection = itemRows.length > 0 && itemRows[0].incoming_inspection === 'Y';
+      // 需检验物料入库到待检仓，免检物料入库到入库单指定仓库
+      let whNumber = header.warehouse_number;
+      if (needsInspection) {
+        const [inspWhRows]: any = await sequelize.query(
+          `SELECT TOP 1 warehouse_number FROM warehouse WHERE warehouse_name = N'待检仓' OR warehouse_type = N'待检仓'`
+        );
+        if (inspWhRows.length > 0) whNumber = inspWhRows[0].warehouse_number;
+      }
+
+      const [batchRows]: any = await sequelize.query(
+        `SELECT quantity FROM material_batch_inventory WHERE batch_number = :bn AND item_number = :itemNum AND warehouse_number = :whNum`,
+        { replacements: { bn: d.batch_number, itemNum: d.item_number, whNum: whNumber } }
+      );
+      if (batchRows.length > 0) {
+        const currentQty = parseFloat(batchRows[0].quantity);
+        const entryQty = needsInspection
+          ? (parseFloat(d.stock_in_quantity) || 0)
+          : (parseFloat(d.qualified_quantity) || 0);
+        if (currentQty < entryQty) {
+          res.status(400).json({
+            success: false,
+            message: `批次 ${d.batch_number} 已被消耗（剩余 ${currentQty}，需回退 ${entryQty}），请先撤回后续出库操作`
+          });
+          return;
+        }
+      }
+    }
+
+    // 4. 安全检查：来料检验单是否已完成检验
+    const inspectionNumbers: string[] = [];
+    for (const d of details) {
+      if (d.inspection_number) inspectionNumbers.push(d.inspection_number);
+    }
+    if (inspectionNumbers.length > 0) {
+      const [inspRows]: any = await sequelize.query(
+        `SELECT inspection_number, inspect_status FROM purchase_quality_inspection WHERE inspection_number IN (:inspNos)`,
+        { replacements: { inspNos: inspectionNumbers } }
+      );
+      for (const insp of inspRows) {
+        if (insp.inspect_status === '已完成' || insp.inspect_status === '检验中') {
+          res.status(400).json({
+            success: false,
+            message: `检验单 ${insp.inspection_number} 已完成检验，请先撤回检验结果后再撤回入库`
+          });
+          return;
+        }
+      }
+    }
+
+    const transaction = await sequelize.transaction();
+    try {
+      const txnNumbers: string[] = [];
+
+      for (const d of details) {
+        if (!d.batch_number) continue;
+
+        // 确定仓库
+        const [itemRows]: any = await sequelize.query(
+          `SELECT incoming_inspection FROM item_master WHERE item_number = :item_number`,
+          { replacements: { item_number: d.item_number }, transaction }
+        );
+        const needsInspection = itemRows.length > 0 && itemRows[0].incoming_inspection === 'Y';
+        let whNumber = header.warehouse_number;
+        if (needsInspection) {
+          const [inspWhRows]: any = await sequelize.query(
+            `SELECT TOP 1 warehouse_number FROM warehouse WHERE warehouse_name = N'待检仓' OR warehouse_type = N'待检仓'`,
+            { transaction }
+          );
+          if (inspWhRows.length > 0) whNumber = inspWhRows[0].warehouse_number;
+        }
+
+        const entryQty = needsInspection
+          ? (parseFloat(d.stock_in_quantity) || 0)
+          : (parseFloat(d.qualified_quantity) || 0);
+        if (entryQty <= 0) continue;
+
+        // 5.1 扣减/删除批次库存
+        const [batchRows]: any = await sequelize.query(
+          `SELECT id, quantity FROM material_batch_inventory WHERE batch_number = :bn AND item_number = :itemNum AND warehouse_number = :whNum`,
+          { replacements: { bn: d.batch_number, itemNum: d.item_number, whNum: whNumber }, transaction }
+        );
+        if (batchRows.length > 0) {
+          const currentQty = parseFloat(batchRows[0].quantity);
+          if (currentQty - entryQty <= 0) {
+            await sequelize.query(
+              `DELETE FROM material_batch_inventory WHERE id = :id`,
+              { replacements: { id: batchRows[0].id }, transaction }
+            );
+          } else {
+            await sequelize.query(
+              `UPDATE material_batch_inventory SET quantity = quantity - :qty, last_updated = GETDATE() WHERE id = :id`,
+              { replacements: { qty: entryQty, id: batchRows[0].id }, transaction }
+            );
+          }
+        }
+
+        // 5.2 同步汇总库存
+        await syncMaterialInventorySummary(d.item_number, whNumber, transaction);
+
+        // 5.3 收集入库时创建的库存流水号
+        const [txRows]: any = await sequelize.query(
+          `SELECT transaction_number FROM material_inventory_transaction WHERE source_number = :sourceNo AND batch_number = :batchNo AND transaction_type = N'入库'`,
+          { replacements: { sourceNo: id, batchNo: d.batch_number }, transaction }
+        );
+        for (const tx of txRows) {
+          txnNumbers.push(tx.transaction_number);
+        }
+
+        // 5.4 回退采购订单明细 received_quantity（仅免检物料在确认时回写了）
+        if (!needsInspection && d.purchase_detail_id) {
+          const qualifiedQty = parseFloat(d.qualified_quantity) || 0;
+          await sequelize.query(`
+            UPDATE purchase_order_detail SET
+              received_quantity = CASE WHEN received_quantity - :qty < 0 THEN 0 ELSE received_quantity - :qty END,
+              receive_status = CASE
+                WHEN received_quantity - :qty2 <= 0 THEN N'未到货'
+                WHEN received_quantity - :qty3 < order_quantity THEN N'部分到货'
+                ELSE N'已到货'
+              END
+            WHERE id = :detailId
+          `, { replacements: { qty: qualifiedQty, qty2: qualifiedQty, qty3: qualifiedQty, detailId: d.purchase_detail_id }, transaction });
+        }
+      }
+
+      // 6. 标记库存流水作废（物料流水表无 status 列，用 remark 追加作废标记）
+      if (txnNumbers.length > 0) {
+        await sequelize.query(
+          `UPDATE material_inventory_transaction SET remark = ISNULL(remark, '') + N' [已作废-入库单撤回]' WHERE transaction_number IN (:txns)`,
+          { replacements: { txns: txnNumbers }, transaction }
+        );
+      }
+
+      // 7. 清空入库明细批次号和检验状态
+      await sequelize.query(
+        `UPDATE stock_in_detail SET batch_number = '', inspect_status = NULL, qualified_quantity = stock_in_quantity WHERE stock_in_number = :id`,
+        { replacements: { id }, transaction }
+      );
+
+      // 8. 作废来料检验单
+      if (inspectionNumbers.length > 0) {
+        await sequelize.query(
+          `UPDATE purchase_quality_inspection SET inspect_status = N'已作废', remark = ISNULL(remark, '') + N' [入库单撤回]' WHERE inspection_number IN (:inspNos)`,
+          { replacements: { inspNos: inspectionNumbers }, transaction }
+        );
+      }
+
+      // 9. 重算采购订单主表执行状态
+      if (header.purchase_order_number) {
+        const [poDetails]: any = await sequelize.query(
+          `SELECT receive_status FROM purchase_order_detail WHERE purchase_order_number = :pon`,
+          { replacements: { pon: header.purchase_order_number }, transaction }
+        );
+        const allReceived = poDetails.length > 0 && poDetails.every((r: any) => r.receive_status === PURCHASE_STATUS.RECEIVED);
+        const anyReceived = poDetails.some((r: any) => r.receive_status !== PURCHASE_STATUS.NOT_RECEIVED);
+        const newStatus = allReceived ? '已完成' : (anyReceived ? '执行中' : '待执行');
+        await sequelize.query(
+          `UPDATE purchase_order SET order_status = :newStatus WHERE purchase_order_number = :pon`,
+          { replacements: { newStatus, pon: header.purchase_order_number }, transaction }
+        );
+        await checkAndAutoComplete('purchase_order', header.purchase_order_number, transaction);
+      }
+
+      // 10. 更新入库单状态为"已撤回"
+      await sequelize.query(
+        `UPDATE stock_in SET approval_status = N'已撤回' WHERE stock_in_number = :id`,
+        { replacements: { id }, transaction }
+      );
+
+      await transaction.commit();
+      res.json(success(null, '撤回入库成功'));
     } catch (e) {
       await transaction.rollback();
       throw e;

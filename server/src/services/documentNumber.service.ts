@@ -336,3 +336,25 @@ export const generateOutsourcingReturnStockinNumber = async (transaction?: any):
   }
   return `${prefix}${String(seq).padStart(3, '0')}`;
 };
+
+// ==================== 半成品生产入库单编号 ====================
+
+export const generateSemiProductionInboundOrderNumber = async (transaction?: any): Promise<string> => {
+  const today = new Date();
+  const dateStr = today.getFullYear() +
+    String(today.getMonth() + 1).padStart(2, '0') +
+    String(today.getDate()).padStart(2, '0');
+  const prefix = `SPIO-${dateStr}-`;
+
+  const [rows]: any = await sequelize.query(
+    `SELECT MAX(inbound_order_number) as max_num FROM semi_production_inbound_order WHERE inbound_order_number LIKE :prefix`,
+    { replacements: { prefix: prefix + '%' }, ...(transaction ? { transaction } : {}) }
+  );
+
+  let seq = 1;
+  if (rows[0]?.max_num) {
+    const lastSeq = parseInt(rows[0].max_num.substring(prefix.length));
+    if (!isNaN(lastSeq)) seq = lastSeq + 1;
+  }
+  return prefix + String(seq).padStart(3, '0');
+};

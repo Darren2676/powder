@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { validateCreateWorkReport, validateUpdateWorkReport } from '../../../validators/production.validator';
 import { authenticate } from '../../../middleware/auth.middleware';
-import { getWorkReports, createWorkReport, updateWorkReport, deleteWorkReport, exportWorkReports, importWorkReports, getTasksForReport, quickReport, completeOrderReport } from './workReport.controller';
+import { getWorkReports, createWorkReport, updateWorkReport, deleteWorkReport, exportWorkReports, importWorkReports, getTasksForReport, quickReport, completeOrderReport, undoPreview, undoExecute } from './workReport.controller';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -15,6 +15,8 @@ router.post('/quick', authenticate, quickReport);
 router.post('/complete-order', authenticate, completeOrderReport);
 router.post('/', authenticate, validateCreateWorkReport, createWorkReport);
 router.put('/:id', authenticate, validateUpdateWorkReport, updateWorkReport);
+router.post('/undo-preview', authenticate, undoPreview);
+router.post('/undo-execute', authenticate, undoExecute);
 router.delete('/:id', authenticate, deleteWorkReport);
 
 export default router;

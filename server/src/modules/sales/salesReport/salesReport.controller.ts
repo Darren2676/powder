@@ -461,3 +461,96 @@ export const getShippingByOrderSummary = async (req: Request, res: Response, nex
     res.json(success({ items, total, page: pageNum, limit: pageSize }));
   } catch (err) { next(err); }
 };
+
+// ==================== 订单维度生产单报表 ====================
+export const getOrderProductionSummary = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { page = 1, limit = 20, search = '', start_date, end_date } = req.query;
+    const pageNum = Number(page);
+    const pageSize = Number(limit);
+    const offset = (pageNum - 1) * pageSize;
+    const offsetEnd = offset + pageSize;
+
+    let searchClause = '';
+    let dateClause = '';
+    const replacements: any = { offset, offsetEnd };
+
+    if (search) {
+      searchClause = ` AND (so.sales_order_number LIKE :search OR so.customer_name LIKE :search OR sod.item_number LIKE :search OR sod.item_name LIKE :search OR pp.production_number LIKE :search OR po.production_order_number LIKE :search)`;
+      replacements.search = `%${search}%`;
+    }
+
+    if (start_date && end_date) {
+      dateClause = ` AND so.order_date >= :start_date AND so.order_date < DATEADD(day, 1, CAST(:end_date AS DATE))`;
+      replacements.start_date = start_date;
+      replacements.end_date = end_date;
+    }
+
+    // 计算总数 — 展开到工单维度
+    const [countResult]: any = await sequelize.query(`
+      SELECT COUNT(*) as total
+      FROM sales_order so
+      INNER JOIN sales_order_detail sod ON sod.sales_order_number = so.sales_order_number
+      INNER JOIN Production_plan pp ON pp.source_order_number = sod.sales_order_number
+        AND pp.source_line_number = sod.line_number
+      LEFT JOIN production_order po ON po.production_number = pp.production_number
+        AND po.item_number = pp.item_number
+      WHERE so.approval_status = N'已审批'
+        AND sod.status NOT IN (N'已取消')
+        ${dateClause}
+        ${searchClause}
+    `, { replacements });
+
+    const total = Number(countResult[0]?.total) || 0;
+
+    // 分页查询 — 展开到工单维度
+    const [items]: any = await sequelize.query(`
+      SELECT * FROM (
+        SELECT
+          so.sales_order_number,
+          so.customer_name,
+          so.order_date,
+          sod.line_number,
+          sod.item_number,
+          sod.item_name,
+          sod.specifications,
+          sod.basic_unit,
+          sod.order_quantity,
+          pp.production_number,
+          pp.planned_quantity AS plan_planned_quantity,
+          po.production_order_number,
+          po.item_number AS po_item_number,
+          po.item_name AS po_item_name,
+          po.planned_quantity AS po_planned_quantity,
+          po.plan_status AS po_plan_status,
+          ISNULL(po.inbound_quantity, 0) AS po_inbound_quantity,
+          CASE WHEN po.plan_status IN (N'已派发', N'已备料', N'生产中') THEN po.planned_quantity ELSE 0 END AS po_wip_quantity,
+          CASE WHEN po.production_order_number IS NOT NULL THEN pp.planned_quantity - ISNULL(inbound_sub.total_inbound, 0) ELSE pp.planned_quantity END AS uncompleted_quantity,
+          ROW_NUMBER() OVER (ORDER BY so.order_date DESC, so.sales_order_number, sod.line_number, po.production_order_number) AS _row_num
+        FROM sales_order so
+        INNER JOIN sales_order_detail sod ON sod.sales_order_number = so.sales_order_number
+        INNER JOIN Production_plan pp ON pp.source_order_number = sod.sales_order_number
+          AND pp.source_line_number = sod.line_number
+        LEFT JOIN production_order po ON po.production_number = pp.production_number
+          AND po.item_number = pp.item_number
+        OUTER APPLY (
+          SELECT ISNULL(SUM(po2.inbound_quantity), 0) AS total_inbound
+          FROM production_order po2
+          WHERE po2.production_number = pp.production_number
+            AND po2.item_number = pp.item_number
+        ) inbound_sub
+        WHERE so.approval_status = N'已审批'
+          AND sod.status NOT IN (N'已取消')
+          ${dateClause}
+          ${searchClause}
+      ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
+    `, { replacements });
+
+    const cleanItems = items.map((r: any, i: number) => {
+      const { _row_num, ...rest } = r;
+      return { ...rest, _row_num: (pageNum - 1) * pageSize + i + 1 };
+    });
+
+    res.json(success({ items: cleanItems, total, page: pageNum, limit: pageSize }));
+  } catch (err) { next(err); }
+};

@@ -14,6 +14,8 @@ import {
   EyeOutlined
 } from '@ant-design/icons-vue'
 import { getQualitySummary, getProductionQualityReport, getDefectAnalysis, getProcessQuality } from '@/api/quality/qualityReport'
+import YieldRate from './YieldRate.vue'
+import ProductionOrderPivot from './ProductionOrderPivot.vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart, PieChart, LineChart } from 'echarts/charts'
@@ -70,6 +72,9 @@ const detailData = ref<any>(null)
 // 图表选项卡
 const activeChartTab = ref('bar')
 
+// 主页面 Tab
+const activeMainTab = ref('summary')
+
 // ==================== 列定义 ====================
 
 const columns = [
@@ -82,6 +87,7 @@ const columns = [
   { title: '合格总量', dataIndex: 'total_qualified', key: 'total_qualified', width: 90, align: 'right' as const },
   { title: '不合格量', dataIndex: 'total_unqualified', key: 'total_unqualified', width: 90, align: 'right' as const },
   { title: '合格率', dataIndex: 'overall_pass_rate', key: 'overall_pass_rate', width: 90, align: 'right' as const },
+  { title: '综合合格率', dataIndex: 'yield_rate', key: 'yield_rate', width: 100, align: 'right' as const },
   { title: '工序数', dataIndex: 'process_count', key: 'process_count', width: 80, align: 'center' as const },
   { title: '缺陷报工', dataIndex: 'defect_report_count', key: 'defect_report_count', width: 90, align: 'center' as const },
   { title: '设备', dataIndex: 'equipment_name', key: 'equipment_name', width: 130 },
@@ -311,6 +317,14 @@ const getQualityLevel = (rate: number) => {
   return { text: '异常', color: 'error' }
 }
 
+const getYieldRateColor = (rate: number | null) => {
+  if (rate === null || rate === undefined) return '#999'
+  if (rate >= 95) return '#52c41a'
+  if (rate >= 85) return '#1890ff'
+  if (rate >= 70) return '#faad14'
+  return '#ff4d4f'
+}
+
 // ==================== 初始化 ====================
 
 onMounted(() => {
@@ -320,6 +334,8 @@ onMounted(() => {
 
 <template>
   <div class="quality-report-page">
+    <a-tabs v-model:activeKey="activeMainTab" size="small">
+      <a-tab-pane key="summary" tab="生产单质量汇总">
     <!-- 搜索栏 -->
     <a-card size="small" :bordered="false" style="margin-bottom: 16px;">
       <a-form layout="inline" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
@@ -428,6 +444,14 @@ onMounted(() => {
               {{ text }}%
             </span>
           </template>
+          <template v-else-if="column.key === 'yield_rate'">
+            <template v-if="text !== null && text !== undefined">
+              <span :style="{ color: getYieldRateColor(parseFloat(text)), fontWeight: 600 }">
+                {{ text }}%
+              </span>
+            </template>
+            <span v-else style="color: #bbb;">-</span>
+          </template>
           <template v-else-if="column.key === 'total_unqualified'">
             <a-tag v-if="parseFloat(text) > 0" color="error">{{ text }}</a-tag>
             <span v-else style="color: #999;">0</span>
@@ -452,7 +476,7 @@ onMounted(() => {
     <!-- 详情弹窗 -->
     <a-modal
       v-model:open="detailVisible"
-      :title="detailData?.order ? `质量报告 - ${detailData.order.production_order_number}` : '质量报告'"
+      :title="detailData?.order ? `质量报表 - ${detailData.order.production_order_number}` : '质量报表'"
       :width="1200"
       :footer="null"
       :body-style="{ maxHeight: '78vh', overflowY: 'auto', padding: '16px' }"
@@ -524,6 +548,12 @@ onMounted(() => {
             <div class="kpi-item">
               <div class="kpi-label">工序合格率</div>
               <div class="kpi-value" style="color: #1890ff;">{{ detailData.kpi_summary.process_pass_rate }}%</div>
+            </div>
+            <div class="kpi-item">
+              <div class="kpi-label">综合合格率</div>
+              <div class="kpi-value" :style="{ color: getYieldRateColor(detailData.kpi_summary.yield_rate) }">
+                {{ detailData.kpi_summary.yield_rate !== null && detailData.kpi_summary.yield_rate !== undefined ? detailData.kpi_summary.yield_rate + '%' : '未入库' }}
+              </div>
             </div>
           </div>
 
@@ -625,6 +655,14 @@ onMounted(() => {
         </template>
       </a-spin>
     </a-modal>
+      </a-tab-pane>
+      <a-tab-pane key="yield-rate" tab="综合合格率">
+        <YieldRate />
+      </a-tab-pane>
+      <a-tab-pane key="po-pivot" tab="生产单质量透视">
+        <ProductionOrderPivot />
+      </a-tab-pane>
+    </a-tabs>
   </div>
 </template>
 
@@ -646,7 +684,7 @@ onMounted(() => {
 
 .kpi-row {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   gap: 12px;
   margin-bottom: 8px;
 }

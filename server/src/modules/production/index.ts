@@ -16,8 +16,12 @@ import outsourcingSettlementRoutes from './outsourcingSettlement/outsourcingSett
 import outsourcingReturnStockinRoutes from './outsourcingReturnStockin/outsourcingReturnStockin.routes';
 import outsourcingPriceRoutes from './outsourcingPrice/outsourcingPrice.routes';
 import wipReportRoutes from './wipReport/wipReport.routes';
+import progressDashboardRoutes from './progressDashboard/progressDashboard.routes';
 import backflushTaskRoutes from './backflushTask/backflushTask.routes';
 import pieceRateWageRoutes from './pieceRateWage/pieceRateWage.routes';
+import materialCostRoutes from './materialCost/materialCost.routes';
+import materialReturnRoutes from './materialReturn/materialReturn.routes';
+import processKanbanRoutes from './processKanban/processKanban.routes';
 import * as mobileLabelController from './outsourcingIssue/outsourcingIssue.mobile.controller';
 import outsourcingInspectionMobileRoutes from './outsourcingInspection/outsourcingInspection.mobile.routes';
 
@@ -37,8 +41,12 @@ router.use('/outsourcing/settlement', outsourcingSettlementRoutes);
 router.use('/outsourcing/return-stockin', outsourcingReturnStockinRoutes);
 router.use('/outsourcing-prices', outsourcingPriceRoutes);
 router.use('/wip', wipReportRoutes);
+router.use('/progress-dashboard', progressDashboardRoutes);
 router.use('/backflush-tasks', backflushTaskRoutes);
 router.use('/piece-rate-wages', pieceRateWageRoutes);
+router.use('/production-material-cost', materialCostRoutes);
+router.use('/material-returns', materialReturnRoutes);
+router.use('/process-kanban', processKanbanRoutes);
 
 // 移动端委外路由
 router.use('/mobile/outsourcing/issue', outsourcingIssueMobileRoutes);

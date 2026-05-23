@@ -344,6 +344,7 @@ export const getDemandSources = async (req: Request, res: Response, next: NextFu
              ISNULL(d.shipped_quantity, 0) as shipped_quantity,
              d.order_quantity - ISNULL(d.shipped_quantity, 0) as remaining_quantity,
              d.remark as detail_remark,
+             d.customer_item_number, d.customer_item_description,
              h.customer_number, h.customer_name, h.delivery_date as header_delivery_date,
              ISNULL(pe.rubber_compound_number, '') as rubber_compound_number,
              ISNULL(pe.batch_production_quota, '') as batch_production_quota
@@ -364,6 +365,7 @@ export const getDemandSources = async (req: Request, res: Response, next: NextFu
              d.product_drawing_number, d.remaining_quantity as quantity, d.end_date as delivery_date,
              d.status, d.consumption_status,
              d.remark as detail_remark,
+             d.customer_item_number, d.customer_item_description,
              h.customer_number, h.customer_name,
              ISNULL(pe.rubber_compound_number, '') as rubber_compound_number,
              ISNULL(pe.batch_production_quota, '') as batch_production_quota

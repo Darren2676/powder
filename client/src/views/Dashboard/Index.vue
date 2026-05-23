@@ -123,7 +123,7 @@ const fetchData = async () => {
             return `<b>${p[0].name}</b><br/>订单金额: ¥${val >= 10000 ? (val / 10000).toFixed(2) + '万' : val.toLocaleString()}`
           }
         },
-        grid: { left: '3%', right: '4%', top: 24, bottom: '4%', containLabel: true },
+        grid: { left: '3%', right: '4%', top: 12, bottom: '4%', containLabel: true },
         xAxis: {
           type: 'category',
           data: rows.map((r: any) => r.customer_name),
@@ -131,7 +131,7 @@ const fetchData = async () => {
         },
         yAxis: {
           type: 'value',
-          name: '金额 (元)',
+          name: '金额',
           nameTextStyle: { fontSize: 10, color: '#8c8c8c' },
           axisLabel: { formatter: (v: number) => v >= 10000 ? (v / 10000).toFixed(0) + '万' : String(v) }
         },
@@ -175,8 +175,8 @@ const fetchData = async () => {
             return s
           }
         },
-        legend: { top: 4, data: ['订单数', '订单金额'], textStyle: { fontSize: 11 } },
-        grid: { left: '3%', right: '5%', top: 36, bottom: '4%', containLabel: true },
+        legend: { top: 0, data: ['订单数', '订单金额'], textStyle: { fontSize: 11 } },
+        grid: { left: '3%', right: '5%', top: 28, bottom: '4%', containLabel: true },
         xAxis: {
           type: 'category',
           data: rows.map((r: any) => r.month),
@@ -252,8 +252,8 @@ const fetchData = async () => {
             return s
           }
         },
-        legend: { top: 4, data: ['涉及订单数', '发货数量'], textStyle: { fontSize: 11 } },
-        grid: { left: '3%', right: '5%', top: 36, bottom: '4%', containLabel: true },
+        legend: { top: 0, data: ['涉及订单数', '发货数量'], textStyle: { fontSize: 11 } },
+        grid: { left: '3%', right: '5%', top: 28, bottom: '4%', containLabel: true },
         xAxis: {
           type: 'category',
           data: rows.map((r: any) => r.week_label),
@@ -309,47 +309,47 @@ onMounted(() => { fetchData() })
           <!-- 统计卡片：6个合并为一行 -->
           <a-row :gutter="[12, 12]" class="section-row">
             <a-col :xs="12" :sm="8" :md="4">
-              <a-card hoverable :bodyStyle="{ padding: '12px 16px' }" class="stat-card">
-                <a-statistic title="订单总数" :value="stats.total || 0" :value-style="{ color: '#1677ff', fontSize: '22px' }">
+              <a-card hoverable :bodyStyle="{ padding: '8px 12px' }" class="stat-card">
+                <a-statistic title="订单总数" :value="stats.total || 0" :value-style="{ color: '#1677ff', fontSize: '20px' }">
                   <template #prefix><ShoppingOutlined /></template>
                   <template #suffix><span class="stat-suffix">单</span></template>
                 </a-statistic>
               </a-card>
             </a-col>
             <a-col :xs="12" :sm="8" :md="4">
-              <a-card hoverable :bodyStyle="{ padding: '12px 16px' }" class="stat-card">
-                <a-statistic title="草稿" :value="stats.draft || 0" :value-style="{ color: '#8c8c8c', fontSize: '22px' }">
+              <a-card hoverable :bodyStyle="{ padding: '8px 12px' }" class="stat-card">
+                <a-statistic title="草稿" :value="stats.draft || 0" :value-style="{ color: '#8c8c8c', fontSize: '20px' }">
                   <template #prefix><FileTextOutlined /></template>
                   <template #suffix><span class="stat-suffix">单</span></template>
                 </a-statistic>
               </a-card>
             </a-col>
             <a-col :xs="12" :sm="8" :md="4">
-              <a-card hoverable :bodyStyle="{ padding: '12px 16px' }" class="stat-card">
-                <a-statistic title="待审批" :value="stats.pending || 0" :value-style="{ color: '#faad14', fontSize: '22px' }">
+              <a-card hoverable :bodyStyle="{ padding: '8px 12px' }" class="stat-card">
+                <a-statistic title="待审批" :value="stats.pending || 0" :value-style="{ color: '#faad14', fontSize: '20px' }">
                   <template #prefix><ClockCircleOutlined /></template>
                   <template #suffix><span class="stat-suffix">单</span></template>
                 </a-statistic>
               </a-card>
             </a-col>
             <a-col :xs="12" :sm="8" :md="4">
-              <a-card hoverable :bodyStyle="{ padding: '12px 16px' }" class="stat-card">
-                <a-statistic title="已审批" :value="stats.approved || 0" :value-style="{ color: '#52c41a', fontSize: '22px' }">
+              <a-card hoverable :bodyStyle="{ padding: '8px 12px' }" class="stat-card">
+                <a-statistic title="已审批" :value="stats.approved || 0" :value-style="{ color: '#52c41a', fontSize: '20px' }">
                   <template #prefix><CheckCircleOutlined /></template>
                   <template #suffix><span class="stat-suffix">单</span></template>
                 </a-statistic>
               </a-card>
             </a-col>
             <a-col :xs="12" :sm="8" :md="4">
-              <a-card hoverable :bodyStyle="{ padding: '12px 16px' }" class="stat-card">
-                <a-statistic title="订单总金额" :value="stats.totalAmount || 0" :precision="2" :value-style="{ color: '#1677ff', fontSize: '22px' }" prefix="¥">
+              <a-card hoverable :bodyStyle="{ padding: '8px 12px' }" class="stat-card">
+                <a-statistic title="订单总金额" :value="stats.totalAmount || 0" :precision="2" :value-style="{ color: '#1677ff', fontSize: '20px' }" prefix="¥">
                   <template #suffix><span class="stat-suffix"><DollarOutlined /></span></template>
                 </a-statistic>
               </a-card>
             </a-col>
             <a-col :xs="12" :sm="8" :md="4">
-              <a-card hoverable :bodyStyle="{ padding: '12px 16px' }" class="stat-card">
-                <a-statistic title="已审批金额" :value="stats.approvedAmount || 0" :precision="2" :value-style="{ color: '#52c41a', fontSize: '22px' }" prefix="¥">
+              <a-card hoverable :bodyStyle="{ padding: '8px 12px' }" class="stat-card">
+                <a-statistic title="已审批金额" :value="stats.approvedAmount || 0" :precision="2" :value-style="{ color: '#52c41a', fontSize: '20px' }" prefix="¥">
                   <template #suffix><span class="stat-suffix"><RiseOutlined /></span></template>
                 </a-statistic>
               </a-card>
@@ -359,13 +359,13 @@ onMounted(() => { fetchData() })
           <!-- 图表第一行: 审批状态分布 + 客户订单金额 TOP10 -->
           <a-row :gutter="12" class="section-row">
             <a-col :xs="24" :md="10">
-              <a-card :headStyle="{ fontWeight: 600, padding: '0 16px', minHeight: '40px' }" :bodyStyle="{ padding: '8px' }" title="审批状态分布">
-                <VChart :option="statusChartOption" style="height: 260px;" autoresize />
+              <a-card :headStyle="{ fontWeight: 600, padding: '0 16px', minHeight: '36px', fontSize: '13px' }" :bodyStyle="{ padding: '6px' }" title="审批状态分布">
+                <VChart :option="statusChartOption" style="height: 220px;" autoresize />
               </a-card>
             </a-col>
             <a-col :xs="24" :md="14">
-              <a-card :headStyle="{ fontWeight: 600, padding: '0 16px', minHeight: '40px' }" :bodyStyle="{ padding: '8px' }" title="客户订单金额 TOP10">
-                <VChart :option="customerChartOption" style="height: 260px;" autoresize />
+              <a-card :headStyle="{ fontWeight: 600, padding: '0 16px', minHeight: '36px', fontSize: '13px' }" :bodyStyle="{ padding: '6px' }" title="客户订单金额 TOP10">
+                <VChart :option="customerChartOption" style="height: 220px;" autoresize />
               </a-card>
             </a-col>
           </a-row>
@@ -373,13 +373,13 @@ onMounted(() => { fetchData() })
           <!-- 图表第二行: 月度订单趋势 + 未来发货趋势 -->
           <a-row :gutter="12" class="section-row">
             <a-col :xs="24" :md="14">
-              <a-card :headStyle="{ fontWeight: 600, padding: '0 16px', minHeight: '40px' }" :bodyStyle="{ padding: '8px' }" title="月度订单趋势 (近12个月)">
-                <VChart :option="trendChartOption" style="height: 260px;" autoresize />
+              <a-card :headStyle="{ fontWeight: 600, padding: '0 16px', minHeight: '36px', fontSize: '13px' }" :bodyStyle="{ padding: '6px' }" title="月度订单趋势 (近12个月)">
+                <VChart :option="trendChartOption" style="height: 220px;" autoresize />
               </a-card>
             </a-col>
             <a-col :xs="24" :md="10">
-              <a-card :headStyle="{ fontWeight: 600, padding: '0 16px', minHeight: '40px' }" :bodyStyle="{ padding: '8px' }" title="未来发货趋势 (未来8周)">
-                <VChart :option="deliveryChartOption" style="height: 260px;" autoresize />
+              <a-card :headStyle="{ fontWeight: 600, padding: '0 16px', minHeight: '36px', fontSize: '13px' }" :bodyStyle="{ padding: '6px' }" title="未来发货趋势 (未来8周)">
+                <VChart :option="deliveryChartOption" style="height: 220px;" autoresize />
               </a-card>
             </a-col>
           </a-row>
@@ -388,7 +388,7 @@ onMounted(() => { fetchData() })
 
       <a-tab-pane key="detail" tab="订单明细">
         <a-spin :spinning="loading">
-          <a-card :headStyle="{ fontWeight: 600, padding: '0 16px', minHeight: '40px' }" :bodyStyle="{ padding: '0' }" title="最近销售订单">
+          <a-card :headStyle="{ fontWeight: 600, padding: '0 16px', minHeight: '36px', fontSize: '13px' }" :bodyStyle="{ padding: '0' }" title="最近销售订单">
             <a-table
               :columns="recentColumns"
               :data-source="recentOrders"
@@ -421,17 +421,17 @@ onMounted(() => { fetchData() })
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .dashboard-title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   color: #1d2129;
   margin: 0;
   padding-left: 2px;
 }
 .section-row {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .stat-card {
   height: 100%;

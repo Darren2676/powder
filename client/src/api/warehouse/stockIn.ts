@@ -20,6 +20,10 @@ export function confirmStockIn(id: string) {
   return request.post(`/stock-ins/${encodeURIComponent(id)}/confirm`)
 }
 
+export function withdrawStockIn(id: string) {
+  return request.post(`/stock-ins/${encodeURIComponent(id)}/withdraw`)
+}
+
 export function exportStockIns(search?: string) {
   return request.get('/stock-ins/export', { params: { search }, responseType: 'blob' })
 }

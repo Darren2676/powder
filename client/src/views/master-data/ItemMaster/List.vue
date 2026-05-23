@@ -7,6 +7,7 @@ import { getProductClasses } from '@/api/master-data/productClass'
 import { getMaterialClasses } from '@/api/master-data/materialClass'
 import { getMateriaProperties } from '@/api/master-data/materiaProperty'
 import { getUnits } from '@/api/master-data/unit'
+import { getWarehouses } from '@/api/master-data/warehouse'
 import { useTableList } from '@/composables/useTableList'
 import { useModalDrag } from '@/composables/useModalDrag'
 import dayjs from 'dayjs'
@@ -39,6 +40,34 @@ const productClassOptions = ref<any[]>([])
 const materialClassOptions = ref<any[]>([])
 const materiaPropertyOptions = ref<{ label: string; value: string }[]>([])
 const unitOptions = ref<{ label: string; value: string }[]>([])
+const warehouseOptions = ref<any[]>([])
+
+const fetchWarehouses = async () => {
+  try {
+    const res = await getWarehouses({ page: 1, limit: 9999 })
+    warehouseOptions.value = res.data?.items || []
+  } catch {}
+}
+
+// 默认仓库模糊搜索
+const createWarehouseSearch = ref('')
+const editWarehouseSearch = ref('')
+const filteredWarehouseOptions = computed(() => {
+  return warehouseOptions.value.map((w: any) => ({
+    value: w.warehouse_number,
+    label: `${w.warehouse_number} - ${w.warehouse_name}`
+  }))
+})
+const filteredWarehouseForCreate = computed(() => {
+  const search = createWarehouseSearch.value.toLowerCase()
+  if (!search) return filteredWarehouseOptions.value
+  return filteredWarehouseOptions.value.filter((o: any) => o.label.toLowerCase().includes(search))
+})
+const filteredWarehouseForEdit = computed(() => {
+  const search = editWarehouseSearch.value.toLowerCase()
+  if (!search) return filteredWarehouseOptions.value
+  return filteredWarehouseOptions.value.filter((o: any) => o.label.toLowerCase().includes(search))
+})
 
 const fetchProductClasses = async () => {
   try {
@@ -253,7 +282,8 @@ const emptyForm = () => ({
   over_delivery_rate: 0,
   purchase_unit: '',
   // 质量检验分区字段"
-  incoming_inspection: 'N'
+  incoming_inspection: 'N',
+  enable_quality_chars: 'N'
 })
 
 // ========== 新建弹窗 ==========
@@ -643,6 +673,7 @@ onMounted(() => {
   fetchMaterialClasses()
   fetchMateriaProperties()
   fetchUnits()
+  fetchWarehouses()
 })
 </script>
 
@@ -954,7 +985,7 @@ onMounted(() => {
                 </a-select>
               </a-form-item></a-col>
               <a-col :span="12"><a-form-item label="默认仓库">
-                <a-input v-model:value="createForm.default_warehouse" placeholder="请输入默认仓库" />
+                <a-auto-complete v-model:value="createForm.default_warehouse" :options="filteredWarehouseForCreate" @search="createWarehouseSearch = $event" placeholder="输入仓库编号或名称搜索" allow-clear />
               </a-form-item></a-col>
             </a-row>
             <a-row :gutter="8">
@@ -1123,6 +1154,12 @@ onMounted(() => {
                 <a-select v-model:value="createForm.incoming_inspection">
                   <a-select-option value="Y">需要</a-select-option>
                   <a-select-option value="N">不需要</a-select-option>
+                </a-select>
+              </a-form-item></a-col>
+              <a-col v-if="createForm.incoming_inspection === 'Y'" :span="12"><a-form-item label="启用质量特性">
+                <a-select v-model:value="createForm.enable_quality_chars">
+                  <a-select-option value="Y">启用</a-select-option>
+                  <a-select-option value="N">不启用</a-select-option>
                 </a-select>
               </a-form-item></a-col>
             </a-row>
@@ -1325,7 +1362,7 @@ onMounted(() => {
                     </a-select>
                   </a-form-item></a-col>
                   <a-col :span="12"><a-form-item label="默认仓库">
-                    <a-input v-model:value="editForm.default_warehouse" placeholder="请输入默认仓库" />
+                    <a-auto-complete v-model:value="editForm.default_warehouse" :options="filteredWarehouseForEdit" @search="editWarehouseSearch = $event" placeholder="输入仓库编号或名称搜索" allow-clear />
                   </a-form-item></a-col>
                 </a-row>
                 <a-row :gutter="8">
@@ -1494,6 +1531,12 @@ onMounted(() => {
                     <a-select v-model:value="editForm.incoming_inspection">
                       <a-select-option value="Y">需要</a-select-option>
                       <a-select-option value="N">不需要</a-select-option>
+                    </a-select>
+                  </a-form-item></a-col>
+                  <a-col v-if="editForm.incoming_inspection === 'Y'" :span="12"><a-form-item label="启用质量特性">
+                    <a-select v-model:value="editForm.enable_quality_chars">
+                      <a-select-option value="Y">启用</a-select-option>
+                      <a-select-option value="N">不启用</a-select-option>
                     </a-select>
                   </a-form-item></a-col>
                 </a-row>
@@ -1844,7 +1887,7 @@ onMounted(() => {
           <a-descriptions-item label="批次管理">{{ detailData.batch_management === 'Y' ? '是' : '否' }}</a-descriptions-item>
           <a-descriptions-item label="呆滞天数">{{ detailData.stagnation_days || 0 }}</a-descriptions-item>
           <a-descriptions-item label="锁定库存">{{ detailData.lock_inventory === 'Y' ? '是' : '否' }}</a-descriptions-item>
-          <a-descriptions-item label="默认仓库">{{ detailData.default_warehouse || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="默认仓库">{{ detailData.default_warehouse ? (() => { const w = warehouseOptions.find((w: any) => w.warehouse_number === detailData.default_warehouse); return w ? `${w.warehouse_number} - ${w.warehouse_name}` : detailData.default_warehouse })() : '-' }}</a-descriptions-item>
           <a-descriptions-item label="标准成本">{{ detailData.standard_cost || 0 }}</a-descriptions-item>
           <a-descriptions-item label="实际成本">{{ detailData.actual_cost || 0 }}</a-descriptions-item>
           <a-descriptions-item label="舍入方法">{{ detailData.rounding_method || '-' }}</a-descriptions-item>

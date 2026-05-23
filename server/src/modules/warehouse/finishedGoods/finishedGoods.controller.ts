@@ -652,15 +652,13 @@ export const getMonthlyReport = async (req: Request, res: Response, next: NextFu
       return res.status(400).json({ success: false, message: '仅已完成的盘点单可用于报表' });
     }
 
-    // 推算报表月份
-    const [year, month] = header.count_period.split('-').map(Number);
+    // 报表月份 = 盘点期间本身（盘点在每月第一天00:30执行，作为当月期初基准）
+    const reportMonth = header.count_period;
+    const [year, month] = reportMonth.split('-').map(Number);
+    const startDate = `${reportMonth}-01`;
     const nextMonth = month === 12 ? 1 : month + 1;
     const nextYear = month === 12 ? year + 1 : year;
-    const reportMonth = `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
-    const startDate = `${reportMonth}-01`;
-    const afterMonth = nextMonth === 12 ? 1 : nextMonth + 1;
-    const afterYear = nextMonth === 12 ? nextYear + 1 : nextYear;
-    const nextMonthStart = `${afterYear}-${String(afterMonth).padStart(2, '0')}-01`;
+    const nextMonthStart = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
 
     // Step 2: 期初数量（盘点明细按物料+质量状态汇总）
     const [openingRows]: any = await sequelize.query(`
@@ -687,9 +685,9 @@ export const getMonthlyReport = async (req: Request, res: Response, next: NextFu
         SUM(CASE WHEN transaction_type=N'出库' THEN quantity ELSE 0 END) as out_total
       FROM inventory_transaction
       WHERE warehouse_number = :warehouse_number
-        AND operation_date >= :startDate AND operation_date < :nextMonthStart
+        AND (accounting_period = :reportMonth OR (ISNULL(accounting_period, '') = '' AND operation_date >= :startDate AND operation_date < :nextMonthStart))
       GROUP BY item_number, quality_status
-    `, { replacements: { warehouse_number: header.warehouse_number, startDate, nextMonthStart } });
+    `, { replacements: { warehouse_number: header.warehouse_number, reportMonth, startDate, nextMonthStart } });
 
     // Step 4: Node.js 层合并
     const map = new Map<string, any>();

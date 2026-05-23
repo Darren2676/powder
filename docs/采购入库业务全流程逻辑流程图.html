@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>采购入库业务全流程逻辑流程图 - 睿信橡胶密封件MES系统</title>
+<script src="../../node_modules/mermaid/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:'default'});</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+  .page { max-width: 1300px; margin: 0 auto; padding: 32px; background: #fff; min-height: 100vh; }
+  h1 { text-align: center; font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 20px; color: #1a1a2e; margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 16px; color: #1a1a2e; margin: 20px 0 10px; }
+  .intro { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; padding: 16px; margin-bottom: 24px; font-size: 14px; }
+  .mermaid { text-align: center; margin: 16px 0; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  .warn { background: #fff1f0; border-left: 4px solid #f5222d; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 4px; }
+  .badge-blue { background: #e6f7ff; color: #1890ff; }
+  .badge-green { background: #f6ffed; color: #52c41a; }
+  .badge-red { background: #fff1f0; color: #f5222d; }
+  .badge-orange { background: #fff7e6; color: #fa8c16; }
+  .badge-purple { background: #f9f0ff; color: #722ed1; }
+  .badge-cyan { background: #e6fffb; color: #13c2c2; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>采购入库业务全流程逻辑流程图</h1>
+<div class="subtitle">睿信橡胶密封件MES系统 | 从供应商送货到收货通知、确认入库、来料检验、检验转仓、入库撤回的全链路业务流程</div>
+
+<div class="intro">
+  <strong>文档说明：</strong>本文档完整展示采购入库业务的5个阶段：<br>
+  <strong>阶段1 采购收货通知：</strong>供应商送货 → 创建入库单 → 自动报检<br>
+  <strong>阶段2 确认入库：</strong>免检物料直接入默认仓库 / 需检验物料入待检仓<br>
+  <strong>阶段3 来料检验：</strong>检验通知 → 执行检验 → 提交结果 → 不合格品NC处理<br>
+  <strong>阶段4 检验后转仓：</strong>合格品待检仓→默认仓库 / 不合格品退货/让步/报废<br>
+  <strong>阶段5 入库撤回：</strong>安全检查 → 7步反转 → 状态回退<br>
+  涵盖状态流转、数据变更矩阵、关键业务规则及各环节的数据实体关系。
+</div>
+
+<!-- ==================== 一、全流程总览 ==================== -->
+<h2>一、采购入库全流程总览</h2>
+<div class="mermaid">
+graph TB
+    subgraph 采购收货["📋 阶段1：采购收货通知"]
+        VENDOR[供应商送货到厂] --> CREATE_SI[创建采购入库单<br/>stock_in<br/>approval_status=草稿]
+        CREATE_SI --> AUTO_INSP{遍历明细行<br/>item_master<br/>.incoming_inspection}
+        AUTO_INSP -->|Y 需检验| CREATE_PQI[自动创建来料检验单<br/>purchase_quality_inspection<br/>inspect_status=待检验]
+        AUTO_INSP -->|N 免检| NO_INSP[不创建检验单]
+    end
+
+    subgraph 确认入库["🏭 阶段2：确认入库"]
+        NO_INSP --> CONFIRM_FREE[仓管员确认入库]
+        CREATE_PQI --> CONFIRM_CHK[仓管员确认入库]
+        CONFIRM_FREE --> FREE_FLOW[免检物料流程]
+        CONFIRM_CHK --> CHK_FLOW[待检物料流程]
+    end
+
+    subgraph 免检流程["✅ 免检物料入库"]
+        FREE_FLOW --> GEN_BATCH1[生成批次号 MB-]
+        GEN_BATCH1 --> WRITE_INV1[写入批次库存<br/>material_batch_inventory<br/>仓库=默认仓库]
+        WRITE_INV1 --> SYNC_SUM1[同步汇总库存<br/>material_inventory]
+        SYNC_SUM1 --> WRITE_TXN1[写入库存流水<br/>material_inventory_transaction<br/>源类型=采购入库]
+        WRITE_TXN1 --> UPDATE_DET1[回写明细 batch_number<br/>inspect_status=免检]
+        UPDATE_DET1 --> UPDATE_PO1[回写PO received_quantity<br/>更新PO order_status]
+    end
+
+    subgraph 待检流程["🔬 待检物料入库"]
+        CHK_FLOW --> GEN_BATCH2[生成批次号 MB-]
+        GEN_BATCH2 --> WRITE_INV2[写入批次库存<br/>material_batch_inventory<br/>仓库=待检仓]
+        WRITE_INV2 --> SYNC_SUM2[同步汇总库存<br/>material_inventory<br/>待检仓维度]
+        SYNC_SUM2 --> WRITE_TXN2[写入库存流水<br/>material_inventory_transaction<br/>源类型=来料待检]
+        WRITE_TXN2 --> UPDATE_DET2[回写明细 batch_number<br/>inspect_status=待检验]
+        UPDATE_DET2 --> NO_PO[⚠ 不回写PO<br/>等待检验完成]
+    end
+
+    UPDATE_PO1 --> SI_DONE[入库单状态→已入库]
+    NO_PO --> SI_DONE
+
+    subgraph 来料检验["🔎 阶段3：来料检验"]
+        SI_DONE --> INSP_NOTICE[查看来料检验通知<br/>匹配检验方案/规范]
+        INSP_NOTICE --> INSP_EXEC[执行检验<br/>填写合格/不合格数量]
+        INSP_EXEC --> INSP_SUBMIT[提交检验结果<br/>inspect_status→检验中→已完成]
+        INSP_SUBMIT --> INSP_RESULT{检验结果}
+        INSP_RESULT -->|合格| QUALIFIED[合格品处理]
+        INSP_RESULT -->|不合格| NC_CREATE[创建NC待处理单]
+    end
+
+    subgraph 检验转仓["📦 阶段4：检验后转仓"]
+        QUALIFIED --> TRANSFER[合格品转仓<br/>待检仓→默认仓库]
+        TRANSFER --> TRANSFER_SYS[系统自动处理]
+        TRANSFER_SYS --> BATCH_TRANSFER[批次库存转仓]
+        BATCH_TRANSFER --> INV_SYNC[汇总库存双向同步]
+        INV_SYNC --> TXN_WRITE[写入出入库流水]
+        TXN_WRITE --> PO_WRITEBACK[回写PO received_quantity<br/>更新PO order_status]
+    end
+
+    subgraph NC处理["⚠️ 不合格品处理"]
+        NC_CREATE --> NC_CHOOSE{选择处理方式}
+        NC_CHOOSE -->|挑选| SORTING[分拣合格/不合格]
+        NC_CHOOSE -->|拒收| REJECT[拒收标记]
+        NC_CHOOSE -->|报废| SCRAP[报废入库→仓库08]
+        NC_CHOOSE -->|特采| SPECIAL[让步接收→指定仓库]
+        NC_CHOOSE -->|退货| RETURN[退货→校验退货单]
+    end
+
+    subgraph 入库撤回["↩️ 阶段5：入库撤回"]
+        SI_DONE2[入库单 approval_status=已入库] --> WITHDRAW[发起撤回]
+        WITHDRAW --> SAFE_CHECK{安全检查}
+        SAFE_CHECK -->|批次已消耗| REJECT_W[拒绝撤回]
+        SAFE_CHECK -->|检验已完成| REJECT_W2[拒绝撤回<br/>需先撤回检验]
+        SAFE_CHECK -->|检查通过| ROLLBACK[7步反转事务]
+        ROLLBACK --> RB1[①扣减/删除批次库存]
+        RB1 --> RB2[②重新同步汇总库存]
+        RB2 --> RB3[③标记库存流水作废]
+        RB3 --> RB4[④清空明细批次号+检验状态]
+        RB4 --> RB5[⑤作废来料检验单]
+        RB5 --> RB6[⑥回退PO已收货数量+状态]
+        RB6 --> RB7[⑦更新入库单状态→已撤回]
+    end
+</div>
+
+<!-- ==================== 二、采购收货通知详细流程 ==================== -->
+<h2>二、阶段1：采购收货通知详细流程</h2>
+<div class="mermaid">
+graph TB
+    subgraph 供应商送货["1. 供应商送货"]
+        A1[采购员收到供应商送货信息<br/>送货单号/物料/数量/批次] --> A2[核对采购订单<br/>purchase_order]
+    end
+
+    subgraph 创建入库单["2. 创建采购入库单"]
+        A2 --> B1[选择采购订单号<br/>系统自动带入供应商信息]
+        B1 --> B2[自动带入物料明细<br/>订单数量/已入库数量/未交数量]
+        B2 --> B3[填写本次入库数量<br/>stock_in_quantity]
+        B3 --> B4["保存入库单<br/>stock_in.approval_status=草稿<br/>stock_in_detail写入明细行"]
+    end
+
+    subgraph 自动报检["3. 系统自动报检"]
+        B4 --> C1{遍历明细行<br/>item_master<br/>.incoming_inspection}
+        C1 -->|"= 'Y'"| C2[自动创建来料检验单<br/>purchase_quality_inspection<br/>inspect_status=待检验]
+        C2 --> C3["回写明细行<br/>inspection_number=检验单号<br/>inspect_status=待检验<br/>qualified_quantity=0"]
+        C1 -->|"≠ 'Y'"| C4[免检物料<br/>不创建检验单]
+        C4 --> C5["明细行<br/>inspection_number=NULL<br/>inspect_status=NULL"]
+    end
+</div>
+
+<div class="note">
+  <strong>自动报检规则：</strong>创建入库单时，系统遍历所有明细行，对 <code>item_master.incoming_inspection = 'Y'</code> 的物料自动创建来料检验单（purchase_quality_inspection），并回写检验单号到明细行的 inspection_number 字段。合格数量初始为0，等待检验结果回填。
+</div>
+
+<!-- ==================== 三、确认入库详细流程 ==================== -->
+<h2>三、阶段2：确认入库详细流程（按检验标志分流）</h2>
+<div class="mermaid">
+graph TB
+    subgraph 点数核对["1. 仓管员点数核对"]
+        A1[根据送货单清点物料<br/>核对物料编码/规格/数量] --> A2{核对结果}
+        A2 -->|数量一致| A3[确认入库]
+        A2 -->|数量不符| A4[调整数量后确认]
+        A4 --> A3
+    end
+
+    subgraph 检验标志分流["2. 系统按检验标志分流处理"]
+        A3 --> B1{item_master<br/>.incoming_inspection}
+        B1 -->|免检物料| B2[免检入库流程]
+        B1 -->|需检验物料| B3[待检入库流程]
+    end
+
+    subgraph 免检入库["3. 免检物料入库流程"]
+        B2 --> C1["生成批次号<br/>MB-YYYYMMDD-NNN"]
+        C1 --> C2["写入批次库存<br/>material_batch_inventory<br/>warehouse_name=默认仓库<br/>quantity=入库数量"]
+        C2 --> C3["同步汇总库存<br/>material_inventory<br/>warehouse_name=默认仓库<br/>+入库数量"]
+        C3 --> C4["写入库存流水<br/>material_inventory_transaction<br/>transaction_type=入库<br/>source_type=采购入库"]
+        C4 --> C5["回写明细行<br/>batch_number=批次号<br/>inspect_status=免检<br/>qualified_quantity=入库数量"]
+        C5 --> C6["回写PO已收货数量<br/>purchase_order_detail<br/>.received_quantity += 入库数量"]
+        C6 --> C7["更新PO执行状态<br/>purchase_order<br/>.order_status重算"]
+    end
+
+    subgraph 待检入库["4. 待检物料入库流程"]
+        B3 --> D1["生成批次号<br/>MB-YYYYMMDD-NNN"]
+        D1 --> D2["写入批次库存<br/>material_batch_inventory<br/>warehouse_name=待检仓<br/>quantity=入库数量"]
+        D2 --> D3["同步汇总库存<br/>material_inventory<br/>warehouse_name=待检仓<br/>+入库数量"]
+        D3 --> D4["写入库存流水<br/>material_inventory_transaction<br/>transaction_type=入库<br/>source_type=来料待检"]
+        D4 --> D5["回写明细行<br/>batch_number=批次号<br/>inspect_status=待检验<br/>qualified_quantity=0"]
+        D5 --> D6["⚠ 不回写PO已收货数量<br/>等待检验完成后回写<br/>purchase_order_detail<br/>.received_quantity不变"]
+    end
+
+    C7 --> E1["入库单状态→已入库<br/>stock_in.approval_status=已入库"]
+    D6 --> E1
+</div>
+
+<div class="note">
+  <strong>免检 vs 待检核心差异：</strong><br>
+  ① 仓库不同：免检入默认仓库，待检入待检仓<br>
+  ② PO回写：免检立即回写 received_quantity，待检不回写（等检验完成）<br>
+  ③ 合格数量：免检=入库数量，待检=0（等检验结果）<br>
+  ④ 检验状态：免检→'免检'，待检→'待检验'
+</div>
+
+<!-- ==================== 四、来料检验详细流程 ==================== -->
+<h2>四、阶段3：来料检验详细流程</h2>
+<div class="mermaid">
+graph TB
+    subgraph 检验通知["1. 来料检验通知"]
+        A1["质量管理→来料检验通知<br/>系统列出待检验物料记录"] --> A2["匹配收料检验方案<br/>incoming_inspection_scheme<br/>按物料编号精确匹配"]
+        A2 --> A3["匹配来料检验规范<br/>incoming_inspection_spec<br/>确定检验项目和标准"]
+        A3 --> A4["确定检验方式<br/>普检/抽检<br/>抽检比例"]
+    end
+
+    subgraph 检验执行["2. 检验执行"]
+        A4 --> B1["按检验方案执行检验<br/>逐项检查质量指标"]
+        B1 --> B2["填写检验数据<br/>合格数量 qualified_quantity<br/>不合格数量 unqualified_quantity<br/>缺陷分类 defect_category"]
+    end
+
+    subgraph 检验提交["3. 提交检验结果"]
+        B2 --> C1["确认提交<br/>purchase_quality_inspection<br/>.inspect_status→已完成"]
+        C1 --> C2["写入检验明细<br/>purchase_quality_inspection<br/>_detail"]
+        C1 --> C3{检验结果判断}
+        C3 -->|"合格数量 > 0<br/>且不合格=0"| C4["检验合格"]
+        C3 -->|"不合格数量 > 0"| C5["检验不合格"]
+    end
+
+    subgraph 检验合格["4. 检验合格处理"]
+        C4 --> D1["更新明细行<br/>inspect_status=已完成<br/>qualified_quantity=检验合格数"]
+        D1 --> D2["通知仓管员<br/>可执行检验后入库"]
+    end
+
+    subgraph 检验不合格["5. 检验不合格处理"]
+        C5 --> E1["可进行缺陷处理<br/>创建NC待处理单"]
+        E1 --> E2["NC-YYYYMMDD-NNN<br/>handling_status=待处理<br/>source_type=来料检验"]
+        E2 --> E3{选择处理方式}
+        E3 -->|挑选| E4["分拣合格/不合格<br/>回写stock_in_detail<br/>inspect_status=已处理-挑选"]
+        E3 -->|拒收| E5["标记拒收<br/>回写stock_in_detail<br/>inspect_status=已处理-拒收"]
+        E3 -->|报废| E6["报废入库→仓库08<br/>创建报废入库单<br/>inspect_status=已处理-报废"]
+        E3 -->|特采| E7["让步接收<br/>qualified+=special_qty<br/>inspect_status=已处理-特采<br/>指定仓库"]
+        E3 -->|退货| E8["校验退货单<br/>return_order_number<br/>inspect_status=已处理-退货"]
+    end
+</div>
+
+<!-- ==================== 五、检验后转仓详细流程 ==================== -->
+<h2>五、阶段4：检验后确认入库（待检仓→默认仓库）</h2>
+<div class="mermaid">
+graph TB
+    subgraph 转仓触发["1. 仓管员确认合格品入库"]
+        A1["查看来料检验结果<br/>qualified_quantity > 0"] --> A2["点数确认合格品<br/>核对数量"]
+        A2 --> A3["确认合格品入库<br/>待检仓→默认仓库"]
+    end
+
+    subgraph 转仓系统处理["2. 系统自动处理"]
+        A3 --> B1["① 待检仓批次库存扣减<br/>material_batch_inventory<br/>warehouse_name=待检仓<br/>quantity -= qualified_quantity"]
+        B1 --> B2["② 默认仓库批次库存增加<br/>material_batch_inventory<br/>warehouse_name=默认仓库<br/>quantity += qualified_quantity"]
+        B2 --> B3["③ 汇总库存双向同步<br/>material_inventory<br/>待检仓-qualified<br/>默认仓库+qualified"]
+        B3 --> B4["④ 写入出入库流水<br/>material_inventory_transaction<br/>出库流水: 待检仓出库<br/>入库流水: 默认仓库入库"]
+        B4 --> B5["⑤ 回写PO已收货数量<br/>purchase_order_detail<br/>.received_quantity += qualified_quantity"]
+        B5 --> B6["⑥ 更新PO执行状态<br/>purchase_order.order_status<br/>重算: 未交货/部分交货/已交货"]
+    end
+
+    subgraph 不合格品["3. 不合格品处理"]
+        A3 --> C1{不合格品处理方式}
+        C1 -->|退货| C2["待检仓出库<br/>创建退货单<br/>退回供应商"]
+        C1 -->|让步接收| C3["按让步数量入库<br/>默认仓库<br/>标记让步接收"]
+        C1 -->|报废| C4["待检仓出库<br/>转入报废仓库08<br/>创建报废入库单"]
+    end
+</div>
+
+<!-- ==================== 六、入库撤回详细流程 ==================== -->
+<h2>六、阶段5：入库撤回完整流程</h2>
+<div class="mermaid">
+graph TB
+    subgraph 撤回触发["1. 撤回触发条件"]
+        A1["入库单 approval_status = 已入库"] --> A2["用户点击撤回入库"]
+        A2 --> A3["前端 Modal.confirm 确认<br/>提示撤回将反转所有库存变动"]
+    end
+
+    subgraph 安全检查["2. 前置安全检查"]
+        A3 --> B1{安全检查1:<br/>批次库存是否已被消耗}
+        B1 -->|是-有出库记录| B2["❌ 拒绝撤回<br/>提示: 需先撤回相关出库单"]
+        B1 -->|否-未被消耗| B3{安全检查2:<br/>检验单是否已完成检验}
+        B3 -->|是-已完成| B4["❌ 拒绝撤回<br/>提示: 需先撤回检验结果"]
+        B3 -->|否-待检验或无检验| B5["✅ 安全检查通过<br/>开始7步反转事务"]
+    end
+
+    subgraph 反转事务["3. 7步反转事务（在单一事务中执行）"]
+        B5 --> C1["① 扣减/删除批次库存<br/>material_batch_inventory<br/>按明细行遍历<br/>数量归零则删除记录"]
+        C1 --> C2["② 重新同步汇总库存<br/>syncMaterialInventorySummary<br/>重算 material_inventory"]
+        C2 --> C3["③ 标记库存流水作废<br/>material_inventory_transaction<br/>.remark += [已作废-入库单撤回]<br/>⚠ 无status列,用remark标记"]
+        C3 --> C4["④ 清空明细批次号和检验状态<br/>stock_in_detail<br/>batch_number=NULL<br/>inspect_status=NULL<br/>qualified_quantity=0"]
+        C4 --> C5["⑤ 作废来料检验单<br/>purchase_quality_inspection<br/>inspect_status→已作废<br/>remark += [入库单撤回]"]
+        C5 --> C6["⑥ 回退PO已收货数量和状态<br/>purchase_order_detail<br/>.received_quantity -= 入库数量<br/>purchase_order<br/>.order_status重算"]
+        C6 --> C7["⑦ 更新入库单状态<br/>stock_in<br/>.approval_status→已撤回"]
+    end
+
+    C7 --> D1["✅ 撤回完成<br/>数据一致性保证"]
+</div>
+
+<div class="warn">
+  <strong>⚠ 撤回安全检查：</strong><br>
+  ① <strong>批次消耗检查：</strong>若 material_batch_inventory 中对应批次已有出库记录（出库数量 > 0），拒绝撤回，需先撤回相关出库单<br>
+  ② <strong>检验完成检查：</strong>若 purchase_quality_inspection 的 inspect_status = '已完成'，拒绝撤回，需先在检验模块撤回检验结果<br>
+  ③ <strong>事务保证：</strong>7步反转在同一数据库事务中执行，任一步失败则全部回滚
+</div>
+
+<!-- ==================== 七、单据状态流转 ==================== -->
+<h2>七、单据状态流转图</h2>
+
+<h3>7.1 入库单（stock_in）状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 草稿: 创建入库单
+    草稿 --> 已入库: 确认入库（免检/待检）
+    草稿 --> [*]: 删除（草稿状态可删除）
+    已入库 --> 已撤回: 撤回入库
+    已撤回 --> [*]: 不可操作
+</div>
+
+<h3>7.2 入库明细（stock_in_detail）检验状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 空: 创建明细行
+
+    state 免检路径 {
+        空 --> 免检: 确认入库(免检物料)
+    }
+
+    state 待检路径 {
+        空 --> 待检验: 确认入库(待检物料)
+        待检验 --> 检验中: 填写检验数据
+        检验中 --> 已完成: 确认提交
+        已完成 --> 已处理_挑选: NC处理-挑选
+        已完成 --> 已处理_拒收: NC处理-拒收
+        已完成 --> 已处理_报废: NC处理-报废
+        已完成 --> 已处理_特采: NC处理-特采
+        已完成 --> 已处理_退货: NC处理-退货
+    }
+
+    空 --> [*]: 入库撤回
+    待检验 --> 空: 入库撤回
+</div>
+
+<h3>7.3 来料检验单（purchase_quality_inspection）状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 待检验: 自动报检创建
+    待检验 --> 检验中: 填写检验数据
+    检验中 --> 已完成: 确认提交
+    待检验 --> 已作废: 入库撤回
+    已完成 --> [*]: 检验完成
+    已作废 --> [*]: 不可操作
+</div>
+
+<h3>7.4 NC不合格品单状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 待处理: 检验不合格→缺陷处理创建NC单
+
+    待处理 --> 已完成: 选择挑选/拒收/报废/特采/退货
+    待处理 --> 处理中: 退货流程中的中间状态
+
+    处理中 --> 已完成: 处理完成
+
+    已完成 --> [*]
+</div>
+
+<!-- ==================== 八、关键数据实体关系 ==================== -->
+<h2>八、关键数据实体关系</h2>
+<div class="mermaid">
+erDiagram
+    PURCHASE_ORDER ||--o{ PURCHASE_ORDER_DETAIL : "订单明细"
+    PURCHASE_ORDER_DETAIL ||--o{ STOCK_IN_DETAIL : "关联入库"
+    STOCK_IN ||--o{ STOCK_IN_DETAIL : "入库明细"
+    STOCK_IN_DETAIL ||--o| PURCHASE_QUALITY_INSPECTION : "条件触发来料检验"
+    PURCHASE_QUALITY_INSPECTION ||--o{ PURCHASE_QUALITY_INSPECTION_DETAIL : "检验明细"
+    PURCHASE_QUALITY_INSPECTION ||--o| NONCONFORMING_PRODUCT : "不合格创建NC"
+
+    STOCK_IN_DETAIL ||--o| MATERIAL_BATCH_INVENTORY : "写入批次库存"
+    MATERIAL_BATCH_INVENTORY }o--|| MATERIAL_INVENTORY : "汇总库存"
+    STOCK_IN_DETAIL ||--o| MATERIAL_INVENTORY_TRANSACTION : "写入库存流水"
+
+    NONCONFORMING_PRODUCT ||--o| STOCK_IN : "报废关联入库单"
+    NONCONFORMING_PRODUCT ||--o| RETURN_ORDER : "退货关联"
+
+    ITEM_MASTER ||--o{ STOCK_IN_DETAIL : "物料信息"
+    ITEM_MASTER ||--o{ PURCHASE_QUALITY_INSPECTION : "检验标志"
+    WAREHOUSE ||--o{ MATERIAL_BATCH_INVENTORY : "仓库维度"
+    WAREHOUSE ||--o{ MATERIAL_INVENTORY : "仓库维度"
+</div>
+
+<!-- ==================== 九、数据变更矩阵 ==================== -->
+<h2>九、数据变更矩阵</h2>
+
+<h3>9.1 各操作对数据库表的影响</h3>
+<table>
+<tr>
+  <th>数据库表</th>
+  <th>创建入库单</th>
+  <th>自动报检</th>
+  <th>确认入库(免检)</th>
+  <th>确认入库(待检)</th>
+  <th>提交检验</th>
+  <th>检验转仓</th>
+  <th>入库撤回</th>
+</tr>
+<tr>
+  <td><span class="badge badge-blue">stock_in</span></td>
+  <td>写入(草稿)</td>
+  <td>—</td>
+  <td>→已入库</td>
+  <td>→已入库</td>
+  <td>—</td>
+  <td>—</td>
+  <td>→已撤回</td>
+</tr>
+<tr>
+  <td><span class="badge badge-blue">stock_in_detail</span></td>
+  <td>写入明细</td>
+  <td>检验单号+状态</td>
+  <td>批次号+免检</td>
+  <td>批次号+待检验</td>
+  <td>—</td>
+  <td>—</td>
+  <td>清空批次号+状态</td>
+</tr>
+<tr>
+  <td><span class="badge badge-green">material_batch_inventory</span></td>
+  <td>—</td>
+  <td>—</td>
+  <td>+默认仓库存</td>
+  <td>+待检仓库存</td>
+  <td>—</td>
+  <td>-待检 +默认</td>
+  <td>扣减/删除</td>
+</tr>
+<tr>
+  <td><span class="badge badge-green">material_inventory</span></td>
+  <td>—</td>
+  <td>—</td>
+  <td>+默认仓汇总</td>
+  <td>+待检仓汇总</td>
+  <td>—</td>
+  <td>-待检 +默认</td>
+  <td>重新同步</td>
+</tr>
+<tr>
+  <td><span class="badge badge-cyan">material_inventory_transaction</span></td>
+  <td>—</td>
+  <td>—</td>
+  <td>采购入库流水</td>
+  <td>来料待检流水</td>
+  <td>—</td>
+  <td>出+入流水</td>
+  <td>remark标记作废</td>
+</tr>
+<tr>
+  <td><span class="badge badge-orange">purchase_quality_inspection</span></td>
+  <td>—</td>
+  <td>写入(待检验)</td>
+  <td>—</td>
+  <td>—</td>
+  <td>→检验中→已完成</td>
+  <td>—</td>
+  <td>→已作废</td>
+</tr>
+<tr>
+  <td><span class="badge badge-purple">purchase_order_detail</span></td>
+  <td>—</td>
+  <td>—</td>
+  <td>+received_qty</td>
+  <td style="color:#fa8c16;font-weight:700;">⚠ 不回写</td>
+  <td>—</td>
+  <td>+received_qty</td>
+  <td>-received_qty</td>
+</tr>
+<tr>
+  <td><span class="badge badge-purple">purchase_order</span></td>
+  <td>—</td>
+  <td>—</td>
+  <td>order_status</td>
+  <td style="color:#fa8c16;font-weight:700;">⚠ 不更新</td>
+  <td>—</td>
+  <td>order_status</td>
+  <td>order_status</td>
+</tr>
+</table>
+
+<div class="note">
+  <strong>关键差异说明：</strong>需检验物料在"确认入库"阶段不回写PO，因为此时合格数量尚不确定（qualified_quantity=0）。PO的 received_quantity 只有在检验完成、合格品转入默认仓库后才回写，保证PO收货数量反映的是实际合格品数量。
+</div>
+
+<!-- ==================== 十、核心业务规则汇总 ==================== -->
+<h2>十、核心业务规则汇总</h2>
+
+<h3>10.1 来料检验触发条件</h3>
+<table>
+<tr><th>条件</th><th>是否触发检验</th><th>说明</th></tr>
+<tr><td>item_master.incoming_inspection = 'Y'</td><td><span class="badge badge-green">是</span></td><td>创建入库单时自动创建来料检验单</td></tr>
+<tr><td>item_master.incoming_inspection ≠ 'Y'</td><td><span class="badge badge-orange">否</span></td><td>免检物料，直接确认入库到默认仓库</td></tr>
+</table>
+
+<h3>10.2 检验方案匹配规则</h3>
+<table>
+<tr><th>匹配维度</th><th>匹配方式</th><th>说明</th></tr>
+<tr><td>物料编号</td><td><span class="badge badge-green">精确匹配</span></td><td>按 item_code 精确匹配收料检验方案</td></tr>
+<tr><td>检验规范</td><td>方案关联</td><td>通过方案关联来料检验规范，确定检验项目和标准</td></tr>
+<tr><td>检验方式</td><td>方案设定</td><td>普检（全检）或抽检（按抽检比例）</td></tr>
+</table>
+
+<h3>10.3 免检 vs 待检物料处理对照</h3>
+<table>
+<tr><th>维度</th><th>免检物料</th><th>需检验物料</th></tr>
+<tr><td>入库仓库</td><td>物料默认仓库</td><td>待检仓</td></tr>
+<tr><td>合格数量</td><td>= 入库数量</td><td>= 0（等待检验结果）</td></tr>
+<tr><td>PO回写</td><td>确认入库时立即回写 received_quantity</td><td>检验转仓后才回写 received_quantity</td></tr>
+<tr><td>检验状态</td><td>免检</td><td>待检验 → 检验中 → 已完成</td></tr>
+<tr><td>库存流水源类型</td><td>采购入库</td><td>来料待检</td></tr>
+</table>
+
+<h3>10.4 不合格品处理方式对照</h3>
+<table>
+<tr><th>处理方式</th><th>核心动作</th><th>库存影响</th><th>明细行状态</th></tr>
+<tr><td><span class="badge badge-blue">挑选</span></td><td>分拣合格/不合格，更新数量</td><td>待检仓数量调整</td><td>已处理-挑选</td></tr>
+<tr><td><span class="badge badge-red">拒收</span></td><td>标记拒收，物料退回</td><td>待检仓出库</td><td>已处理-拒收</td></tr>
+<tr><td><span class="badge badge-red">报废</span></td><td>创建报废入库单，入报废仓库08</td><td>待检仓→报废仓</td><td>已处理-报废</td></tr>
+<tr><td><span class="badge badge-purple">特采</span></td><td>让步接收，合格数+=特采数量</td><td>待检仓→指定仓库</td><td>已处理-特采</td></tr>
+<tr><td><span class="badge badge-orange">退货</span></td><td>校验退货单号，标记退货</td><td>待检仓出库退回</td><td>已处理-退货</td></tr>
+</table>
+
+<h3>10.5 入库撤回规则</h3>
+<table>
+<tr><th>规则</th><th>说明</th></tr>
+<tr><td>前置条件</td><td>仅"已入库"状态可撤回</td></tr>
+<tr><td>批次消耗检查</td><td>material_batch_inventory 中批次已被消耗（有出库）→ 拒绝撤回</td></tr>
+<tr><td>检验完成检查</td><td>purchase_quality_inspection.inspect_status = '已完成' → 拒绝撤回</td></tr>
+<tr><td>事务保证</td><td>7步反转在同一事务中执行，任一失败全部回滚</td></tr>
+<tr><td>流水作废方式</td><td>material_inventory_transaction 无 status 列，用 remark 追加标记</td></tr>
+<tr><td>检验单作废</td><td>purchase_quality_inspection.inspect_status → '已作废'（非 inspection_status）</td></tr>
+<tr><td>撤回后状态</td><td>stock_in.approval_status → '已撤回'，不可再操作</td></tr>
+</table>
+
+<h3>10.6 关键数据库表结构注意</h3>
+<table>
+<tr><th>表名</th><th>注意事项</th><th>影响范围</th></tr>
+<tr><td>material_inventory_transaction</td><td>无 status / void_operator / void_date 列<br/>（成品仓 inventory_transaction 才有）</td><td>作废标记只能用 remark 字段</td></tr>
+<tr><td>purchase_quality_inspection</td><td>状态列名是 inspect_status<br/>（非 inspection_status）</td><td>SQL查询和更新必须用 inspect_status</td></tr>
+<tr><td>material_batch_inventory</td><td>仓库维度：同一物料不同仓库为不同记录</td><td>转仓需分别处理待检仓和默认仓记录</td></tr>
+<tr><td>material_inventory</td><td>汇总维度：按 warehouse_name + item_code 汇总</td><td>syncMaterialInventorySummary 重算</td></tr>
+</table>
+
+<div style="margin-top:40px;text-align:center;color:#888;font-size:12px;">
+  文档生成时间：2026年5月15日 | 基于系统代码版本自动生成 | 采购入库业务全流程逻辑流程图
+</div>
+
+</div>
+</body>
+</html>

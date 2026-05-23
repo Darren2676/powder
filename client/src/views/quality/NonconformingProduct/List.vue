@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import {
   ReloadOutlined, DownloadOutlined, SearchOutlined,
-  EyeOutlined, WarningOutlined, CheckCircleOutlined
+  EyeOutlined, WarningOutlined, CheckCircleOutlined,
+  UndoOutlined
 } from '@ant-design/icons-vue'
 import {
   getNonconformingProducts, getNonconformingProductDetail,
-  handleNonconforming, exportNonconformingProducts
+  handleNonconforming, cancelHandleNonconforming, exportNonconformingProducts
 } from '@/api/quality/nonconformingProduct'
 import { generateExportFilename } from '@/utils/exportFilename'
+import { getWarehouses } from '@/api/master-data/warehouse'
+import { getItemDetail } from '@/api/master-data/itemMaster'
 
 defineOptions({ name: 'NonconformingProductList' })
 
@@ -36,6 +39,7 @@ const handleForm = reactive({
   concession_quantity: 0 as number,
   scrap_type: '批量' as string,
   scrap_quantity: 0 as number,
+  return_type: '退货退款' as string,
   return_order_number: '' as string,
   special_warehouse: '' as string,
   qualified_quantity_after: 0 as number,
@@ -108,7 +112,21 @@ const handleDetail = async (record: any) => {
 }
 
 // ==================== Handle (处理) ====================
-const openHandle = (record: any) => {
+const warehouseOptions = ref<any[]>([])
+const filterWarehouseOption = (input: string, option: any) => {
+  const search = input.toLowerCase()
+  const label = (option.label || '').toLowerCase()
+  return label.includes(search)
+}
+
+const fetchWarehouses = async () => {
+  try {
+    const res = await getWarehouses({ page: 1, limit: 9999 })
+    warehouseOptions.value = res.data?.items || []
+  } catch {}
+}
+
+const openHandle = async (record: any) => {
   handleRecord.value = { ...record }
   handleForm.handling_method = ''
   handleForm.handling_quantity = record.unqualified_quantity || 0
@@ -116,11 +134,22 @@ const openHandle = (record: any) => {
   handleForm.concession_quantity = record.unqualified_quantity || 0
   handleForm.scrap_type = '批量'
   handleForm.scrap_quantity = record.unqualified_quantity || 0
+  handleForm.return_type = '退货退款'
   handleForm.return_order_number = ''
   handleForm.special_warehouse = ''
   handleForm.qualified_quantity_after = 0
   handleForm.unqualified_quantity_after = 0
   handleForm.handling_remark = ''
+
+  // 查询物料主数据默认仓库
+  if (record.item_number) {
+    try {
+      const itemRes = await getItemDetail(record.item_number)
+      const defaultWh = itemRes.data?.default_warehouse
+      if (defaultWh) handleForm.special_warehouse = defaultWh
+    } catch {}
+  }
+
   handleVisible.value = true
 }
 
@@ -133,6 +162,30 @@ const handleOk = async () => {
     fetchList()
   } catch (e: any) {
     message.error(e.response?.data?.message || e.response?.data?.error || '处理失败')
+  }
+}
+
+// ==================== 撤销处理 ====================
+const handleCancelHandling = async (record: any) => {
+  try {
+    await new Promise((resolve, reject) => {
+      Modal.confirm({
+        title: '确认撤销',
+        content: `确定要撤销不合格品单 ${record.nonconforming_number} 的处理吗？将回退相关单据的数量和状态。`,
+        okText: '确认撤销',
+        cancelText: '取消',
+        okType: 'danger',
+        onOk: () => resolve(true),
+        onCancel: () => reject(new Error('cancel'))
+      })
+    })
+    await cancelHandleNonconforming(record.nonconforming_number)
+    message.success('不合格品处理已撤销')
+    fetchList()
+  } catch (e: any) {
+    if (e.message !== 'cancel') {
+      message.error(e.response?.data?.message || '撤销失败')
+    }
   }
 }
 
@@ -175,7 +228,7 @@ const getHandlingMethodColor = (method: string) => {
   return 'default'
 }
 
-onMounted(() => { fetchList() })
+onMounted(() => { fetchWarehouses(); fetchList() })
 </script>
 
 <template>
@@ -257,6 +310,7 @@ onMounted(() => { fetchList() })
           <template v-else-if="column.key === 'action'">
             <a-space :size="4">
               <a-button type="link" size="small" @click="handleDetail(record)"><EyeOutlined />详情</a-button>
+              <a-button v-if="record.handling_status === '已完成' || record.handling_status === '处理中'" type="link" size="small" style="color: #faad14;" @click="handleCancelHandling(record)"><UndoOutlined />撤销</a-button>
             </a-space>
           </template>
         </template>
@@ -313,6 +367,9 @@ onMounted(() => { fetchList() })
         </a-descriptions-item>
         <a-descriptions-item label="物料">{{ handleRecord.item_name }}</a-descriptions-item>
         <a-descriptions-item label="不合格数量"><span style="color: red; font-weight: bold;">{{ handleRecord.unqualified_quantity }}</span></a-descriptions-item>
+        <a-descriptions-item label="缺陷分类">{{ handleRecord.defect_class_name || '-' }}</a-descriptions-item>
+        <a-descriptions-item label="缺陷名称">{{ handleRecord.defect_name || '-' }}</a-descriptions-item>
+        <a-descriptions-item label="缺陷原因" :span="2">{{ handleRecord.defect_reason_name || '-' }}</a-descriptions-item>
       </a-descriptions>
       <a-form :label-col="{ span: 6 }" :wrapper-col="{ span: 16 }">
         <a-form-item label="处理方式" required>
@@ -352,15 +409,36 @@ onMounted(() => { fetchList() })
 
         <!-- 特采 -->
         <a-form-item v-if="handleForm.handling_method === '特采'" label="特采入库仓库">
-          <a-input v-model:value="handleForm.special_warehouse" placeholder="输入仓库编号" />
+          <a-select
+            v-model:value="handleForm.special_warehouse"
+            show-search
+            :filter-option="filterWarehouseOption"
+            placeholder="输入仓库编号或名称搜索"
+            allow-clear
+          >
+            <a-select-option v-for="w in warehouseOptions" :key="w.warehouse_number" :value="w.warehouse_number" :label="`${w.warehouse_number} - ${w.warehouse_name}`">
+              {{ w.warehouse_number }} - {{ w.warehouse_name }}
+            </a-select-option>
+          </a-select>
         </a-form-item>
         <a-form-item v-if="handleForm.handling_method === '特采'" label="特采数量">
           <a-input-number v-model:value="handleForm.handling_quantity" :min="0" :max="handleRecord.unqualified_quantity" style="width: 100%;" />
         </a-form-item>
 
         <!-- 退货 -->
-        <a-form-item v-if="handleForm.handling_method === '退货'" label="关联退货单号">
-          <a-input v-model:value="handleForm.return_order_number" placeholder="输入退货单号" />
+        <a-form-item v-if="handleForm.handling_method === '退货'" label="退货类型">
+          <a-select v-model:value="handleForm.return_type" placeholder="选择退货类型">
+            <a-select-option value="退货退款">退货退款</a-select-option>
+            <a-select-option value="退货换货">退货换货</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item v-if="handleForm.handling_method === '退货'" label="退货数量">
+          <a-input-number v-model:value="handleForm.handling_quantity" :min="1" :max="handleRecord.unqualified_quantity" style="width: 100%;" />
+        </a-form-item>
+        <a-form-item v-if="handleForm.handling_method === '退货'" label="">
+          <a-alert type="info" show-icon style="margin-bottom: 0;">
+            <template #message>系统将自动创建采购退货单，并在退货单审批后执行退货出库</template>
+          </a-alert>
         </a-form-item>
 
         <!-- 拒收 -->

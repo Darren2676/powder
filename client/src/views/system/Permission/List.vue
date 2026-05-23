@@ -51,11 +51,14 @@
     <!-- 新建/编辑弹窗 -->
     <a-modal
       v-model:open="modalVisible"
-      :title="modalTitle"
+      :style="modalStyle"
       @ok="handleModalOk"
       :confirm-loading="modalLoading"
       width="560px"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="onDragStart">{{ modalTitle }}</div>
+      </template>
       <a-form :model="formState" :label-col="{ span: 6 }" :wrapper-col="{ span: 16 }" style="margin-top: 16px;">
         <a-form-item label="权限名称" required>
           <a-input v-model:value="formState.permission_name" placeholder="如：销售管理" />
@@ -119,6 +122,7 @@ import { PlusOutlined } from '@ant-design/icons-vue';
 import * as roleApi from '@/api/system/role';
 import { useMenuStore } from '@/store/menu';
 import { usePermissionStore } from '@/store/permission';
+import { useModalDrag } from '@/composables/useModalDrag';
 
 const menuStore = useMenuStore();
 const permStore = usePermissionStore();
@@ -192,6 +196,7 @@ const columns = [
 
 // 弹窗
 const modalVisible = ref(false);
+const { modalStyle, onDragStart, resetDrag } = useModalDrag();
 const modalLoading = ref(false);
 const editingItem = ref<any>(null);
 const formState = reactive({
@@ -230,6 +235,7 @@ const handleCreateMenu = () => {
     permission_name: '', permission_code: '', permission_type: 'menu',
     parent_id: null, menu_key: '', route_path: '', icon: '', sort_order: 0, status: '启用'
   });
+  resetDrag();
   modalVisible.value = true;
 };
 
@@ -239,6 +245,7 @@ const handleCreatePage = (menu: any) => {
     permission_name: '', permission_code: '', permission_type: 'page',
     parent_id: menu.id, menu_key: '', route_path: '', icon: '', sort_order: 0, status: '启用'
   });
+  resetDrag();
   modalVisible.value = true;
 };
 
@@ -255,6 +262,7 @@ const handleEdit = (record: any) => {
     sort_order: record.sort_order || 0,
     status: record.status || '启用'
   });
+  resetDrag();
   modalVisible.value = true;
 };
 
@@ -316,3 +324,10 @@ onMounted(() => {
   fetchTree();
 });
 </script>
+
+<style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+</style>

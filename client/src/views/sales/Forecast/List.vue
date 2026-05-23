@@ -12,6 +12,7 @@ import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
+import { useModalDrag } from '@/composables/useModalDrag'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
 
@@ -46,6 +47,8 @@ const editForm = reactive<any>({ forecast_number: '', customer_number: '', custo
 const detailModalVisible = ref(false)
 const detailData = ref<any>(null)
 const detailTab = ref('details')
+const { modalStyle: detailModalStyle, onDragStart: detailDragStart, resetDrag: detailResetDrag } = useModalDrag()
+const { modalStyle: createModalStyle, onDragStart: createDragStart, resetDrag: createResetDrag } = useModalDrag()
 
 // 消耗记录弹窗
 const consumptionModalVisible = ref(false)
@@ -135,6 +138,7 @@ const handleFileChange = async (e: Event) => {
 // ==================== CRUD ====================
 const handleCreate = () => {
   Object.assign(createForm, { customer_number: '', customer_name: '', forecast_date: dayjs().format('YYYY-MM-DD'), remark: '', details: [emptyDetail()] })
+  createResetDrag()
   createModalVisible.value = true
 }
 
@@ -216,7 +220,7 @@ const handleDelete = (record: any) => {
 const handleViewDetail = async (record: any) => {
   try {
     const res: any = await getForecastDetail(record.forecast_number)
-    if (res?.success) { detailData.value = res.data; detailTab.value = 'details'; detailModalVisible.value = true }
+    if (res?.success) { detailData.value = res.data; detailTab.value = 'details'; detailResetDrag(); detailModalVisible.value = true }
   } catch (err: any) { message.error(err.response?.data?.message || '获取详情失败') }
 }
 
@@ -472,7 +476,10 @@ const onExpand = async (expanded: boolean, record: any) => {
     </a-table>
 
     <!-- 新建弹窗 -->
-    <a-modal v-model:open="createModalVisible" title="新建销售预测" :width="'90vw'" style="max-width: 1200px" :footer="null" destroyOnClose>
+    <a-modal v-model:open="createModalVisible" :width="'90vw'" style="max-width: 1200px" :style="createModalStyle" :footer="null" destroyOnClose>
+      <template #title>
+        <div class="drag-handle" @mousedown="createDragStart">新建销售预测</div>
+      </template>
       <a-form layout="vertical">
         <a-row :gutter="16">
           <a-col :span="8">
@@ -624,7 +631,10 @@ const onExpand = async (expanded: boolean, record: any) => {
     </a-modal>
 
     <!-- 详情弹窗 -->
-    <a-modal v-model:open="detailModalVisible" title="预测详情" :width="'90vw'" style="max-width: 1100px" :footer="null">
+    <a-modal v-model:open="detailModalVisible" :width="'90vw'" style="max-width: 1100px" :style="detailModalStyle" :footer="null">
+      <template #title>
+        <div class="drag-handle" @mousedown="detailDragStart">预测详情</div>
+      </template>
       <template v-if="detailData">
         <a-descriptions bordered size="small" :column="{ xxl: 3, xl: 3, lg: 3, md: 2, sm: 1, xs: 1 }" style="margin-bottom: 16px">
           <a-descriptions-item label="预测编号">{{ detailData.forecast_number }}</a-descriptions-item>
@@ -665,3 +675,10 @@ const onExpand = async (expanded: boolean, record: any) => {
       @moveUp="moveColumnUp" @moveDown="moveColumnDown" @save="saveColumnSetting" @reset="resetColumnSetting" />
   </div>
 </template>
+
+<style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+</style>

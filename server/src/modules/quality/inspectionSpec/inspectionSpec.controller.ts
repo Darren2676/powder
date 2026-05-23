@@ -34,7 +34,19 @@ export const getInspectionSpecs = async (req: Request, res: Response, next: Next
     const offset = (page - 1) * limit;
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY spec_name) AS _row_num
+        SELECT *, ROW_NUMBER() OVER (ORDER BY
+          CASE spec_name
+            WHEN N'来料普检' THEN 0
+            WHEN N'来料抽检' THEN 1
+            WHEN N'硫化自检' THEN 2
+            WHEN N'包装自检' THEN 3
+            WHEN N'机加自检' THEN 4
+            WHEN N'机加抽检' THEN 5
+            WHEN N'机加全检' THEN 6
+            WHEN N'机加巡检' THEN 7
+            ELSE 99
+          END, spec_name
+        ) AS _row_num
         FROM inspection_spec ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd

@@ -11,6 +11,7 @@ import { registerTaskCompletionSubscriber } from './services/subscribers/taskCom
 import { registerLinesideMovementSubscriber } from './services/subscribers/linesideMovement.subscriber';
 import { registerProductionInspectionSubscriber } from './modules/quality/productionInspection/subscriber';
 import { startEventWorker } from './services/eventWorker.service';
+import { startStockCountScheduler } from './services/stockCountScheduler.service';
 import sequelize from './config/database';
 
 dotenv.config();
@@ -31,9 +32,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ==================== 速率限制 ====================
+const isDevOrTest = !process.env.NODE_ENV || process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15分钟窗口
-  max: 500,                  // 每IP最多500次请求
+  max: isDevOrTest ? 5000 : 500, // 开发/测试环境放宽限制
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: '请求过于频繁，请稍后再试' }
@@ -41,7 +44,7 @@ const apiLimiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15分钟窗口
-  max: 20,                   // 登录接口每IP最多20次
+  max: isDevOrTest ? 500 : 20, // 开发/测试环境: 500次, 生产环境: 20次
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: '登录尝试过于频繁，请稍后再试' }
@@ -98,6 +101,9 @@ registerProductionInspectionSubscriber();
 
 // ==================== 启动事件消费 Worker (Phase 2) ====================
 startEventWorker(10000);
+
+// ==================== 启动自动盘点定时任务 ====================
+startStockCountScheduler();
 
 // 提供前端静态文件
 const clientDistPath = path.join(__dirname, '../../client/dist');

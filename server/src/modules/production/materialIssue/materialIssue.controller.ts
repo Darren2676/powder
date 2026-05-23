@@ -6,6 +6,7 @@ import { generateMaterialTxnNumber, syncMaterialInventorySummary } from '@/servi
 import { logLinesideMovement } from '@/services/linesideMovement.service';
 import { syncProductionStatus } from '@/services/salesOrderSync.service';
 import { createMaterialTransaction } from '@/services/warehouse/helpers';
+import { writeCostSnapshot, deleteCostSnapshot, CostSnapshotItem } from '@/services/materialCostSnapshot.service';
 
 // 自动生成领料单编号: MI-YYYYMMDD-NNN
 const generateIssueNumber = async (): Promise<string> => {
@@ -165,9 +166,10 @@ export const createMaterialIssue = async (req: Request, res: Response, next: Nex
     const now = dayjs().format('YYYY/MM/DD HH:mm');
 
     // 插入领料单主表
+    const sourceType = b.source_type || '领料';
     await sequelize.query(`
-      INSERT INTO material_issue (issue_number, preparation_number, production_order_number, production_number, item_number, item_name, specifications, basic_unit, planned_quantity, total_issue_items, issue_status, remark, creation_date, creation_man)
-      VALUES (:issue_number, :preparation_number, :production_order_number, :production_number, :item_number, :item_name, :specifications, :basic_unit, :planned_quantity, :total_issue_items, N'已领料', :remark, :creation_date, :creation_man)
+      INSERT INTO material_issue (issue_number, preparation_number, production_order_number, production_number, item_number, item_name, specifications, basic_unit, planned_quantity, total_issue_items, issue_status, source_type, remark, creation_date, creation_man)
+      VALUES (:issue_number, :preparation_number, :production_order_number, :production_number, :item_number, :item_name, :specifications, :basic_unit, :planned_quantity, :total_issue_items, N'已领料', :source_type, :remark, :creation_date, :creation_man)
     `, {
       replacements: {
         issue_number,
@@ -180,7 +182,8 @@ export const createMaterialIssue = async (req: Request, res: Response, next: Nex
         basic_unit: prep.basic_unit || '',
         planned_quantity: prep.planned_quantity || 0,
         total_issue_items: validItems.length,
-        remark: b.remark || '',
+        source_type: sourceType,
+        remark: b.remark || (sourceType === '补料' ? '补料' : ''),
         creation_date: now,
         creation_man: user?.username || ''
       },
@@ -458,6 +461,26 @@ export const createMaterialIssue = async (req: Request, res: Response, next: Nex
       }
     } catch (lsErr) {
       console.error('[WIP] logLinesideMovement for material issue error:', lsErr);
+    }
+
+    // ==================== 材料成本快照写入 ====================
+    try {
+      const snapshotItems: CostSnapshotItem[] = validItems.map((item: any) => ({
+        production_order_number: b.production_order_number || prep.production_order_number || '',
+        preparation_number: b.preparation_number,
+        issue_number: issue_number,
+        material_number: item.material_number || '',
+        material_name: item.material_name || '',
+        material_type: item.material_type || '',
+        unit: item.unit || '',
+        issued_quantity: parseFloat(item.actual_quantity) || 0,
+        step_number: item.step_number != null ? item.step_number : null,
+        work_center_name: item.work_center_name || '',
+      }));
+      await writeCostSnapshot(snapshotItems, issue_number, user?.username || '', transaction, sourceType);
+    } catch (snapErr) {
+      console.error('[materialIssue] 成本快照写入失败:', snapErr);
+      // 快照失败不影响领料主流程
     }
 
     await transaction.commit();
@@ -810,7 +833,15 @@ export const deleteMaterialIssue = async (req: Request, res: Response, next: Nex
       }
     } catch (lsErr) { console.error('[deleteMaterialIssue] 线边仓回退失败:', lsErr); }
 
-    // H. 删除领料单
+    // H. 删除成本快照
+    try {
+      await deleteCostSnapshot(issue_number, transaction);
+    } catch (snapErr) {
+      console.error('[deleteMaterialIssue] 成本快照删除失败:', snapErr);
+      // 快照删除失败不影响撤回主流程
+    }
+
+    // I. 删除领料单
     await sequelize.query(
       `DELETE FROM material_issue_detail WHERE issue_number = :issueNo`,
       { replacements: { issueNo: issue_number }, transaction }

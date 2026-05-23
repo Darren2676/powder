@@ -85,10 +85,13 @@ export async function submitAndApprove(module: string, recordId: string): Promis
   const approveRes = await ctx.post(`${API_BASE}/approval/approve`, {
     data: { module, record_id: recordId, remark: 'E2E自动审批' },
   });
-  if (approveRes.ok()) return;
+  if (approveRes.ok()) {
+    console.log(`[${module}] 审批成功，回调已触发`);
+    return;
+  }
 
   // 3. 审批失败（大概率是工作流接管），降级直接 SQL 更新状态
-  console.warn(`[${module}] /approval/approve 失败，降级直接 SQL 更新`);
+  console.warn(`[${module}] /approval/approve 失败 (${approveRes.status()}): ${await approveRes.text()}，降级直接 SQL 更新`);
   await forceApproveBySql(module, recordId);
 }
 
@@ -106,6 +109,7 @@ async function forceApproveBySql(module: string, recordId: string): Promise<void
     return_order: { table: 'return_order', pk: 'return_order_number' },
     shipping_request: { table: 'shipping_request', pk: 'request_number' },
     stock_count: { table: 'stock_count', pk: 'count_number' },
+    stock_in: { table: 'stock_in', pk: 'stock_in_number' },
   };
   const cfg = tableMap[module];
   if (!cfg) throw new Error(`不支持的 module: ${module}`);
@@ -317,7 +321,7 @@ export async function confirmReceivingNoticeAPI(receivingNumber: string, data: {
 /** 获取采购检验详情 */
 export async function getPurchaseInspectionDetailAPI(inspectionNumber: string) {
   const ctx = await getApiContext();
-  const res = await ctx.get(`${API_BASE}/quality-report/purchase-inspections/${inspectionNumber}`);
+  const res = await ctx.get(`${API_BASE}/quality/quality-report/purchase-inspections/${inspectionNumber}`);
   if (!res.ok()) {
     throw new Error(`获取采购检验详情失败 ${res.status()}: ${await res.text()}`);
   }
@@ -334,7 +338,7 @@ export async function updatePurchaseInspectionAPI(inspectionNumber: string, data
   details?: any[];
 }) {
   const ctx = await getApiContext();
-  const res = await ctx.put(`${API_BASE}/quality-report/purchase-inspections/${inspectionNumber}`, { data });
+  const res = await ctx.put(`${API_BASE}/quality/quality-report/purchase-inspections/${inspectionNumber}`, { data });
   if (!res.ok()) {
     throw new Error(`更新采购检验失败 ${res.status()}: ${await res.text()}`);
   }
@@ -349,7 +353,7 @@ export async function completePurchaseInspectionAPI(inspectionNumber: string, da
   unqualified_quantity: number;
 }) {
   const ctx = await getApiContext();
-  const res = await ctx.put(`${API_BASE}/quality-report/purchase-inspections/${inspectionNumber}/complete`, { data });
+  const res = await ctx.put(`${API_BASE}/quality/quality-report/purchase-inspections/${inspectionNumber}/complete`, { data });
   if (!res.ok()) {
     throw new Error(`完成采购检验失败 ${res.status()}: ${await res.text()}`);
   }
@@ -574,6 +578,7 @@ export async function productionInboundAPI(data: {
     basic_unit?: string;
     planned_quantity?: number;
     inbound_qty: number;
+    inbound_quantity?: number;
   }>;
   remark?: string;
 }) {
@@ -1108,7 +1113,7 @@ export async function deleteAPI(path: string) {
 /** 获取生产检验(按工单) */
 export async function getProductionInspectionsByOrderAPI(orderNumber: string) {
   const ctx = await getApiContext();
-  const res = await ctx.get(`${API_BASE}/production-inspections/by-order/${orderNumber}`);
+  const res = await ctx.get(`${API_BASE}/quality/production-inspections/by-order/${orderNumber}`);
   if (!res.ok()) {
     throw new Error(`获取生产检验失败 ${res.status()}: ${await res.text()}`);
   }
@@ -1124,7 +1129,7 @@ export async function updateProductionInspectionAPI(inspectionNumber: string, da
   [key: string]: any;
 }) {
   const ctx = await getApiContext();
-  const res = await ctx.put(`${API_BASE}/production-inspections/${inspectionNumber}`, { data });
+  const res = await ctx.put(`${API_BASE}/quality/production-inspections/${inspectionNumber}`, { data });
   if (!res.ok()) {
     throw new Error(`更新生产检验失败 ${res.status()}: ${await res.text()}`);
   }
@@ -1135,7 +1140,7 @@ export async function updateProductionInspectionAPI(inspectionNumber: string, da
 /** 完成生产检验(自动判定合格/不合格) */
 export async function completeProductionInspectionAPI(inspectionNumber: string) {
   const ctx = await getApiContext();
-  const res = await ctx.put(`${API_BASE}/production-inspections/${inspectionNumber}/complete`);
+  const res = await ctx.put(`${API_BASE}/quality/production-inspections/${inspectionNumber}/complete`);
   if (!res.ok()) {
     throw new Error(`完成生产检验失败 ${res.status()}: ${await res.text()}`);
   }
@@ -1146,7 +1151,7 @@ export async function completeProductionInspectionAPI(inspectionNumber: string) 
 /** 不合格品缺陷处理(创建NC单) */
 export async function defectHandlingAPI(inspectionNumber: string) {
   const ctx = await getApiContext();
-  const res = await ctx.put(`${API_BASE}/production-inspections/${inspectionNumber}/defect-handling`);
+  const res = await ctx.put(`${API_BASE}/quality/production-inspections/${inspectionNumber}/defect-handling`);
   if (!res.ok()) {
     throw new Error(`缺陷处理失败 ${res.status()}: ${await res.text()}`);
   }
@@ -1159,7 +1164,7 @@ export async function defectHandlingAPI(inspectionNumber: string) {
 /** 获取NC单详情 */
 export async function getNonconformingProductAPI(ncNumber: string) {
   const ctx = await getApiContext();
-  const res = await ctx.get(`${API_BASE}/nonconforming-products/${ncNumber}`);
+  const res = await ctx.get(`${API_BASE}/quality/nonconforming-products/${ncNumber}`);
   if (!res.ok()) {
     throw new Error(`获取NC单详情失败 ${res.status()}: ${await res.text()}`);
   }
@@ -1177,7 +1182,7 @@ export async function handleNonconformingAPI(ncNumber: string, data: {
   handling_remark?: string;
 }) {
   const ctx = await getApiContext();
-  const res = await ctx.put(`${API_BASE}/nonconforming-products/${ncNumber}/handle`, { data });
+  const res = await ctx.put(`${API_BASE}/quality/nonconforming-products/${ncNumber}/handle`, { data });
   if (!res.ok()) {
     throw new Error(`处理NC单失败 ${res.status()}: ${await res.text()}`);
   }
@@ -1190,7 +1195,7 @@ export async function handleNonconformingAPI(ncNumber: string, data: {
 /** 获取返修单详情 */
 export async function getReworkOrderAPI(reworkOrderNumber: string) {
   const ctx = await getApiContext();
-  const res = await ctx.get(`${API_BASE}/rework-orders/${reworkOrderNumber}`);
+  const res = await ctx.get(`${API_BASE}/quality/rework-orders/${reworkOrderNumber}`);
   if (!res.ok()) {
     throw new Error(`获取返修单详情失败 ${res.status()}: ${await res.text()}`);
   }
@@ -1201,7 +1206,7 @@ export async function getReworkOrderAPI(reworkOrderNumber: string) {
 /** 完成返修单 */
 export async function completeReworkOrderAPI(reworkOrderNumber: string) {
   const ctx = await getApiContext();
-  const res = await ctx.post(`${API_BASE}/rework-orders/${reworkOrderNumber}/complete`);
+  const res = await ctx.post(`${API_BASE}/quality/rework-orders/${reworkOrderNumber}/complete`);
   if (!res.ok()) {
     throw new Error(`完成返修单失败 ${res.status()}: ${await res.text()}`);
   }
@@ -1212,7 +1217,7 @@ export async function completeReworkOrderAPI(reworkOrderNumber: string) {
 /** 返修重新检验 */
 export async function reworkReInspectAPI(reworkOrderNumber: string) {
   const ctx = await getApiContext();
-  const res = await ctx.post(`${API_BASE}/rework-orders/${reworkOrderNumber}/re-inspect`);
+  const res = await ctx.post(`${API_BASE}/quality/rework-orders/${reworkOrderNumber}/re-inspect`);
   if (!res.ok()) {
     throw new Error(`返修重新检验失败 ${res.status()}: ${await res.text()}`);
   }
@@ -1374,6 +1379,374 @@ export async function getAbnormalIODetailAPI(requestNumber: string) {
   const res = await ctx.get(`${API_BASE}/abnormal-io/${requestNumber}`);
   if (!res.ok()) {
     throw new Error(`获取其他出入库详情失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+// ==================== 采购入库 API ====================
+
+/** 创建采购入库单 */
+export async function createStockInAPI(data: {
+  purchase_order_number: string;
+  warehouse_number: string;
+  warehouse_name: string;
+  stock_in_type?: string;
+  remark?: string;
+  details: Array<{
+    purchase_detail_id: number;
+    item_number: string;
+    item_name: string;
+    specifications?: string;
+    basic_unit?: string;
+    order_quantity: number;
+    received_quantity: number;
+    stock_in_quantity: number;
+    qualified_quantity: number;
+    unqualified_quantity?: number;
+    remark?: string;
+  }>;
+}) {
+  const ctx = await getApiContext();
+  const res = await ctx.post(`${API_BASE}/stock-ins`, { data });
+  if (!res.ok()) {
+    throw new Error(`创建入库单失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 获取入库单列表 */
+export async function getStockInListAPI(params?: {
+  search?: string;
+  approval_status?: string;
+  page?: number;
+  limit?: number;
+}) {
+  const ctx = await getApiContext();
+  const qs = new URLSearchParams();
+  if (params?.search) qs.set('search', params.search);
+  if (params?.approval_status) qs.set('approval_status', params.approval_status);
+  if (params?.page) qs.set('page', String(params.page));
+  if (params?.limit) qs.set('limit', String(params.limit));
+  const url = `${API_BASE}/stock-ins?${qs.toString()}`;
+  const res = await ctx.get(url);
+  if (!res.ok()) {
+    throw new Error(`获取入库单列表失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 获取入库单详情 */
+export async function getStockInDetailAPI(stockInNumber: string) {
+  const ctx = await getApiContext();
+  const res = await ctx.get(`${API_BASE}/stock-ins/${encodeURIComponent(stockInNumber)}`);
+  if (!res.ok()) {
+    throw new Error(`获取入库单详情失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 确认入库 */
+export async function confirmStockInAPI(stockInNumber: string) {
+  const ctx = await getApiContext();
+  const res = await ctx.post(`${API_BASE}/stock-ins/${encodeURIComponent(stockInNumber)}/confirm`);
+  if (!res.ok()) {
+    throw new Error(`确认入库失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body;
+}
+
+/** 撤回入库 */
+export async function withdrawStockInAPI(stockInNumber: string) {
+  const ctx = await getApiContext();
+  const res = await ctx.post(`${API_BASE}/stock-ins/${encodeURIComponent(stockInNumber)}/withdraw`);
+  if (!res.ok()) {
+    throw new Error(`撤回入库失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body;
+}
+
+/** 删除入库单（草稿状态） */
+export async function deleteStockInAPI(stockInNumber: string) {
+  const ctx = await getApiContext();
+  const res = await ctx.delete(`${API_BASE}/stock-ins/${encodeURIComponent(stockInNumber)}`);
+  if (!res.ok()) {
+    throw new Error(`删除入库单失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body;
+}
+
+// ==================== 销售发票 API ====================
+
+/** 创建销售发票 */
+export async function createSalesInvoiceAPI(data: {
+  invoice_code?: string;
+  invoice_no?: string;
+  invoice_type?: string;
+  customer_number: string;
+  customer_name?: string;
+  invoice_title?: string;
+  tax_id?: string;
+  invoice_address?: string;
+  invoice_phone?: string;
+  bank_name?: string;
+  bank_account_number?: string;
+  invoice_date?: string;
+  tax_rate?: number;
+  amount_without_tax?: number;
+  tax_amount?: number;
+  amount_with_tax?: number;
+  currency_code?: string;
+  remark?: string;
+  lines: Array<{
+    shipping_order_number: string;
+    shipping_detail_id: number;
+    sales_order_number?: string;
+    sales_detail_id?: number;
+    item_number: string;
+    item_name?: string;
+    specifications?: string;
+    basic_unit?: string;
+    ship_quantity: number;
+    invoice_quantity: number;
+    unit_price?: number;
+    amount_without_tax?: number;
+    tax_rate?: number;
+    tax_amount?: number;
+    amount_with_tax?: number;
+    remark?: string;
+  }>;
+}) {
+  const ctx = await getApiContext();
+  const res = await ctx.post(`${API_BASE}/sales-invoices`, { data });
+  if (!res.ok()) {
+    throw new Error(`创建销售发票失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 获取销售发票详情 */
+export async function getSalesInvoiceDetailAPI(invoiceNumber: string) {
+  const ctx = await getApiContext();
+  const res = await ctx.get(`${API_BASE}/sales-invoices/${encodeURIComponent(invoiceNumber)}`);
+  if (!res.ok()) {
+    throw new Error(`获取销售发票详情失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 更新销售发票 */
+export async function updateSalesInvoiceAPI(invoiceNumber: string, data: any) {
+  const ctx = await getApiContext();
+  const res = await ctx.put(`${API_BASE}/sales-invoices/${encodeURIComponent(invoiceNumber)}`, { data });
+  if (!res.ok()) {
+    throw new Error(`更新销售发票失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 删除销售发票 */
+export async function deleteSalesInvoiceAPI(invoiceNumber: string) {
+  const ctx = await getApiContext();
+  const res = await ctx.delete(`${API_BASE}/sales-invoices/${encodeURIComponent(invoiceNumber)}`);
+  if (!res.ok()) {
+    throw new Error(`删除销售发票失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 查询入库单列表 */
+export async function getInboundOrdersAPI(params?: { search?: string; page?: number; limit?: number }) {
+  const ctx = await getApiContext();
+  let url = `${API_BASE}/finished-goods/inbound-orders`;
+  const qs = new URLSearchParams();
+  if (params?.search) qs.set('search', params.search);
+  if (params?.page) qs.set('page', String(params.page));
+  if (params?.limit) qs.set('limit', String(params.limit));
+  if (qs.toString()) url += `?${qs.toString()}`;
+  const res = await ctx.get(url);
+  if (!res.ok()) {
+    throw new Error(`查询入库单列表失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** WIP在制品报告 - 按生产单 */
+export async function getWipByOrderAPI(productionOrderNumber: string) {
+  const ctx = await getApiContext();
+  const res = await ctx.get(`${API_BASE}/wip-report/by-order/${productionOrderNumber}`);
+  if (!res.ok()) {
+    throw new Error(`查询WIP报告失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 质量透视报表 */
+export async function getQualityPivotAPI(params?: { page?: number; limit?: number; search?: string; start_date?: string; end_date?: string }) {
+  const ctx = await getApiContext();
+  let url = `${API_BASE}/quality/quality-report/production-order-pivot`;
+  const qs = new URLSearchParams();
+  if (params?.page) qs.set('page', String(params.page));
+  if (params?.limit) qs.set('limit', String(params.limit));
+  if (params?.search) qs.set('search', params.search);
+  if (params?.start_date) qs.set('start_date', params.start_date);
+  if (params?.end_date) qs.set('end_date', params.end_date);
+  if (qs.toString()) url += `?${qs.toString()}`;
+  const res = await ctx.get(url);
+  if (!res.ok()) {
+    throw new Error(`查询质量透视报表失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 审批销售发票 */
+export async function approveSalesInvoiceAPI(invoiceNumber: string) {
+  const ctx = await getApiContext();
+  const res = await ctx.post(`${API_BASE}/sales-invoices/${encodeURIComponent(invoiceNumber)}/approve`);
+  if (!res.ok()) {
+    throw new Error(`审批销售发票失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 撤消审批销售发票 */
+export async function withdrawSalesInvoiceAPI(invoiceNumber: string) {
+  const ctx = await getApiContext();
+  const res = await ctx.post(`${API_BASE}/sales-invoices/${encodeURIComponent(invoiceNumber)}/withdraw`);
+  if (!res.ok()) {
+    throw new Error(`撤消销售发票失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 获取可开票发货明细行 */
+export async function getAvailableShippingDetailsAPI(customerNumber: string, excludeInvoice?: string) {
+  const ctx = await getApiContext();
+  let url = `${API_BASE}/sales-invoices/available-shipping-details?customer_number=${encodeURIComponent(customerNumber)}`;
+  if (excludeInvoice) url += `&exclude_invoice=${encodeURIComponent(excludeInvoice)}`;
+  const res = await ctx.get(url);
+  if (!res.ok()) {
+    throw new Error(`获取可开票发货明细失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return (body?.data || []) as any[];
+}
+
+/** 根据发货明细查关联发票 */
+export async function getInvoicesByShippingDetailAPI(detailId: number) {
+  const ctx = await getApiContext();
+  const res = await ctx.get(`${API_BASE}/sales-invoices/by-shipping-detail/${detailId}`);
+  if (!res.ok()) {
+    throw new Error(`查询发货明细关联发票失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return (body?.data || []) as any[];
+}
+
+/** 根据销售订单明细查关联发票 */
+export async function getInvoicesBySalesDetailAPI(detailId: number) {
+  const ctx = await getApiContext();
+  const res = await ctx.get(`${API_BASE}/sales-invoices/by-sales-detail/${detailId}`);
+  if (!res.ok()) {
+    throw new Error(`查询销售订单明细关联发票失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return (body?.data || []) as any[];
+}
+
+// ==================== 备料退料补料 API ====================
+
+/** 创建领料单（支持 source_type） */
+export async function createMaterialIssueV2API(data: {
+  preparation_number: string;
+  production_order_number?: string;
+  source_type?: string;
+  items: Array<{ preparation_detail_id?: number; material_number: string; actual_quantity: number; warehouse_number: string; step_number?: number; [key: string]: any }>;
+  remark?: string;
+}) {
+  const ctx = await getApiContext();
+  const res = await ctx.post(`${API_BASE}/material-issues`, { data });
+  if (!res.ok()) {
+    throw new Error(`创建领料单失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 撤回/删除领料单 */
+export async function deleteMaterialIssueAPI(issueNumber: string) {
+  const ctx = await getApiContext();
+  const res = await ctx.delete(`${API_BASE}/material-issues/${issueNumber}`);
+  if (!res.ok()) {
+    throw new Error(`撤回领料单失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 创建退料单 */
+export async function createMaterialReturnAPI(data: {
+  issue_number: string;
+  items: Array<{ material_number: string; return_quantity: number; batch_number?: string }>;
+  remark?: string;
+}) {
+  const ctx = await getApiContext();
+  const res = await ctx.post(`${API_BASE}/material-returns`, { data });
+  if (!res.ok()) {
+    throw new Error(`创建退料单失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 撤回/删除退料单 */
+export async function deleteMaterialReturnAPI(returnNumber: string) {
+  const ctx = await getApiContext();
+  const res = await ctx.delete(`${API_BASE}/material-returns/${returnNumber}`);
+  if (!res.ok()) {
+    throw new Error(`撤回退料单失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 查询退料单列表 */
+export async function getMaterialReturnsAPI(params?: Record<string, string>) {
+  const ctx = await getApiContext();
+  let url = `${API_BASE}/material-returns`;
+  if (params) {
+    const qs = new URLSearchParams(params).toString();
+    url += `?${qs}`;
+  }
+  const res = await ctx.get(url);
+  if (!res.ok()) {
+    throw new Error(`查询退料单列表失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 查询退料单详情 */
+export async function getMaterialReturnDetailAPI(returnNumber: string) {
+  const ctx = await getApiContext();
+  const res = await ctx.get(`${API_BASE}/material-returns/${returnNumber}`);
+  if (!res.ok()) {
+    throw new Error(`查询退料单详情失败 ${res.status()}: ${await res.text()}`);
   }
   const body = await res.json();
   return body?.data;

@@ -8,7 +8,7 @@ export function queryByOrder(orderNo: string) {
   return request.get(`/material-issues/query-by-order/${encodeURIComponent(orderNo)}`)
 }
 
-export function createMaterialIssue(data: { preparation_number: string; production_order_number: string; remark?: string; items: any[] }) {
+export function createMaterialIssue(data: { preparation_number: string; production_order_number: string; source_type?: string; remark?: string; items: any[] }) {
   return request.post('/material-issues', data)
 }
 

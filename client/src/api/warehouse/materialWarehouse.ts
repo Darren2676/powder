@@ -57,3 +57,49 @@ export function getItemOptions(params: { keyword: string; item_type?: string }) 
 export function getWarehouseOptions() {
   return request.get('/material-warehouse/warehouse-options')
 }
+
+// ==================== 原料仓月度报表 ====================
+
+export function getCompletedMaterialStockCounts() {
+  return request.get('/material-warehouse/completed-material-stock-counts')
+}
+
+export function getMaterialMonthlyReport(params: { count_number: string }) {
+  return request.get('/material-warehouse/material-monthly-report', { params })
+}
+
+export function getMaterialMonthlyReportByPeriod(params: { warehouse_number: string; accounting_period: string; count_number?: string }) {
+  return request.get('/material-warehouse/material-monthly-report-by-period', { params })
+}
+
+export function getStockCountsByWarehouse(params: { warehouse_number: string }) {
+  return request.get('/material-warehouse/stock-counts-by-warehouse', { params })
+}
+
+// ==================== 半成品生产入库单 ====================
+
+export function getSemiInboundOrderList(params?: { page?: number; limit?: number; search?: string }) {
+  return request.get('/material-warehouse/semi-inbound-orders', { params })
+}
+
+export function getSemiInboundOrderDetail(inbound_order_number: string) {
+  return request.get(`/material-warehouse/semi-inbound-orders/${inbound_order_number}`)
+}
+
+export function withdrawSemiInboundOrder(inbound_order_number: string) {
+  return request.post(`/material-warehouse/semi-inbound-orders/${inbound_order_number}/withdraw`)
+}
+
+// ==================== 采购退货出库 ====================
+
+export function getReturnOutboundList(params?: { page?: number; limit?: number; search?: string; return_status?: string }) {
+  return request.get('/material-warehouse/return-outbound', { params })
+}
+
+export function getReturnOutboundDetail(id: string) {
+  return request.get(`/material-warehouse/return-outbound/${encodeURIComponent(id)}`)
+}
+
+export function executeReturnOutbound(id: string) {
+  return request.post(`/material-warehouse/return-outbound/${encodeURIComponent(id)}/execute`)
+}

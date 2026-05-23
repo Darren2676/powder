@@ -3,6 +3,7 @@ import { ref, computed, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { SearchOutlined, ReloadOutlined, SettingOutlined, DownloadOutlined } from '@ant-design/icons-vue'
 import { getShippingOrderDetailsPage, exportShippingOrderDetailsSelected } from '@/api/sales/shippingOrder'
+import { getInvoicesByShippingDetail } from '@/api/sales/salesInvoice'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import { generateExportFilename } from '@/utils/exportFilename'
@@ -49,7 +50,8 @@ const defaultDataColumns: any[] = [
   { title: '运单号', dataIndex: 'tracking_number', key: 'tracking_number', width: 150, resizable: true },
   { title: '发货日期', dataIndex: 'shipping_date', key: 'shipping_date', width: 110, resizable: true },
   { title: '创建人', dataIndex: 'creation_man', key: 'creation_man', width: 100, resizable: true },
-  { title: '创建时间', dataIndex: 'order_creation_date', key: 'order_creation_date', width: 170, resizable: true }
+  { title: '创建时间', dataIndex: 'order_creation_date', key: 'order_creation_date', width: 170, resizable: true },
+  { title: '开票状态', dataIndex: 'invoice_status', key: 'invoice_status', width: 100, resizable: true }
 ]
 
 const {
@@ -128,6 +130,37 @@ onMounted(async () => {
   await loadColumnPreference()
   fetchData()
 })
+
+// ==================== 开票状态双向查询 ====================
+const invoiceStatusColors: Record<string, string> = {
+  '未开票': 'default',
+  '部分开票': 'orange',
+  '已开票': 'green'
+}
+const relatedInvoicesVisible = ref(false)
+const relatedInvoicesLoading = ref(false)
+const relatedInvoices = ref<any[]>([])
+
+const handleViewRelatedInvoices = async (detailId: number) => {
+  relatedInvoicesVisible.value = true
+  relatedInvoicesLoading.value = true
+  try {
+    const res: any = await getInvoicesByShippingDetail(detailId)
+    if (res?.success) relatedInvoices.value = res.data || []
+  } catch { message.error('获取关联发票失败') }
+  finally { relatedInvoicesLoading.value = false }
+}
+
+const relatedInvoiceColumns = [
+  { title: '发票编号', dataIndex: 'invoice_number', width: 170 },
+  { title: '发票代码', dataIndex: 'invoice_code', width: 120 },
+  { title: '发票号码', dataIndex: 'invoice_no', width: 120 },
+  { title: '开票日期', dataIndex: 'invoice_date', width: 110 },
+  { title: '开票数量', dataIndex: 'invoice_quantity', width: 90 },
+  { title: '单价', dataIndex: 'unit_price', width: 90 },
+  { title: '不含税金额', dataIndex: 'amount_without_tax', width: 110 },
+  { title: '审批状态', dataIndex: 'approval_status', width: 90 }
+]
 </script>
 
 <template>
@@ -188,6 +221,11 @@ onMounted(async () => {
         <template v-else-if="column.key === 'order_creation_date'">
           {{ formatDateTime(record.order_creation_date) }}
         </template>
+        <template v-else-if="column.key === 'invoice_status'">
+          <a-tag :color="invoiceStatusColors[record.invoice_status] || 'default'" style="cursor: pointer" @click="record.detail_id && handleViewRelatedInvoices(record.detail_id)">
+            {{ record.invoice_status || '未开票' }}
+          </a-tag>
+        </template>
       </template>
     </a-table>
 
@@ -195,6 +233,33 @@ onMounted(async () => {
       已选择 <span style="color: #1677ff; font-weight: 600">{{ selectedRowKeys.length }}</span> 条记录
       <a style="margin-left: 8px" @click="selectedRowKeys = []">清空选择</a>
     </div>
+
+    <!-- 关联发票弹窗 -->
+    <a-modal v-model:open="relatedInvoicesVisible" title="关联发票列表" width="900px" :footer="null">
+      <a-spin :spinning="relatedInvoicesLoading">
+        <a-table
+          :columns="relatedInvoiceColumns"
+          :data-source="relatedInvoices"
+          :pagination="false"
+          row-key="invoice_number"
+          size="small"
+          bordered
+          :scroll="{ y: 350 }"
+        >
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.dataIndex === 'approval_status'">
+              <a-tag :color="record.approval_status === '已审批' ? 'green' : 'orange'">{{ record.approval_status }}</a-tag>
+            </template>
+            <template v-else-if="column.dataIndex === 'invoice_date'">
+              {{ formatDate(record.invoice_date) }}
+            </template>
+          </template>
+        </a-table>
+        <div v-if="!relatedInvoicesLoading && relatedInvoices.length === 0" style="text-align: center; color: #999; padding: 20px">
+          该发货明细行暂无关联发票
+        </div>
+      </a-spin>
+    </a-modal>
 
     <ColumnSettingDrawer
       v-model:open="columnSettingVisible"

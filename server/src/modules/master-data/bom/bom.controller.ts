@@ -615,3 +615,358 @@ export const getBomFlatten = async (req: Request, res: Response, next: NextFunct
     res.json(success({ items: flatList }, '获取BOM用量汇总成功'));
   } catch (err) { next(err); }
 };
+
+// ==================== 成本BOM ====================
+
+/** 获取可用的标准成本单价表列表 */
+export const getAvailableCostLists = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const [rows]: any = await sequelize.query(
+      `SELECT cost_list_number, cost_list_name,
+              CONVERT(VARCHAR(10), effective_date, 23) as effective_date,
+              CONVERT(VARCHAR(10), expiration_date, 23) as expiration_date
+       FROM standard_cost_header
+       WHERE approval_status = N'已审批'
+       ORDER BY effective_date DESC`
+    );
+    res.json(success(rows, '获取可用成本表列表成功'));
+  } catch (err) { next(err); }
+};
+
+/** 递归展开BOM并计算双成本（内部函数）
+ *  material_cost: 纯材料成本，半成品=子件材料成本汇总（Bottom-up）
+ *  standard_cost_total: 标准成本，半成品=累计用量×自身标准单价（含加工费，Top-down）
+ *  processing_cost = standard_cost_total - material_cost（加工成本）
+ */
+async function expandCostBomRecursive(
+  bomNumber: string,
+  costMap: Record<string, number>,
+  visitedSet: Set<string>,
+  depth: number,
+  maxDepth: number,
+  parentMultiplier: number,
+  flatResult: any[],
+  path: string
+): Promise<{ node: any; children_material_cost: number; children_standard_cost: number }> {
+  if (depth > maxDepth) return { node: null, children_material_cost: 0, children_standard_cost: 0 };
+  if (visitedSet.has(bomNumber)) return { node: { circular: true, bom_number: bomNumber }, children_material_cost: 0, children_standard_cost: 0 };
+  visitedSet.add(bomNumber);
+
+  const [headers]: any = await sequelize.query(
+    `SELECT * FROM bom_header WHERE bom_number = :bomNumber`,
+    { replacements: { bomNumber } }
+  );
+  if (!headers.length) return { node: null, children_material_cost: 0, children_standard_cost: 0 };
+  const header = headers[0];
+  const baseQty = parseFloat(header.base_quantity) || 1;
+
+  const [details]: any = await sequelize.query(
+    `SELECT * FROM bom_detail WHERE bom_number = :bomNumber ORDER BY line_number`,
+    { replacements: { bomNumber } }
+  );
+
+  // 批量查找子BOM
+  const materialNumbers = details.map((d: any) => d.material_number).filter((m: string) => m);
+  let bomMap: Record<string, string> = {};
+  if (materialNumbers.length > 0) {
+    const placeholders = materialNumbers.map((_: string, i: number) => `:m${i}`).join(',');
+    const matReplacements: any = {};
+    materialNumbers.forEach((m: string, i: number) => { matReplacements[`m${i}`] = m; });
+    const [bomRows]: any = await sequelize.query(
+      `SELECT item_number, bom_number FROM bom_header WHERE item_number IN (${placeholders}) AND [condition] = N'启用'`,
+      { replacements: matReplacements }
+    );
+    for (const row of bomRows) {
+      if (!bomMap[row.item_number]) bomMap[row.item_number] = row.bom_number;
+    }
+  }
+
+  const enrichedDetails = [];
+  let totalMaterialCost = 0;
+  let totalStandardCost = 0;
+
+  for (const d of details) {
+    const childBomNum = d.child_bom_number || bomMap[d.material_number] || null;
+    const hasChildBom = !!childBomNum;
+    const actualQty = parseFloat(d.actual_quantity) || 0;
+    const accumulatedQty = parentMultiplier * (actualQty / baseQty);
+    const unitCost = costMap[d.material_number] || 0;
+    const hasCost = unitCost > 0;
+    const currentPath = path ? `${path} > ${header.bom_number}` : header.bom_number;
+
+    if (hasChildBom) {
+      // 半成品：递归展开子BOM
+      const { node: childNode, children_material_cost: childMatCost, children_standard_cost: childStdCost } = await expandCostBomRecursive(
+        childBomNum, costMap, new Set(visitedSet), depth + 1, maxDepth,
+        accumulatedQty, flatResult, currentPath
+      );
+      // 标准成本：使用半成品自身标准单价（含加工费）
+      const semiStdUnitCost = unitCost; // 半成品在成本表中的标准单价
+      const semiStdTotal = Math.round(accumulatedQty * semiStdUnitCost * 100) / 100;
+      // 如果半成品无标准单价，则回退到子件材料成本汇总
+      const effectiveStdCost = hasCost ? semiStdTotal : childMatCost;
+      // 材料成本=子件材料成本汇总
+      const materialCost = Math.round(childMatCost * 100) / 100;
+      // 加工成本=标准成本-材料成本
+      const processingCost = Math.round((effectiveStdCost - materialCost) * 100) / 100;
+
+      enrichedDetails.push({
+        ...d,
+        has_child_bom: true,
+        matched_bom_number: childBomNum,
+        accumulated_quantity: Math.round(accumulatedQty * 10000) / 10000,
+        // 兼容旧字段（材料成本视角）
+        unit_cost: 0,
+        total_cost: materialCost,
+        has_cost: materialCost > 0 || effectiveStdCost > 0,
+        is_semi_finished: true,
+        children: childNode?.details || [],
+        // 双成本字段
+        material_cost: materialCost,
+        standard_cost_total: Math.round(effectiveStdCost * 100) / 100,
+        processing_cost: processingCost,
+        semi_standard_unit_cost: semiStdUnitCost,
+        has_standard_cost: hasCost
+      });
+      totalMaterialCost += materialCost;
+      totalStandardCost += Math.round(effectiveStdCost * 100) / 100;
+    } else {
+      // 叶子节点：材料成本=标准成本
+      const lineCost = Math.round(accumulatedQty * unitCost * 100) / 100;
+      enrichedDetails.push({
+        ...d,
+        has_child_bom: false,
+        matched_bom_number: null,
+        accumulated_quantity: Math.round(accumulatedQty * 10000) / 10000,
+        unit_cost: unitCost,
+        total_cost: lineCost,
+        has_cost: hasCost,
+        is_semi_finished: false,
+        bom_path: currentPath,
+        level: depth,
+        // 双成本字段（叶子节点两者相同）
+        material_cost: lineCost,
+        standard_cost_total: lineCost,
+        processing_cost: 0
+      });
+      totalMaterialCost += lineCost;
+      totalStandardCost += lineCost;
+      // 添加到扁平汇总
+      flatResult.push({
+        material_number: d.material_number,
+        material_name: d.material_name,
+        material_type: d.material_type,
+        unit: d.unit,
+        accumulated_quantity: Math.round(accumulatedQty * 10000) / 10000,
+        unit_cost: unitCost,
+        total_cost: lineCost,
+        has_cost: hasCost,
+        bom_path: currentPath,
+        level: depth
+      });
+    }
+  }
+
+  return {
+    node: {
+      bom_number: header.bom_number,
+      bom_name: header.bom_name,
+      item_number: header.item_number,
+      item_name: header.item_name,
+      bom_version: header.bom_version,
+      base_quantity: header.base_quantity,
+      base_unit: header.base_unit,
+      condition: header.condition,
+      approval_status: header.approval_status,
+      details: enrichedDetails
+    },
+    children_material_cost: totalMaterialCost,
+    children_standard_cost: totalStandardCost
+  };
+}
+
+/** 获取成本BOM */
+export const getCostBom = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const costListNumber = req.query.cost_list_number as string || '';
+
+    // 1. 校验BOM存在
+    const [headers]: any = await sequelize.query(
+      `SELECT * FROM bom_header WHERE bom_number = :id`,
+      { replacements: { id } }
+    );
+    if (!headers.length) { res.status(404).json({ success: false, message: 'BOM不存在' }); return; }
+
+    // 2. 确定成本表
+    let selectedCostList = costListNumber;
+    if (!selectedCostList) {
+      const [latestRows]: any = await sequelize.query(
+        `SELECT TOP 1 cost_list_number FROM standard_cost_header
+         WHERE effective_date <= GETDATE()
+           AND (expiration_date IS NULL OR expiration_date >= GETDATE())
+           AND approval_status = N'已审批'
+         ORDER BY effective_date DESC`
+      );
+      if (latestRows.length > 0) selectedCostList = latestRows[0].cost_list_number;
+    }
+
+    if (!selectedCostList) {
+      res.json(success({
+        cost_list_number: '',
+        cost_list_name: '',
+        effective_date: '',
+        tree: null,
+        flat_summary: [],
+        total_cost: 0,
+        message: '未找到当前有效的标准成本单价表'
+      }, '未找到有效成本表'));
+      return;
+    }
+
+    // 3. 获取成本表信息
+    const [costHeaders]: any = await sequelize.query(
+      `SELECT cost_list_number, cost_list_name,
+              CONVERT(VARCHAR(10), effective_date, 23) as effective_date,
+              CONVERT(VARCHAR(10), expiration_date, 23) as expiration_date
+       FROM standard_cost_header WHERE cost_list_number = :cln`,
+      { replacements: { cln: selectedCostList } }
+    );
+    if (!costHeaders.length) { res.status(404).json({ success: false, message: '标准成本单价表不存在' }); return; }
+
+    // 4. 构建 item_number → standard_cost 映射
+    const [costDetails]: any = await sequelize.query(
+      `SELECT item_number, standard_cost FROM standard_cost_detail WHERE cost_list_number = :cln`,
+      { replacements: { cln: selectedCostList } }
+    );
+    const costMap: Record<string, number> = {};
+    for (const cd of costDetails) {
+      costMap[cd.item_number] = parseFloat(cd.standard_cost) || 0;
+    }
+
+    // 5. 递归展开BOM并计算成本
+    const baseQty = parseFloat(headers[0].base_quantity) || 1;
+    const flatResult: any[] = [];
+    const { node: tree, children_material_cost: totalMaterialCost, children_standard_cost: totalStandardCost } = await expandCostBomRecursive(
+      id as string, costMap, new Set(), 0, 10, baseQty, flatResult, ''
+    );
+
+    // 6. 按物料编号分组汇总
+    const grouped: Record<string, any> = {};
+    for (const item of flatResult) {
+      if (grouped[item.material_number]) {
+        grouped[item.material_number].accumulated_quantity =
+          Math.round((grouped[item.material_number].accumulated_quantity + item.accumulated_quantity) * 10000) / 10000;
+        grouped[item.material_number].total_cost =
+          Math.round((grouped[item.material_number].total_cost + item.total_cost) * 100) / 100;
+      } else {
+        grouped[item.material_number] = { ...item };
+      }
+    }
+    const flatSummary = Object.values(grouped).sort((a: any, b: any) => b.total_cost - a.total_cost);
+
+    // 计算成本占比
+    const totalMaterialCostRounded = Math.round(totalMaterialCost * 100) / 100;
+    const totalStandardCostRounded = Math.round(totalStandardCost * 100) / 100;
+    const totalProcessingCost = Math.round((totalStandardCostRounded - totalMaterialCostRounded) * 100) / 100;
+    for (const item of flatSummary) {
+      item.cost_percentage = totalMaterialCostRounded > 0
+        ? Math.round(item.total_cost / totalMaterialCostRounded * 10000) / 100
+        : 0;
+    }
+
+    res.json(success({
+      cost_list_number: selectedCostList,
+      cost_list_name: costHeaders[0].cost_list_name,
+      effective_date: costHeaders[0].effective_date,
+      tree,
+      flat_summary: flatSummary,
+      total_cost: totalMaterialCostRounded,
+      total_material_cost: totalMaterialCostRounded,
+      total_standard_cost: totalStandardCostRounded,
+      total_processing_cost: totalProcessingCost,
+      material_count: flatSummary.length,
+      priced_count: flatSummary.filter((i: any) => i.has_cost).length
+    }, '获取成本BOM成功'));
+  } catch (err) { next(err); }
+};
+
+/** 导出成本BOM到Excel */
+export const exportCostBom = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const costListNumber = req.query.cost_list_number as string || '';
+
+    // 复用 getCostBom 逻辑获取数据
+    const [headers]: any = await sequelize.query(
+      `SELECT * FROM bom_header WHERE bom_number = :id`,
+      { replacements: { id } }
+    );
+    if (!headers.length) { res.status(404).json({ success: false, message: 'BOM不存在' }); return; }
+
+    let selectedCostList = costListNumber;
+    if (!selectedCostList) {
+      const [latestRows]: any = await sequelize.query(
+        `SELECT TOP 1 cost_list_number FROM standard_cost_header
+         WHERE effective_date <= GETDATE()
+           AND (expiration_date IS NULL OR expiration_date >= GETDATE())
+           AND approval_status = N'已审批'
+         ORDER BY effective_date DESC`
+      );
+      if (latestRows.length > 0) selectedCostList = latestRows[0].cost_list_number;
+    }
+    if (!selectedCostList) { res.status(400).json({ success: false, message: '未找到有效成本表' }); return; }
+
+    const [costHeaders]: any = await sequelize.query(
+      `SELECT cost_list_number, cost_list_name FROM standard_cost_header WHERE cost_list_number = :cln`,
+      { replacements: { cln: selectedCostList } }
+    );
+    const [costDetails]: any = await sequelize.query(
+      `SELECT item_number, standard_cost FROM standard_cost_detail WHERE cost_list_number = :cln`,
+      { replacements: { cln: selectedCostList } }
+    );
+    const costMap: Record<string, number> = {};
+    for (const cd of costDetails) { costMap[cd.item_number] = parseFloat(cd.standard_cost) || 0; }
+
+    const baseQty = parseFloat(headers[0].base_quantity) || 1;
+    const flatResult: any[] = [];
+    const { children_material_cost: totalMaterialCost, children_standard_cost: totalStandardCost } = await expandCostBomRecursive(
+      id as string, costMap, new Set(), 0, 10, baseQty, flatResult, ''
+    );
+
+    // 分组汇总
+    const grouped: Record<string, any> = {};
+    for (const item of flatResult) {
+      if (grouped[item.material_number]) {
+        grouped[item.material_number].accumulated_quantity =
+          Math.round((grouped[item.material_number].accumulated_quantity + item.accumulated_quantity) * 10000) / 10000;
+        grouped[item.material_number].total_cost =
+          Math.round((grouped[item.material_number].total_cost + item.total_cost) * 100) / 100;
+      } else {
+        grouped[item.material_number] = { ...item };
+      }
+    }
+    const flatSummary = Object.values(grouped).sort((a: any, b: any) => b.total_cost - a.total_cost);
+    const totalMatCost = flatSummary.reduce((sum: number, i: any) => sum + i.total_cost, 0);
+    const totalStdCost = Math.round(totalStandardCost * 100) / 100;
+    const totalProcCost = Math.round((totalStdCost - Math.round(totalMaterialCost * 100) / 100) * 100) / 100;
+
+    const exportFields = ['material_number', 'material_name', 'material_type', 'unit', 'accumulated_quantity', 'unit_cost', 'total_cost', 'cost_percentage', 'bom_path'];
+    const exportHeaders = ['物料编号', '物料名称', '物料类型', '单位', '用量', '标准成本单价', '成本小计', '成本占比(%)', 'BOM路径'];
+
+    const exportData = flatSummary.map((item: any) => ({
+      ...item,
+      cost_percentage: totalMatCost > 0 ? Math.round(item.total_cost / totalMatCost * 10000) / 100 : 0
+    }));
+
+    const bomNumber = headers[0].bom_number || id;
+    const fileName = `成本BOM_${bomNumber}_${costHeaders[0]?.cost_list_name || selectedCostList}`;
+    // 在第一行添加双成本汇总信息
+    exportData.unshift({
+      material_number: '【汇总】', material_name: '', material_type: '', unit: '',
+      accumulated_quantity: '', unit_cost: '', total_cost: Math.round(totalMaterialCost * 100) / 100,
+      cost_percentage: '', bom_path: `材料成本:${totalMaterialCost.toFixed(2)} | 标准成本:${totalStdCost.toFixed(2)} | 加工成本:${totalProcCost.toFixed(2)}`
+    });
+    exportToExcel(exportData, exportFields, exportHeaders, fileName, res);
+  } catch (err) { next(err); }
+};

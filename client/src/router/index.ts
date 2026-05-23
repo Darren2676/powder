@@ -15,6 +15,7 @@ import { qualityRoutes } from './quality';
 import { financeRoutes } from './finance';
 import { integrationRoutes } from './integration';
 import { equipmentRoutes } from './equipment';
+import { scoreRoutes } from './score';
 
 const routes: RouteRecordRaw[] = [
   {
@@ -37,8 +38,8 @@ const routes: RouteRecordRaw[] = [
       {
         path: '',
         name: 'Dashboard',
-        component: () => import('@/views/Dashboard/Index.vue'),
-        meta: { title: '销售订单仪表板' }
+        component: () => import('@/views/system/Cockpit/Index.vue'),
+        meta: { title: '管理驾驶舱' }
       },
       ...systemRoutes,
       ...masterDataRoutes,
@@ -51,6 +52,7 @@ const routes: RouteRecordRaw[] = [
       ...financeRoutes,
       ...integrationRoutes,
       ...equipmentRoutes,
+      ...scoreRoutes,
     ]
   },
   {
@@ -81,6 +83,8 @@ const routePermissionMap: Record<string, string> = {
   'ShippingWarning': 'shipping-warning',
   'OverdueShipping': 'overdue-shipping',
   'ShippingByOrderSummary': 'shipping-by-order-summary',
+  'OrderProductionSummary': 'order-production-summary',
+  'SalesDashboard': 'sales-order-dashboard',
   'MpsReport': 'mps-report',
   'PlanList': 'plans',
   'MrpPage': 'mrp',
@@ -114,6 +118,7 @@ const routePermissionMap: Record<string, string> = {
   'PurchasePriceList': 'purchase-prices',
   'PieceRatePriceList': 'piece-rate-prices',
   'PieceRateWageList': 'piece-rate-wages',
+  'ProductionMaterialCost': 'production-material-cost',
   'StandardCostList': 'standard-costs',
   'AccountingPeriodList': 'accounting-periods',
   'EquipmentList': 'equipments',
@@ -124,6 +129,7 @@ const routePermissionMap: Record<string, string> = {
   'EquipmentOeeDashboard': 'equipment-oee',
   'ItemMasterList': 'item-masters',
   'BomList': 'boms',
+  'CostBomIndex': 'cost-bom',
   'ProcedureList': 'procedures',
   'WorkCenterList': 'work-centers',
   'RoutingMasterList': 'routing-masters',
@@ -131,6 +137,16 @@ const routePermissionMap: Record<string, string> = {
   'SupplierList': 'suppliers',
   'EmployeeList': 'employees',
   'ApiKeyList': 'api-keys',
+  'ScrapOrderReport': 'scrap-order-report',
+  'ScrapInventoryReport': 'scrap-inventory-report',
+  'ScrapDisposalReport': 'scrap-disposal-report',
+  'ScrapQualityStatsReport': 'scrap-quality-stats-report',
+  'ScrapInboundOrderList': 'scrap-inbound-orders',
+  'ScrapInventoryList': 'scrap-inventory',
+  'ScrapTransactionList': 'scrap-transactions',
+  'PurchaseReturnList': 'purchase-returns',
+  'PurchaseInvoiceList': 'purchase-invoices',
+  'HefeiUniversity2025': 'hefei-university-2025',
 };
 
 // Navigation guard

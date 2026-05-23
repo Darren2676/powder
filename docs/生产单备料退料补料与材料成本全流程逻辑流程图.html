@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>生产单备料退料补料与材料成本全流程逻辑流程图 - 睿信橡胶密封件MES系统</title>
+<script src="../../node_modules/mermaid/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:'default'});</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+  .page { max-width: 1300px; margin: 0 auto; padding: 32px; background: #fff; min-height: 100vh; }
+  h1 { text-align: center; font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 20px; color: #1a1a2e; margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 16px; color: #1a1a2e; margin: 20px 0 10px; }
+  .intro { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; padding: 16px; margin-bottom: 24px; font-size: 14px; }
+  .mermaid { text-align: center; margin: 16px 0; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  .warn { background: #fff1f0; border-left: 4px solid #f5222d; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 4px; }
+  .badge-blue { background: #e6f7ff; color: #1890ff; }
+  .badge-green { background: #f6ffed; color: #52c41a; }
+  .badge-red { background: #fff1f0; color: #f5222d; }
+  .badge-orange { background: #fff7e6; color: #fa8c16; }
+  .badge-purple { background: #f9f0ff; color: #722ed1; }
+  .badge-cyan { background: #e6fffb; color: #13c2c2; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>生产单备料退料补料与材料成本全流程逻辑流程图</h1>
+<div class="subtitle">睿信橡胶密封件MES系统 | 从生产单派发、备料出库、补料、退料、领料撤回到成本快照写入/冲减/删除的全链路业务流程</div>
+
+<div class="intro">
+  <strong>文档说明：</strong>本文档完整展示生产单备料出库、退料、补料和材料成本的7个阶段：<br>
+  <strong>阶段1 生产单派发与备料单生成：</strong>生产单审批 → 派发 → 自动生成备料单<br>
+  <strong>阶段2 正常领料出库：</strong>选择备料单 → 填写领料数量 → 创建领料单 → 扣减库存 → 线边仓入库 → 写入成本快照<br>
+  <strong>阶段3 补料：</strong>对同一备料单再次领料 → source_type=补料 → 扣减库存 → 写入成本快照<br>
+  <strong>阶段4 部分退料：</strong>选择领料单 → 填写退料数量 → 创建退料单 → 库存回退 → 线边仓出线 → 写入负数成本快照<br>
+  <strong>阶段5 领料撤回：</strong>删除领料单 → 库存回退 → 线边仓出线 → 删除成本快照<br>
+  <strong>阶段6 退料撤回：</strong>删除退料单 → 库存重新扣减 → 线边仓回入 → 删除负数成本快照<br>
+  <strong>阶段7 状态联动与成本汇总：</strong>备料状态/生产单状态联动重算 + 成本快照正负对冲汇总<br>
+  涵盖状态流转、数据变更矩阵、关键业务规则及各环节的数据实体关系。
+</div>
+
+<!-- ==================== 一、全流程总览 ==================== -->
+<h2>一、备料退料补料与成本全流程总览</h2>
+
+<div class="note">
+  <strong>全流程阶段概览：</strong>共7个阶段，按业务时序展开<br>
+  阶段1 生产单派发 → 阶段2 正常领料 → 阶段3 补料 → 阶段4 退料 → 阶段5 领料撤回 → 阶段6 退料撤回 → 阶段7 状态联动与成本汇总
+</div>
+
+<!-- 阶段1 -->
+<h3>阶段1：生产单派发与备料单生成</h3>
+<div class="mermaid">
+graph TB
+    PLAN[生产计划审批<br/>production_plan<br/>approval_status=已审批] --> ORDER[创建生产单<br/>production_order<br/>approval_status=草稿]
+    ORDER --> ORDER_APP[审批生产单<br/>approval_status=已审批]
+    ORDER_APP --> DISPATCH[派发生产单<br/>plan_status=已派发<br/>按BOM+工艺路线生成]
+    DISPATCH --> PREP[自动生成备料单<br/>material_preparation<br/>preparation_status=未领料<br/>material_preparation_detail<br/>issued_quantity=0]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<!-- 阶段2 -->
+<h3>阶段2：正常领料出库</h3>
+<div class="mermaid">
+graph TB
+    PREP2[备料单<br/>preparation_status=未领料/部分领料] --> SEL_ITEM[选择物料行<br/>填写实际领料数量]
+    SEL_ITEM --> CREATE_MI[创建领料单<br/>material_issue<br/>source_type=领料<br/>issue_status=已领料]
+    CREATE_MI --> DEDUCT[扣减原料库存<br/>material_inventory<br/>FIFO批次扣减<br/>汇总库存扣减]
+    DEDUCT --> TXN_OUT[记录库存流水<br/>material_inventory_transaction<br/>transaction_type=出库<br/>source_type=领料出库]
+    TXN_OUT --> LINE_IN[线边仓入线<br/>lineside_inventory_transaction<br/>transaction_type=入线边<br/>direction=IN]
+    LINE_IN --> UPD_PREP[更新备料明细已领量<br/>issued_quantity += actual_quantity]
+    UPD_PREP --> RECALC_PREP[重算备料单状态<br/>未领料/部分领料/已领料]
+    RECALC_PREP --> RECALC_ORDER[重算生产单状态<br/>首道全部领完→已备料]
+    RECALC_ORDER --> COST_SNAP[写入成本快照<br/>production_material_cost_snapshot<br/>source_type=领料<br/>issued_quantity=正数<br/>material_cost=正数]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<!-- 阶段3 -->
+<h3>阶段3：补料（再次领料）</h3>
+<div class="mermaid">
+graph TB
+    NEED_MORE[生产需要更多物料] --> SEL_ITEM2[选择物料行<br/>填写补充数量]
+    SEL_ITEM2 --> CREATE_MI2[创建领料单<br/>material_issue<br/>source_type=补料<br/>issue_status=已领料]
+    CREATE_MI2 --> DEDUCT2[扣减原料库存]
+    DEDUCT2 --> TXN_OUT2[记录库存流水<br/>source_type=领料出库]
+    TXN_OUT2 --> LINE_IN2[线边仓入线<br/>direction=IN]
+    LINE_IN2 --> UPD_PREP2[更新备料明细已领量<br/>issued_quantity += 补料数量]
+    UPD_PREP2 --> COST_SNAP2[写入成本快照<br/>source_type=补料<br/>issued_quantity=正数]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<!-- 阶段4 -->
+<h3>阶段4：部分退料</h3>
+<div class="mermaid">
+graph TB
+    OVER_ISSUED[领料过多/生产异常] --> SEL_RETURN[选择领料单<br/>填写退料数量]
+    SEL_RETURN --> VALIDATE{退料数量校验}
+    VALIDATE -->|超出可退量| REJECT[拒绝: 退料数量超过可退量]
+    VALIDATE -->|通过| CREATE_MR[创建退料单<br/>material_return<br/>return_status=已退料<br/>material_return_detail<br/>return_quantity=正数]
+    CREATE_MR --> INV_RETURN[库存回退<br/>material_inventory<br/>quantity += return_quantity<br/>优先回退原批次]
+    INV_RETURN --> TXN_IN[记录库存流水<br/>material_inventory_transaction<br/>transaction_type=入库<br/>source_type=退料入库]
+    TXN_IN --> LINE_OUT[线边仓出线<br/>lineside_inventory_transaction<br/>transaction_type=出线边<br/>source_type=退料出线<br/>direction=OUT]
+    LINE_OUT --> UPD_PREP_DEC[更新备料明细已领量<br/>issued_quantity -= return_quantity]
+    UPD_PREP_DEC --> RECALC2[重算备料单状态<br/>已领料→部分领料/未领料]
+    RECALC2 --> RECALC_ORDER2[重算生产单状态<br/>首道不再全领完→已派发]
+    RECALC_ORDER2 --> COST_NEG[写入负数成本快照<br/>production_material_cost_snapshot<br/>source_type=退料<br/>issued_quantity=负数<br/>material_cost=负数]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<!-- 阶段5 -->
+<h3>阶段5：领料撤回（整单撤回）</h3>
+<div class="mermaid">
+graph TB
+    MISTAKE[领料错误/整单撤回] --> CHECK_REPORT{报工检查}
+    CHECK_REPORT -->|后续工序已报工| BLOCK[拒绝撤回<br/>请先删除报工记录]
+    CHECK_REPORT -->|无报工冲突| ROLLBACK[开始撤回领料单]
+    ROLLBACK --> INV_BACK[库存回退<br/>material_inventory<br/>quantity += actual_quantity<br/>优先批次回退]
+    INV_BACK --> TXN_IN2[记录库存流水<br/>source_type=领料撤回<br/>transaction_type=入库]
+    TXN_IN2 --> LINE_OUT2[线边仓出线对冲<br/>source_type=领料撤回<br/>direction=OUT]
+    LINE_OUT2 --> UPD_PREP_DEC2[更新备料明细已领量<br/>issued_quantity -= actual_quantity]
+    UPD_PREP_DEC2 --> RECALC3[重算备料单状态]
+    RECALC3 --> RECALC_ORDER3[重算生产单状态<br/>已备料→已派发]
+    RECALC_ORDER3 --> DEL_SNAP[删除成本快照<br/>DELETE production_material_cost_snapshot<br/>WHERE issue_number=领料单号]
+    DEL_SNAP --> DEL_MI[删除领料单主/明细<br/>material_issue_detail<br/>material_issue]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<!-- 阶段6 -->
+<h3>阶段6：退料撤回</h3>
+<div class="mermaid">
+graph TB
+    RETURN_ERR[退料错误] --> ROLLBACK_R[开始撤回退料单]
+    ROLLBACK_R --> INV_DEDUCT[库存重新扣减<br/>material_inventory<br/>quantity -= return_quantity]
+    INV_DEDUCT --> TXN_OUT3[记录库存流水<br/>source_type=退料撤回<br/>transaction_type=出库]
+    TXN_OUT3 --> UPD_PREP_INC[更新备料明细已领量<br/>issued_quantity += return_quantity]
+    UPD_PREP_INC --> RECALC4[重算备料单状态]
+    RECALC4 --> RECALC_ORDER4[重算生产单状态<br/>已派发→已备料]
+    RECALC_ORDER4 --> DEL_NEG[删除负数成本快照<br/>DELETE production_material_cost_snapshot<br/>WHERE source_number=退料单号<br/>AND source_type=退料]
+    DEL_NEG --> LINE_IN_BACK[线边仓回入<br/>source_type=退料撤回<br/>direction=IN]
+    LINE_IN_BACK --> DEL_MR[删除退料单主/明细<br/>material_return_detail<br/>material_return]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<!-- 阶段7 -->
+<h3>阶段7：状态联动与成本汇总</h3>
+<div class="mermaid">
+graph TB
+    subgraph 备料单状态联动
+        PS0[未领料<br/>所有明细 issued_quantity=0]
+        PS1[部分领料<br/>存在明细 0&lt;issued&lt;required]
+        PS2[已领料<br/>所有明细 issued≥required]
+        PS0 -->|领料/补料| PS1
+        PS1 -->|领料/补料| PS2
+        PS2 -->|退料/领料撤回| PS1
+        PS1 -->|退料/领料撤回| PS0
+    end
+    subgraph 生产单状态联动
+        OS1[已派发<br/>首道工序未全部领完]
+        OS2[已备料<br/>首道工序全部领完]
+        OS1 -->|首道领完| OS2
+        OS2 -->|首道退料/撤回| OS1
+    end
+    subgraph 成本快照汇总
+        CS1[领料快照 source_type=领料<br/>issued_quantity>0 material_cost>0]
+        CS2[补料快照 source_type=补料<br/>issued_quantity>0 material_cost>0]
+        CS3[退料快照 source_type=退料<br/>issued_quantity&lt;0 material_cost&lt;0]
+        CS4[生产单材料成本 =<br/>SUM material_cost<br/>正负对冲]
+    end
+    CS1 --> CS4
+    CS2 --> CS4
+    CS3 --> CS4
+</div>
+
+<!-- ==================== 二、正常领料出库详细流程 ==================== -->
+<h2>二、阶段2：正常领料出库详细流程</h2>
+
+<h3>2.1 选择生产单与备料单</h3>
+<div class="mermaid">
+graph TB
+    A1[扫码/输入生产单编号] --> A2[查询生产单信息<br/>production_order<br/>plan_status=已派发/已备料]
+    A2 --> A3[查询关联备料单<br/>material_preparation<br/>按BOM+工艺路线生成]
+    A3 --> A4[加载备料明细<br/>material_preparation_detail<br/>物料编号/需求数量/已领量/未领量]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>2.2 填写领料数量</h3>
+<div class="mermaid">
+graph TB
+    B0[打开备料弹窗] --> B1[逐行填写实际备料数量<br/>input_actual_quantity<br/>可≤未领量 或 超量领料]
+    B1 --> B2[填写批次号<br/>input_batch_number<br/>可选]
+    B2 --> B3[支持添加多行<br/>同一物料分批次领料]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>2.3 事务内操作（原子性）</h3>
+<div class="mermaid">
+graph TB
+    C0[开启数据库事务] --> C1[生成领料单编号<br/>MI-YYYYMMDD-NNN]
+    C1 --> C2[INSERT material_issue 主表<br/>source_type=领料/补料]
+    C2 --> C3[INSERT material_issue_detail 明细]
+    C3 --> C4[扣减库存<br/>优先批次扣减→汇总扣减<br/>material_batch_inventory<br/>material_inventory]
+    C4 --> C5[记录库存流水<br/>material_inventory_transaction<br/>出库/领料出库]
+    C5 --> C6[更新备料明细已领量<br/>issued_quantity += actual_quantity]
+    C6 --> C7[重算备料单状态<br/>未领料→部分领料→已领料]
+    C7 --> C8[重算生产单状态<br/>首道全领完→已备料]
+    C8 --> C9[线边仓入线记录<br/>lineside_inventory_transaction]
+    C9 --> C10[写入成本快照<br/>production_material_cost_snapshot<br/>source_type=领料/补料]
+    C10 --> C11[COMMIT 事务]
+</div>
+
+<div class="note">
+  <strong>原子性保证：</strong>以上所有操作在同一个数据库事务中执行，任一步失败则全部回滚。成本快照写入失败不影响领料主流程（try-catch包裹）。
+</div>
+
+<!-- ==================== 三、补料详细流程 ==================== -->
+<h2>三、阶段3：补料详细流程</h2>
+
+<h3>3.1 补料触发</h3>
+<div class="mermaid">
+graph TB
+    D0[备料单页面<br/>点击 开始备料 ▾] --> D1{选择操作}
+    D1 -->|领料| D2[source_type=领料]
+    D1 -->|补料| D3[source_type=补料]
+    D2 --> D4[弹窗标题: 按生产单备料清单备料]
+    D3 --> D5[弹窗标题: 补料<br/>remark自动填入 补料]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>3.2 补料与领料的差异</h3>
+<div class="mermaid">
+graph TB
+    E0[复用领料逻辑<br/>同一备料单可多次领料] --> E1[唯一区别: source_type]
+    E1 --> E2[领料: source_type=领料<br/>备注为空/自定义]
+    E1 --> E3[补料: source_type=补料<br/>备注默认 补料]
+    E2 --> E4[库存扣减逻辑相同]
+    E3 --> E4
+    E4 --> E5[成本快照区分<br/>source_type不同<br/>但金额均为正数]
+</div>
+
+<div class="note">
+  <strong>补料本质：</strong>补料 = 再次领料。系统已支持同一备料单创建多条领料单，补料仅增加 source_type 标识用于区分和统计。
+</div>
+
+<!-- ==================== 四、退料详细流程 ==================== -->
+<h2>四、阶段4：部分退料详细流程</h2>
+
+<h3>4.1 退料触发</h3>
+<div class="mermaid">
+graph TB
+    F0[历史领料记录<br/>点击 退料 按钮] --> F1[查询领料单明细<br/>material_issue_detail]
+    F1 --> F2[弹出退料弹窗<br/>显示每行物料的已领数量/可退数量]
+    F2 --> F3[填写退料数量<br/>0 &lt; return_quantity ≤ max_return<br/>max_return = 已领量 - 已退量]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>4.2 退料数量校验</h3>
+<div class="mermaid">
+graph TB
+    G0[提交退料] --> G1{校验}
+    G1 -->|领料单不存在| G2[返回404错误]
+    G1 -->|退料数量≤0| G3[跳过该行]
+    G1 -->|物料不在领料单中| G4[返回400错误]
+    G1 -->|退料数量>可退量| G5[返回400: 超过可退量<br/>可退量=已领-已退]
+    G1 -->|校验通过| G6[继续执行]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>4.3 事务内操作（原子性）</h3>
+<div class="mermaid">
+graph TB
+    H0[开启数据库事务] --> H1[生成退料单编号<br/>MR-YYYYMMDD-NNN]
+    H1 --> H2[INSERT material_return 主表<br/>return_status=已退料]
+    H2 --> H3[INSERT material_return_detail 明细]
+    H3 --> H4[库存回退<br/>优先批次回退→汇总回退<br/>quantity += return_quantity]
+    H4 --> H5[记录库存流水<br/>material_inventory_transaction<br/>入库/退料入库]
+    H5 --> H6[更新备料明细已领量<br/>issued_quantity -= return_quantity]
+    H6 --> H7[重算备料单状态<br/>已领料→部分领料→未领料]
+    H7 --> H8[重算生产单状态<br/>已备料→已派发]
+    H8 --> H9[线边仓出线记录<br/>lineside_inventory_transaction<br/>source_type=退料出线<br/>direction=OUT]
+    H9 --> H10[写入负数成本快照<br/>production_material_cost_snapshot<br/>source_type=退料<br/>issued_quantity=负数<br/>material_cost=负数<br/>standard_cost=正数]
+    H10 --> H11[COMMIT 事务]
+</div>
+
+<div class="warn">
+  <strong>退料核心规则：</strong><br>
+  ① 退料数量 ≤ 该物料已领数量 - 累计已退数量<br>
+  ② 同一领料单可多次退料，每次创建新退料单<br>
+  ③ 退料不检查报工（退料只减少领料量，不影响报工数据）<br>
+  ④ 退料成本快照：issued_quantity 和 material_cost 均为负数，standard_cost 为正数（锁定当时的成本单价）
+</div>
+
+<!-- ==================== 五、领料撤回详细流程 ==================== -->
+<h2>五、阶段5：领料撤回详细流程</h2>
+
+<h3>5.1 报工冲突检查</h3>
+<div class="mermaid">
+graph TB
+    I0[点击撤回领料单] --> I1[查询领料单主/明细]
+    I1 --> I2[提取领料工序号<br/>MIN step_number]
+    I2 --> I3{该工序及后道工序<br/>是否有报工?}
+    I3 -->|有报工| I4[拒绝撤回<br/>请先删除报工记录<br/>返回409]
+    I3 -->|无报工| I5[允许撤回<br/>进入事务]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>5.2 撤回事务操作</h3>
+<div class="mermaid">
+graph TB
+    J0[开启事务] --> J1[逐行回退库存<br/>批次回退→汇总回退<br/>quantity += actual_quantity]
+    J1 --> J2[记录库存流水<br/>入库/领料撤回]
+    J2 --> J3[更新备料明细已领量<br/>issued_quantity -= actual_quantity]
+    J3 --> J4[重算备料单状态]
+    J4 --> J5[重算生产单状态<br/>已备料→已派发]
+    J5 --> J6[线边仓出线对冲<br/>source_type=领料撤回<br/>direction=OUT]
+    J6 --> J7[删除成本快照<br/>DELETE WHERE issue_number=领料单号]
+    J7 --> J8[删除领料单明细+主表]
+    J8 --> J9[COMMIT]
+</div>
+
+<!-- ==================== 六、退料撤回详细流程 ==================== -->
+<h2>六、阶段6：退料撤回详细流程</h2>
+
+<div class="mermaid">
+graph TB
+    K0[点击撤回退料单] --> K1[查询退料单主/明细]
+    K1 --> K2[逐行重新扣减库存<br/>quantity -= return_quantity]
+    K2 --> K3[记录库存流水<br/>出库/退料撤回]
+    K3 --> K4[更新备料明细已领量<br/>issued_quantity += return_quantity]
+    K4 --> K5[重算备料单状态]
+    K5 --> K6[重算生产单状态<br/>已派发→已备料]
+    K6 --> K7[线边仓回入<br/>source_type=退料撤回<br/>direction=IN]
+    K7 --> K8[删除负数成本快照<br/>DELETE WHERE source_number=退料单号<br/>AND source_type=退料]
+    K8 --> K9[删除退料单明细+主表]
+    K9 --> K10[COMMIT]
+</div>
+
+<div class="note">
+  <strong>退料撤回与领料撤回对比：</strong><br>
+  ① 退料撤回不检查报工（退料不影响报工，所以撤回退料也不需要检查）<br>
+  ② 退料撤回是扣减库存（把退回的物料再扣回去），领料撤回是回退库存<br>
+  ③ 退料撤回恢复已领量（+=），领料撤回减少已领量（-=）<br>
+  ④ 退料撤回后生产单可能恢复为"已备料"，领料撤回后可能回退为"已派发"
+</div>
+
+<!-- ==================== 七、备料单状态流转 ==================== -->
+<h2>七、备料单与生产单状态流转</h2>
+
+<h3>7.1 备料单状态</h3>
+<div class="mermaid">
+graph LR
+    S0[未领料<br/>issued=0] -->|领料/补料| S1[部分领料<br/>0&lt;issued&lt;required]
+    S1 -->|领料/补料| S2[已领料<br/>issued≥required]
+    S2 -->|退料/领料撤回| S1
+    S1 -->|退料/领料撤回| S0
+</div>
+
+<h3>7.2 生产单状态</h3>
+<div class="mermaid">
+graph LR
+    O1[已派发<br/>首道未全部领完] -->|首道工序全部领完| O2[已备料<br/>首道 issued≥required]
+    O2 -->|退料/领料撤回<br/>首道不再全领完| O1
+</div>
+
+<div class="note">
+  <strong>状态联动规则：</strong><br>
+  ① 首道工序 = material_preparation_detail 中 MIN(step_number) 的所有物料行<br>
+  ② 当首道所有物料行的 issued_quantity ≥ required_quantity 时，生产单状态从"已派发"→"已备料"<br>
+  ③ 当首道存在物料行 issued_quantity < required_quantity 时，生产单状态从"已备料"→"已派发"<br>
+  ④ 同时会回写销售订单的生产状态
+</div>
+
+<!-- ==================== 八、成本快照模型 ==================== -->
+<h2>八、成本快照数据模型与汇总</h2>
+
+<h3>8.1 成本快照表结构</h3>
+<div class="mermaid">
+graph TB
+    subgraph production_material_cost_snapshot
+        F1[snapshot_number MCS-YYYYMMDD-NNN]
+        F2[production_order_number 生产单编号]
+        F3[preparation_number 备料单编号]
+        F4[issue_number 领料单编号<br/>退料时为空]
+        F5[material_number 物料编号]
+        F6[issued_quantity 领料=正数 退料=负数]
+        F7[standard_cost 标准成本单价 正数]
+        F8[material_cost 材料成本<br/>领料=正数 退料=负数]
+        F9[source_type 领料/补料/退料]
+        F10[source_number 领料单号/退料单号]
+        F11[cost_list_number 成本表编号]
+    end
+</div>
+
+<h3>8.2 成本快照来源对应</h3>
+<table>
+<tr><th>操作</th><th>source_type</th><th>source_number</th><th>issued_quantity</th><th>material_cost</th><th>standard_cost</th></tr>
+<tr><td><span class="badge badge-blue">领料</span></td><td>领料</td><td>领料单号 MI-xxx</td><td>正数</td><td>正数</td><td>正数</td></tr>
+<tr><td><span class="badge badge-green">补料</span></td><td>补料</td><td>领料单号 MI-xxx</td><td>正数</td><td>正数</td><td>正数</td></tr>
+<tr><td><span class="badge badge-red">退料</span></td><td>退料</td><td>退料单号 MR-xxx</td><td style="color:#f5222d;font-weight:700;">负数</td><td style="color:#f5222d;font-weight:700;">负数</td><td>正数</td></tr>
+</table>
+
+<h3>8.3 成本汇总公式</h3>
+<div class="mermaid">
+graph TB
+    subgraph 生产单材料成本
+        TOTAL[生产单材料成本 =<br/>SUM material_cost<br/>FROM production_material_cost_snapshot<br/>WHERE production_order_number = :orderNo]
+        POS[领料+补料成本<br/>SUM WHERE source_type IN<br/>领料 补料<br/>material_cost > 0]
+        NEG[退料冲减<br/>SUM WHERE source_type = 退料<br/>material_cost < 0]
+        TOTAL --- POS
+        TOTAL --- NEG
+    end
+</div>
+
+<div class="note">
+  <strong>成本锁定原则：</strong><br>
+  ① 领料时按当时的标准成本单价表快照写入，后续成本表更新不影响已有快照<br>
+  ② 退料时按退料时的标准成本单价写入负数快照（如果成本表已更新，退料用新单价）<br>
+  ③ 领料撤回时直接删除该领料单的所有快照行<br>
+  ④ 退料撤回时直接删除该退料单的所有快照行
+</div>
+
+<!-- ==================== 九、数据变更矩阵 ==================== -->
+<h2>九、数据变更矩阵</h2>
+
+<table>
+<tr>
+  <th>数据表/字段</th>
+  <th>领料</th>
+  <th>补料</th>
+  <th>退料</th>
+  <th>领料撤回</th>
+  <th>退料撤回</th>
+</tr>
+<tr>
+  <td><span class="badge badge-blue">material_issue</span></td>
+  <td style="color:#52c41a;font-weight:700;">INSERT</td>
+  <td style="color:#52c41a;font-weight:700;">INSERT<br/>source_type=补料</td>
+  <td>—</td>
+  <td style="color:#f5222d;font-weight:700;">DELETE</td>
+  <td>—</td>
+</tr>
+<tr>
+  <td><span class="badge badge-blue">material_issue_detail</span></td>
+  <td style="color:#52c41a;font-weight:700;">INSERT</td>
+  <td style="color:#52c41a;font-weight:700;">INSERT</td>
+  <td>—</td>
+  <td style="color:#f5222d;font-weight:700;">DELETE</td>
+  <td>—</td>
+</tr>
+<tr>
+  <td><span class="badge badge-red">material_return</span></td>
+  <td>—</td>
+  <td>—</td>
+  <td style="color:#52c41a;font-weight:700;">INSERT</td>
+  <td>—</td>
+  <td style="color:#f5222d;font-weight:700;">DELETE</td>
+</tr>
+<tr>
+  <td><span class="badge badge-red">material_return_detail</span></td>
+  <td>—</td>
+  <td>—</td>
+  <td style="color:#52c41a;font-weight:700;">INSERT</td>
+  <td>—</td>
+  <td style="color:#f5222d;font-weight:700;">DELETE</td>
+</tr>
+<tr>
+  <td><span class="badge badge-green">material_inventory<br/>.quantity</span></td>
+  <td>-= 领料数量</td>
+  <td>-= 补料数量</td>
+  <td>+= 退料数量</td>
+  <td>+= 撤回数量</td>
+  <td>-= 退料数量</td>
+</tr>
+<tr>
+  <td><span class="badge badge-green">material_inventory_transaction</span></td>
+  <td>出库/领料出库</td>
+  <td>出库/领料出库</td>
+  <td>入库/退料入库</td>
+  <td>入库/领料撤回</td>
+  <td>出库/退料撤回</td>
+</tr>
+<tr>
+  <td><span class="badge badge-green">material_preparation_detail<br/>.issued_quantity</span></td>
+  <td>+= actual_quantity</td>
+  <td>+= 补料数量</td>
+  <td>-= return_quantity</td>
+  <td>-= actual_quantity</td>
+  <td>+= return_quantity</td>
+</tr>
+<tr>
+  <td><span class="badge badge-orange">material_preparation<br/>.preparation_status</span></td>
+  <td>重算</td>
+  <td>重算</td>
+  <td>重算</td>
+  <td>重算</td>
+  <td>重算</td>
+</tr>
+<tr>
+  <td><span class="badge badge-orange">production_order<br/>.plan_status</span></td>
+  <td>条件触发</td>
+  <td>条件触发</td>
+  <td>条件触发</td>
+  <td>条件触发</td>
+  <td>条件触发</td>
+</tr>
+<tr>
+  <td><span class="badge badge-cyan">lineside_inventory_transaction</span></td>
+  <td>入线边/领料入线</td>
+  <td>入线边/领料入线</td>
+  <td>出线边/退料出线</td>
+  <td>出线边/领料撤回</td>
+  <td>入线边/退料撤回</td>
+</tr>
+<tr>
+  <td><span class="badge badge-purple">production_material_cost_snapshot</span></td>
+  <td>INSERT<br/>source_type=领料<br/>正数</td>
+  <td>INSERT<br/>source_type=补料<br/>正数</td>
+  <td>INSERT<br/>source_type=退料<br/>负数</td>
+  <td style="color:#f5222d;font-weight:700;">DELETE<br/>WHERE issue_number</td>
+  <td style="color:#f5222d;font-weight:700;">DELETE<br/>WHERE source_number<br/>AND source_type=退料</td>
+</tr>
+</table>
+
+<!-- ==================== 十、核心业务规则汇总 ==================== -->
+<h2>十、核心业务规则汇总</h2>
+
+<h3>10.1 编号生成规则</h3>
+<table>
+<tr><th>单据</th><th>编号格式</th><th>示例</th></tr>
+<tr><td>领料单</td><td>MI-YYYYMMDD-NNN</td><td>MI-20260522-001</td></tr>
+<tr><td>退料单</td><td>MR-YYYYMMDD-NNN</td><td>MR-20260522-001</td></tr>
+<tr><td>成本快照</td><td>MCS-YYYYMMDD-NNN</td><td>MCS-20260522-001</td></tr>
+</table>
+
+<h3>10.2 退料数量约束规则</h3>
+<table>
+<tr><th>校验项</th><th>规则</th><th>说明</th></tr>
+<tr><td>退料数量 > 0</td><td>return_quantity 必须大于0</td><td>不填数量的行自动跳过</td></tr>
+<tr><td>物料在领料单中</td><td>material_number 必须存在于 issue_detail</td><td>防止退非领物料</td></tr>
+<tr><td>不超过可退量</td><td>return_quantity ≤ issued_quantity - 已退return_quantity</td><td>同一领料单可多次退料</td></tr>
+</table>
+
+<h3>10.3 领料撤回约束规则</h3>
+<table>
+<tr><th>校验项</th><th>规则</th><th>说明</th></tr>
+<tr><td>报工冲突</td><td>该领料工序及后道工序不能有报工记录</td><td>有报工则返回409，需先删除报工</td></tr>
+<tr><td>领料单存在</td><td>issue_number 必须存在</td><td>返回404</td></tr>
+</table>
+
+<h3>10.4 退料撤回约束规则</h3>
+<table>
+<tr><th>校验项</th><th>规则</th><th>说明</th></tr>
+<tr><td>退料单存在</td><td>return_number 必须存在</td><td>返回404</td></tr>
+<tr><td>无需报工检查</td><td>退料不影响报工数据</td><td>退料撤回直接执行</td></tr>
+</table>
+
+<h3>10.5 备料单状态判定规则</h3>
+<table>
+<tr><th>状态</th><th>条件</th></tr>
+<tr><td>未领料</td><td>所有明细行 issued_quantity = 0</td></tr>
+<tr><td>部分领料</td><td>存在明细行 issued_quantity > 0 且存在明细行 issued_quantity < required_quantity</td></tr>
+<tr><td>已领料</td><td>所有明细行 issued_quantity ≥ required_quantity</td></tr>
+</table>
+
+<h3>10.6 生产单状态联动规则</h3>
+<table>
+<tr><th>条件</th><th>状态变化</th></tr>
+<tr><td>首道工序所有物料行 issued_quantity ≥ required_quantity</td><td>已派发 → 已备料</td></tr>
+<tr><td>首道工序存在物料行 issued_quantity < required_quantity</td><td>已备料 → 已派发</td></tr>
+</table>
+
+<h3>10.7 关键 API 端点一览</h3>
+<table>
+<tr><th>分类</th><th>方法</th><th>端点</th><th>说明</th></tr>
+<tr><td>领料CRUD</td><td>POST</td><td>/api/v1/material-issues</td><td>创建领料单（source_type=领料/补料）</td></tr>
+<tr><td>领料CRUD</td><td>GET</td><td>/api/v1/material-issues</td><td>领料单列表</td></tr>
+<tr><td>领料CRUD</td><td>GET</td><td>/api/v1/material-issues/:id</td><td>领料单详情</td></tr>
+<tr><td>领料CRUD</td><td>DELETE</td><td>/api/v1/material-issues/:id</td><td>撤回领料单</td></tr>
+<tr><td>退料CRUD</td><td>POST</td><td>/api/v1/material-returns</td><td>创建退料单</td></tr>
+<tr><td>退料CRUD</td><td>GET</td><td>/api/v1/material-returns</td><td>退料单列表</td></tr>
+<tr><td>退料CRUD</td><td>GET</td><td>/api/v1/material-returns/:id</td><td>退料单详情</td></tr>
+<tr><td>退料CRUD</td><td>DELETE</td><td>/api/v1/material-returns/:id</td><td>撤回退料单</td></tr>
+<tr><td>成本查询</td><td>GET</td><td>/api/v1/production-material-cost</td><td>生产单材料成本（快照汇总）</td></tr>
+<tr><td>成本查询</td><td>GET</td><td>/api/v1/production-material-cost/summary</td><td>成本汇总统计</td></tr>
+<tr><td>备料查询</td><td>GET</td><td>/api/v1/material-issues/query-by-order/:orderNo</td><td>按生产单查询备料信息</td></tr>
+</table>
+
+<div style="margin-top:40px;text-align:center;color:#888;font-size:12px;">
+  文档生成时间：2026年5月22日 | 基于系统代码版本自动生成 | 生产单备料退料补料与材料成本全流程逻辑流程图
+</div>
+
+</div>
+</body>
+</html>

@@ -24,3 +24,8 @@ export const copyBomAsNewVersion = (id: string) => request.post(`/boms/${encodeU
 export const getBomTree = (id: string) => request.get(`/boms/${encodeURIComponent(id)}/tree`)
 export const getBomFlatten = (id: string) => request.get(`/boms/${encodeURIComponent(id)}/flatten`)
 export const checkMaterialHasBom = (materialNumbers: string) => request.get('/boms/check-has-bom', { params: { material_numbers: materialNumbers } })
+
+// Cost BOM
+export const getAvailableCostLists = () => request.get('/boms/available-cost-lists')
+export const getCostBom = (bomNumber: string, costListNumber?: string) => request.get(`/boms/${encodeURIComponent(bomNumber)}/cost-bom`, { params: costListNumber ? { cost_list_number: costListNumber } : {} })
+export const exportCostBomData = (bomNumber: string, costListNumber?: string) => request.get(`/boms/${encodeURIComponent(bomNumber)}/cost-bom/export`, { params: costListNumber ? { cost_list_number: costListNumber } : {}, responseType: 'blob' })

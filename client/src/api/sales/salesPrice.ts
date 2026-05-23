@@ -33,3 +33,7 @@ export function importSalesPriceList(formData: FormData) {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
 }
+
+export function downloadImportTemplate() {
+  return request.get('/sales-prices/import-template', { responseType: 'blob' })
+}

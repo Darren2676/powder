@@ -333,6 +333,23 @@ loadPlans()
         </a-button>
       </template>
 
+      <!-- 删除约束提示 -->
+      <a-alert
+        v-if="mrpResult.run_status === '已确认'"
+        message="MRP删除约束：生产工单与采购申请为配套关联单据，删除时必须同时删除，不可单独删除其中一个。"
+        type="warning"
+        show-icon
+        style="margin-bottom: 12px"
+      />
+
+      <a-alert
+        v-if="mrpResult.run_status === '已计算'"
+        message="注意：执行MRP后生成的生产工单与采购申请为配套关联单据，删除时必须同时删除两者，不可单独删除。"
+        type="info"
+        show-icon
+        style="margin-bottom: 12px"
+      />
+
       <!-- 汇总统计 -->
       <a-row :gutter="16" style="margin-bottom: 12px">
         <a-col :span="4"><a-statistic title="组件总数" :value="summary.total" /></a-col>

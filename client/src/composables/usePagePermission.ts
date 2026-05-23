@@ -100,10 +100,10 @@ export function usePagePermission(pageCode: string) {
       'outsourcing-orders': ['unit_price', 'total_amount'],
       'shipping-orders': ['unit_price', 'total_amount', 'freight'],
       'stock-ins': ['unit_price', 'total_amount'],
-      'sales-prices': ['unit_price', 'price'],
+      'sales-prices': ['tax_inclusive_price', 'tax_exclusive_price', 'tax_rate', 'min_price_inclusive', 'min_price_exclusive'],
       'purchase-prices': ['unit_price', 'price'],
-      'piece-rate-prices': ['unit_price', 'price'],
-      'standard-costs': ['standard_cost', 'actual_cost', 'price'],
+      'piece-rate-prices': ['qualified_piece_rate', 'defective_piece_rate'],
+      'standard-costs': ['standard_cost', 'actual_cost'],
       'return-orders': ['unit_price', 'total_amount'],
     };
     const fields = CONTROLLED_FIELDS[pCode];

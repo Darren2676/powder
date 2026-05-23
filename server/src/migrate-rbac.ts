@@ -147,6 +147,22 @@ async function migrate() {
         );
       }
 
+      // 二级子菜单分组 - 挂载到一级菜单下
+      const subMenus = [
+        { name: '工资管理', code: 'wage-management', parent_code: 'production', menu_key: 'wage-management', icon: 'AccountBookOutlined', sort: 9 },
+      ];
+      for (const sm of subMenus) {
+        const [parentRows]: any = await sequelize.query(
+          `SELECT id FROM permission WHERE permission_code = :code`,
+          { replacements: { code: sm.parent_code } }
+        );
+        const parentId = parentRows.length > 0 ? parentRows[0].id : null;
+        await sequelize.query(
+          `INSERT INTO permission (permission_name, permission_code, permission_type, parent_id, menu_key, icon, sort_order) VALUES (:name, :code, 'menu', :parentId, :menu_key, :icon, :sort)`,
+          { replacements: { name: sm.name, code: sm.code, parentId, menu_key: sm.menu_key, icon: sm.icon, sort: sm.sort } }
+        );
+      }
+
       // 二级页面权限 - 关联一级菜单
       const pages: Array<{ name: string; code: string; parent_code: string; menu_key: string; route: string; sort: number }> = [
         // 销售
@@ -156,7 +172,8 @@ async function migrate() {
         { name: '发货申请', code: 'shipping-requests', parent_code: 'sales', menu_key: 'shipping-requests', route: '/shipping-requests', sort: 5 },
         { name: '发货单', code: 'shipping-orders', parent_code: 'sales', menu_key: 'shipping-orders-list', route: '/shipping-orders-list', sort: 5 },
         { name: '退货单', code: 'return-orders', parent_code: 'sales', menu_key: 'return-orders', route: '/return-orders', sort: 6 },
-        { name: '销售退货报表', code: 'sales-report', parent_code: 'sales', menu_key: 'sales-report', route: '/sales-report', sort: 7 },
+        { name: '销售发票', code: 'sales-invoices', parent_code: 'sales', menu_key: 'sales-invoices', route: '/sales-invoices', sort: 7 },
+        { name: '销售退货报表', code: 'sales-report', parent_code: 'sales', menu_key: 'sales-report', route: '/sales-report', sort: 8 },
         // 生产计划
         { name: 'MPS报表', code: 'mps-report', parent_code: 'planning', menu_key: 'mps-report', route: '/mps-report', sort: 1 },
         { name: '生产计划', code: 'plans', parent_code: 'planning', menu_key: 'plans', route: '/plans', sort: 2 },
@@ -170,20 +187,28 @@ async function migrate() {
         { name: '报工记录', code: 'work-reports', parent_code: 'production', menu_key: 'work-reports', route: '/work-reports', sort: 6 },
         { name: '外协申请', code: 'outsourcing-reqs', parent_code: 'production', menu_key: 'outsourcing-reqs', route: '/outsourcing-reqs', sort: 7 },
         { name: '外协订单', code: 'outsourcing-orders', parent_code: 'production', menu_key: 'outsourcing-orders', route: '/outsourcing-orders', sort: 8 },
-        { name: '计件单价', code: 'piece-rate-prices', parent_code: 'production', menu_key: 'piece-rate-prices', route: '/piece-rate-prices', sort: 9 },
-        { name: '计件工资', code: 'piece-rate-wages', parent_code: 'production', menu_key: 'piece-rate-wages', route: '/piece-rate-wages', sort: 10 },
+        { name: '计件单价', code: 'piece-rate-prices', parent_code: 'wage-management', menu_key: 'piece-rate-prices', route: '/piece-rate-prices', sort: 1 },
+        { name: '计件工资计算', code: 'piece-rate-wages', parent_code: 'wage-management', menu_key: 'piece-rate-wages', route: '/piece-rate-wages', sort: 2 },
         // 仓储管理
         { name: '生产入库', code: 'fg-inbound', parent_code: 'warehouse', menu_key: 'fg-inbound', route: '/fg-inbound', sort: 1 },
         { name: '成品发货', code: 'fg-outbound', parent_code: 'warehouse', menu_key: 'fg-outbound', route: '/fg-outbound', sort: 2 },
         { name: '库存查询', code: 'fg-inventory-query', parent_code: 'warehouse', menu_key: 'fg-inventory-query', route: '/fg-inventory-query', sort: 3 },
-        { name: '原料仓库存', code: 'mw-inventory', parent_code: 'warehouse', menu_key: 'mw-inventory', route: '/mw-inventory', sort: 4 },
-        { name: '原料入库', code: 'mw-inbound', parent_code: 'warehouse', menu_key: 'mw-inbound', route: '/mw-inbound', sort: 5 },
-        { name: '原料出库', code: 'mw-outbound', parent_code: 'warehouse', menu_key: 'mw-outbound', route: '/mw-outbound', sort: 6 },
+        // 原料仓子菜单
+        { name: '采购收货通知', code: 'receiving-notices', parent_code: 'material-warehouse-management', menu_key: 'receiving-notices', route: '/receiving-notices', sort: 1 },
+        { name: '采购入库', code: 'mw-inbound', parent_code: 'material-warehouse-management', menu_key: 'mw-inbound', route: '/mw-inbound', sort: 2 },
+        { name: '原料出库', code: 'mw-outbound', parent_code: 'material-warehouse-management', menu_key: 'mw-outbound', route: '/mw-outbound', sort: 3 },
+        { name: '半成品生产入库', code: 'mw-production-inbound', parent_code: 'material-warehouse-management', menu_key: 'mw-production-inbound', route: '/mw-production-inbound', sort: 4 },
+        { name: '半成品生产入库单', code: 'mw-semi-inbound-orders', parent_code: 'material-warehouse-management', menu_key: 'mw-semi-inbound-orders', route: '/mw-semi-inbound-orders', sort: 5 },
+        { name: '原料仓库存', code: 'mw-inventory', parent_code: 'material-warehouse-management', menu_key: 'mw-inventory', route: '/mw-inventory', sort: 6 },
+        { name: '采购入库单', code: 'stock-ins', parent_code: 'material-warehouse-management', menu_key: 'stock-ins', route: '/stock-ins', sort: 7 },
+        { name: '物料流水记录', code: 'mw-transactions', parent_code: 'material-warehouse-management', menu_key: 'mw-transactions', route: '/mw-transactions', sort: 8 },
+        { name: '安全库存预警', code: 'mw-safety-stock', parent_code: 'material-warehouse-management', menu_key: 'mw-safety-stock', route: '/mw-safety-stock', sort: 9 },
+        { name: '采购退货出库', code: 'mw-return-outbound', parent_code: 'material-warehouse-management', menu_key: 'mw-return-outbound', route: '/mw-return-outbound', sort: 10 },
         // 采购管理
         { name: '采购申请', code: 'purchase-reqs', parent_code: 'purchasing', menu_key: 'purchase-reqs', route: '/purchase-reqs', sort: 1 },
         { name: '采购订单', code: 'purchase-orders', parent_code: 'purchasing', menu_key: 'purchase-orders', route: '/purchase-orders', sort: 2 },
         { name: '采购订单明细', code: 'purchase-order-details', parent_code: 'purchasing', menu_key: 'purchase-order-details', route: '/purchase-order-details', sort: 3 },
-        { name: '采购入库', code: 'stock-ins', parent_code: 'purchasing', menu_key: 'stock-ins', route: '/stock-ins', sort: 4 },
+        { name: '采购订单仪表板', code: 'purchasing-dashboard', parent_code: 'purchasing', menu_key: 'purchasing-dashboard', route: '/purchasing-dashboard', sort: 4 },
         // 质量管理
         { name: '批次追溯', code: 'batch-trace', parent_code: 'quality', menu_key: 'batch-trace', route: '/batch-trace', sort: 1 },
         { name: '质量报表', code: 'quality-report', parent_code: 'quality', menu_key: 'quality-report', route: '/quality-report', sort: 2 },

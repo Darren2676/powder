@@ -20,6 +20,7 @@ const RoutingMasterList = () => import('@/views/master-data/RoutingMaster/List.v
 const CustomerMaterialMapping = () => import('@/views/master-data/CustomerMaterialMapping/List.vue');
 const BomList = () => import('@/views/master-data/Bom/List.vue');
 const BomTreeViewer = () => import('@/views/master-data/Bom/TreeViewer.vue');
+const CostBomIndex = () => import('@/views/master-data/CostBom/Index.vue');
 const MfgBomList = () => import('@/views/master-data/MfgBom/List.vue');
 const MfgBomTreeViewer = () => import('@/views/master-data/MfgBom/TreeViewer.vue');
 const MouldMapping = () => import('@/views/master-data/MfgBom/MouldMapping.vue');
@@ -48,6 +49,7 @@ export const masterDataRoutes: RouteRecordRaw[] = [
   { path: 'customer-material-mapping', name: 'CustomerMaterialMapping', component: CustomerMaterialMapping, meta: {"title":"客户物料对照表"} },
   { path: 'boms', name: 'BomList', component: BomList, meta: {"title":"BOM物料清单"} },
   { path: 'bom-tree', name: 'BomTreeViewer', component: BomTreeViewer, meta: {"title":"BOM结构树"} },
+  { path: 'cost-bom', name: 'CostBomIndex', component: CostBomIndex, meta: {"title":"成本BOM"} },
   { path: 'mfg-boms', name: 'MfgBomList', component: MfgBomList, meta: {"title":"制造BOM管理"} },
   { path: 'mfg-bom-tree', name: 'MfgBomTreeViewer', component: MfgBomTreeViewer, meta: {"title":"制造BOM结构"} },
   { path: 'mould-bom-mapping', name: 'MouldMapping', component: MouldMapping, meta: {"title":"模具BOM映射"} },

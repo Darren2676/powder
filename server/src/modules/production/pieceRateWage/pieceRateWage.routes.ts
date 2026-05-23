@@ -4,13 +4,14 @@ import { validateCreatePieceRateWage, validateUpdatePieceRateWage } from '../../
 import {
   getPieceRateWages, getPieceRateWageDetail, getPieceRateWageSummary,
   createPieceRateWage, updatePieceRateWage, deletePieceRateWage,
-  calculatePieceRateWage, exportPieceRateWages
+  calculatePieceRateWage, exportPieceRateWages, exportPieceRateWagesSelected
 } from './pieceRateWage.controller';
 
 const router = Router();
 
 router.get('/', authenticate, getPieceRateWages);
 router.get('/export', authenticate, exportPieceRateWages);
+router.post('/export-selected', authenticate, exportPieceRateWagesSelected);
 router.post('/', authenticate, validateCreatePieceRateWage, createPieceRateWage);
 router.post('/:id/calculate', authenticate, calculatePieceRateWage);
 router.get('/:id/summary', authenticate, getPieceRateWageSummary);

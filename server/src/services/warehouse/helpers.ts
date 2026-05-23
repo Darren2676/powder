@@ -112,13 +112,14 @@ export const createMaterialTransaction = async (
     basic_unit: string; warehouse_number: string; warehouse_name: string;
     quantity: number; before_quantity: number; after_quantity: number;
     batch_number: string; supplier_number?: string; supplier_name?: string;
-    operator: string; remark: string;
+    operator: string; remark: string; accounting_period?: string;
   },
   transaction?: Transaction
 ) => {
+  const ap = params.accounting_period || new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
   await sequelize.query(
-    "INSERT INTO material_inventory_transaction (transaction_number, transaction_type, source_type, source_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, before_quantity, after_quantity, batch_number, supplier_number, supplier_name, operator, operation_date, remark, creation_date) VALUES (:transaction_number, :transaction_type, :source_type, :source_number, :item_number, :item_name, :item_type, :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity, :batch_number, :supplier_number, :supplier_name, :operator, GETDATE(), :remark, GETDATE())",
-    { replacements: { ...params, supplier_number: params.supplier_number || '', supplier_name: params.supplier_name || '' }, transaction }
+    "INSERT INTO material_inventory_transaction (transaction_number, transaction_type, source_type, source_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, before_quantity, after_quantity, batch_number, supplier_number, supplier_name, operator, operation_date, remark, creation_date, accounting_period) VALUES (:transaction_number, :transaction_type, :source_type, :source_number, :item_number, :item_name, :item_type, :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity, :batch_number, :supplier_number, :supplier_name, :operator, GETDATE(), :remark, GETDATE(), :accounting_period)",
+    { replacements: { ...params, supplier_number: params.supplier_number || '', supplier_name: params.supplier_name || '', accounting_period: ap }, transaction }
   );
 };
 
@@ -228,5 +229,22 @@ export const createTransactionBatches = async (
       'INSERT INTO inventory_transaction_batch (transaction_number, batch_number, quantity, creation_date) VALUES (:transaction_number, :batch_number, :quantity, GETDATE())',
       { replacements: { transaction_number, batch_number: bd.batch_number, quantity: bd.quantity }, transaction }
     );
+  }
+};
+
+/** 校验会计期间是否已开启 */
+export const validateAccountingPeriodOpen = async (accountingPeriod: string): Promise<void> => {
+  if (!accountingPeriod) {
+    throw new BusinessError(400, '请选择会计期间');
+  }
+  const [rows]: any = await sequelize.query(
+    `SELECT id, status, period_name FROM accounting_period WHERE period_code = :ap`,
+    { replacements: { ap: accountingPeriod } }
+  );
+  if (rows.length === 0) {
+    throw new BusinessError(400, '会计期间不存在: ' + accountingPeriod);
+  }
+  if (rows[0].status !== '已开启') {
+    throw new BusinessError(400, `会计期间「${rows[0].period_name}」状态为${rows[0].status}，不允许操作`);
   }
 };

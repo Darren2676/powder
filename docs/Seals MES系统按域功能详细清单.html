@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Seals MES 系统按域功能详细清单</title>
+<style>
+  @page { size: A4 landscape; margin: 15mm 12mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Microsoft YaHei', '微软雅黑', 'SimHei', sans-serif; color: #1a1a2e; background: #fff; font-size: 9px; line-height: 1.4; }
+
+  /* ===== Cover Page ===== */
+  .cover { page-break-after: always; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: linear-gradient(135deg, #0f0c29, #302b63, #24243e); color: #fff; text-align: center; }
+  .cover h1 { font-size: 36px; letter-spacing: 6px; margin-bottom: 20px; }
+  .cover .subtitle { font-size: 16px; opacity: 0.7; margin-bottom: 40px; }
+  .cover .stats { display: flex; gap: 40px; margin-top: 30px; }
+  .cover .stat-item { text-align: center; }
+  .cover .stat-num { font-size: 48px; font-weight: 700; color: #4fc3f7; }
+  .cover .stat-label { font-size: 13px; opacity: 0.6; margin-top: 4px; }
+  .cover .date { margin-top: 50px; font-size: 13px; opacity: 0.5; }
+
+  /* ===== Summary Page ===== */
+  .summary-page { page-break-after: always; padding: 20px; }
+  .summary-page h2 { font-size: 18px; text-align: center; margin-bottom: 16px; color: #302b63; border-bottom: 3px solid #4fc3f7; padding-bottom: 8px; display: inline-block; }
+  .summary-center { text-align: center; }
+
+  /* ===== Domain Section ===== */
+  .domain-section { page-break-before: always; padding: 10px 15px; }
+  .domain-section:first-of-type { page-break-before: auto; }
+
+  .domain-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 10px 16px; border-radius: 8px; color: #fff; }
+  .domain-header .domain-icon { font-size: 22px; }
+  .domain-header .domain-title { font-size: 16px; font-weight: 700; letter-spacing: 1px; }
+  .domain-header .domain-subtitle { font-size: 10px; opacity: 0.8; }
+  .domain-header .domain-count { margin-left: auto; font-size: 28px; font-weight: 700; opacity: 0.3; }
+
+  /* Domain Colors */
+  .bg-master-data { background: linear-gradient(135deg, #667eea, #764ba2); }
+  .bg-sales { background: linear-gradient(135deg, #f093fb, #f5576c); }
+  .bg-planning { background: linear-gradient(135deg, #4facfe, #00f2fe); }
+  .bg-production { background: linear-gradient(135deg, #43e97b, #38f9d7); }
+  .bg-purchasing { background: linear-gradient(135deg, #fa709a, #fee140); }
+  .bg-quality { background: linear-gradient(135deg, #a18cd1, #fbc2eb); }
+  .bg-warehouse { background: linear-gradient(135deg, #fccb90, #d57eeb); }
+  .bg-equipment { background: linear-gradient(135deg, #5ee7df, #b490ca); }
+  .bg-finance { background: linear-gradient(135deg, #c3cfe2, #f5f7fa); color: #333; }
+  .bg-integration { background: linear-gradient(135deg, #667eea, #764ba2); }
+  .bg-system { background: linear-gradient(135deg, #89f7fe, #66a6ff); }
+  .bg-open { background: linear-gradient(135deg, #a1c4fd, #c2e9fb); color: #333; }
+
+  /* ===== Table ===== */
+  table { width: 100%; border-collapse: collapse; font-size: 8.5px; }
+  thead th { background: #302b63; color: #fff; padding: 6px 8px; text-align: left; font-weight: 600; font-size: 8px; white-space: nowrap; }
+  thead th:first-child { border-radius: 4px 0 0 0; width: 28px; text-align: center; }
+  thead th:nth-child(2) { width: 90px; }
+  thead th:nth-child(3) { width: 120px; }
+  thead th:nth-child(4) { width: 145px; }
+  thead th:nth-child(5) { width: 145px; }
+  thead th:last-child { border-radius: 0 4px 0 0; }
+  tbody td { padding: 5px 8px; border-bottom: 1px solid #e8eaf6; vertical-align: top; }
+  tbody tr:nth-child(even) { background: #f8f9ff; }
+  tbody tr:hover { background: #e8eaf6; }
+  tbody td:first-child { text-align: center; font-weight: 700; color: #302b63; }
+  .module-name { font-weight: 600; color: #302b63; }
+  .api-path { font-family: 'Consolas', 'Courier New', monospace; font-size: 7.5px; color: #5c6bc0; }
+  .db-table { font-family: 'Consolas', 'Courier New', monospace; font-size: 7.5px; color: #7b1fa2; background: #f3e5f5; padding: 1px 4px; border-radius: 3px; white-space: nowrap; }
+  .desc { color: #455a64; }
+
+  /* ===== Flow Chart (Appendix A) ===== */
+  .flow-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; display: flex; align-items: flex-start; gap: 12px; background: #fafbff; }
+  .flow-num { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; background: #302b63; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; }
+  .flow-content { flex: 1; }
+  .flow-title { font-weight: 700; font-size: 11px; color: #302b63; margin-bottom: 3px; }
+  .flow-domains { font-size: 8px; color: #7986cb; margin-bottom: 4px; }
+  .flow-steps { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  .flow-step { background: #e8eaf6; color: #3949ab; padding: 2px 8px; border-radius: 10px; font-size: 8px; font-weight: 500; }
+  .flow-arrow { color: #9fa8da; font-size: 10px; }
+
+  /* ===== Stats Bar (Appendix B) ===== */
+  .stats-bar-container { margin-top: 8px; }
+  .stats-bar-row { display: flex; align-items: center; margin-bottom: 5px; }
+  .stats-bar-label { width: 70px; font-size: 9px; font-weight: 600; color: #302b63; text-align: right; padding-right: 8px; }
+  .stats-bar-track { flex: 1; height: 18px; background: #e8eaf6; border-radius: 9px; overflow: hidden; position: relative; }
+  .stats-bar-fill { height: 100%; border-radius: 9px; display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; font-size: 8px; font-weight: 700; color: #fff; min-width: 30px; transition: width 0.3s; }
+  .stats-bar-value { width: 30px; font-size: 9px; font-weight: 700; color: #302b63; text-align: right; }
+
+  .stats-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  .stats-table th { background: #302b63; color: #fff; padding: 6px 10px; font-size: 9px; }
+  .stats-table td { padding: 5px 10px; border-bottom: 1px solid #e0e0e0; font-size: 9px; text-align: center; }
+  .stats-table td:first-child { text-align: left; font-weight: 600; }
+  .stats-table tr:last-child { background: #e8eaf6; font-weight: 700; }
+
+  /* ===== Misc ===== */
+  .appendix { page-break-before: always; padding: 10px 15px; }
+  .appendix h2 { font-size: 18px; color: #302b63; margin-bottom: 14px; padding-bottom: 6px; border-bottom: 3px solid #4fc3f7; display: inline-block; }
+  .page-footer { text-align: center; font-size: 8px; color: #bbb; padding: 8px 0; }
+</style>
+</head>
+<body>
+
+<!-- ============ Cover ============ -->
+<div class="cover">
+  <h1>Seals MES</h1>
+  <div class="subtitle">制造执行系统 · 按域功能详细清单</div>
+  <div class="stats">
+    <div class="stat-item"><div class="stat-num">12</div><div class="stat-label">业务域</div></div>
+    <div class="stat-item"><div class="stat-num">122</div><div class="stat-label">功能模块</div></div>
+    <div class="stat-item"><div class="stat-num">113</div><div class="stat-label">后端路由</div></div>
+    <div class="stat-item"><div class="stat-num">103</div><div class="stat-label">前端页面</div></div>
+  </div>
+  <div class="date">统计时间：2026-05-21 | 前后端+数据库三层交叉验证</div>
+</div>
+
+<!-- ============ 一、基础数据域 ============ -->
+<div class="domain-section">
+  <div class="domain-header bg-master-data">
+    <span class="domain-icon">📦</span>
+    <div><div class="domain-title">一、基础数据域</div><div class="domain-subtitle">master-data</div></div>
+    <span class="domain-count">23</span>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td class="module-name">客户管理</td><td>Customer/</td><td class="api-path">/customers</td><td><span class="db-table">customer</span></td><td class="desc">客户档案CRUD，含开票信息（抬头/税号/地址/银行账号）</td></tr>
+      <tr><td>2</td><td class="module-name">供应商管理</td><td>Supplier/</td><td class="api-path">/suppliers</td><td><span class="db-table">supplier</span></td><td class="desc">供应商档案CRUD，含税务/银行信息</td></tr>
+      <tr><td>3</td><td class="module-name">物料主文件</td><td>ItemMaster/</td><td class="api-path">/item-masters</td><td><span class="db-table">item_master</span></td><td class="desc">物料档案CRUD，含质量特性启用标志、默认仓库</td></tr>
+      <tr><td>4</td><td class="module-name">物料分类</td><td>MaterialClass/</td><td class="api-path">/material-classes</td><td><span class="db-table">material_class</span></td><td class="desc">物料分类树形管理</td></tr>
+      <tr><td>5</td><td class="module-name">物料属性</td><td>MateriaProperty/</td><td class="api-path">/materia-properties</td><td><span class="db-table">materia_property</span></td><td class="desc">物料属性定义（原料/成品/半成品等）</td></tr>
+      <tr><td>6</td><td class="module-name">产品分类</td><td>ProductClass/</td><td class="api-path">/product-classes</td><td><span class="db-table">product_class</span></td><td class="desc">产品分类管理</td></tr>
+      <tr><td>7</td><td class="module-name">产品管理</td><td>Product/</td><td class="api-path">/products</td><td><span class="db-table">product</span></td><td class="desc">产品档案管理</td></tr>
+      <tr><td>8</td><td class="module-name">物料管理</td><td>Material/</td><td class="api-path">/materials</td><td><span class="db-table">material</span></td><td class="desc">物料基础信息管理</td></tr>
+      <tr><td>9</td><td class="module-name">客户物料映射</td><td>CustomerMaterialMapping/</td><td class="api-path">/customer-material-mappings</td><td><span class="db-table">customer_material_mapping</span></td><td class="desc">客户与物料编号对照关系</td></tr>
+      <tr><td>10</td><td class="module-name">BOM管理</td><td>Bom/</td><td class="api-path">/boms</td><td><span class="db-table">bom / bom_detail</span></td><td class="desc">标准BOM清单及明细行管理</td></tr>
+      <tr><td>11</td><td class="module-name">制造BOM</td><td>MfgBom/</td><td class="api-path">/mfg-boms</td><td><span class="db-table">mfg_bom / mfg_bom_detail</span></td><td class="desc">制造BOM（含替代料/损耗率）</td></tr>
+      <tr><td>12</td><td class="module-name">工序管理</td><td>Procedure/</td><td class="api-path">/procedures</td><td><span class="db-table">procedure</span></td><td class="desc">工序定义（编号/名称/类型/工时）</td></tr>
+      <tr><td>13</td><td class="module-name">工作中心</td><td>WorkCenter/</td><td class="api-path">/work-centers</td><td><span class="db-table">work_center</span></td><td class="desc">工作中心管理，关联车间/设备</td></tr>
+      <tr><td>14</td><td class="module-name">工艺路线</td><td>RoutingMaster/</td><td class="api-path">/routing-masters</td><td><span class="db-table">routing_master / routing_detail</span></td><td class="desc">工艺路线主表+工序明细行管理</td></tr>
+      <tr><td>15</td><td class="module-name">单位管理</td><td>Unit/</td><td class="api-path">/units</td><td><span class="db-table">unit</span></td><td class="desc">计量单位CRUD</td></tr>
+      <tr><td>16</td><td class="module-name">仓库管理</td><td>Warehouse/</td><td class="api-path">/warehouses</td><td><span class="db-table">warehouse</span></td><td class="desc">仓库档案（编号/名称/类型：成品仓/原料仓/报废仓等）</td></tr>
+      <tr><td>17</td><td class="module-name">库位管理</td><td>StorageLocation/</td><td class="api-path">/storage-locations</td><td><span class="db-table">storage_location</span></td><td class="desc">仓库内库位管理</td></tr>
+      <tr><td>18</td><td class="module-name">车间管理</td><td>Workshop/</td><td class="api-path">/workshops</td><td><span class="db-table">workshop</span></td><td class="desc">车间档案管理</td></tr>
+      <tr><td>19</td><td class="module-name">生产线</td><td>Productionline/</td><td class="api-path">/productionlines</td><td><span class="db-table">production_line</span></td><td class="desc">产线档案管理</td></tr>
+      <tr><td>20</td><td class="module-name">班组管理</td><td>Team/</td><td class="api-path">/teams</td><td><span class="db-table">team</span></td><td class="desc">班组档案管理</td></tr>
+      <tr><td>21</td><td class="module-name">班次管理</td><td>Schedule/</td><td class="api-path">/schedules</td><td><span class="db-table">schedule</span></td><td class="desc">班次定义（早班/中班/晚班）</td></tr>
+      <tr><td>22</td><td class="module-name">员工管理</td><td>Employee/</td><td class="api-path">/employees</td><td><span class="db-table">employee</span></td><td class="desc">员工档案（工号/姓名/部门/岗位）</td></tr>
+      <tr><td>23</td><td class="module-name">物流公司</td><td>LogisticsCompany/</td><td class="api-path">/logistics-companies</td><td><span class="db-table">logistics_company</span></td><td class="desc">承运商/物流公司管理</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 二、销售管理域 ============ -->
+<div class="domain-section">
+  <div class="domain-header bg-sales">
+    <span class="domain-icon">💰</span>
+    <div><div class="domain-title">二、销售管理域</div><div class="domain-subtitle">sales</div></div>
+    <span class="domain-count">10</span>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td class="module-name">销售订单</td><td>SalesOrder/</td><td class="api-path">/sales-orders</td><td><span class="db-table">sales_order / sales_order_detail</span></td><td class="desc">订单CRUD+审批，明细行含shipping_status/invoice_status/production_status多维度状态跟踪</td></tr>
+      <tr><td>2</td><td class="module-name">销售预测</td><td>Forecast/</td><td class="api-path">/forecasts</td><td><span class="db-table">sales_forecast / sales_forecast_detail</span></td><td class="desc">预测录入+审批，作为MPS需求来源</td></tr>
+      <tr><td>3</td><td class="module-name">销售价目表</td><td>SalesPrice/</td><td class="api-path">/sales-prices</td><td><span class="db-table">sales_price</span></td><td class="desc">客户+物料维度定价管理</td></tr>
+      <tr><td>4</td><td class="module-name">发货申请</td><td>ShippingRequest/</td><td class="api-path">/shipping-requests</td><td><span class="db-table">shipping_request / shipping_request_detail</span></td><td class="desc">从销售订单创建发货申请，审核后可出库</td></tr>
+      <tr><td>5</td><td class="module-name">销售发货单</td><td>ShippingOrder/</td><td class="api-path">/shipping-orders</td><td><span class="db-table">shipping_order / shipping_order_detail</span></td><td class="desc">发货出库后自动生成，支持批次FIFO/箱码出库，明细行含invoice_status开票状态</td></tr>
+      <tr><td>6</td><td class="module-name">退货单</td><td>ReturnOrder/</td><td class="api-path">/return-orders</td><td><span class="db-table">return_order / return_order_detail</span></td><td class="desc">退款退货/退货换货，确认后触发退货入库</td></tr>
+      <tr><td>7</td><td class="module-name">销售发票</td><td>SalesInvoice/</td><td class="api-path">/sales-invoices</td><td><span class="db-table">sales_invoice / sales_invoice_line</span></td><td class="desc">发票CRUD+审批/撤消，明细行关联发货明细和销售明细，审批后联动更新开票状态</td></tr>
+      <tr><td>8</td><td class="module-name">销售报表</td><td>SalesReport/</td><td class="api-path">/sales-report</td><td>—</td><td class="desc">销售统计报表</td></tr>
+      <tr><td>9</td><td class="module-name">发货预警</td><td>ShippingWarning/</td><td>—</td><td>—</td><td class="desc">超期未发货/逾期提醒</td></tr>
+      <tr><td>10</td><td class="module-name">按订单发货汇总</td><td>ShippingByOrderSummary/</td><td>—</td><td>—</td><td class="desc">按销售订单维度汇总发货情况</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 三、计划管理域 ============ -->
+<div class="domain-section">
+  <div class="domain-header bg-planning">
+    <span class="domain-icon">📊</span>
+    <div><div class="domain-title">三、计划管理域</div><div class="domain-subtitle">planning</div></div>
+    <span class="domain-count">3</span>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td class="module-name">生产计划</td><td>Plan/</td><td class="api-path">/plans</td><td><span class="db-table">Production_plan / Production_plan_detail</span></td><td class="desc">生产计划CRUD+审批，支持MPS导入，明细行含MRP状态</td></tr>
+      <tr><td>2</td><td class="module-name">MPS主生产计划</td><td>MPS/</td><td class="api-path">/mps</td><td>—</td><td class="desc">MPS计算（毛需求→净需求→建议计划），从需求来源（销售订单+预测）导入</td></tr>
+      <tr><td>3</td><td class="module-name">MRP物料需求计划</td><td>MRP/</td><td class="api-path">/mrp</td><td><span class="db-table">mrp_run / mrp_run_detail</span></td><td class="desc">MRP运算（BFS展开BOM），生成生产单+采购申请，执行后可拆分/派发</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 四、生产管理域 ============ -->
+<div class="domain-section">
+  <div class="domain-header bg-production">
+    <span class="domain-icon">🏭</span>
+    <div><div class="domain-title">四、生产管理域</div><div class="domain-subtitle">production</div></div>
+    <span class="domain-count">18</span>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td class="module-name">生产订单</td><td>Order/</td><td class="api-path">/orders</td><td><span class="db-table">production_order</span></td><td class="desc">生产单管理，支持拆分/派发+生成工序任务和备料单</td></tr>
+      <tr><td>2</td><td class="module-name">工序任务</td><td>ProcessTask/</td><td class="api-path">/process-tasks</td><td><span class="db-table">process_task</span></td><td class="desc">工序任务管理，含倒冲标志(is_backflush)，支持快速报工</td></tr>
+      <tr><td>3</td><td class="module-name">报工管理</td><td>WorkReport/</td><td class="api-path">/work-reports</td><td><span class="db-table">work_report / work_report_detail</span></td><td class="desc">生产报工（合格/不合格数量），支持快速报工和详情报工</td></tr>
+      <tr><td>4</td><td class="module-name">备料单</td><td>MaterialPreparation/</td><td class="api-path">/material-preparations</td><td><span class="db-table">material_preparation / material_preparation_detail</span></td><td class="desc">派发时自动生成，记录各工序所需物料</td></tr>
+      <tr><td>5</td><td class="module-name">领料单</td><td>MaterialIssue/</td><td class="api-path">/material-issues</td><td><span class="db-table">material_issue</span></td><td class="desc">从备料单创建领料单，扣减原料库存</td></tr>
+      <tr><td>6</td><td class="module-name">倒冲任务</td><td>—</td><td class="api-path">/backflush-tasks</td><td><span class="db-table">backflush_task</span></td><td class="desc">自动倒冲领料（按BOM耗用）</td></tr>
+      <tr><td>7</td><td class="module-name">委外申请</td><td>OutsourcingReq/</td><td class="api-path">/outsourcing-reqs</td><td><span class="db-table">outsourcing_req</span></td><td class="desc">委外加工申请</td></tr>
+      <tr><td>8</td><td class="module-name">委外订单</td><td>OutsourcingOrder/</td><td class="api-path">/outsourcing-orders</td><td><span class="db-table">outsourcing_order</span></td><td class="desc">委外订单CRUD+发出，关联工序任务</td></tr>
+      <tr><td>9</td><td class="module-name">委外发料</td><td>OutsourcingIssue/</td><td class="api-path">/outsourcing/issue</td><td><span class="db-table">outsourcing_issue</span></td><td class="desc">委外原料发料，支持移动端操作+打印标签+拍照</td></tr>
+      <tr><td>10</td><td class="module-name">委外收货</td><td>OutsourcingReceipt/</td><td class="api-path">/outsourcing/receipt</td><td><span class="db-table">outsourcing_receipt</span></td><td class="desc">委外收货确认，触发检验路由，支持移动端</td></tr>
+      <tr><td>11</td><td class="module-name">委外检验</td><td>OutsourcingInspection/</td><td class="api-path">/outsourcing/inspection</td><td>—</td><td class="desc">委外来料检验，支持移动端</td></tr>
+      <tr><td>12</td><td class="module-name">委外结算</td><td>OutsourcingSettlement/</td><td class="api-path">/outsourcing/settlement</td><td><span class="db-table">outsourcing_settlement</span></td><td class="desc">委外费用结算</td></tr>
+      <tr><td>13</td><td class="module-name">委外退料入库</td><td>—</td><td class="api-path">/outsourcing/return-stockin</td><td>—</td><td class="desc">委外余料退回入库</td></tr>
+      <tr><td>14</td><td class="module-name">委外价目表</td><td>OutsourcingPrice/</td><td class="api-path">/outsourcing-prices</td><td><span class="db-table">outsourcing_price</span></td><td class="desc">委外供应商+物料维度定价</td></tr>
+      <tr><td>15</td><td class="module-name">在制品报表</td><td>WIP/</td><td class="api-path">/wip</td><td>—</td><td class="desc">在制品统计报表</td></tr>
+      <tr><td>16</td><td class="module-name">计件工资</td><td>PieceRateWage/</td><td class="api-path">/piece-rate-wages</td><td><span class="db-table">piece_rate_wage</span></td><td class="desc">按报工数量×计件单价计算工资</td></tr>
+      <tr><td>17</td><td class="module-name">甘特图</td><td>Gantt/</td><td class="api-path">/orders/gantt</td><td>—</td><td class="desc">生产排程甘特图视图</td></tr>
+      <tr><td>18</td><td class="module-name">派发打印</td><td>DispatchPrint/</td><td class="api-path">/orders/print-data</td><td>—</td><td class="desc">派工单/流程卡打印</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 五、采购管理域 ============ -->
+<div class="domain-section">
+  <div class="domain-header bg-purchasing">
+    <span class="domain-icon">🛒</span>
+    <div><div class="domain-title">五、采购管理域</div><div class="domain-subtitle">purchasing</div></div>
+    <span class="domain-count">7</span>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td class="module-name">采购申请</td><td>PurchaseReq/</td><td class="api-path">/purchase-reqs</td><td><span class="db-table">purchase_req / purchase_req_detail</span></td><td class="desc">采购申请CRUD+审批，支持合并转采购订单，转单后回写明细行状态</td></tr>
+      <tr><td>2</td><td class="module-name">采购订单</td><td>PurchaseOrder/</td><td class="api-path">/purchase-orders</td><td><span class="db-table">purchase_order / purchase_order_detail</span></td><td class="desc">采购订单CRUD+审批，支持从采购申请转单，删除后回写申请明细</td></tr>
+      <tr><td>3</td><td class="module-name">收货通知</td><td>ReceivingNotice/</td><td class="api-path">/receiving-notices</td><td><span class="db-table">receiving_notice / receiving_notice_detail</span></td><td class="desc">采购收货通知，确认后触发检验路由</td></tr>
+      <tr><td>4</td><td class="module-name">采购入库</td><td>StockIn/</td><td class="api-path">/stock-ins</td><td><span class="db-table">stock_in / stock_in_detail</span></td><td class="desc">采购入库单CRUD+确认/撤回，含会计期间字段</td></tr>
+      <tr><td>5</td><td class="module-name">采购退货</td><td>PurchaseReturn/</td><td class="api-path">/purchase-returns</td><td><span class="db-table">purchase_return</span></td><td class="desc">采购退货出库</td></tr>
+      <tr><td>6</td><td class="module-name">采购价目表</td><td>PurchasePrice/</td><td class="api-path">/purchase-prices</td><td><span class="db-table">purchase_price</span></td><td class="desc">供应商+物料维度采购定价</td></tr>
+      <tr><td>7</td><td class="module-name">采购计算器</td><td>PurchaseCalc/</td><td class="api-path">/purchase-calc</td><td>—</td><td class="desc">采购量/金额计算工具</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 六、质量管理域 ============ -->
+<div class="domain-section">
+  <div class="domain-header bg-quality">
+    <span class="domain-icon">🔬</span>
+    <div><div class="domain-title">六、质量管理域</div><div class="domain-subtitle">quality</div></div>
+    <span class="domain-count">17</span>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td class="module-name">来料检验规范</td><td>IncomingInspectSpec/</td><td class="api-path">/quality/incoming-inspect-specs</td><td><span class="db-table">incoming_inspect_spec / incoming_inspect_spec_item</span></td><td class="desc">按物料编号精确匹配检验规范，含抽检方式/检验项目/质量特性</td></tr>
+      <tr><td>2</td><td class="module-name">来料检验方案</td><td>IncomingInspectPlan/</td><td class="api-path">/quality/incoming-inspect-plans</td><td><span class="db-table">incoming_inspect_plan</span></td><td class="desc">检验方案CRUD，含抽检方式(全检/抽检)、检验部门、检验员、质量特性启用</td></tr>
+      <tr><td>3</td><td class="module-name">生产检验规范</td><td>InspectionSpec/</td><td class="api-path">/quality/inspection-specs</td><td><span class="db-table">inspection_spec / inspection_spec_item</span></td><td class="desc">生产过程检验规范定义</td></tr>
+      <tr><td>4</td><td class="module-name">生产检验方案</td><td>InspectionPlan/</td><td class="api-path">/quality/inspection-plans</td><td><span class="db-table">inspection_plan</span></td><td class="desc">生产检验方案管理</td></tr>
+      <tr><td>5</td><td class="module-name">采购检验报告</td><td>QualityReport/</td><td class="api-path">/quality/quality-report</td><td><span class="db-table">purchase_quality_inspection / purchase_quality_inspection_detail</span></td><td class="desc">采购来料检验单，含合格/不合格/特采判定，缺陷明细行，质量特性启用</td></tr>
+      <tr><td>6</td><td class="module-name">生产检验报告</td><td>ProductionInspection/</td><td class="api-path">/quality/production-inspections</td><td><span class="db-table">production_inspection</span></td><td class="desc">生产过程检验，支持合格/不合格判定+缺陷处理</td></tr>
+      <tr><td>7</td><td class="module-name">不合格品管理</td><td>NonconformingProduct/</td><td class="api-path">/quality/nonconforming-products</td><td><span class="db-table">nonconforming_product</span></td><td class="desc">NC单管理，支持返修/报废/让步接收，按缺陷行拆分</td></tr>
+      <tr><td>8</td><td class="module-name">返修单</td><td>ReworkOrder/</td><td class="api-path">/quality/rework-orders</td><td><span class="db-table">rework_order</span></td><td class="desc">返修工单，完成后可重新检验</td></tr>
+      <tr><td>9</td><td class="module-name">缺陷分类</td><td>DefectClass/</td><td class="api-path">/quality/defect-classes</td><td><span class="db-table">defect_class</span></td><td class="desc">缺陷大类管理</td></tr>
+      <tr><td>10</td><td class="module-name">缺陷项目</td><td>Defect/</td><td class="api-path">/quality/defects</td><td><span class="db-table">defect</span></td><td class="desc">缺陷项目定义，关联缺陷分类</td></tr>
+      <tr><td>11</td><td class="module-name">缺陷原因</td><td>DefectReason/</td><td class="api-path">/quality/defect-reasons</td><td><span class="db-table">defect_reason</span></td><td class="desc">缺陷原因字典</td></tr>
+      <tr><td>12</td><td class="module-name">质量特性</td><td>QualityCharacteristic/</td><td class="api-path">/quality/quality-characteristics</td><td><span class="db-table">quality_characteristic</span></td><td class="desc">检验项目/质量特性定义</td></tr>
+      <tr><td>13</td><td class="module-name">报废订单报表</td><td>ScrapOrderReport/</td><td class="api-path">/quality/scrap-order-report</td><td>—</td><td class="desc">报废订单统计报表</td></tr>
+      <tr><td>14</td><td class="module-name">报废库存报表</td><td>ScrapInventoryReport/</td><td class="api-path">/quality/scrap-inventory-report</td><td>—</td><td class="desc">报废仓库存报表</td></tr>
+      <tr><td>15</td><td class="module-name">报废处置报表</td><td>ScrapDisposalReport/</td><td class="api-path">/quality/scrap-disposal-report</td><td>—</td><td class="desc">报废处置统计报表</td></tr>
+      <tr><td>16</td><td class="module-name">报废质量统计</td><td>ScrapQualityStatsReport/</td><td class="api-path">/quality/scrap-quality-stats-report</td><td>—</td><td class="desc">报废品质量分析报表</td></tr>
+      <tr><td>17</td><td class="module-name">报废入库单</td><td>ScrapInboundOrder/</td><td class="api-path">/quality/scrap-inbound-orders</td><td><span class="db-table">scrap_inbound_order</span></td><td class="desc">报废品入库管理</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 七、仓储管理域 ============ -->
+<div class="domain-section">
+  <div class="domain-header bg-warehouse">
+    <span class="domain-icon">🏗️</span>
+    <div><div class="domain-title">七、仓储管理域</div><div class="domain-subtitle">warehouse</div></div>
+    <span class="domain-count">14</span>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td class="module-name">成品库存查询</td><td>FinishedGoods/</td><td class="api-path">/finished-goods/inventory</td><td><span class="db-table">finished_goods_inventory</span></td><td class="desc">成品仓库存汇总查询（按物料+仓库+质量状态）</td></tr>
+      <tr><td>2</td><td class="module-name">成品批次库存</td><td>—</td><td class="api-path">/finished-goods/inventory/detail</td><td><span class="db-table">finished_batch_inventory</span></td><td class="desc">成品批次明细+流水查询</td></tr>
+      <tr><td>3</td><td class="module-name">成品入库</td><td>—</td><td class="api-path">/finished-goods/inbound</td><td><span class="db-table">finished_goods_inventory</span></td><td class="desc">生产成品入库（含入库单管理/确认/撤回）</td></tr>
+      <tr><td>4</td><td class="module-name">成品出库</td><td>—</td><td class="api-path">/finished-goods/outbound</td><td>—</td><td class="desc">销售发货出库（批次FIFO/箱码模式）</td></tr>
+      <tr><td>5</td><td class="module-name">成品装箱</td><td>—</td><td class="api-path">/packing-orders</td><td><span class="db-table">packing_order / packing_box_inventory</span></td><td class="desc">装箱单管理（确认/拆箱/箱码出库）</td></tr>
+      <tr><td>6</td><td class="module-name">原料库存查询</td><td>MaterialWarehouse/</td><td class="api-path">/material-warehouse/inventory</td><td><span class="db-table">material_batch_inventory</span></td><td class="desc">原料仓库存查询（批次+库位）</td></tr>
+      <tr><td>7</td><td class="module-name">原料入库</td><td>—</td><td class="api-path">/material-warehouse/inbound</td><td><span class="db-table">material_batch_inventory</span></td><td class="desc">原料采购入库/退料入库</td></tr>
+      <tr><td>8</td><td class="module-name">原料出库</td><td>—</td><td class="api-path">/material-warehouse/outbound</td><td>—</td><td class="desc">原料领料出库</td></tr>
+      <tr><td>9</td><td class="module-name">盘点管理</td><td>StockCount/</td><td class="api-path">/stock-counts</td><td><span class="db-table">stock_count / stock_count_detail</span></td><td class="desc">盘点单CRUD，录入实盘→复核→确认执行（库存调整）</td></tr>
+      <tr><td>10</td><td class="module-name">其他出入库</td><td>—</td><td class="api-path">/abnormal-io</td><td><span class="db-table">abnormal_io / abnormal_io_detail</span></td><td class="desc">其他入库/出库/调拨，确认/驳回/撤消</td></tr>
+      <tr><td>11</td><td class="module-name">报废处置</td><td>ScrapDisposal/</td><td class="api-path">/scrap-disposal</td><td><span class="db-table">scrap_disposal</span></td><td class="desc">报废品处置管理</td></tr>
+      <tr><td>12</td><td class="module-name">报废流水</td><td>ScrapTransaction/</td><td class="api-path">/scrap-transactions</td><td>—</td><td class="desc">报废仓库存流水记录</td></tr>
+      <tr><td>13</td><td class="module-name">报废库存</td><td>ScrapInventory/</td><td>—</td><td>—</td><td class="desc">报废仓库存查询</td></tr>
+      <tr><td>14</td><td class="module-name">月度出入库报表</td><td>—</td><td class="api-path">/finished-goods/monthly-report</td><td>—</td><td class="desc">成品仓月度出入库统计报表</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 八、设备管理域 ============ -->
+<div class="domain-section">
+  <div class="domain-header bg-equipment">
+    <span class="domain-icon">⚙️</span>
+    <div><div class="domain-title">八、设备管理域</div><div class="domain-subtitle">equipment</div></div>
+    <span class="domain-count">6</span>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td class="module-name">设备台账</td><td>Equipment/</td><td class="api-path">/equipments</td><td><span class="db-table">equipment</span></td><td class="desc">设备档案CRUD（编号/名称/型号/状态/所属车间）</td></tr>
+      <tr><td>2</td><td class="module-name">模具台账</td><td>Mould/</td><td class="api-path">/moulds</td><td><span class="db-table">mould</span></td><td class="desc">模具档案管理</td></tr>
+      <tr><td>3</td><td class="module-name">模具保养</td><td>MouldMaintenance/</td><td class="api-path">/mould-maintenance</td><td><span class="db-table">mould_maintenance</span></td><td class="desc">模具保养记录</td></tr>
+      <tr><td>4</td><td class="module-name">设备停机</td><td>EquipmentDowntime/</td><td class="api-path">/equipment-downtime</td><td><span class="db-table">equipment_downtime</span></td><td class="desc">设备停机记录（原因/时长）</td></tr>
+      <tr><td>5</td><td class="module-name">设备保养计划</td><td>EquipmentMaintenancePlan/</td><td class="api-path">/equipment-maintenance-plan</td><td><span class="db-table">equipment_maintenance_plan</span></td><td class="desc">设备保养计划管理</td></tr>
+      <tr><td>6</td><td class="module-name">设备OEE</td><td>EquipmentOee/</td><td class="api-path">/equipment-oee</td><td>—</td><td class="desc">设备综合效率(OEE)仪表板</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 九、财务管理域 ============ -->
+<div class="domain-section">
+  <div class="domain-header bg-finance">
+    <span class="domain-icon">💶</span>
+    <div><div class="domain-title">九、财务管理域</div><div class="domain-subtitle">finance</div></div>
+    <span class="domain-count">3</span>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td class="module-name">会计期间</td><td>AccountingPeriod/</td><td class="api-path">/accounting-periods</td><td><span class="db-table">accounting_period</span></td><td class="desc">会计期间管理（年月/起止日期/状态），月度报表和报废入库的期间控制</td></tr>
+      <tr><td>2</td><td class="module-name">计件单价</td><td>PieceRatePrice/</td><td class="api-path">/piece-rate-prices</td><td><span class="db-table">piece_rate_price</span></td><td class="desc">工序+物料维度计件单价</td></tr>
+      <tr><td>3</td><td class="module-name">标准成本</td><td>StandardCost/</td><td class="api-path">/standard-costs</td><td><span class="db-table">standard_cost</span></td><td class="desc">物料标准成本管理</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 十、系统集成域 ============ -->
+<div class="domain-section">
+  <div class="domain-header bg-integration">
+    <span class="domain-icon">🔗</span>
+    <div><div class="domain-title">十、系统集成域</div><div class="domain-subtitle">integration</div></div>
+    <span class="domain-count">2</span>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td class="module-name">批次追溯</td><td>BatchTrace/</td><td class="api-path">/batch-trace</td><td>—</td><td class="desc">成品批次全链路追溯（原料→生产→发货）</td></tr>
+      <tr><td>2</td><td class="module-name">与小药称量系统对接</td><td>—</td><td class="api-path">/integration/small-medicine</td><td>—</td><td class="desc">提供BOM清单、称量生产工单，接收称量实际数据，完成小药生产工单的报工</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 十一、系统管理域 ============ -->
+<div class="domain-section">
+  <div class="domain-header bg-system">
+    <span class="domain-icon">🔐</span>
+    <div><div class="domain-title">十一、系统管理域</div><div class="domain-subtitle">system</div></div>
+    <span class="domain-count">14</span>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td class="module-name">用户管理</td><td>User/</td><td class="api-path">/users</td><td><span class="db-table">users</span></td><td class="desc">用户CRUD，含角色分配</td></tr>
+      <tr><td>2</td><td class="module-name">角色管理</td><td>Role/</td><td class="api-path">/roles</td><td><span class="db-table">roles / role_permissions</span></td><td class="desc">角色CRUD+权限分配</td></tr>
+      <tr><td>3</td><td class="module-name">权限管理</td><td>Permission/</td><td class="api-path">/permissions</td><td><span class="db-table">permissions / permission_menu</span></td><td class="desc">菜单权限+API权限管理</td></tr>
+      <tr><td>4</td><td class="module-name">部门管理</td><td>Department/</td><td class="api-path">/departments</td><td><span class="db-table">department</span></td><td class="desc">部门树形管理</td></tr>
+      <tr><td>5</td><td class="module-name">审批管理</td><td>—</td><td class="api-path">/approval</td><td>—</td><td class="desc">通用审批流（提交/审批/反审）</td></tr>
+      <tr><td>6</td><td class="module-name">工作流引擎</td><td>Workflow/</td><td class="api-path">/workflows / /workflow-runtime</td><td><span class="db-table">workflow_definition / workflow_instance</span></td><td class="desc">工作流设计器+运行时引擎</td></tr>
+      <tr><td>7</td><td class="module-name">通知管理</td><td>—</td><td class="api-path">/notifications</td><td><span class="db-table">notifications</span></td><td class="desc">站内通知（SSE实时推送）</td></tr>
+      <tr><td>8</td><td class="module-name">安全审计</td><td>—</td><td class="api-path">/security</td><td>—</td><td class="desc">操作日志/安全审计</td></tr>
+      <tr><td>9</td><td class="module-name">API密钥</td><td>ApiKey/</td><td class="api-path">/api-keys</td><td><span class="db-table">api_key</span></td><td class="desc">外部系统API密钥管理</td></tr>
+      <tr><td>10</td><td class="module-name">用户偏好</td><td>—</td><td class="api-path">/user-preferences</td><td><span class="db-table">user_preference</span></td><td class="desc">列个性化等用户偏好持久化</td></tr>
+      <tr><td>11</td><td class="module-name">单据完结配置</td><td>DocumentCompletionConfig/</td><td class="api-path">/document-completion-config</td><td><span class="db-table">document_completion_config</span></td><td class="desc">单据自动完结规则配置</td></tr>
+      <tr><td>12</td><td class="module-name">手动完结</td><td>ManualClose/</td><td class="api-path">/manual-close</td><td>—</td><td class="desc">手动完结指定单据</td></tr>
+      <tr><td>13</td><td class="module-name">自动盘点</td><td>AutoStockCount/</td><td class="api-path">/auto-stock-count</td><td>—</td><td class="desc">定时自动盘点任务配置</td></tr>
+      <tr><td>14</td><td class="module-name">SSE推送</td><td>—</td><td class="api-path">/sse</td><td>—</td><td class="desc">Server-Sent Events实时消息推送</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 十二、开放接口域 ============ -->
+<div class="domain-section">
+  <div class="domain-header bg-open">
+    <span class="domain-icon">📱</span>
+    <div><div class="domain-title">十二、开放接口域</div><div class="domain-subtitle">open</div></div>
+    <span class="domain-count">4</span>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td class="module-name">移动端发货</td><td>—</td><td class="api-path">/open/shipping</td><td>—</td><td class="desc">移动端扫码发货接口</td></tr>
+      <tr><td>2</td><td class="module-name">移动端报工</td><td>—</td><td class="api-path">/open/work-reports</td><td>—</td><td class="desc">移动端快速报工接口</td></tr>
+      <tr><td>3</td><td class="module-name">移动端检验</td><td>—</td><td class="api-path">/open/inspection</td><td>—</td><td class="desc">移动端质检接口</td></tr>
+      <tr><td>4</td><td class="module-name">外部API</td><td>—</td><td class="api-path">/open/*</td><td>—</td><td class="desc">API Key认证的外部系统接口</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ============ 附录A：跨域业务流程 ============ -->
+<div class="appendix">
+  <h2>附录A：跨域业务流程清单</h2>
+  <div class="flow-card"><div class="flow-num">1</div><div class="flow-content"><div class="flow-title">销售订单→发货→开票全流程</div><div class="flow-domains">涉及域：sales</div><div class="flow-steps"><span class="flow-step">草稿</span><span class="flow-arrow">→</span><span class="flow-step">已审批</span><span class="flow-arrow">→</span><span class="flow-step">已发货</span><span class="flow-arrow">→</span><span class="flow-step">部分开票/已开票</span></div></div></div>
+  <div class="flow-card"><div class="flow-num">2</div><div class="flow-content"><div class="flow-title">采购申请→采购订单→收货→检验→入库</div><div class="flow-domains">涉及域：purchasing + quality + warehouse</div><div class="flow-steps"><span class="flow-step">草稿</span><span class="flow-arrow">→</span><span class="flow-step">已审批</span><span class="flow-arrow">→</span><span class="flow-step">已收货</span><span class="flow-arrow">→</span><span class="flow-step">已检验</span><span class="flow-arrow">→</span><span class="flow-step">已入库</span></div></div></div>
+  <div class="flow-card"><div class="flow-num">3</div><div class="flow-content"><div class="flow-title">MPS→MRP→生产单→派发→报工→检验→入库</div><div class="flow-domains">涉及域：planning + production + quality + warehouse</div><div class="flow-steps"><span class="flow-step">待排产</span><span class="flow-arrow">→</span><span class="flow-step">已派发</span><span class="flow-arrow">→</span><span class="flow-step">生产中</span><span class="flow-arrow">→</span><span class="flow-step">已报工</span><span class="flow-arrow">→</span><span class="flow-step">已检验</span><span class="flow-arrow">→</span><span class="flow-step">已入库</span></div></div></div>
+  <div class="flow-card"><div class="flow-num">4</div><div class="flow-content"><div class="flow-title">委外申请→委外订单→发料→收货→检验→结算</div><div class="flow-domains">涉及域：production</div><div class="flow-steps"><span class="flow-step">草稿</span><span class="flow-arrow">→</span><span class="flow-step">已发出</span><span class="flow-arrow">→</span><span class="flow-step">已发料</span><span class="flow-arrow">→</span><span class="flow-step">已收货</span><span class="flow-arrow">→</span><span class="flow-step">已检验</span><span class="flow-arrow">→</span><span class="flow-step">已结算</span></div></div></div>
+  <div class="flow-card"><div class="flow-num">5</div><div class="flow-content"><div class="flow-title">生产检验→NC单→返修/报废/让步</div><div class="flow-domains">涉及域：quality + production</div><div class="flow-steps"><span class="flow-step">合格/不合格</span><span class="flow-arrow">→</span><span class="flow-step">返修→重检</span><span class="flow-arrow">/</span><span class="flow-step">报废→处置</span><span class="flow-arrow">/</span><span class="flow-step">让步接收</span></div></div></div>
+  <div class="flow-card"><div class="flow-num">6</div><div class="flow-content"><div class="flow-title">成品装箱→箱码出库→发货</div><div class="flow-domains">涉及域：warehouse + sales</div><div class="flow-steps"><span class="flow-step">待确认</span><span class="flow-arrow">→</span><span class="flow-step">已确认</span><span class="flow-arrow">→</span><span class="flow-step">在库</span><span class="flow-arrow">→</span><span class="flow-step">已出库</span></div></div></div>
+  <div class="flow-card"><div class="flow-num">7</div><div class="flow-content"><div class="flow-title">盘点→复核→库存调整</div><div class="flow-domains">涉及域：warehouse</div><div class="flow-steps"><span class="flow-step">待盘点</span><span class="flow-arrow">→</span><span class="flow-step">已录入</span><span class="flow-arrow">→</span><span class="flow-step">已复核</span><span class="flow-arrow">→</span><span class="flow-step">已调整</span></div></div></div>
+  <div class="flow-card"><div class="flow-num">8</div><div class="flow-content"><div class="flow-title">采购退货出库</div><div class="flow-domains">涉及域：purchasing + warehouse</div><div class="flow-steps"><span class="flow-step">草稿</span><span class="flow-arrow">→</span><span class="flow-step">已审批</span><span class="flow-arrow">→</span><span class="flow-step">已出库</span></div></div></div>
+  <div class="flow-card"><div class="flow-num">9</div><div class="flow-content"><div class="flow-title">销售退货→退货入库</div><div class="flow-domains">涉及域：sales + warehouse</div><div class="flow-steps"><span class="flow-step">草稿</span><span class="flow-arrow">→</span><span class="flow-step">已确认</span><span class="flow-arrow">→</span><span class="flow-step">已入库</span></div></div></div>
+  <div class="flow-card"><div class="flow-num">10</div><div class="flow-content"><div class="flow-title">报废处置→报废入库</div><div class="flow-domains">涉及域：quality + warehouse</div><div class="flow-steps"><span class="flow-step">待处置</span><span class="flow-arrow">→</span><span class="flow-step">已处置</span><span class="flow-arrow">→</span><span class="flow-step">已入库</span></div></div></div>
+</div>
+
+<!-- ============ 附录B：功能统计汇总 ============ -->
+<div class="appendix">
+  <h2>附录B：功能统计汇总</h2>
+
+  <div class="stats-bar-container">
+    <div class="stats-bar-row"><span class="stats-bar-label">基础数据</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:76.7%;background:linear-gradient(90deg,#667eea,#764ba2);">23</div></div><span class="stats-bar-value">23</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">销售管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:33.3%;background:linear-gradient(90deg,#f093fb,#f5576c);">10</div></div><span class="stats-bar-value">10</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">计划管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:10%;background:linear-gradient(90deg,#4facfe,#00f2fe);">3</div></div><span class="stats-bar-value">3</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">生产管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:60%;background:linear-gradient(90deg,#43e97b,#38f9d7);">18</div></div><span class="stats-bar-value">18</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">采购管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:23.3%;background:linear-gradient(90deg,#fa709a,#fee140);">7</div></div><span class="stats-bar-value">7</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">质量管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:56.7%;background:linear-gradient(90deg,#a18cd1,#fbc2eb);">17</div></div><span class="stats-bar-value">17</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">仓储管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:46.7%;background:linear-gradient(90deg,#fccb90,#d57eeb);">14</div></div><span class="stats-bar-value">14</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">设备管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:20%;background:linear-gradient(90deg,#5ee7df,#b490ca);">6</div></div><span class="stats-bar-value">6</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">财务管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:10%;background:linear-gradient(90deg,#c3cfe2,#f5f7fa);">3</div></div><span class="stats-bar-value">3</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">系统集成</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:6.7%;background:linear-gradient(90deg,#667eea,#764ba2);">2</div></div><span class="stats-bar-value">2</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">系统管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:46.7%;background:linear-gradient(90deg,#89f7fe,#66a6ff);">14</div></div><span class="stats-bar-value">14</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">开放接口</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:13.3%;background:linear-gradient(90deg,#a1c4fd,#c2e9fb);">4</div></div><span class="stats-bar-value">4</span></div>
+  </div>
+
+  <table class="stats-table" style="margin-top:16px;">
+    <thead><tr><th>业务域</th><th>功能模块数</th><th>后端路由数</th><th>前端页面数</th></tr></thead>
+    <tbody>
+      <tr><td>基础数据</td><td>23</td><td>22</td><td>23</td></tr>
+      <tr><td>销售管理</td><td>10</td><td>8</td><td>10</td></tr>
+      <tr><td>计划管理</td><td>3</td><td>3</td><td>3</td></tr>
+      <tr><td>生产管理</td><td>18</td><td>17</td><td>15</td></tr>
+      <tr><td>采购管理</td><td>7</td><td>6</td><td>6</td></tr>
+      <tr><td>质量管理</td><td>17</td><td>17</td><td>17</td></tr>
+      <tr><td>仓储管理</td><td>14</td><td>8</td><td>7</td></tr>
+      <tr><td>设备管理</td><td>6</td><td>6</td><td>6</td></tr>
+      <tr><td>财务管理</td><td>3</td><td>3</td><td>3</td></tr>
+      <tr><td>系统集成</td><td>2</td><td>2</td><td>1</td></tr>
+      <tr><td>系统管理</td><td>14</td><td>16</td><td>11</td></tr>
+      <tr><td>开放接口</td><td>4</td><td>4</td><td>0</td></tr>
+      <tr><td>合计</td><td>122</td><td>113</td><td>103</td></tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

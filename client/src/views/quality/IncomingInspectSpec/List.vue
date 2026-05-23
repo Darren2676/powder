@@ -1,95 +1,108 @@
 <template>
   <div>
-    <!-- 上部: 主表 -->
-    <a-card title="来料检验规范" :bordered="false">
-      <template #extra>
-        <a-space>
-          <a-input-search v-model:value="searchText" placeholder="搜索规范名/缺陷分类" style="width: 220px" @search="handleSearch" allowClear @change="(e: any) => { if (!e.target.value) handleSearch() }" />
-          <a-button @click="handleReset"><ReloadOutlined />重置</a-button>
-          <a-button @click="handleExport"><DownloadOutlined />导出</a-button>
-          <a-button type="primary" @click="openCreateModal"><PlusOutlined />新建</a-button>
-        </a-space>
-      </template>
-
-      <a-table
-        :columns="headerColumns"
-        :data-source="headerData"
-        :loading="headerLoading"
-        row-key="spec_name"
-        :pagination="headerPagination"
-        :scroll="{ y: 'calc(38vh - 120px)' }"
-        :row-class-name="(record: any) => record.spec_name === selectedSpecName ? 'ant-table-row-selected' : ''"
-        :custom-row="(record: any) => ({ onClick: () => handleSelectSpec(record) })"
-        @change="handleHeaderTableChange"
-        size="small"
-      >
-        <template #bodyCell="{ column, record, index }">
-          <template v-if="column.key === 'rowIndex'">
-            {{ (headerPagination.current - 1) * headerPagination.pageSize + index + 1 }}
-          </template>
-          <template v-else-if="column.key === 'approval_status'">
-            <a-tag :color="(record.approval_status || '').trim() === APPROVAL_STATUS.APPROVED ? 'blue' : 'default'">{{ (record.approval_status || '').trim() || APPROVAL_STATUS.UNAPPROVED }}</a-tag>
-          </template>
-          <template v-else-if="column.key === 'action'">
-            <a-space :size="4">
-              <a-button type="link" size="small" @click.stop="handleEditSpec(record)">编辑</a-button>
-              <a-divider type="vertical" />
-              <a-dropdown :trigger="['click']">
-                <a-button type="link" size="small" @click.stop>
-                  更多<DownOutlined style="font-size: 10px; margin-left: 2px;" />
-                </a-button>
-                <template #overlay>
-                  <a-menu>
-                    <a-menu-item v-if="(record.approval_status || '').trim() !== APPROVAL_STATUS.APPROVED" @click="handleApprove(record)">审核</a-menu-item>
-                    <a-menu-item v-else @click="handleWithdraw(record)">撤消</a-menu-item>
-                    <a-menu-item @click="handleDeleteSpec(record)">删除</a-menu-item>
-                  </a-menu>
-                </template>
-              </a-dropdown>
-            </a-space>
-          </template>
-        </template>
-      </a-table>
-    </a-card>
-
-    <!-- 下部: 明细 -->
-    <a-card :bordered="false" style="margin-top: 8px">
-      <template #title>
-        <span>来料检验规范明细</span>
-        <a-tag v-if="selectedSpecName" color="blue" style="margin-left: 8px">{{ selectedSpecName }}</a-tag>
-        <span v-else style="color: #999; font-size: 12px; margin-left: 8px">请选择上方检验规范</span>
-      </template>
-      <template #extra>
-        <a-button type="primary" size="small" :disabled="!selectedSpecName" @click="openCreateItemModal"><PlusOutlined />新增明细</a-button>
-      </template>
-
-      <a-table
-        :columns="detailColumns"
-        :data-source="detailData"
-        :loading="detailLoading"
-        row-key="id"
-        :pagination="false"
-        :scroll="{ x: 1600, y: 'calc(42vh - 120px)' }"
-        size="small"
-      >
-        <template #bodyCell="{ column, record, index }">
-          <template v-if="column.key === 'rowIndex'">{{ index + 1 }}</template>
-          <template v-else-if="column.key === 'upper_limit'">{{ fmtNum(record.upper_limit) }}</template>
-          <template v-else-if="column.key === 'standard_value'">{{ fmtNum(record.standard_value) }}</template>
-          <template v-else-if="column.key === 'lower_limit'">{{ fmtNum(record.lower_limit) }}</template>
-          <template v-else-if="column.key === 'default_result'">
-            <a-tag v-if="record.default_result === '合格'" color="green">合格</a-tag>
-            <a-tag v-else-if="record.default_result === '不合格'" color="red">不合格</a-tag>
-            <span v-else>{{ record.default_result }}</span>
-          </template>
-          <template v-else-if="column.key === 'action'">
+    <a-card :bordered="false" :body-style="{ padding: '0 12px 8px' }">
+      <a-tabs v-model:activeKey="pageTab" size="small">
+        <!-- ========== Tab 1: 来料检验规范 ========== -->
+        <a-tab-pane key="header" tab="来料检验规范">
+          <div class="tab-toolbar">
+            <div></div>
             <a-space>
-              <a-button type="link" size="small" @click="handleEditItem(record)"><EditOutlined />编辑</a-button>
-              <a-button type="link" danger size="small" @click="handleDeleteItem(record)"><DeleteOutlined />删除</a-button>
+              <a-input-search v-model:value="searchText" placeholder="搜索规范名/缺陷分类" style="width: 220px" @search="handleSearch" allowClear @change="(e: any) => { if (!e.target.value) handleSearch() }" />
+              <a-button @click="handleReset"><ReloadOutlined />重置</a-button>
+              <a-button @click="handleExport"><DownloadOutlined />导出</a-button>
+              <a-button type="primary" @click="openCreateModal"><PlusOutlined />新建</a-button>
             </a-space>
+          </div>
+
+          <a-table
+            :columns="headerColumns"
+            :data-source="headerData"
+            :loading="headerLoading"
+            row-key="spec_name"
+            :pagination="headerPagination"
+            :scroll="{ y: 'calc(72vh - 200px)' }"
+            :row-class-name="(record: any) => record.spec_name === selectedSpecName ? 'ant-table-row-selected' : ''"
+            :custom-row="(record: any) => ({ onClick: () => handleSelectSpec(record) })"
+            @change="handleHeaderTableChange"
+            size="small"
+          >
+            <template #bodyCell="{ column, record, index }">
+              <template v-if="column.key === 'rowIndex'">
+                {{ (headerPagination.current - 1) * headerPagination.pageSize + index + 1 }}
+              </template>
+              <template v-else-if="column.key === 'approval_status'">
+                <a-tag :color="(record.approval_status || '').trim() === APPROVAL_STATUS.APPROVED ? 'blue' : 'default'">{{ (record.approval_status || '').trim() || APPROVAL_STATUS.UNAPPROVED }}</a-tag>
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <a-space :size="4">
+                  <a-button type="link" size="small" @click.stop="handleEditSpec(record)">编辑</a-button>
+                  <a-divider type="vertical" />
+                  <a-dropdown :trigger="['click']">
+                    <a-button type="link" size="small" @click.stop>
+                      更多<DownOutlined style="font-size: 10px; margin-left: 2px;" />
+                    </a-button>
+                    <template #overlay>
+                      <a-menu>
+                        <a-menu-item v-if="(record.approval_status || '').trim() !== APPROVAL_STATUS.APPROVED" @click="handleApprove(record)">审核</a-menu-item>
+                        <a-menu-item v-else @click="handleWithdraw(record)">撤消</a-menu-item>
+                        <a-menu-item @click="handleDeleteSpec(record)">删除</a-menu-item>
+                      </a-menu>
+                    </template>
+                  </a-dropdown>
+                </a-space>
+              </template>
+            </template>
+          </a-table>
+        </a-tab-pane>
+
+        <!-- ========== Tab 2: 来料检验规范明细 ========== -->
+        <a-tab-pane key="detail">
+          <template #tab>
+            <span>来料检验规范明细</span>
+            <a-tag v-if="selectedSpecName" color="blue" style="margin-left: 8px">{{ selectedSpecName }}</a-tag>
           </template>
-        </template>
-      </a-table>
+          <div v-if="!selectedSpecName" style="text-align: center; padding: 40px 0; color: #aaa;">
+            <a-empty description="请在「来料检验规范」页签中点击一行以查看明细" />
+          </div>
+          <template v-else>
+            <div class="tab-toolbar">
+              <div></div>
+              <a-space>
+                <a-button @click="pageTab = 'header'">返回主表</a-button>
+                <a-button type="primary" size="small" @click="openCreateItemModal"><PlusOutlined />新增明细</a-button>
+              </a-space>
+            </div>
+
+            <a-table
+              :columns="detailColumns"
+              :data-source="detailData"
+              :loading="detailLoading"
+              row-key="id"
+              :pagination="false"
+              :scroll="{ x: 1600, y: 'calc(72vh - 240px)' }"
+              size="small"
+            >
+              <template #bodyCell="{ column, record, index }">
+                <template v-if="column.key === 'rowIndex'">{{ index + 1 }}</template>
+                <template v-else-if="column.key === 'upper_limit'">{{ fmtNum(record.upper_limit) }}</template>
+                <template v-else-if="column.key === 'standard_value'">{{ fmtNum(record.standard_value) }}</template>
+                <template v-else-if="column.key === 'lower_limit'">{{ fmtNum(record.lower_limit) }}</template>
+                <template v-else-if="column.key === 'default_result'">
+                  <a-tag v-if="record.default_result === '合格'" color="green">合格</a-tag>
+                  <a-tag v-else-if="record.default_result === '不合格'" color="red">不合格</a-tag>
+                  <span v-else>{{ record.default_result }}</span>
+                </template>
+                <template v-else-if="column.key === 'action'">
+                  <a-space>
+                    <a-button type="link" size="small" @click="handleEditItem(record)"><EditOutlined />编辑</a-button>
+                    <a-button type="link" danger size="small" @click="handleDeleteItem(record)"><DeleteOutlined />删除</a-button>
+                  </a-space>
+                </template>
+              </template>
+            </a-table>
+          </template>
+        </a-tab-pane>
+      </a-tabs>
     </a-card>
 
     <!-- 主表 新建/编辑 Modal -->
@@ -226,10 +239,12 @@ import { generateExportFilename } from '@/utils/exportFilename'
 const { loading: headerLoading, dataSource: headerData, searchText, pagination: headerPagination, fetchData: fetchHeaderList, handleTableChange: handleHeaderTableChange, handleSearch, handleReset } = useTableList(getIncomingInspectSpecs)
 
 const selectedSpecName = ref<string | null>(null)
+const pageTab = ref('header')
 
 const handleSelectSpec = (record: any) => {
   selectedSpecName.value = record.spec_name
   fetchDetailList(record.spec_name)
+  pageTab.value = 'detail'
 }
 
 const headerColumns = [
@@ -466,4 +481,10 @@ onMounted(() => { fetchHeaderList() })
 :deep(.ant-card-extra) { padding: 0; }
 :deep(.ant-table-row) { cursor: pointer; }
 :deep(.ant-table-row-selected) td { background-color: #e6f7ff !important; }
+.tab-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+}
 </style>

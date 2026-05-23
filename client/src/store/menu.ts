@@ -46,6 +46,8 @@ export const useMenuStore = defineStore('menu', () => {
 
   // Actions
 
+  const MENU_CACHE_VERSION = 'v20260529'; // 菜单缓存版本号，菜单结构变更时更新
+
   /**
    * 从服务器获取菜单树
    */
@@ -55,8 +57,9 @@ export const useMenuStore = defineStore('menu', () => {
       if (response.success) {
         menuTree.value = response.data;
         loaded.value = true;
-        // 持久化
+        // 持久化（带版本号）
         localStorage.setItem('menuTree', JSON.stringify(response.data));
+        localStorage.setItem('menuTreeVersion', MENU_CACHE_VERSION);
       }
     } catch (err) {
       console.error('获取菜单树失败:', err);
@@ -65,17 +68,24 @@ export const useMenuStore = defineStore('menu', () => {
 
   /**
    * 从 localStorage 恢复菜单树
+   * 仅当缓存版本号匹配时才恢复，避免旧缓存导致路由错乱
    */
   const initMenuTree = () => {
+    const storedVersion = localStorage.getItem('menuTreeVersion');
     const stored = localStorage.getItem('menuTree');
-    if (stored) {
+    if (stored && storedVersion === MENU_CACHE_VERSION) {
       try {
         menuTree.value = JSON.parse(stored);
         loaded.value = true;
       } catch (err) {
         console.error('Failed to parse stored menuTree:', err);
         localStorage.removeItem('menuTree');
+        localStorage.removeItem('menuTreeVersion');
       }
+    } else {
+      // 版本不匹配或无缓存，清除旧数据
+      localStorage.removeItem('menuTree');
+      localStorage.removeItem('menuTreeVersion');
     }
   };
 
@@ -86,6 +96,7 @@ export const useMenuStore = defineStore('menu', () => {
     menuTree.value = [];
     loaded.value = false;
     localStorage.removeItem('menuTree');
+    localStorage.removeItem('menuTreeVersion');
   };
 
   // 初始化

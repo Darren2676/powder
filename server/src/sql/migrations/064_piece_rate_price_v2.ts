@@ -67,7 +67,7 @@ export async function up(queryInterface: QueryInterface, seq: any): Promise<void
     const seq = String(i + 1).padStart(3, '0');
     const priceListNumber = `PR-${dateStr}-${seq}`;
     const priceListName = `计件单价表_${dateStr}`;
-    const status = g.approval_status || N'草稿';
+    const status = g.approval_status || '草稿';
     const creator = g.creation_man || '';
     const createDate = g.creation_date || '';
 

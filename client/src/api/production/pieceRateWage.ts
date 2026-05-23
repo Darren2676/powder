@@ -23,3 +23,6 @@ export const calculatePieceRateWage = (id: string) =>
 
 export const exportPieceRateWages = (search?: string, approval_status?: string) =>
   request.get('/piece-rate-wages/export', { params: { search, approval_status }, responseType: 'blob' })
+
+export const exportPieceRateWagesSelected = (data: { ids: string[] }) =>
+  request.post('/piece-rate-wages/export-selected', data, { responseType: 'blob' })

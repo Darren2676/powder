@@ -23,19 +23,27 @@
           </a-col>
         </a-row>
         <a-row :gutter="12">
-          <a-col :span="8">
+          <a-col :span="6">
             <a-form-item label="当前库存">
               <span style="font-size:16px;font-weight:600;color:#1890ff;">{{ currentStock }}</span> {{ form.basic_unit }}
             </a-form-item>
           </a-col>
-          <a-col :span="8">
+          <a-col :span="6">
             <a-form-item label="出库数量">
               <a-input-number v-model:value="form.quantity" :min="0.0001" :max="currentStock" size="small" style="width:100%;" />
             </a-form-item>
           </a-col>
-          <a-col :span="8">
+          <a-col :span="6">
             <a-form-item label="批次号">
               <a-input v-model:value="form.batch_number" size="small" placeholder="可选" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="6">
+            <a-form-item label="会计期间">
+              <a-select v-model:value="form.accounting_period" placeholder="请选择" size="small" style="width:100%;" :loading="openPeriodLoading">
+                <a-select-option v-for="opt in openPeriodOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</a-select-option>
+                <a-select-option v-if="noOpenPeriod" disabled value="">无已开启期间</a-select-option>
+              </a-select>
             </a-form-item>
           </a-col>
         </a-row>
@@ -54,6 +62,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { manualOutbound, getItemOptions, getWarehouseOptions, getInventoryList } from '@/api/warehouse/materialWarehouse'
+import { useOpenAccountingPeriods } from '@/composables/useOpenAccountingPeriods'
 
 const saving = ref(false)
 const warehouseOpts = ref<any[]>([])
@@ -61,7 +70,9 @@ const itemKeyword = ref('')
 const itemOpts = ref<any[]>([])
 const currentStock = ref(0)
 
-const form = reactive({ item_number: '', item_name: '', basic_unit: '', warehouse_number: '', quantity: null as number | null, batch_number: '', remark: '' })
+const { openPeriodOptions, openPeriodLoading, noOpenPeriod, fetchOpenPeriods, getDefaultPeriod } = useOpenAccountingPeriods()
+
+const form = reactive({ item_number: '', item_name: '', basic_unit: '', warehouse_number: '', quantity: null as number | null, batch_number: '', accounting_period: '', remark: '' })
 
 const onSearch = async (val: string) => {
   if (!val || val.length < 1) { itemOpts.value = []; return }
@@ -103,12 +114,15 @@ const handleSubmit = async () => {
     form.quantity = null
     form.batch_number = ''
     form.remark = ''
+    form.accounting_period = getDefaultPeriod()
     loadStock()
   } catch (err: any) { message.error(err?.response?.data?.message || '出库失败') }
   finally { saving.value = false }
 }
 
 onMounted(async () => {
+  fetchOpenPeriods()
+  form.accounting_period = getDefaultPeriod()
   try {
     const res: any = await getWarehouseOptions()
     warehouseOpts.value = res?.data || []

@@ -2,7 +2,7 @@
 import { ref, reactive, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined, DownloadOutlined, UploadOutlined, ExclamationCircleOutlined, DownOutlined, SettingOutlined } from '@ant-design/icons-vue'
-import { getPurchasePriceLists, getPurchasePriceListDetail, createPurchasePriceList, updatePurchasePriceList, deletePurchasePriceList, exportPurchasePriceLists, importPurchasePriceList } from '@/api/purchasing/purchasePrice'
+import { getPurchasePriceLists, getPurchasePriceListDetail, createPurchasePriceList, updatePurchasePriceList, deletePurchasePriceList, exportPurchasePriceLists, importPurchasePriceList, downloadImportTemplate } from '@/api/purchasing/purchasePrice'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getSuppliers } from '@/api/master-data/supplier'
 import { submitForApproval, approveRecord, reverseApproval } from '@/api/system/approval'
@@ -11,6 +11,7 @@ import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
+import { useModalDrag } from '@/composables/useModalDrag'
 
 // ==================== 数据 ====================
 
@@ -27,6 +28,9 @@ const detailRows = ref<any[]>([])
 
 const itemOptions = ref<any[]>([])
 const supplierOptions = ref<any[]>([])
+
+// 弹窗拖拽
+const { modalStyle, onDragStart, resetDrag } = useModalDrag()
 
 // 导入
 const importFileRef = ref<HTMLInputElement | null>(null)
@@ -122,6 +126,7 @@ const openCreate = () => {
   }
   detailRows.value = []
   modalVisible.value = true
+  resetDrag()
 }
 
 const openView = async (record: any) => {
@@ -131,6 +136,7 @@ const openView = async (record: any) => {
   formData.value = res.data?.header || {}
   detailRows.value = res.data?.details || []
   modalVisible.value = true
+  resetDrag()
 }
 
 const openEdit = async (record: any) => {
@@ -140,6 +146,7 @@ const openEdit = async (record: any) => {
   formData.value = res.data?.header || {}
   detailRows.value = (res.data?.details || []).map((d: any) => ({ ...d, enable_tiered_pricing: !!d.enable_tiered_pricing }))
   modalVisible.value = true
+  resetDrag()
 }
 
 const handleDelete = (record: any) => {
@@ -264,6 +271,19 @@ const handleExport = async () => {
 
 // ==================== 导入 ====================
 const triggerImport = () => { importFileRef.value?.click() }
+const handleDownloadTemplate = async () => {
+  try {
+    const res: any = await downloadImportTemplate()
+    const url = window.URL.createObjectURL(new Blob([res.data]))
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', '采购价目表导入模板.xlsx')
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    message.success('模板下载成功')
+  } catch { /* error handled by request interceptor */ }
+}
 const handleImportFile = async (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
@@ -293,6 +313,7 @@ const handleImportFile = async (e: Event) => {
         <a-button @click="openColumnSetting"><template #icon><SettingOutlined /></template>列设置</a-button>
         <a-button @click="handleExport"><template #icon><DownloadOutlined /></template>导出</a-button>
         <a-button @click="triggerImport"><template #icon><UploadOutlined /></template>导入</a-button>
+        <a-button @click="handleDownloadTemplate"><template #icon><DownloadOutlined /></template>下载模板</a-button>
         <input ref="importFileRef" type="file" accept=".xlsx,.xls" style="display:none" @change="handleImportFile" />
         <a-button type="primary" @click="openCreate"><template #icon><PlusOutlined /></template>新建</a-button>
       </div>
@@ -340,7 +361,10 @@ const handleImportFile = async (e: Event) => {
     </a-table>
 
     <!-- 编辑/查看弹窗 -->
-    <a-modal v-model:open="modalVisible" :title="modalTitle" width="1200px" @ok="handleSave" :ok-button-props="{ style: isView ? { display: 'none' } : {} }" :cancel-text="isView ? '关闭' : '取消'">
+    <a-modal v-model:open="modalVisible" width="1200px" :style="modalStyle" @ok="handleSave" :ok-button-props="{ style: isView ? { display: 'none' } : {} }" :cancel-text="isView ? '关闭' : '取消'">
+      <template #title>
+        <div class="drag-handle" @mousedown="onDragStart">{{ modalTitle }}</div>
+      </template>
       <a-form layout="vertical">
         <a-row :gutter="16">
           <a-col :span="6"><a-form-item label="价目表名称" required>
@@ -430,6 +454,13 @@ const handleImportFile = async (e: Event) => {
     </a-modal>
   </div>
 </template>
+
+<style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+</style>
 
 <ColumnSettingDrawer
   :open="columnSettingVisible"

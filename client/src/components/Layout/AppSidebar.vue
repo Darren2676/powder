@@ -66,7 +66,9 @@ import {
   AppstoreAddOutlined,
   HddOutlined,
   ClusterOutlined,
-  MenuOutlined
+  MenuOutlined,
+  DeleteOutlined,
+  TrophyOutlined
 } from '@ant-design/icons-vue';
 
 interface Props {
@@ -106,7 +108,8 @@ const iconMap: Record<string, any> = {
   AuditOutlined, FileSearchOutlined, ReconciliationOutlined,
   PlusCircleOutlined, OrderedListOutlined, TableOutlined, PartitionOutlined,
   ProjectOutlined, AppstoreAddOutlined, HddOutlined, ClusterOutlined,
-  MenuOutlined
+  MenuOutlined, DeleteOutlined,
+  TrophyOutlined
 };
 
 // 获取图标组件
@@ -134,6 +137,8 @@ const keyToRoute: Record<string, string> = {
   'shipping-warning': '/shipping-warning',
   'overdue-shipping': '/overdue-shipping',
   'shipping-by-order-summary': '/shipping-by-order-summary',
+  'order-production-summary': '/order-production-summary',
+  'sales-order-dashboard': '/sales-order-dashboard',
   'sales-prices': '/sales-prices',
   'mps-report': '/mps-report',
   'plans': '/plans',
@@ -159,6 +164,7 @@ const keyToRoute: Record<string, string> = {
   'wip-by-order': '/wip-by-order',
   'wip-by-work-center': '/wip-by-work-center',
   'wip-lineside-transactions': '/wip-lineside-transactions',
+    'process-kanban': '/process-kanban',
   'fg-inventory': '/fg-inventory',
   'fg-inventory-query': '/fg-inventory-query',
   'fg-inbound': '/fg-inbound',
@@ -183,23 +189,30 @@ const keyToRoute: Record<string, string> = {
   'purchase-calc': '/purchase-calc',
   'piece-rate-prices': '/piece-rate-prices',
   'piece-rate-wages': '/piece-rate-wages',
+  'production-material-cost': '/production-material-cost',
   'standard-costs': '/standard-costs',
-  'defect-reasons': '/defect-reasons',
-  'defect-classes': '/defect-classes',
-  'defects': '/defects',
-  'quality-characteristics': '/quality-characteristics',
-  'inspection-specs-production': '/inspection-specs-production',
-  'inspection-specs-incoming': '/inspection-specs-incoming',
-  'inspection-plans': '/inspection-plans',
-  'incoming-inspect-plans': '/incoming-inspect-plans',
-  'quality-report': '/quality-report',
-  'product-quality-summary': '/product-quality-summary',
+  'defect-reasons': '/quality/defect-reasons',
+  'defect-classes': '/quality/defect-classes',
+  'defects': '/quality/defects',
+  'quality-characteristics': '/quality/quality-characteristics',
+  'inspection-specs-production': '/quality/inspection-specs-production',
+  'inspection-specs-incoming': '/quality/inspection-specs-incoming',
+  'inspection-plans': '/quality/inspection-plans',
+  'incoming-inspect-plans': '/quality/incoming-inspect-plans',
+  'quality-report': '/quality/quality-report',
+  'product-quality-summary': '/quality/product-quality-summary',
   'purchase-inspection': '/purchase-inspection',
-  'production-inspections': '/production-inspections',
-  'nonconforming-products': '/nonconforming-products',
-  'pending-nonconforming-products': '/pending-nonconforming-products',
-  'scrap-orders': '/scrap-orders',
-  'rework-orders': '/rework-orders',
+  'production-inspections': '/quality/production-inspections',
+  'nonconforming-products': '/quality/nonconforming-products',
+  'pending-nonconforming-products': '/quality/pending-nonconforming-products',
+  'rework-orders': '/quality/rework-orders',
+  'scrap-order-report': '/scrap-order-report',
+  'scrap-inventory-report': '/scrap-inventory-report',
+  'scrap-disposal-report': '/scrap-disposal-report',
+  'scrap-quality-stats-report': '/scrap-quality-stats-report',
+  'scrap-inbound-orders': '/scrap-inbound-orders',
+  'scrap-inventory': '/scrap-inventory',
+  'scrap-transactions': '/scrap-transactions',
   'xhy-inspect': '/xhy-inspect',
   'xhy-inspect-lines': '/xhy-inspect-lines',
   'xhy-inspect-summary': '/xhy-inspect-summary',
@@ -243,6 +256,10 @@ const keyToRoute: Record<string, string> = {
   'departments': '/departments',
   'workflow': '/workflow',
   'api-keys': '/api-keys',
+  'purchase-returns': '/purchase-returns',
+  'purchase-invoices': '/purchase-invoices',
+  'purchasing-dashboard': '/purchasing-dashboard',
+  'hefei-university-2025': '/hefei-university-2025',
 };
 
 // 从路由路径查找对应的菜单key
@@ -427,7 +444,7 @@ const handleMenuClick = ({ key }: { key: string }) => {
   <!-- Dashboard -->
     <a-menu-item key="dashboard" @contextmenu="(e: MouseEvent) => handleContextMenu(e, 'dashboard')">
       <DashboardOutlined />
-      <span>仪表板</span>
+      <span>驾驶舱</span>
     </a-menu-item>
 
     <!-- 我的待办 -->

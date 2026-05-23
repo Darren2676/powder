@@ -6,4 +6,4 @@
  *   - material.ts       物料仓业务（手工入库/生产入库/手工出库/手动调整）
  */
 export { productionInboundFinished, shippingOutbound, returnInbound, adjustFinishedInventory, rollbackShippingOutbound, rollbackProductionInbound } from './warehouse/finishedGoods';
-export { manualInboundMaterial, productionInboundMaterial, manualOutboundMaterial, adjustMaterialInventory } from './warehouse/material';
+export { manualInboundMaterial, productionInboundMaterial, manualOutboundMaterial, adjustMaterialInventory, rollbackSemiProductionInbound } from './warehouse/material';

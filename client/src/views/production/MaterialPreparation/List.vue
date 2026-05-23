@@ -9,6 +9,7 @@ import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import { useTableList } from '@/composables/useTableList'
+import { useModalDrag } from '@/composables/useModalDrag'
 import { generateExportFilename } from '@/utils/exportFilename'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval, batchSubmitForApproval, batchApproveRecords, batchWithdrawApproval, batchReverseApproval } from '@/api/system/approval'
 
@@ -283,6 +284,7 @@ const handleGenerateFromOrder = async () => {
 
 // ==================== 备料单明细弹窗 ====================
 const detailModalVisible = ref(false)
+const { modalStyle: detailModalStyle, onDragStart: detailDragStart, resetDrag: detailResetDrag } = useModalDrag()
 const detailLoading = ref(false)
 const detailHeader = ref<MaterialPreparation | null>(null)
 const detailList = ref<PreparationDetail[]>([])
@@ -309,6 +311,7 @@ const detailColumns = [
 
 const handleViewDetails = async (record: MaterialPreparation) => {
   detailLoading.value = true
+  detailResetDrag()
   detailModalVisible.value = true
   detailEditing.value = false
   try {
@@ -534,10 +537,13 @@ const handleBatchAction = (action: string) => {
     <!-- 备料单明细弹窗 -->
     <a-modal
       v-model:open="detailModalVisible"
-      :title="'备料单明细 - ' + (detailHeader?.preparation_number || '')"
       width="1300px"
+      :style="detailModalStyle"
       :footer="null"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="detailDragStart">备料单明细 - {{ detailHeader?.preparation_number || '' }}</div>
+      </template>
       <a-spin :spinning="detailLoading">
         <template v-if="detailHeader">
           <a-descriptions :column="4" bordered size="small" style="margin-bottom: 16px;">
@@ -632,6 +638,10 @@ const handleBatchAction = (action: string) => {
 </template>
 
 <style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
 .material-preparation-page {
   padding: 0;
 }

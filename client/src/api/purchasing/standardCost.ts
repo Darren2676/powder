@@ -20,3 +20,6 @@ export const exportStandardCosts = (search?: string, approval_status?: string, c
 
 export const importStandardCost = (formData: FormData) =>
   request.post('/standard-costs/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+
+export const downloadImportTemplate = () =>
+  request.get('/standard-costs/import-template', { responseType: 'blob' })

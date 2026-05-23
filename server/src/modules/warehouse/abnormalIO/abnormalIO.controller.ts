@@ -3,7 +3,7 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { generateBatchNumber, syncFinishedGoodsSummary } from '@/services/inventory.service';
 import { generateTransactionNumber } from '@/services/inventory.service';
-import { createTransactionBatches } from '@/services/warehouse/helpers';
+import { createTransactionBatches, validateAccountingPeriodOpen } from '@/services/warehouse/helpers';
 
 // ==================== 其他出入库单号生成 ====================
 // RI-退货入库, SO-报废出库, TR-调拨, SC-盘点
@@ -365,6 +365,13 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
     const header = headers[0];
     if (header.status !== '待确认') {
       res.status(400).json({ success: false, message: '只能确认待确认状态的单据' }); return;
+    }
+
+    // 校验会计期间
+    try {
+      await validateAccountingPeriodOpen(header.accounting_period || '');
+    } catch (err: any) {
+      res.status(400).json({ success: false, message: err.message }); return;
     }
 
     // 查询明细

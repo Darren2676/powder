@@ -246,6 +246,59 @@ export const exportProductionInspections = async (req: Request, res: Response, n
   } catch (err) { next(err); }
 };
 
+// ==================== 删除检验记录 ====================
+export const deleteProductionInspection = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const inspectionNumber = String(id);
+
+    const [records]: any = await sequelize.query(
+      `SELECT * FROM production_inspection WHERE inspection_number = :id`,
+      { replacements: { id: inspectionNumber } }
+    );
+    if (!records.length) {
+      res.status(404).json({ success: false, message: '检验记录不存在' });
+      return;
+    }
+    const record = records[0];
+
+    // 仅允许删除 待检/检验中 状态的记录；已完成 或 已处理 的不允许删除
+    if (record.status === '已完成') {
+      res.status(403).json({ success: false, message: '已完成的检验记录不允许删除。如需撤销，请使用连续报工页面的「撤销重报」功能。' });
+      return;
+    }
+
+    const transaction = await sequelize.transaction();
+    try {
+      // 删除检验明细项
+      await sequelize.query(
+        `DELETE FROM production_inspection_item WHERE inspection_number = :id`,
+        { replacements: { id: inspectionNumber }, transaction }
+      );
+
+      // 删除检验主记录
+      await sequelize.query(
+        `DELETE FROM production_inspection WHERE inspection_number = :id`,
+        { replacements: { id: inspectionNumber }, transaction }
+      );
+
+      // 清除关联工序任务的 inspect_status
+      if (record.process_task_number) {
+        await sequelize.query(
+          `UPDATE process_task SET inspect_status = NULL WHERE process_task_number = :taskNo`,
+          { replacements: { taskNo: record.process_task_number }, transaction }
+        );
+      }
+
+      await transaction.commit();
+      res.json(success(null, `检验记录「${inspectionNumber}」已删除`));
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
+  } catch (err) { next(err); }
+};
+
 // ==================== 创建检验记录（供报工服务调用） ====================
 export const createInspectionFromWorkReport = async (params: {
   work_report_number: string;

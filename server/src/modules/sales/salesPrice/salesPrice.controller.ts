@@ -298,20 +298,88 @@ export const exportSalesPriceLists = async (req: Request, res: Response, next: N
   } catch (err) { next(err); }
 };
 
-// ==================== 导入 ====================
+// ==================== 导入模板下载 ====================
 const importDetailFields = ['item_number', 'item_name', 'item_category', 'specifications', 'tax_inclusive_price', 'tax_exclusive_price', 'tax_rate', 'enable_tiered_pricing', 'start_quantity', 'end_quantity', 'pricing_unit', 'min_price_inclusive', 'min_price_exclusive'];
 const importDetailHeaders = ['物料编号', '物料名称', '物料分类', '物料规格', '含税单价', '未税单价', '税率%', '启用分段价格', '起始数量', '结束数量', '计价单位', '含税最低价', '不含税最低价'];
+
+export const downloadImportTemplate = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const XLSX = await import('xlsx');
+    const wb = XLSX.utils.book_new();
+
+    // 第1行：主表字段标签；第2行：主表字段值（示例）
+    const headerRows = [
+      ['价目表名称(*)', '客户编号', '客户名称', '客户分类', '生效日期(*)', '失效日期(*)', '价格类型', '币种', '备注'],
+      ['2026年销售价目表', '', '', '', '2026-01-01', '2026-12-31', '含税', 'CNY', ''],
+    ];
+
+    // 第3行空行；第4行明细列头；第5行+示例数据
+    const detailRows = [
+      importDetailHeaders,
+      ['C100809', 'O型密封圈', '成品', '50×3.5', '1.50', '1.33', '13', '否', '1', '', '个', '1.20', '1.06'],
+      ['C100810', '油封', '成品', '80×60×10', '3.80', '3.36', '13', '否', '1', '', '个', '3.00', '2.65'],
+    ];
+
+    const allRows = [...headerRows, [], ...detailRows];
+    const ws = XLSX.utils.aoa_to_sheet(allRows);
+
+    // 设置列宽
+    ws['!cols'] = [
+      { wch: 18 }, { wch: 12 }, { wch: 14 }, { wch: 12 },
+      { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 14 },
+      { wch: 14 }, { wch: 10 }, { wch: 14 }, { wch: 14 },
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, '销售价目表导入');
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const fullName = '销售价目表导入模板.xlsx';
+    const encoded = encodeURIComponent(fullName);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${encoded}"; filename*=UTF-8''${encoded}`);
+    res.send(Buffer.from(buffer));
+  } catch (err) { next(err); }
+};
 
 export const importSalesPriceList = async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!req.file) { res.status(400).json({ success: false, message: '请上传Excel文件' }); return; }
-    const rows = parseExcelFile(req.file.buffer, importDetailFields, importDetailHeaders);
-    if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件内容为空' }); return; }
+
+    // 解析Excel：前2行为主表信息，第3行空行，第4行起为明细列头+数据
+    const XLSX = await import('xlsx');
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const allData: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+    // 读取主表信息（第1行标签，第2行值）
+    const headerValues = allData[1] || [];
+    const excelPriceListName = String(headerValues[0] || '').trim();
+    const excelCustomerNumber = String(headerValues[1] || '').trim();
+    const excelCustomerName = String(headerValues[2] || '').trim();
+    const excelCustomerCategory = String(headerValues[3] || '').trim();
+    const excelEffectiveDate = String(headerValues[4] || '').trim();
+    const excelExpirationDate = String(headerValues[5] || '').trim();
+    const excelPriceType = String(headerValues[6] || '').trim();
+    const excelCurrency = String(headerValues[7] || '').trim();
+    const excelRemark = String(headerValues[8] || '').trim();
+
+    // 从第4行开始解析明细
+    const detailJsonData: any[] = XLSX.utils.sheet_to_json(ws, { range: 3 });
+    const rows = detailJsonData.map((row: any) => {
+      const item: any = {};
+      importDetailFields.forEach((f, i) => {
+        item[f] = String(row[importDetailHeaders[i]] ?? row[f] ?? '').trim();
+      });
+      return item;
+    }).filter((r: any) => r.item_number);
+
+    if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件明细内容为空' }); return; }
+    if (!excelPriceListName) { res.status(400).json({ success: false, message: '价目表名称不能为空，请在Excel第2行第1列填写' }); return; }
+    if (!excelEffectiveDate) { res.status(400).json({ success: false, message: '生效日期不能为空，请在Excel第2行第5列填写' }); return; }
+    if (!excelExpirationDate) { res.status(400).json({ success: false, message: '失效日期不能为空，请在Excel第2行第6列填写' }); return; }
 
     const price_list_number = await generatePriceListNumber();
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const creation_man = (req as any).user?.username || '';
-    const b = req.body;
 
     const transaction = await sequelize.transaction();
     try {
@@ -325,15 +393,15 @@ export const importSalesPriceList = async (req: Request, res: Response, next: Ne
       `, {
         replacements: {
           price_list_number,
-          price_list_name: b?.price_list_name || '导入价目表',
-          customer_number: b?.customer_number || '',
-          customer_name: b?.customer_name || '',
-          customer_category: b?.customer_category || '',
-          effective_date: b?.effective_date || null,
-          expiration_date: b?.expiration_date || null,
-          price_type: b?.price_type || '含税',
-          currency: b?.currency || 'CNY',
-          remark: b?.remark || '',
+          price_list_name: excelPriceListName,
+          customer_number: excelCustomerNumber,
+          customer_name: excelCustomerName,
+          customer_category: excelCustomerCategory,
+          effective_date: excelEffectiveDate || null,
+          expiration_date: excelExpirationDate || null,
+          price_type: excelPriceType || '含税',
+          currency: excelCurrency || 'CNY',
+          remark: excelRemark,
           creation_date: now,
           creation_man
         },

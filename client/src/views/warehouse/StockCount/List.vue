@@ -17,12 +17,14 @@ import { getWarehouseOptions } from '@/api/warehouse/finishedGoods'
 import { getItemOptions } from '@/api/warehouse/materialWarehouse'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
+import { useModalDrag } from '@/composables/useModalDrag'
 
 // ==================== 列表数据 ====================
 
 
 
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getStockCountList)
+const { modalStyle: editModalStyle, onDragStart: editDragStart, resetDrag: editResetDrag } = useModalDrag()
 
 const filterStatus = ref('')
 const filterWarehouse = ref('')
@@ -230,6 +232,7 @@ const openEdit = async (record: any) => {
   isViewMode.value = false
   editLoading.value = true
   editVisible.value = true
+  editResetDrag()
   try {
     const res: any = await getStockCountDetail(record.count_number)
     if (res?.success) {
@@ -245,6 +248,7 @@ const openView = async (record: any) => {
   isViewMode.value = true
   editLoading.value = true
   editVisible.value = true
+  editResetDrag()
   try {
     const res: any = await getStockCountDetail(record.count_number)
     if (res?.success) {
@@ -590,9 +594,12 @@ onMounted(() => {
     </a-modal>
 
     <!-- 编辑/查看明细弹窗 -->
-    <a-modal v-model:open="editVisible" :title="isViewMode ? '盘点单详情' : '录入盘点数量'" :width="1200"
+    <a-modal v-model:open="editVisible" :width="1200"
       :footer="isViewMode ? null : undefined" @ok="handleSaveDetails" :confirmLoading="editSaving"
-      :okText="'保存'" :cancelText="'关闭'">
+      :okText="'保存'" :cancelText="'关闭'" :style="editModalStyle">
+      <template #title>
+        <div class="drag-handle" @mousedown="editDragStart">{{ isViewMode ? '盘点单详情' : '录入盘点数量' }}</div>
+      </template>
       <!-- 单头信息 -->
       <div style="margin-bottom: 16px; background: #fafafa; padding: 12px; border-radius: 4px">
         <a-row :gutter="16">
@@ -730,3 +737,10 @@ onMounted(() => {
     </a-modal>
   </div>
 </template>
+
+<style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+</style>

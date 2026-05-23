@@ -25,7 +25,9 @@ export function exportToExcel(
     : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   const buffer = XLSX.write(wb, { type: 'buffer', bookType });
   res.setHeader('Content-Type', contentType);
-  res.setHeader('Content-Disposition', `attachment; filename=${filename}.${bookType}`);
+  const fullName = `${filename}.${bookType}`;
+  const encoded = encodeURIComponent(fullName);
+  res.setHeader('Content-Disposition', `attachment; filename="${encoded}"; filename*=UTF-8''${encoded}`);
   res.send(Buffer.from(buffer));
 }
 

@@ -29,3 +29,11 @@ export function importPurchasePriceList(formData: FormData) {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
 }
+
+export function downloadImportTemplate() {
+  return request.get('/purchase-prices/import-template', { responseType: 'blob' })
+}
+
+export function queryPurchasePrice(params: { supplier_number: string; item_numbers: string }) {
+  return request.get('/purchase-prices/query-price', { params })
+}

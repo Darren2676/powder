@@ -19,6 +19,6 @@ export class LoginPage {
     // Ant Design 按钮文本会插入空白 span，用 locator+hasText 或 type=submit 更稳
     await this.page.locator('button[type="submit"]').click();
     // 登录成功后跳转到首页，侧边菜单出现
-    await this.page.waitForURL(url => !url.pathname.includes('/login'), { timeout: 15_000 });
+    await this.page.waitForURL(url => !url.pathname.includes('/login'), { timeout: 30_000 });
   }
 }

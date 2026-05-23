@@ -11,7 +11,8 @@ import {
 } from '@/services/inventory.service';
 import { withTransaction } from '@/shared/db/withTransaction';
 import { executeBackflushDeduction } from '@/services/backflushTask.service';
-import { upsertMaterialInventory, createMaterialTransaction, fifoDeductBatches, writeBatchTraceability } from './helpers';
+import { generateSemiProductionInboundOrderNumber } from '@/services/documentNumber.service';
+import { upsertMaterialInventory, createMaterialTransaction, fifoDeductBatches, writeBatchTraceability, validateAccountingPeriodOpen } from './helpers';
 
 // ==================== 物料仓 - Main Exported Functions ====================
 
@@ -24,6 +25,7 @@ export const manualInboundMaterial = async (
       supplier_number?: string; supplier_name?: string;
     }>;
     warehouse_number: string; warehouse_name: string; remark?: string;
+    accounting_period?: string;
   },
   operator: string
 ) => {
@@ -34,6 +36,9 @@ export const manualInboundMaterial = async (
   if (!b.warehouse_number || !b.warehouse_name) {
     throw new BusinessError(400, '请选择入库仓库');
   }
+
+  const accountingPeriod = b.accounting_period || new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+  await validateAccountingPeriodOpen(accountingPeriod);
 
   return await withTransaction(async (transaction) => {
     const transactionNumbers: string[] = [];
@@ -86,6 +91,7 @@ export const manualInboundMaterial = async (
         quantity: inboundQty, before_quantity: beforeQty, after_quantity: afterQty,
         batch_number: batchNo,
         supplier_number: item.supplier_number || '', supplier_name: item.supplier_name || '',
+        accounting_period: accountingPeriod,
         operator, remark: b.remark || ''
       }, transaction);
     }
@@ -103,6 +109,7 @@ export const productionInboundMaterial = async (
       inbound_quantity?: number; planned_quantity?: number;
     }>;
     warehouse_number: string; warehouse_name: string; remark?: string;
+    accounting_period?: string;
   },
   operator: string
 ) => {
@@ -113,6 +120,9 @@ export const productionInboundMaterial = async (
   if (!b.warehouse_number || !b.warehouse_name) {
     throw new BusinessError(400, '请选择入库仓库');
   }
+
+  const prodAP = b.accounting_period || new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+  await validateAccountingPeriodOpen(prodAP);
 
   return await withTransaction(async (transaction) => {
     const transactionNumbers: string[] = [];
@@ -164,6 +174,7 @@ export const productionInboundMaterial = async (
         quantity: inboundQty, before_quantity: beforeQty, after_quantity: afterQty,
         batch_number: batchNo,
         supplier_number: '', supplier_name: '',
+        accounting_period: prodAP,
         operator, remark: b.remark || ''
       }, transaction);
 
@@ -190,7 +201,48 @@ export const productionInboundMaterial = async (
       }, transaction);
     }
 
-    return { transactionNumbers, batchNumbers };
+    // ====== 生成半成品生产入库单 ======
+    const inboundOrderNo = await generateSemiProductionInboundOrderNumber(transaction);
+    let totalQty = 0;
+    let lineNum = 0;
+    for (let i = 0; i < b.items.length; i++) {
+      const item = b.items[i];
+      const inboundQty = Number(item.inbound_qty) || 0;
+      if (inboundQty <= 0) continue;
+      lineNum++;
+      totalQty += inboundQty;
+
+      await sequelize.query(
+        "INSERT INTO semi_production_inbound_order_detail (inbound_order_number, line_number, production_order_number, item_number, item_name, item_type, specifications, basic_unit, batch_number, planned_quantity, inbound_quantity, transaction_number, remark, creation_date) VALUES (:inbound_order_number, :line_number, :production_order_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :batch_number, :planned_quantity, :inbound_quantity, :transaction_number, :remark, GETDATE())",
+        {
+          replacements: {
+            inbound_order_number: inboundOrderNo, line_number: lineNum,
+            production_order_number: item.production_order_number || '',
+            item_number: item.item_number, item_name: item.item_name || '',
+            specifications: item.specifications || '', basic_unit: item.basic_unit || '',
+            batch_number: batchNumbers[i] || '',
+            planned_quantity: Number(item.planned_quantity) || 0,
+            inbound_quantity: inboundQty,
+            transaction_number: transactionNumbers[i] || '',
+            remark: b.remark || ''
+          }, transaction
+        }
+      );
+    }
+
+    await sequelize.query(
+      'INSERT INTO semi_production_inbound_order (inbound_order_number, warehouse_number, warehouse_name, total_quantity, total_items, remark, accounting_period, operator, inbound_date, creation_date) VALUES (:inbound_order_number, :warehouse_number, :warehouse_name, :total_quantity, :total_items, :remark, :accounting_period, :operator, GETDATE(), GETDATE())',
+      {
+        replacements: {
+          inbound_order_number: inboundOrderNo,
+          warehouse_number: b.warehouse_number, warehouse_name: b.warehouse_name,
+          total_quantity: totalQty, total_items: lineNum,
+          remark: b.remark || '', accounting_period: prodAP, operator
+        }, transaction
+      }
+    );
+
+    return { transactionNumbers, batchNumbers, inboundOrderNumber: inboundOrderNo };
   });
 };
 
@@ -200,6 +252,7 @@ export const manualOutboundMaterial = async (
   params: {
     item_number: string; warehouse_number: string; quantity: number;
     batch_items?: Array<{ batch_number: string; quantity: number }>; remark?: string;
+    accounting_period?: string;
   },
   operator: string
 ) => {
@@ -211,6 +264,9 @@ export const manualOutboundMaterial = async (
   if (outQty <= 0) {
     throw new BusinessError(400, '出库数量必须大于0');
   }
+
+  const outboundAP = b.accounting_period || new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+  await validateAccountingPeriodOpen(outboundAP);
 
   return await withTransaction(async (transaction) => {
     // 汇总表验证
@@ -269,6 +325,7 @@ export const manualOutboundMaterial = async (
         quantity: bd.quantity, before_quantity: batchBefore, after_quantity: batchAfter,
         batch_number: bd.batch_number,
         supplier_number: '', supplier_name: '',
+        accounting_period: outboundAP,
         operator, remark: b.remark || ''
       }, transaction);
     }
@@ -287,6 +344,7 @@ export const adjustMaterialInventory = async (
     specifications?: string; basic_unit?: string;
     warehouse_number: string; warehouse_name?: string;
     adjust_quantity: number; remark?: string;
+    accounting_period?: string;
   },
   operator: string
 ) => {
@@ -299,6 +357,9 @@ export const adjustMaterialInventory = async (
   if (adjustQty === 0) {
     throw new BusinessError(400, '调整数量不能为0');
   }
+
+  const adjustAP = b.accounting_period || new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+  await validateAccountingPeriodOpen(adjustAP);
 
   return await withTransaction(async (transaction) => {
     const [existing]: any = await sequelize.query(
@@ -346,9 +407,195 @@ export const adjustMaterialInventory = async (
       warehouse_number: b.warehouse_number, warehouse_name: b.warehouse_name || existing[0]?.warehouse_name || '',
       quantity: Math.abs(adjustQty), before_quantity: beforeQty, after_quantity: afterQty,
       batch_number: '', supplier_number: '', supplier_name: '',
+      accounting_period: adjustAP,
       operator, remark: b.remark || '手动调整'
     }, transaction);
 
     return { transaction_number: txNum };
+  });
+};
+
+/** 半成品生产入库撤回 */
+export const rollbackSemiProductionInbound = async (inboundOrderNumber: string, operator: string) => {
+  // 1. 校验入库单存在且未被撤回
+  const [headerRows]: any = await sequelize.query(
+    `SELECT * FROM semi_production_inbound_order WHERE inbound_order_number = :num`,
+    { replacements: { num: inboundOrderNumber } }
+  );
+  if (headerRows.length === 0) {
+    throw new BusinessError(404, '入库单不存在');
+  }
+  const header = headerRows[0];
+  if (header.status && header.status.trim() === '已撤回') {
+    throw new BusinessError(400, '该入库单已撤回，不可重复操作');
+  }
+
+  // 2. 查询入库单明细
+  const [details]: any = await sequelize.query(
+    `SELECT * FROM semi_production_inbound_order_detail WHERE inbound_order_number = :num`,
+    { replacements: { num: inboundOrderNumber } }
+  );
+  if (details.length === 0) {
+    throw new BusinessError(400, '入库单明细为空');
+  }
+
+  // 3. 安全检查：物料批次未被出库消耗
+  for (const detail of details) {
+    const [batchRows]: any = await sequelize.query(
+      `SELECT quantity FROM material_batch_inventory
+       WHERE batch_number = :bn AND item_number = :itemNum AND warehouse_number = :whNum`,
+      { replacements: { bn: detail.batch_number, itemNum: detail.item_number, whNum: header.warehouse_number } }
+    );
+    if (batchRows.length > 0) {
+      const currentQty = parseFloat(batchRows[0].quantity);
+      const inboundQty = parseFloat(detail.inbound_quantity);
+      if (currentQty < inboundQty) {
+        throw new BusinessError(400,
+          `批次 ${detail.batch_number} 已被出库消耗（剩余 ${currentQty}，需回退 ${inboundQty}），请先撤回后续出库操作`);
+      }
+    }
+  }
+
+  // 4. 事务内执行所有反转操作
+  return await withTransaction(async (transaction) => {
+    const transactionNumbers: string[] = [];
+    const batchNumbers: string[] = [];
+    const ponQtyMap = new Map<string, number>();
+
+    // 5. 反转物料批次库存
+    for (const detail of details) {
+      const inboundQty = parseFloat(detail.inbound_quantity);
+      const [batchRows]: any = await sequelize.query(
+        `SELECT id, quantity FROM material_batch_inventory
+         WHERE batch_number = :bn AND item_number = :itemNum AND warehouse_number = :whNum`,
+        { replacements: { bn: detail.batch_number, itemNum: detail.item_number, whNum: header.warehouse_number }, transaction }
+      );
+
+      if (batchRows.length > 0) {
+        const currentQty = parseFloat(batchRows[0].quantity);
+        if (currentQty - inboundQty <= 0) {
+          await sequelize.query(
+            `DELETE FROM material_batch_inventory WHERE id = :id`,
+            { replacements: { id: batchRows[0].id }, transaction }
+          );
+        } else {
+          await sequelize.query(
+            `UPDATE material_batch_inventory SET quantity = quantity - :qty, last_updated = GETDATE() WHERE id = :id`,
+            { replacements: { qty: inboundQty, id: batchRows[0].id }, transaction }
+          );
+        }
+      }
+
+      // 6. 同步物料汇总库存
+      await syncMaterialInventorySummary(detail.item_number, header.warehouse_number, transaction);
+
+      if (detail.transaction_number) transactionNumbers.push(detail.transaction_number);
+      if (detail.batch_number) batchNumbers.push(detail.batch_number);
+
+      const pon = detail.production_order_number;
+      if (pon) {
+        ponQtyMap.set(pon, (ponQtyMap.get(pon) || 0) + inboundQty);
+      }
+    }
+
+    // 7. 标记物料库存流水作废
+    if (transactionNumbers.length > 0) {
+      await sequelize.query(
+        `UPDATE material_inventory_transaction
+         SET status = N'作废', void_operator = :op, void_date = GETDATE()
+         WHERE transaction_number IN (:txns)
+           AND (status IS NULL OR status = N'正常')`,
+        { replacements: { op: operator, txns: transactionNumbers }, transaction }
+      );
+    }
+
+    // 8. 回退生产单入库数量和状态
+    for (const [pon, rollbackQty] of ponQtyMap) {
+      await sequelize.query(
+        `UPDATE production_order
+         SET inbound_quantity = CASE WHEN inbound_quantity - :rollbackQty < 0 THEN 0 ELSE inbound_quantity - :rollbackQty END,
+             inbound_status = CASE
+               WHEN inbound_quantity - :rollbackQty2 <= 0 THEN N'未入库'
+               WHEN inbound_quantity - :rollbackQty3 < planned_quantity THEN N'部分入库'
+               ELSE N'全部入库'
+             END
+         WHERE production_order_number = :pon`,
+        { replacements: { rollbackQty, rollbackQty2: rollbackQty, rollbackQty3: rollbackQty, pon }, transaction }
+      );
+    }
+
+    // 9. 反转倒冲扣减
+    for (const [pon, inboundQty] of ponQtyMap) {
+      const [deductionLogs]: any = await sequelize.query(
+        `SELECT * FROM backflush_deduction_log
+         WHERE production_order_number = :pon
+           AND inbound_quantity = :inboundQty
+           AND status = N'成功'
+         ORDER BY deduction_date DESC`,
+        { replacements: { pon, inboundQty }, transaction }
+      );
+
+      for (const dlog of deductionLogs) {
+        let batchDeductions: Array<{ batch_number: string; quantity: number }> = [];
+        try { if (dlog.batch_deductions) batchDeductions = JSON.parse(dlog.batch_deductions); } catch { /* ignore */ }
+
+        for (const bd of batchDeductions) {
+          await sequelize.query(
+            `UPDATE material_batch_inventory SET quantity = quantity + :qty, last_updated = GETDATE()
+             WHERE batch_number = :bn AND item_number = :matNum AND warehouse_number = :whNum`,
+            { replacements: { qty: bd.quantity, bn: bd.batch_number, matNum: dlog.material_number, whNum: dlog.warehouse_number }, transaction }
+          );
+        }
+
+        const deductQty = parseFloat(dlog.deduction_quantity) || 0;
+        if (deductQty > 0) {
+          await sequelize.query(
+            `UPDATE material_inventory SET quantity = quantity + :deductQty, last_updated = GETDATE()
+             WHERE item_number = :matNum AND warehouse_number = :whNum`,
+            { replacements: { deductQty, matNum: dlog.material_number, whNum: dlog.warehouse_number }, transaction }
+          );
+        }
+
+        if (dlog.transaction_number) {
+          await sequelize.query(
+            `UPDATE material_inventory_transaction SET status = N'作废', void_operator = :op, void_date = GETDATE()
+             WHERE transaction_number = :txNum AND (status IS NULL OR status = N'正常')`,
+            { replacements: { op: operator, txNum: dlog.transaction_number }, transaction }
+          );
+        }
+
+        if (dlog.backflush_task_id) {
+          await sequelize.query(
+            `UPDATE backflush_task SET deducted_quantity = deducted_quantity - :deductQty,
+                deduction_status = CASE WHEN deducted_quantity - :deductQty2 <= 0 THEN N'待扣减' ELSE N'部分扣减' END,
+                error_message = '', last_updated = GETDATE()
+             WHERE id = :taskId`,
+            { replacements: { deductQty, deductQty2: deductQty, taskId: dlog.backflush_task_id }, transaction }
+          );
+        }
+
+        await sequelize.query(
+          `UPDATE backflush_deduction_log SET status = N'已撤回' WHERE id = :logId`,
+          { replacements: { logId: dlog.id }, transaction }
+        );
+      }
+    }
+
+    // 10. 删除批次追溯记录
+    if (batchNumbers.length > 0) {
+      const ponList = Array.from(ponQtyMap.keys());
+      await sequelize.query(
+        `DELETE FROM batch_traceability WHERE finished_batch_number IN (:batchNos) AND production_order_number IN (:pons)`,
+        { replacements: { batchNos: batchNumbers, pons: ponList }, transaction }
+      );
+    }
+
+    // 11. 更新入库单状态
+    await sequelize.query(
+      `UPDATE semi_production_inbound_order SET status = N'已撤回', withdraw_operator = :op, withdraw_date = GETDATE() WHERE inbound_order_number = :num`,
+      { replacements: { op: operator, num: inboundOrderNumber }, transaction }
+    );
+
+    return { inbound_order_number: inboundOrderNumber, rolledBackTransactions: transactionNumbers, operator };
   });
 };

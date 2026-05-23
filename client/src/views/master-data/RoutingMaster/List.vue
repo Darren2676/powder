@@ -321,7 +321,7 @@ const fetchInspectionPlans = async () => {
 }
 const fetchInspectionSpecs = async () => {
   try {
-    const res = await getInspectionSpecs({ page: 1, limit: 9999 })
+    const res = await getInspectionSpecs({ page: 1, limit: 9999, spec_type: '生产' })
     const list = res.data.items || []
     inspectionSpecOptions.value = list.map((s: any) => ({ label: `${s.spec_name}`, value: s.spec_name }))
   } catch {}

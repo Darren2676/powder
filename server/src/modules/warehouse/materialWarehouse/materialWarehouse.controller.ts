@@ -7,6 +7,7 @@ import {
   productionInboundMaterial,
   manualOutboundMaterial,
   adjustMaterialInventory as adjustMaterialInventoryService,
+  rollbackSemiProductionInbound as rollbackSemiProductionInboundService,
 } from '@/services/warehouse.service';
 
 // Re-export from service for backward compatibility
@@ -381,5 +382,185 @@ export const getBatchOptions = async (req: Request, res: Response, next: NextFun
     `, { replacements: { item_number, warehouse_number } });
 
     res.json(success(items));
+  } catch (err) { next(err); }
+};
+
+// ==================== 半成品生产入库单列表 ====================
+export const getSemiInboundOrderList = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { page = 1, limit = 20, search = '' } = req.query;
+    const pageNum = Number(page);
+    const pageSize = Number(limit);
+    const offset = (pageNum - 1) * pageSize;
+    const offsetEnd = offset + pageSize;
+
+    let whereClause = '';
+    const replacements: any = { offset, offsetEnd };
+
+    if (search) {
+      whereClause = `WHERE (o.inbound_order_number LIKE :search OR o.warehouse_name LIKE :search OR o.operator LIKE :search)`;
+      replacements.search = `%${search}%`;
+    }
+
+    const [countResult]: any = await sequelize.query(
+      `SELECT COUNT(*) as total FROM semi_production_inbound_order o ${whereClause}`, { replacements }
+    );
+
+    const [items]: any = await sequelize.query(`
+      SELECT * FROM (
+        SELECT o.*, ROW_NUMBER() OVER (ORDER BY o.creation_date DESC) AS _row_num
+        FROM semi_production_inbound_order o ${whereClause}
+      ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
+    `, { replacements });
+
+    res.json(success({
+      items,
+      total: countResult[0]?.total || 0,
+      page: pageNum,
+      limit: pageSize
+    }));
+  } catch (err) { next(err); }
+};
+
+// ==================== 半成品生产入库单详情 ====================
+export const getSemiInboundOrderDetail = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { inbound_order_number } = req.params;
+
+    const [headers]: any = await sequelize.query(
+      `SELECT * FROM semi_production_inbound_order WHERE inbound_order_number = :num`,
+      { replacements: { num: inbound_order_number } }
+    );
+
+    const [details]: any = await sequelize.query(
+      `SELECT * FROM semi_production_inbound_order_detail WHERE inbound_order_number = :num ORDER BY line_number`,
+      { replacements: { num: inbound_order_number } }
+    );
+
+    res.json(success({ header: headers[0], details }));
+  } catch (err) { next(err); }
+};
+
+// ==================== 半成品生产入库单撤回 ====================
+export const withdrawSemiInboundOrder = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await rollbackSemiProductionInboundService(
+      String(req.params.inbound_order_number),
+      (req as any).user?.username || ''
+    );
+    res.json(success(result, '入库单撤回成功'));
+  } catch (err) {
+    if (err instanceof BusinessError) {
+      res.status(err.statusCode).json({ success: false, message: err.message });
+      return;
+    }
+    next(err);
+  }
+};
+
+// ==================== 采购退货出库列表 ====================
+export const getReturnOutboundList = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { page = 1, limit = 20, search = '', return_status = '' } = req.query;
+    const pageNum = Number(page);
+    const pageSize = Number(limit);
+    const offset = (pageNum - 1) * pageSize;
+    const offsetEnd = offset + pageSize;
+
+    const conditions: string[] = [`pr.approval_status = N'已审批'`];
+    const replacements: any = { offset, offsetEnd };
+
+    if (search) {
+      conditions.push(`(pr.return_number LIKE :search OR pr.purchase_order_number LIKE :search OR pr.supplier_name LIKE :search)`);
+      replacements.search = `%${search}%`;
+    }
+    if (return_status) {
+      conditions.push(`pr.return_status = :return_status`);
+      replacements.return_status = return_status;
+    }
+
+    const whereClause = 'WHERE ' + conditions.join(' AND ');
+
+    const [countResult]: any = await sequelize.query(
+      `SELECT COUNT(*) as total FROM purchase_return pr ${whereClause}`, { replacements }
+    );
+    const total = countResult[0].total;
+
+    const [items]: any = await sequelize.query(`
+      SELECT * FROM (
+        SELECT pr.return_number, pr.purchase_order_number, pr.supplier_number, pr.supplier_name,
+               pr.return_type, pr.return_reason, pr.warehouse_number, pr.warehouse_name,
+               pr.approval_status, pr.return_status, pr.exchange_status,
+               pr.total_return_quantity, pr.total_return_amount,
+               pr.remark, pr.creation_date, pr.creation_man,
+               po.order_status as po_order_status,
+               ROW_NUMBER() OVER (ORDER BY pr.creation_date DESC, pr.return_number DESC) AS _row_num
+        FROM purchase_return pr
+        LEFT JOIN purchase_order po ON po.purchase_order_number = pr.purchase_order_number
+        ${whereClause}
+      ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
+    `, { replacements });
+
+    const cleanItems = items.map((item: any) => { const { _row_num, ...rest } = item; return rest; });
+    res.json(success({ items: cleanItems, pagination: { total, page: pageNum, limit: pageSize, totalPages: Math.ceil(total / pageSize) } }, '获取采购退货出库列表成功'));
+  } catch (err) { next(err); }
+};
+
+// ==================== 采购退货出库详情（含批次库存） ====================
+export const getReturnOutboundDetail = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+
+    const [headers]: any = await sequelize.query(
+      `SELECT * FROM purchase_return WHERE return_number = :id`, { replacements: { id } }
+    );
+    if (!headers.length) { res.status(404).json({ success: false, message: '退货单不存在' }); return; }
+    const header = headers[0];
+
+    const [details]: any = await sequelize.query(
+      `SELECT * FROM purchase_return_detail WHERE return_number = :id ORDER BY line_number`, { replacements: { id } }
+    );
+
+    // 补充每个明细行的批次库存信息
+    const detailsWithBatch = [];
+    for (const d of details) {
+      const [batches]: any = await sequelize.query(`
+        SELECT batch_number, quantity, inbound_date, status
+        FROM material_batch_inventory
+        WHERE item_number = :item_number AND warehouse_number = :warehouse_number AND quantity > 0 AND status != N'冻结'
+        ORDER BY inbound_date ASC
+      `, { replacements: { item_number: d.item_number, warehouse_number: header.warehouse_number } });
+
+      // 查询当前物料在仓库的汇总库存
+      const [invRows]: any = await sequelize.query(
+        `SELECT ISNULL(quantity, 0) as current_stock FROM material_inventory WHERE item_number = :item_number AND warehouse_number = :warehouse_number`,
+        { replacements: { item_number: d.item_number, warehouse_number: header.warehouse_number } }
+      );
+
+      detailsWithBatch.push({
+        ...d,
+        current_stock: parseFloat(invRows[0]?.current_stock) || 0,
+        batches
+      });
+    }
+
+    // 查询关联的采购入库单信息
+    const [stockInRows]: any = await sequelize.query(`
+      SELECT DISTINCT si.stock_in_number, si.approval_status as si_status, si.stock_in_date
+      FROM stock_in si
+      INNER JOIN stock_in_detail sid ON sid.stock_in_number = si.stock_in_number
+      WHERE si.purchase_order_number = :pon AND si.approval_status = N'已入库'
+    `, { replacements: { pon: header.purchase_order_number } });
+
+    res.json(success({ header, details: detailsWithBatch, stockIns: stockInRows }, '获取退货出库详情成功'));
+  } catch (err) { next(err); }
+};
+
+// ==================== 执行采购退货出库（代理） ====================
+export const executeReturnOutbound = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // 代理调用 purchaseReturn.controller 的 executeReturn
+    const { executeReturn } = await import('../../purchasing/purchaseReturn/purchaseReturn.controller');
+    await executeReturn(req, res, next);
   } catch (err) { next(err); }
 };

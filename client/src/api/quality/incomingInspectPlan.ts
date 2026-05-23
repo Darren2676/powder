@@ -1,25 +1,25 @@
 import request from '@/utils/request'
 
 export const getIncomingInspectPlans = (params?: any) =>
-  request.get('/incoming-inspect-plans', { params })
+  request.get('/quality/incoming-inspect-plans', { params })
 
 export const createIncomingInspectPlan = (data: any) =>
-  request.post('/incoming-inspect-plans', data)
+  request.post('/quality/incoming-inspect-plans', data)
 
 export const updateIncomingInspectPlan = (id: string, data: any) =>
-  request.put(`/incoming-inspect-plans/${encodeURIComponent(id)}`, data)
+  request.put(`/quality/incoming-inspect-plans/${encodeURIComponent(id)}`, data)
 
 export const deleteIncomingInspectPlan = (id: string) =>
-  request.delete(`/incoming-inspect-plans/${encodeURIComponent(id)}`)
+  request.delete(`/quality/incoming-inspect-plans/${encodeURIComponent(id)}`)
 
 export const exportIncomingInspectPlans = () =>
-  request.get('/incoming-inspect-plans/export', { responseType: 'blob' })
+  request.get('/quality/incoming-inspect-plans/export', { responseType: 'blob' })
 
 export const importIncomingInspectPlans = (formData: FormData) =>
-  request.post('/incoming-inspect-plans/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+  request.post('/quality/incoming-inspect-plans/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
 
 export const approveIncomingInspectPlan = (id: string) =>
-  request.put(`/incoming-inspect-plans/${encodeURIComponent(id)}/approve`)
+  request.put(`/quality/incoming-inspect-plans/${encodeURIComponent(id)}/approve`)
 
 export const withdrawIncomingInspectPlan = (id: string) =>
-  request.put(`/incoming-inspect-plans/${encodeURIComponent(id)}/withdraw`)
+  request.put(`/quality/incoming-inspect-plans/${encodeURIComponent(id)}/withdraw`)

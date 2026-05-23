@@ -13,6 +13,7 @@ import { syncProductionStatus } from '@/services/salesOrderSync.service';
 import { emitAsync } from '@/shared/eventBus';
 import { EVENT_NAMES } from '@/shared/events';
 import { syncTaskCompletion } from './taskSync';
+import { recalcYieldRate } from '../productionYield.service';
 
 // ==================== 创建报工单 ====================
 
@@ -252,6 +253,11 @@ export const createWorkReport = async (params: {
       transaction,
     });
 
+    // 重算生产单综合合格率
+    if (task.production_order_number) {
+      await recalcYieldRate(task.production_order_number, transaction);
+    }
+
     return { workReportNumber: wrNumber };
   });
 };
@@ -488,6 +494,11 @@ export const quickReport = async (params: {
       transaction,
     });
 
+    // 重算生产单综合合格率
+    if (task.production_order_number) {
+      await recalcYieldRate(task.production_order_number, transaction);
+    }
+
     return { workReportNumber: wrNumber };
   });
 };
@@ -514,12 +525,13 @@ export const updateWorkReport = async (workReportNumber: string, params: {
   remark?: string;
 }, user: { username: string }): Promise<void> => {
   return await withTransaction(async (transaction) => {
-    const [chk]: any = await sequelize.query(`SELECT approval_status, process_task_number, qualified_quantity FROM work_report WHERE work_report_number = :id`, { replacements: { id: workReportNumber }, transaction });
+    const [chk]: any = await sequelize.query(`SELECT approval_status, process_task_number, production_order_number, qualified_quantity FROM work_report WHERE work_report_number = :id`, { replacements: { id: workReportNumber }, transaction });
     if (!chk.length) throw new BusinessError(404, '报工单不存在');
     if (chk[0].approval_status !== ORDER_STATUS.DRAFT) throw new BusinessError(403, '已提交或已审批的报工单不允许编辑');
 
     const oldQualifiedQty = parseFloat(chk[0].qualified_quantity) || 0;
     const taskNo = chk[0].process_task_number;
+    const pon = chk[0].production_order_number;
 
     const b = params;
     const qualifiedQty = Number(b.qualified_quantity) || 0;
@@ -589,6 +601,11 @@ export const updateWorkReport = async (workReportNumber: string, params: {
     if (taskNo && qualifiedQty > 0) {
       await logWorkReportLinesideMovement(taskNo, qualifiedQty, workReportNumber, user?.username || '', transaction);
     }
+
+    // 重算生产单综合合格率
+    if (pon) {
+      await recalcYieldRate(pon, transaction);
+    }
   });
 };
 
@@ -596,12 +613,13 @@ export const updateWorkReport = async (workReportNumber: string, params: {
 
 export const deleteWorkReport = async (workReportNumber: string, user: { username: string }): Promise<void> => {
   return await withTransaction(async (transaction) => {
-    const [chk]: any = await sequelize.query(`SELECT approval_status, process_task_number, qualified_quantity FROM work_report WHERE work_report_number = :id`, { replacements: { id: workReportNumber }, transaction });
+    const [chk]: any = await sequelize.query(`SELECT approval_status, process_task_number, production_order_number, qualified_quantity FROM work_report WHERE work_report_number = :id`, { replacements: { id: workReportNumber }, transaction });
     if (!chk.length) throw new BusinessError(404, '报工单不存在');
     if (chk[0].approval_status !== ORDER_STATUS.DRAFT) throw new BusinessError(403, '已提交或已审批的报工单不允许删除');
 
     const taskNo = chk[0].process_task_number;
     const qty = parseFloat(chk[0].qualified_quantity) || 0;
+    const pon = chk[0].production_order_number;
 
     await sequelize.query(`DELETE FROM work_report WHERE work_report_number = :id`, { replacements: { id: workReportNumber }, transaction });
 
@@ -613,6 +631,11 @@ export const deleteWorkReport = async (workReportNumber: string, user: { usernam
     // 线边仓流转冲销
     if (taskNo && qty > 0) {
       await logWorkReportReverseLinesideMovement(taskNo, qty, workReportNumber, user?.username || '', transaction);
+    }
+
+    // 重算生产单综合合格率
+    if (pon) {
+      await recalcYieldRate(pon, transaction);
     }
   });
 };
@@ -763,6 +786,9 @@ export const completeOrderReport = async (params: {
     );
     // 回写销售订单明细 production_status
     await syncProductionStatus(orderNo, '生产完成', transaction);
+
+    // 重算生产单综合合格率
+    await recalcYieldRate(orderNo, transaction);
 
     return {
       workReportNumber: wrNumber || null,

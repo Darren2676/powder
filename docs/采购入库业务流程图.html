@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>采购入库业务全流程逻辑流程图</title>
+<style>
+  :root {
+    --c-purchase: #1677ff; --c-purchase-bg: #e6f4ff; --c-purchase-border: #91caff;
+    --c-warehouse: #00b578; --c-warehouse-bg: #e8f9f0; --c-warehouse-border: #7be0a8;
+    --c-inspect: #fa8c16; --c-inspect-bg: #fff7e6; --c-inspect-border: #ffd591;
+    --c-system: #722ed1; --c-system-bg: #f5f0ff; --c-system-border: #d3adf7;
+    --c-rollback: #f5222d; --c-rollback-bg: #fff1f0; --c-rollback-border: #ffa39e;
+    --c-decision: #eb2f96; --c-decision-bg: #fff0f6; --c-decision-border: #ffadd2;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Microsoft YaHei','PingFang SC',sans-serif; background: linear-gradient(135deg,#f5f7fa 0%,#e4e9f0 100%); min-height: 100vh; padding: 24px; }
+
+  .page-header { text-align: center; margin-bottom: 28px; }
+  .page-header h1 { font-size: 30px; color: #1a1a2e; margin-bottom: 6px; letter-spacing: 2px; }
+  .page-header p { font-size: 14px; color: #888; }
+
+  /* ===== 泳道图 ===== */
+  .swimlane-chart { max-width: 1300px; margin: 0 auto 32px; background: #fff; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,.08); overflow: hidden; }
+  .swimlane-header { display: grid; grid-template-columns: 100px 1fr 1fr 1fr 1fr; border-bottom: 2px solid #f0f0f0; }
+  .swimlane-label { padding: 14px 8px; text-align: center; font-size: 13px; font-weight: 700; color: #fff; writing-mode: horizontal-tb; display: flex; align-items: center; justify-content: center; gap: 4px; }
+  .swimlane-label.sl-purchase { background: var(--c-purchase); }
+  .swimlane-label.sl-warehouse { background: var(--c-warehouse); }
+  .swimlane-label.sl-inspect { background: var(--c-inspect); }
+  .swimlane-label.sl-system { background: var(--c-system); }
+  .swimlane-label.sl-phase { background: #344054; font-size: 12px; }
+
+  .swimlane-body { display: grid; grid-template-columns: 100px 1fr 1fr 1fr 1fr; }
+  .lane { border-right: 1px solid #f0f0f0; padding: 12px 10px; min-height: 60px; display: flex; flex-direction: column; gap: 10px; }
+  .lane:last-child { border-right: none; }
+  .lane-phase { background: #fafbfc; font-size: 12px; color: #666; display: flex; align-items: center; justify-content: center; font-weight: 600; border-right: 2px solid #e0e0e0; }
+
+  /* 流程节点 */
+  .node { border-radius: 8px; padding: 10px 12px; font-size: 12px; line-height: 1.5; position: relative; border: 1.5px solid; transition: all .15s; }
+  .node:hover { transform: scale(1.03); box-shadow: 0 4px 12px rgba(0,0,0,.1); }
+  .node .n-title { font-weight: 700; font-size: 13px; margin-bottom: 3px; }
+  .node .n-desc { color: #666; font-size: 11px; }
+  .node .n-tag { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; margin-top: 4px; }
+
+  .node-purchase { background: var(--c-purchase-bg); border-color: var(--c-purchase-border); color: var(--c-purchase); }
+  .node-warehouse { background: var(--c-warehouse-bg); border-color: var(--c-warehouse-border); color: #0a6e3f; }
+  .node-inspect { background: var(--c-inspect-bg); border-color: var(--c-inspect-border); color: #a4620a; }
+  .node-system { background: var(--c-system-bg); border-color: var(--c-system-border); color: var(--c-system); }
+  .node-decision { background: var(--c-decision-bg); border-color: var(--c-decision-border); color: var(--c-decision); transform: rotate(0deg); text-align: center; }
+  .node-decision .n-title::before { content: '◆ '; }
+  .node-rollback { background: var(--c-rollback-bg); border-color: var(--c-rollback-border); color: var(--c-rollback); }
+  .node-state { background: #f9f0ff; border-color: #d3adf7; color: #722ed1; text-align: center; font-weight: 700; font-size: 13px; border-width: 2px; border-style: dashed; }
+
+  .arrow-cell { display: flex; align-items: center; justify-content: center; color: #ccc; font-size: 20px; height: 28px; }
+
+  /* ===== 主流程图（纵向） ===== */
+  .main-flow { max-width: 1100px; margin: 0 auto 32px; background: #fff; border-radius: 16px; padding: 36px 40px; box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+
+  .flow-section { margin-bottom: 28px; }
+  .flow-section:last-child { margin-bottom: 0; }
+  .section-badge { display: inline-flex; align-items: center; padding: 4px 14px; border-radius: 20px; font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 14px; }
+  .section-badge.badge-purchase { background: var(--c-purchase); }
+  .section-badge.badge-warehouse { background: var(--c-warehouse); }
+  .section-badge.badge-inspect { background: var(--c-inspect); }
+  .section-badge.badge-system { background: var(--c-system); }
+  .section-badge.badge-rollback { background: var(--c-rollback); }
+
+  .flow-steps { display: flex; flex-direction: column; gap: 0; padding-left: 20px; border-left: 3px solid #e8e8e8; margin-left: 14px; }
+  .flow-step { position: relative; padding: 10px 0 10px 24px; }
+  .flow-step::before { content: ''; width: 14px; height: 14px; border-radius: 50%; border: 3px solid; background: #fff; position: absolute; left: -8.5px; top: 14px; }
+  .flow-step.step-purchase::before { border-color: var(--c-purchase); }
+  .flow-step.step-warehouse::before { border-color: var(--c-warehouse); }
+  .flow-step.step-inspect::before { border-color: var(--c-inspect); }
+  .flow-step.step-system::before { border-color: var(--c-system); }
+  .flow-step.step-rollback::before { border-color: var(--c-rollback); }
+  .flow-step.step-decision::before { border-color: var(--c-decision); }
+
+  .step-box { background: #fafbfc; border: 1px solid #e8e8e8; border-radius: 10px; padding: 14px 18px; transition: all .15s; }
+  .step-box:hover { box-shadow: 0 3px 10px rgba(0,0,0,.08); }
+  .step-box .sb-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .step-box .sb-num { font-size: 11px; color: #999; font-weight: 500; min-width: 50px; }
+  .step-box .sb-title { font-size: 15px; font-weight: 700; color: #1a1a2e; }
+  .step-box .sb-actor { margin-left: auto; font-size: 11px; padding: 2px 8px; border-radius: 4px; }
+  .actor-purchase { background: var(--c-purchase-bg); color: var(--c-purchase); }
+  .actor-warehouse { background: var(--c-warehouse-bg); color: #0a6e3f; }
+  .actor-inspect { background: var(--c-inspect-bg); color: #a4620a; }
+  .actor-system { background: var(--c-system-bg); color: var(--c-system); }
+  .actor-rollback { background: var(--c-rollback-bg); color: var(--c-rollback); }
+  .step-box .sb-desc { font-size: 13px; color: #555; line-height: 1.7; }
+
+  /* 决策节点 */
+  .decision-box { background: var(--c-decision-bg); border: 2px solid var(--c-decision-border); border-radius: 10px; padding: 14px 18px; }
+  .decision-box .db-title { font-size: 15px; font-weight: 700; color: var(--c-decision); margin-bottom: 4px; }
+  .decision-box .db-branches { display: flex; gap: 16px; margin-top: 10px; }
+  .branch-card { flex: 1; border-radius: 8px; padding: 12px 14px; border: 1.5px solid; }
+  .branch-card.bc-yes { background: var(--c-warehouse-bg); border-color: var(--c-warehouse-border); }
+  .branch-card.bc-no { background: var(--c-inspect-bg); border-color: var(--c-inspect-border); }
+  .branch-card .bc-label { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+  .branch-card.bc-yes .bc-label { color: #0a6e3f; }
+  .branch-card.bc-no .bc-label { color: #a4620a; }
+  .branch-card .bc-items { font-size: 12px; color: #555; line-height: 1.8; }
+  .branch-card .bc-items li { list-style: none; padding-left: 14px; position: relative; }
+  .branch-card .bc-items li::before { content: '→'; position: absolute; left: 0; color: #bbb; }
+
+  /* 数据变更标签 */
+  .db-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .db-tag { font-size: 11px; padding: 2px 7px; border-radius: 4px; font-family: Consolas, monospace; }
+  .db-tag.tag-write { background: #e6f7ff; color: #0958d9; border: 1px solid #91caff; }
+  .db-tag.tag-update { background: #fff7e6; color: #a4620a; border: 1px solid #ffd591; }
+  .db-tag.tag-delete { background: #fff1f0; color: #cf1322; border: 1px solid #ffa39e; }
+
+  /* ===== 状态流转图 ===== */
+  .state-chart { max-width: 1100px; margin: 0 auto 32px; background: #fff; border-radius: 16px; padding: 36px 40px; box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+  .state-chart h3 { font-size: 18px; color: #1a1a2e; margin-bottom: 20px; text-align: center; }
+
+  .state-flow { display: flex; align-items: center; justify-content: center; gap: 0; flex-wrap: wrap; padding: 16px 0; }
+  .state-node { min-width: 100px; padding: 10px 16px; border-radius: 20px; text-align: center; font-size: 13px; font-weight: 700; border: 2px solid; transition: all .15s; }
+  .state-node:hover { transform: scale(1.08); }
+  .sn-draft { background: #f5f5f5; border-color: #d9d9d9; color: #666; }
+  .sn-stocked { background: #e8f9f0; border-color: #7be0a8; color: #0a6e3f; }
+  .sn-inspecting { background: #fff7e6; border-color: #ffd591; color: #a4620a; }
+  .sn-inspected { background: #f5f0ff; border-color: #d3adf7; color: #722ed1; }
+  .sn-withdrawn { background: #fff1f0; border-color: #ffa39e; color: #cf1322; }
+  .sn-void { background: #f5f5f5; border-color: #bfbfbf; color: #999; }
+
+  .state-arrow { font-size: 20px; color: #bbb; margin: 0 4px; flex-shrink: 0; }
+  .state-arrow-group { display: flex; flex-direction: column; align-items: center; margin: 0 2px; }
+  .state-arrow-label { font-size: 10px; color: #999; white-space: nowrap; margin-top: -2px; }
+
+  .state-subtitle { text-align: center; font-size: 13px; color: #888; margin-top: 12px; }
+
+  /* ===== 数据变更矩阵 ===== */
+  .matrix-section { max-width: 1100px; margin: 0 auto 32px; background: #fff; border-radius: 16px; padding: 36px 40px; box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+  .matrix-section h3 { font-size: 18px; color: #1a1a2e; margin-bottom: 20px; text-align: center; }
+  .data-matrix { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .data-matrix th { background: #fafbfc; padding: 10px 8px; border: 1px solid #e8e8e8; font-weight: 600; color: #333; text-align: center; font-size: 11px; }
+  .data-matrix td { padding: 8px; border: 1px solid #e8e8e8; text-align: center; vertical-align: middle; }
+  .data-matrix .op-write { color: #0958d9; font-weight: 600; }
+  .data-matrix .op-update { color: #a4620a; font-weight: 600; }
+  .data-matrix .op-delete { color: #cf1322; font-weight: 600; }
+  .data-matrix .op-none { color: #ccc; }
+  .data-matrix .table-name { font-family: Consolas, monospace; font-size: 11px; color: #722ed1; background: #f9f0ff; padding: 2px 6px; border-radius: 3px; white-space: nowrap; }
+  .data-matrix tr:hover td { background: #fafbfc; }
+
+  /* ===== 撤回流程 ===== */
+  .rollback-flow { max-width: 1100px; margin: 0 auto 32px; background: #fff; border-radius: 16px; padding: 36px 40px; box-shadow: 0 6px 24px rgba(0,0,0,.08); border: 2px solid var(--c-rollback-border); }
+  .rollback-flow h3 { font-size: 18px; color: var(--c-rollback); margin-bottom: 6px; text-align: center; }
+  .rollback-flow .rb-subtitle { text-align: center; font-size: 13px; color: #888; margin-bottom: 20px; }
+
+  .rb-check { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; }
+  .rb-check h4 { color: #8c6d1f; font-size: 14px; margin-bottom: 6px; }
+  .rb-check ul { padding-left: 18px; font-size: 13px; color: #8c6d1f; line-height: 1.8; }
+
+  .rb-steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .rb-step { background: var(--c-rollback-bg); border: 1px solid var(--c-rollback-border); border-radius: 8px; padding: 12px 14px; display: flex; gap: 10px; }
+  .rb-step .rb-num { width: 28px; height: 28px; border-radius: 50%; background: var(--c-rollback); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+  .rb-step .rb-content { font-size: 13px; color: #333; line-height: 1.6; }
+  .rb-step .rb-table { font-family: Consolas, monospace; font-size: 11px; color: var(--c-rollback); background: #fff; padding: 1px 5px; border-radius: 3px; }
+
+  /* ===== 页脚 ===== */
+  .footer { text-align: center; padding: 20px; font-size: 12px; color: #bbb; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>采购入库业务全流程逻辑流程图</h1>
+  <p>Seals MES System — 供应商送货 → 收货通知 → 确认入库/来料检验 → 检验转仓 → 入库撤回</p>
+</div>
+
+<!-- ==================== 1. 泳道图 ==================== -->
+<div class="swimlane-chart">
+  <div class="swimlane-header">
+    <div class="swimlane-label sl-phase">阶段</div>
+    <div class="swimlane-label sl-purchase">👤 采购员</div>
+    <div class="swimlane-label sl-warehouse">🏭 仓管员</div>
+    <div class="swimlane-label sl-inspect">🔬 检验员</div>
+    <div class="swimlane-label sl-system">⚙️ 系统</div>
+  </div>
+
+  <!-- 阶段1 -->
+  <div class="swimlane-body">
+    <div class="lane lane-phase">收货通知</div>
+    <div class="lane">
+      <div class="node node-purchase"><div class="n-title">收到供应商送货</div><div class="n-desc">按PO交货，收到送货单</div></div>
+      <div class="node node-purchase"><div class="n-title">创建入库单</div><div class="n-desc">选PO号→带入明细</div></div>
+    </div>
+    <div class="lane"></div>
+    <div class="lane"></div>
+    <div class="lane">
+      <div class="node node-system"><div class="n-title">写入 stock_in</div><div class="n-desc">主表(草稿) + 明细行</div></div>
+      <div class="node node-system"><div class="n-title">自动报检</div><div class="n-desc">incoming_inspection='Y'<br>创建检验单</div><span class="n-tag" style="background:#f5f0ff;color:#722ed1;">自动</span></div>
+    </div>
+  </div>
+
+  <div style="height:2px;background:#f0f0f0;"></div>
+
+  <!-- 阶段2 -->
+  <div class="swimlane-body">
+    <div class="lane lane-phase">确认入库</div>
+    <div class="lane"></div>
+    <div class="lane">
+      <div class="node node-warehouse"><div class="n-title">点数核对</div><div class="n-desc">按送货单清点物料</div></div>
+      <div class="node node-warehouse"><div class="n-title">确认入库</div><div class="n-desc">核对无误后确认</div></div>
+    </div>
+    <div class="lane"></div>
+    <div class="lane">
+      <div class="node node-decision"><div class="n-title">是否需检验?</div></div>
+      <div class="node node-system" style="margin-top:4px;">
+        <div style="display:flex;gap:8px;">
+          <div style="flex:1;background:var(--c-warehouse-bg);padding:6px;border-radius:6px;border:1px solid var(--c-warehouse-border);">
+            <div style="font-weight:700;color:#0a6e3f;font-size:11px;">免检</div>
+            <div style="font-size:10px;color:#555;margin-top:3px;">入默认仓<br>回写PO<br>状态=免检</div>
+          </div>
+          <div style="flex:1;background:var(--c-inspect-bg);padding:6px;border-radius:6px;border:1px solid var(--c-inspect-border);">
+            <div style="font-weight:700;color:#a4620a;font-size:11px;">需检验</div>
+            <div style="font-size:10px;color:#555;margin-top:3px;">入待检仓<br>不回写PO<br>状态=待检验</div>
+          </div>
+        </div>
+        <span class="n-tag" style="background:#f5f0ff;color:#722ed1;">自动</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="height:2px;background:#f0f0f0;"></div>
+
+  <!-- 阶段3 -->
+  <div class="swimlane-body">
+    <div class="lane lane-phase">来料检验</div>
+    <div class="lane"></div>
+    <div class="lane"></div>
+    <div class="lane">
+      <div class="node node-inspect"><div class="n-title">查看来料检验通知</div><div class="n-desc">匹配检验方案/规范</div></div>
+      <div class="node node-inspect"><div class="n-title">执行检验</div><div class="n-desc">填合格/不合格数量</div></div>
+      <div class="node node-inspect"><div class="n-title">提交检验结果</div><div class="n-desc">inspect_status→已检验</div></div>
+    </div>
+    <div class="lane">
+      <div class="node node-system"><div class="n-title">写入检验明细</div><div class="n-desc">inspection_detail</div></div>
+    </div>
+  </div>
+
+  <div style="height:2px;background:#f0f0f0;"></div>
+
+  <!-- 阶段4 -->
+  <div class="swimlane-body">
+    <div class="lane lane-phase">检验转仓</div>
+    <div class="lane"></div>
+    <div class="lane">
+      <div class="node node-warehouse"><div class="n-title">确认合格品入库</div><div class="n-desc">待检仓→默认仓库</div></div>
+      <div class="node node-warehouse"><div class="n-title">处理不合格品</div><div class="n-desc">退货/让步/报废</div></div>
+    </div>
+    <div class="lane"></div>
+    <div class="lane">
+      <div class="node node-system"><div class="n-title">转仓 + 回写PO</div><div class="n-desc">批次库存转仓<br>汇总库存同步<br>库存流水写入<br>PO received_quantity<br>PO order_status</div>
+      <span class="n-tag" style="background:#f5f0ff;color:#722ed1;">自动</span></div>
+    </div>
+  </div>
+
+  <div style="height:2px;background:#f0f0f0;"></div>
+
+  <!-- 阶段5 -->
+  <div class="swimlane-body">
+    <div class="lane lane-phase">入库撤回</div>
+    <div class="lane"></div>
+    <div class="lane">
+      <div class="node node-rollback"><div class="n-title">发起撤回</div><div class="n-desc">已入库状态可撤回</div></div>
+    </div>
+    <div class="lane"></div>
+    <div class="lane">
+      <div class="node node-rollback"><div class="n-title">安全检查</div><div class="n-desc">批次未消耗<br>检验单未完成</div></div>
+      <div class="node node-rollback"><div class="n-title">7步反转</div><div class="n-desc">扣减批次→同步汇总→流水作废→清空明细→作废检验→回退PO→状态已撤回</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 2. 主流程详图 ==================== -->
+<div class="main-flow">
+  <h3 style="font-size:20px;color:#1a1a2e;margin-bottom:24px;text-align:center;">采购入库主流程详图</h3>
+
+  <!-- 阶段1：收货通知 -->
+  <div class="flow-section">
+    <div class="section-badge badge-purchase">阶段1 采购收货通知</div>
+    <div class="flow-steps">
+      <div class="flow-step step-purchase">
+        <div class="step-box">
+          <div class="sb-header"><span class="sb-num">1.1</span><span class="sb-title">供应商送货到厂</span><span class="sb-actor actor-purchase">采购员</span></div>
+          <div class="sb-desc">供应商按采购订单交货，采购员收到送货信息（送货单号、物料编码、数量、批次等）</div>
+        </div>
+      </div>
+      <div class="flow-step step-purchase">
+        <div class="step-box">
+          <div class="sb-header"><span class="sb-num">1.2</span><span class="sb-title">创建采购入库单</span><span class="sb-actor actor-purchase">采购员 / 仓管员</span></div>
+          <div class="sb-desc">选择采购订单号，系统自动带入供应商、物料明细、订单数量、已入库数量。填写本次入库数量，保存入库单。</div>
+          <div class="db-tags">
+            <span class="db-tag tag-write">stock_in (草稿)</span>
+            <span class="db-tag tag-write">stock_in_detail</span>
+          </div>
+        </div>
+      </div>
+      <div class="flow-step step-system">
+        <div class="step-box">
+          <div class="sb-header"><span class="sb-num">1.3</span><span class="sb-title">自动报检（需检验物料）</span><span class="sb-actor actor-system">系统自动</span></div>
+          <div class="sb-desc">遍历入库明细行，对 <code>item_master.incoming_inspection = 'Y'</code> 的物料，自动创建来料检验单，回写检验单号到明细行，合格数量置0。</div>
+          <div class="db-tags">
+            <span class="db-tag tag-write">purchase_quality_inspection (待检验)</span>
+            <span class="db-tag tag-update">stock_in_detail.inspection_number</span>
+            <span class="db-tag tag-update">stock_in_detail.inspect_status → 待检验</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 阶段2：确认入库 -->
+  <div class="flow-section">
+    <div class="section-badge badge-warehouse">阶段2 确认入库</div>
+    <div class="flow-steps">
+      <div class="flow-step step-warehouse">
+        <div class="step-box">
+          <div class="sb-header"><span class="sb-num">2.1</span><span class="sb-title">仓管员点数核对</span><span class="sb-actor actor-warehouse">仓管员</span></div>
+          <div class="sb-desc">根据送货单逐项清点物料数量，核对物料编码、规格型号、批次等信息。</div>
+        </div>
+      </div>
+      <div class="flow-step step-warehouse">
+        <div class="step-box">
+          <div class="sb-header"><span class="sb-num">2.2</span><span class="sb-title">确认入库</span><span class="sb-actor actor-warehouse">仓管员</span></div>
+          <div class="sb-desc">点数无误后点击"确认入库"按钮。系统根据物料检验标志分流处理。</div>
+        </div>
+      </div>
+      <div class="flow-step step-decision">
+        <div class="decision-box">
+          <div class="db-title">◆ 检验标志判断</div>
+          <div class="db-branches">
+            <div class="branch-card bc-yes">
+              <div class="bc-label">✅ 免检物料 (incoming_inspection ≠ 'Y')</div>
+              <ul class="bc-items">
+                <li>生成批次号 (MB-前缀)</li>
+                <li>写入批次库存 → material_batch_inventory (默认仓库)</li>
+                <li>同步汇总库存 → material_inventory</li>
+                <li>写入库存流水 → material_inventory_transaction (源类型=采购入库)</li>
+                <li>回写明细批次号 + 检验状态=免检</li>
+                <li>回写PO已收货数量 → purchase_order_detail.received_quantity</li>
+                <li>更新PO执行状态 → purchase_order.order_status</li>
+              </ul>
+            </div>
+            <div class="branch-card bc-no">
+              <div class="bc-label">🔬 需检验物料 (incoming_inspection = 'Y')</div>
+              <ul class="bc-items">
+                <li>生成批次号 (MB-前缀)</li>
+                <li>写入批次库存 → material_batch_inventory (待检仓)</li>
+                <li>同步汇总库存 → material_inventory (待检仓维度)</li>
+                <li>写入库存流水 → material_inventory_transaction (源类型=来料待检)</li>
+                <li>回写明细批次号 + 检验状态=待检验</li>
+                <li style="color:#fa8c16;font-weight:600;">⚠ 不回写PO (等待检验完成后回写)</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="flow-step step-warehouse">
+        <div class="step-box">
+          <div class="sb-header"><span class="sb-num">2.3</span><span class="sb-title">更新入库单状态</span><span class="sb-actor actor-warehouse">仓管员确认</span></div>
+          <div class="sb-desc">所有明细行处理完毕，入库单状态从"草稿"变为"已入库"。</div>
+          <div class="db-tags"><span class="db-tag tag-update">stock_in.approval_status → 已入库</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 阶段3：来料检验 -->
+  <div class="flow-section">
+    <div class="section-badge badge-inspect">阶段3 来料检验（仅需检验物料）</div>
+    <div class="flow-steps">
+      <div class="flow-step step-inspect">
+        <div class="step-box">
+          <div class="sb-header"><span class="sb-num">3.1</span><span class="sb-title">查看来料检验通知</span><span class="sb-actor actor-inspect">检验员</span></div>
+          <div class="sb-desc">质量管理 → 来料检验通知，系统自动列出待检验物料。根据收料检验方案匹配检验规范（普检/抽检），确定检验项目和标准。</div>
+        </div>
+      </div>
+      <div class="flow-step step-inspect">
+        <div class="step-box">
+          <div class="sb-header"><span class="sb-num">3.2</span><span class="sb-title">执行检验并填写结果</span><span class="sb-actor actor-inspect">检验员</span></div>
+          <div class="sb-desc">按检验方案执行来料检验，逐项填写合格数量、不合格数量、缺陷分类、缺陷描述等数据。</div>
+        </div>
+      </div>
+      <div class="flow-step step-inspect">
+        <div class="step-box">
+          <div class="sb-header"><span class="sb-num">3.3</span><span class="sb-title">提交检验结果</span><span class="sb-actor actor-inspect">检验员</span></div>
+          <div class="sb-desc">检验数据确认无误后提交。检验单状态变为"已检验"。</div>
+          <div class="db-tags">
+            <span class="db-tag tag-update">purchase_quality_inspection.inspect_status → 已检验</span>
+            <span class="db-tag tag-write">purchase_quality_inspection_detail</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 阶段4：检验后入库 -->
+  <div class="flow-section">
+    <div class="section-badge badge-system">阶段4 检验后确认入库到默认仓库</div>
+    <div class="flow-steps">
+      <div class="flow-step step-warehouse">
+        <div class="step-box">
+          <div class="sb-header"><span class="sb-num">4.1</span><span class="sb-title">合格品从待检仓转入默认仓库</span><span class="sb-actor actor-warehouse">仓管员确认</span></div>
+          <div class="sb-desc">仓管员查看检验结果，点数确认合格品入库。合格品从待检仓出库，入库到物料默认仓库。</div>
+          <div class="db-tags">
+            <span class="db-tag tag-write">material_batch_inventory (默认仓, +合格数量)</span>
+            <span class="db-tag tag-update">material_batch_inventory (待检仓, -合格数量)</span>
+            <span class="db-tag tag-update">material_inventory (双向同步)</span>
+            <span class="db-tag tag-write">material_inventory_transaction (出+入)</span>
+            <span class="db-tag tag-update">purchase_order_detail.received_quantity (+合格)</span>
+            <span class="db-tag tag-update">purchase_order.order_status</span>
+          </div>
+        </div>
+      </div>
+      <div class="flow-step step-warehouse">
+        <div class="step-box">
+          <div class="sb-header"><span class="sb-num">4.2</span><span class="sb-title">不合格品处理</span><span class="sb-actor actor-warehouse">仓管员 / 检验员</span></div>
+          <div class="sb-desc">根据缺陷处理方案分三种路径：<br>① 退货给供应商 — 待检仓出库，创建退货单<br>② 让步接收 — 按让步数量转入默认仓<br>③ 报废 — 转入报废仓</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 3. 状态流转图 ==================== -->
+<div class="state-chart">
+  <h3>单据状态流转图</h3>
+
+  <div style="margin-bottom:20px;">
+    <div style="font-size:14px;font-weight:600;color:#1a1a2e;margin-bottom:12px;">入库单 (stock_in) 状态</div>
+    <div class="state-flow">
+      <div class="state-node sn-draft">草稿</div>
+      <div class="state-arrow-group"><div class="state-arrow">→</div><div class="state-arrow-label">确认入库</div></div>
+      <div class="state-node sn-stocked">已入库</div>
+      <div class="state-arrow-group"><div class="state-arrow">→</div><div class="state-arrow-label">撤回入库</div></div>
+      <div class="state-node sn-withdrawn">已撤回</div>
+    </div>
+    <div class="state-subtitle">草稿状态可删除；已入库状态可撤回；已撤回状态不可操作</div>
+  </div>
+
+  <div style="height:1px;background:#f0f0f0;margin:20px 0;"></div>
+
+  <div style="margin-bottom:20px;">
+    <div style="font-size:14px;font-weight:600;color:#1a1a2e;margin-bottom:12px;">入库明细 (stock_in_detail) 检验状态</div>
+    <div class="state-flow">
+      <div class="state-node sn-draft" style="font-size:11px;">(空)</div>
+      <div class="state-arrow-group"><div class="state-arrow">→</div><div class="state-arrow-label">免检确认</div></div>
+      <div class="state-node sn-stocked" style="font-size:11px;">免检</div>
+    </div>
+    <div class="state-flow" style="margin-top:6px;">
+      <div class="state-node sn-draft" style="font-size:11px;">(空)</div>
+      <div class="state-arrow-group"><div class="state-arrow">→</div><div class="state-arrow-label">待检确认</div></div>
+      <div class="state-node sn-inspecting" style="font-size:11px;">待检验</div>
+      <div class="state-arrow-group"><div class="state-arrow">→</div><div class="state-arrow-label">检验完成</div></div>
+      <div class="state-node sn-inspected" style="font-size:11px;">已检验</div>
+    </div>
+  </div>
+
+  <div style="height:1px;background:#f0f0f0;margin:20px 0;"></div>
+
+  <div>
+    <div style="font-size:14px;font-weight:600;color:#1a1a2e;margin-bottom:12px;">检验单 (purchase_quality_inspection) 状态</div>
+    <div class="state-flow">
+      <div class="state-node sn-inspecting">待检验</div>
+      <div class="state-arrow-group"><div class="state-arrow">→</div><div class="state-arrow-label">提交检验</div></div>
+      <div class="state-node sn-inspected">已检验</div>
+      <div class="state-arrow-group"><div class="state-arrow">→</div><div class="state-arrow-label">入库撤回</div></div>
+      <div class="state-node sn-void">已作废</div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 4. 数据变更矩阵 ==================== -->
+<div class="matrix-section">
+  <h3>数据变更矩阵</h3>
+  <table class="data-matrix">
+    <thead>
+      <tr>
+        <th style="width:140px;">数据库表</th>
+        <th>创建入库单</th>
+        <th>自动报检</th>
+        <th>确认入库(免检)</th>
+        <th>确认入库(待检)</th>
+        <th>提交检验</th>
+        <th>检验转仓</th>
+        <th>入库撤回</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="table-name">stock_in</span></td>
+        <td class="op-write">写入(草稿)</td>
+        <td class="op-none">—</td>
+        <td class="op-update">→已入库</td>
+        <td class="op-update">→已入库</td>
+        <td class="op-none">—</td>
+        <td class="op-none">—</td>
+        <td class="op-update">→已撤回</td>
+      </tr>
+      <tr>
+        <td><span class="table-name">stock_in_detail</span></td>
+        <td class="op-write">写入明细</td>
+        <td class="op-update">检验单号+状态</td>
+        <td class="op-update">批次号+免检</td>
+        <td class="op-update">批次号+待检验</td>
+        <td class="op-none">—</td>
+        <td class="op-none">—</td>
+        <td class="op-delete">清空批次号+状态</td>
+      </tr>
+      <tr>
+        <td><span class="table-name">material_batch_inventory</span></td>
+        <td class="op-none">—</td>
+        <td class="op-none">—</td>
+        <td class="op-write">+默认仓库存</td>
+        <td class="op-write">+待检仓库存</td>
+        <td class="op-none">—</td>
+        <td class="op-update">-待检 +默认</td>
+        <td class="op-delete">扣减/删除</td>
+      </tr>
+      <tr>
+        <td><span class="table-name">material_inventory</span></td>
+        <td class="op-none">—</td>
+        <td class="op-none">—</td>
+        <td class="op-update">+默认仓汇总</td>
+        <td class="op-update">+待检仓汇总</td>
+        <td class="op-none">—</td>
+        <td class="op-update">-待检 +默认</td>
+        <td class="op-update">重新同步</td>
+      </tr>
+      <tr>
+        <td><span class="table-name">material_inventory_transaction</span></td>
+        <td class="op-none">—</td>
+        <td class="op-none">—</td>
+        <td class="op-write">采购入库流水</td>
+        <td class="op-write">来料待检流水</td>
+        <td class="op-none">—</td>
+        <td class="op-write">出+入流水</td>
+        <td class="op-update">remark标记作废</td>
+      </tr>
+      <tr>
+        <td><span class="table-name">purchase_quality_inspection</span></td>
+        <td class="op-none">—</td>
+        <td class="op-write">写入(待检验)</td>
+        <td class="op-none">—</td>
+        <td class="op-none">—</td>
+        <td class="op-update">→已检验</td>
+        <td class="op-none">—</td>
+        <td class="op-update">→已作废</td>
+      </tr>
+      <tr>
+        <td><span class="table-name">purchase_order_detail</span></td>
+        <td class="op-none">—</td>
+        <td class="op-none">—</td>
+        <td class="op-update">+received_qty</td>
+        <td style="color:#fa8c16;font-weight:600;">⚠ 不回写</td>
+        <td class="op-none">—</td>
+        <td class="op-update">+received_qty</td>
+        <td class="op-update">-received_qty</td>
+      </tr>
+      <tr>
+        <td><span class="table-name">purchase_order</span></td>
+        <td class="op-none">—</td>
+        <td class="op-none">—</td>
+        <td class="op-update">order_status</td>
+        <td style="color:#fa8c16;font-weight:600;">⚠ 不更新</td>
+        <td class="op-none">—</td>
+        <td class="op-update">order_status</td>
+        <td class="op-update">order_status</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ==================== 5. 入库撤回流程 ==================== -->
+<div class="rollback-flow">
+  <h3>入库撤回完整流程</h3>
+  <div class="rb-subtitle">仅"已入库"状态可撤回 | 撤回操作在事务中执行，保证数据一致性 | 一步失败全部回滚</div>
+
+  <div class="rb-check">
+    <h4>⚠ 前置安全检查（任一不通过则拒绝撤回）</h4>
+    <ul>
+      <li><strong>批次消耗检查：</strong>若批次库存已被其他出库单消耗（出库数量 > 0），需先撤回相关出库单</li>
+      <li><strong>检验完成检查：</strong>若关联检验单已完成检验（inspect_status = '已检验'），需先在检验模块撤回检验结果</li>
+    </ul>
+  </div>
+
+  <div class="rb-steps">
+    <div class="rb-step">
+      <div class="rb-num">1</div>
+      <div class="rb-content"><strong>扣减/删除批次库存</strong><br>按明细行遍历，扣减 <span class="rb-table">material_batch_inventory</span> 对应批次数量。数量归零则删除记录。</div>
+    </div>
+    <div class="rb-step">
+      <div class="rb-num">2</div>
+      <div class="rb-content"><strong>重新同步汇总库存</strong><br>调用 <span class="rb-table">syncMaterialInventorySummary</span> 重算 <span class="rb-table">material_inventory</span>。</div>
+    </div>
+    <div class="rb-step">
+      <div class="rb-num">3</div>
+      <div class="rb-content"><strong>标记库存流水作废</strong><br>将 <span class="rb-table">material_inventory_transaction.remark</span> 追加 "[已作废-入库单撤回]" 标记。</div>
+    </div>
+    <div class="rb-step">
+      <div class="rb-num">4</div>
+      <div class="rb-content"><strong>清空明细批次号和检验状态</strong><br>将 <span class="rb-table">stock_in_detail</span> 的 batch_number、inspect_status、qualified_quantity 置空/置0。</div>
+    </div>
+    <div class="rb-step">
+      <div class="rb-num">5</div>
+      <div class="rb-content"><strong>作废来料检验单</strong><br>将 <span class="rb-table">purchase_quality_inspection.inspect_status</span> 更新为 '已作废'。</div>
+    </div>
+    <div class="rb-step">
+      <div class="rb-num">6</div>
+      <div class="rb-content"><strong>回退PO已收货数量和状态</strong><br>扣减 <span class="rb-table">purchase_order_detail.received_quantity</span>，重算 <span class="rb-table">purchase_order.order_status</span>。</div>
+    </div>
+    <div class="rb-step">
+      <div class="rb-num">7</div>
+      <div class="rb-content"><strong>更新入库单状态</strong><br>将 <span class="rb-table">stock_in.approval_status</span> 更新为 '已撤回'。</div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">Seals MES System — 采购入库业务全流程逻辑流程图 — 2026.05</div>
+
+</body>
+</html>

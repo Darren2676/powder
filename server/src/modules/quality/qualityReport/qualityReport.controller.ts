@@ -29,7 +29,9 @@ export const getProductionQualityReport = async (req: Request, res: Response, ne
         po.schedule_id,
         po.planned_completion_time,
         po.plan_status,
-        po.remark
+        po.remark,
+        po.yield_rate,
+        po.inbound_quantity
       FROM production_order po
       WHERE po.production_order_number = :production_order_number
     `, { replacements: { production_order_number } });
@@ -135,13 +137,6 @@ export const getProductionQualityReport = async (req: Request, res: Response, ne
     const overallPassRate = totalReported > 0 ? parseFloat((totalQualified * 100.0 / totalReported).toFixed(2)) : 100;
     const processPassRate = totalProcesses > 0 ? parseFloat((zeroDefectCount * 100.0 / totalProcesses).toFixed(1)) : 100;
 
-    // 获取入库量
-    const [inboundRows]: any = await sequelize.query(`
-      SELECT ISNULL(SUM(fi.quantity), 0) AS inbound_quantity
-      FROM finished_goods_inventory fi
-      WHERE fi.item_number = :item_number
-    `, { replacements: { item_number: order.item_number } });
-
     const kpiSummary = {
       total_processes: totalProcesses,
       total_reported: totalReported,
@@ -152,7 +147,8 @@ export const getProductionQualityReport = async (req: Request, res: Response, ne
       defect_process_count: totalProcesses - zeroDefectCount,
       process_pass_rate: processPassRate,
       planned_quantity: parseFloat(order.planned_quantity) || 0,
-      inbound_quantity: parseFloat(inboundRows[0]?.inbound_quantity) || 0
+      inbound_quantity: parseFloat(order.inbound_quantity) || 0,
+      yield_rate: order.yield_rate !== null && order.yield_rate !== undefined ? parseFloat(order.yield_rate) : null
     };
 
     res.json(success({
@@ -222,6 +218,7 @@ export const getQualitySummary = async (req: Request, res: Response, next: NextF
           po.production_date,
           po.equipment_name,
           po.plan_status,
+          po.yield_rate,
           COUNT(DISTINCT wr.step_number) AS process_count,
           SUM(wr.qualified_quantity) AS total_qualified,
           SUM(wr.unqualified_quantity) AS total_unqualified,
@@ -230,12 +227,14 @@ export const getQualitySummary = async (req: Request, res: Response, next: NextF
                THEN CAST(SUM(wr.qualified_quantity) * 100.0 / SUM(wr.total_quantity) AS DECIMAL(5,2))
                ELSE 100 END AS overall_pass_rate,
           SUM(CASE WHEN wr.unqualified_quantity > 0 THEN 1 ELSE 0 END) AS defect_report_count,
+          po.inbound_quantity,
           ROW_NUMBER() OVER (ORDER BY po.production_date DESC, po.production_order_number DESC) AS _row_num
         FROM production_order po
         INNER JOIN work_report wr ON wr.production_order_number = po.production_order_number
         ${whereClause}
         GROUP BY po.production_order_number, po.item_number, po.item_name, po.specifications,
-                 po.basic_unit, po.planned_quantity, po.production_date, po.equipment_name, po.plan_status
+                 po.basic_unit, po.planned_quantity, po.production_date, po.equipment_name, po.plan_status,
+                 po.yield_rate, po.inbound_quantity
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
 
@@ -261,6 +260,240 @@ export const getQualitySummary = async (req: Request, res: Response, next: NextF
       page,
       limit,
       stats: overallStats[0] || {}
+    }));
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * 生产单质量透视报表 - 行=生产单, 列=缺陷分类(动态)
+ * GET /api/quality/quality-report/production-order-pivot
+ *
+ * 公式:
+ *   不合格小计(净) = SUM(work_report.unqualified_quantity) - SUM(nonconforming_product.concession_quantity WHERE handling_method='让步接收')
+ *   合格率 = inbound_quantity / (inbound_quantity + 净不合格小计) * 100%
+ */
+export const getProductionOrderQualityPivot = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const offset = (page - 1) * limit;
+    const offsetEnd = offset + limit;
+
+    const { start_date, end_date, item_number, search, plan_status } = req.query;
+
+    let whereClause = 'WHERE 1=1';
+    const replacements: any = { offset, offsetEnd };
+
+    if (start_date) {
+      whereClause += ' AND po.production_date >= :start_date';
+      replacements.start_date = start_date;
+    }
+    if (end_date) {
+      whereClause += ' AND po.production_date <= :end_date';
+      replacements.end_date = end_date;
+    }
+    if (item_number) {
+      whereClause += ' AND po.item_number = :item_number';
+      replacements.item_number = item_number;
+    }
+    if (plan_status) {
+      whereClause += ' AND po.plan_status = :plan_status';
+      replacements.plan_status = plan_status;
+    }
+    if (search) {
+      whereClause += ' AND (po.production_order_number LIKE :search OR po.item_number LIKE :search OR po.item_name LIKE :search)';
+      replacements.search = `%${search}%`;
+    }
+
+    // ① 分页查询生产单基础数据
+    const [orderRows]: any = await sequelize.query(`
+      SELECT * FROM (
+        SELECT
+          po.production_order_number, po.item_number, po.item_name, po.specifications,
+          po.basic_unit, po.planned_quantity, po.inbound_quantity, po.yield_rate,
+          po.production_date, po.plan_status, po.equipment_name,
+          ROW_NUMBER() OVER (ORDER BY po.production_date DESC, po.production_order_number DESC) AS _row_num
+        FROM production_order po
+        ${whereClause}
+      ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
+    `, { replacements });
+
+    // 总数统计
+    const [countResult]: any = await sequelize.query(`
+      SELECT COUNT(*) AS total FROM production_order po ${whereClause}
+    `, { replacements });
+
+    const orderNumbers: string[] = orderRows.map((r: any) => r.production_order_number);
+
+    // ② 缺陷透视聚合 (按 production_order_number x defect_class_name)
+    let defectRows: any[] = [];
+    if (orderNumbers.length > 0) {
+      const [rows]: any = await sequelize.query(`
+        SELECT
+          production_order_number,
+          ISNULL(NULLIF(defect_class_name, ''), N'未分类') AS defect_class_name,
+          SUM(unqualified_quantity) AS qty
+        FROM work_report
+        WHERE unqualified_quantity > 0
+          AND production_order_number IN (:orderNumbers)
+        GROUP BY production_order_number, ISNULL(NULLIF(defect_class_name, ''), N'未分类')
+      `, { replacements: { orderNumbers } });
+      defectRows = rows;
+    }
+
+    // ③ 让步接收回写
+    let concessionRows: any[] = [];
+    if (orderNumbers.length > 0) {
+      const [rows]: any = await sequelize.query(`
+        SELECT
+          production_order_number,
+          ISNULL(SUM(concession_quantity), 0) AS concession_qty
+        FROM nonconforming_product
+        WHERE handling_method = N'让步接收'
+          AND production_order_number IN (:orderNumbers)
+        GROUP BY production_order_number
+      `, { replacements: { orderNumbers } });
+      concessionRows = rows;
+    }
+
+    // ==== Node 内合并组装 ====
+
+    // 让步接收 map
+    const concessionMap: Record<string, number> = {};
+    for (const r of concessionRows) {
+      concessionMap[r.production_order_number] = parseFloat(r.concession_qty) || 0;
+    }
+
+    // 缺陷分类汇总 (用于动态列与排序)
+    const classTotalMap: Record<string, number> = {};
+    // production_order_number -> { defect_class_name -> qty }
+    const orderDefectMap: Record<string, Record<string, number>> = {};
+    for (const r of defectRows) {
+      const pon = r.production_order_number;
+      const cls = r.defect_class_name;
+      const qty = parseFloat(r.qty) || 0;
+      if (!orderDefectMap[pon]) orderDefectMap[pon] = {};
+      orderDefectMap[pon][cls] = (orderDefectMap[pon][cls] || 0) + qty;
+      classTotalMap[cls] = (classTotalMap[cls] || 0) + qty;
+    }
+
+    // 动态列: 按全表合计降序, 截断前20个, 其余汇入"其他"
+    const MAX_PIVOT_COLS = 20;
+    const sortedClasses = Object.entries(classTotalMap).sort((a, b) => b[1] - a[1]);
+    const topClasses = sortedClasses.slice(0, MAX_PIVOT_COLS);
+    const restClasses = sortedClasses.slice(MAX_PIVOT_COLS);
+    const restClassNames = new Set(restClasses.map(([n]) => n));
+    const hasRest = restClasses.length > 0;
+
+    const pivot_columns: Array<{ defect_class_name: string; total_qty: number }> = topClasses.map(([n, q]) => ({
+      defect_class_name: n,
+      total_qty: Math.round(q * 10000) / 10000
+    }));
+    if (hasRest) {
+      const restTotal = restClasses.reduce((s, [, q]) => s + q, 0);
+      pivot_columns.push({ defect_class_name: '其他', total_qty: Math.round(restTotal * 10000) / 10000 });
+    }
+
+    // 组装 rows
+    const rows: any[] = orderRows.map((o: any) => {
+      const pon = o.production_order_number;
+      const inbound = parseFloat(o.inbound_quantity) || 0;
+      const planned = parseFloat(o.planned_quantity) || 0;
+      const concession = concessionMap[pon] || 0;
+
+      // 该生产单的缺陷分类分布
+      const orderClasses = orderDefectMap[pon] || {};
+      const defect_classes: Record<string, number> = {};
+      let totalUnqualified = 0;
+      let restSum = 0;
+      for (const [cls, qty] of Object.entries(orderClasses)) {
+        totalUnqualified += qty;
+        if (restClassNames.has(cls)) {
+          restSum += qty;
+        } else {
+          defect_classes[cls] = Math.round(qty * 10000) / 10000;
+        }
+      }
+      if (hasRest && restSum > 0) {
+        defect_classes['其他'] = Math.round(restSum * 10000) / 10000;
+      }
+
+      // 净不合格 = 总不合格 - 让步接收, 夹紧到 0
+      const netUnqualified = Math.max(0, totalUnqualified - concession);
+
+      // 合格率 = inbound / (inbound + netUnqualified)
+      let yieldRate: number | null = null;
+      const denominator = inbound + netUnqualified;
+      if (denominator > 0) {
+        yieldRate = Math.round(inbound * 10000 / denominator) / 100;
+      }
+
+      return {
+        production_order_number: pon,
+        item_number: o.item_number,
+        item_name: o.item_name,
+        specifications: o.specifications,
+        basic_unit: o.basic_unit,
+        planned_quantity: planned,
+        inbound_quantity: inbound,
+        production_date: o.production_date,
+        plan_status: o.plan_status,
+        equipment_name: o.equipment_name,
+        total_unqualified: Math.round(totalUnqualified * 10000) / 10000,
+        concession_quantity: Math.round(concession * 10000) / 10000,
+        net_unqualified: Math.round(netUnqualified * 10000) / 10000,
+        yield_rate: yieldRate,
+        defect_classes
+      };
+    });
+
+    // 整体汇总 stats (跨当前查询条件全表, 不仅当前页)
+    const [overallStats]: any = await sequelize.query(`
+      SELECT
+        (SELECT COUNT(*) FROM production_order po ${whereClause}) AS total_orders,
+        (SELECT ISNULL(SUM(po.inbound_quantity), 0) FROM production_order po ${whereClause}) AS total_inbound,
+        (SELECT ISNULL(SUM(wr.unqualified_quantity), 0)
+           FROM work_report wr
+           WHERE wr.production_order_number IN (
+             SELECT po.production_order_number FROM production_order po ${whereClause}
+           )) AS total_unqualified,
+        (SELECT ISNULL(SUM(np.concession_quantity), 0)
+           FROM nonconforming_product np
+           WHERE np.handling_method = N'让步接收'
+             AND np.production_order_number IN (
+               SELECT po.production_order_number FROM production_order po ${whereClause}
+             )) AS total_concession
+    `, { replacements });
+
+    const s = overallStats[0] || {};
+    const totalInbound = parseFloat(s.total_inbound) || 0;
+    const totalUnqualified = parseFloat(s.total_unqualified) || 0;
+    const totalConcession = parseFloat(s.total_concession) || 0;
+    const totalNetUnqualified = Math.max(0, totalUnqualified - totalConcession);
+    let overallYieldRate: number | null = null;
+    const denom = totalInbound + totalNetUnqualified;
+    if (denom > 0) {
+      overallYieldRate = Math.round(totalInbound * 10000 / denom) / 100;
+    }
+
+    res.json(success({
+      pivot_columns,
+      rows,
+      pagination: {
+        total: countResult[0]?.total || 0,
+        page,
+        limit
+      },
+      stats: {
+        total_orders: parseInt(s.total_orders) || 0,
+        total_inbound: totalInbound,
+        total_unqualified: totalUnqualified,
+        total_concession: totalConcession,
+        total_net_unqualified: totalNetUnqualified,
+        overall_yield_rate: overallYieldRate
+      }
     }));
   } catch (err) {
     next(err);
@@ -573,6 +806,115 @@ export const getProductQualitySummary = async (req: Request, res: Response, next
       limit,
       stats: overallStats[0] || {},
       all_defect_details: defectDetails
+    }));
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * 综合合格率报表 - 按生产单维度
+ * GET /api/quality-report/yield-rate
+ */
+export const getYieldRateReport = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const offset = (page - 1) * limit;
+    const offsetEnd = offset + limit;
+
+    const { start_date, end_date, item_number, search, plan_status } = req.query;
+
+    let whereClause = 'WHERE 1=1';
+    const replacements: any = { offset, offsetEnd };
+
+    if (start_date) {
+      whereClause += ` AND po.production_date >= :start_date`;
+      replacements.start_date = start_date;
+    }
+    if (end_date) {
+      whereClause += ` AND po.production_date <= :end_date`;
+      replacements.end_date = end_date;
+    }
+    if (item_number) {
+      whereClause += ` AND po.item_number = :item_number`;
+      replacements.item_number = item_number;
+    }
+    if (plan_status) {
+      whereClause += ` AND po.plan_status = :plan_status`;
+      replacements.plan_status = plan_status;
+    }
+    if (search) {
+      whereClause += ` AND (po.production_order_number LIKE :search OR po.item_number LIKE :search OR po.item_name LIKE :search)`;
+      replacements.search = `%${search}%`;
+    }
+
+    // 计数
+    const [countResult]: any = await sequelize.query(`
+      SELECT COUNT(*) as total FROM production_order po ${whereClause}
+    `, { replacements });
+
+    // 分页查询
+    const [items]: any = await sequelize.query(`
+      SELECT * FROM (
+        SELECT
+          po.production_order_number,
+          po.item_number,
+          po.item_name,
+          po.specifications,
+          po.basic_unit,
+          po.planned_quantity,
+          po.inbound_quantity,
+          po.production_date,
+          po.plan_status,
+          po.yield_rate,
+          ISNULL(wr_agg.total_unqualified, 0) AS total_unqualified,
+          CASE
+            WHEN po.inbound_quantity IS NOT NULL AND (po.inbound_quantity + ISNULL(wr_agg.total_unqualified, 0)) > 0
+            THEN CAST(po.inbound_quantity * 100.0 / (po.inbound_quantity + ISNULL(wr_agg.total_unqualified, 0)) AS DECIMAL(5,2))
+            ELSE NULL
+          END AS yield_rate_calc,
+          ROW_NUMBER() OVER (ORDER BY
+            CASE WHEN po.yield_rate IS NOT NULL THEN 1 ELSE 0 END,
+            po.yield_rate ASC,
+            po.production_date DESC
+          ) AS _row_num
+        FROM production_order po
+        LEFT JOIN (
+          SELECT production_order_number, SUM(unqualified_quantity) AS total_unqualified
+          FROM work_report
+          GROUP BY production_order_number
+        ) wr_agg ON wr_agg.production_order_number = po.production_order_number
+        ${whereClause}
+      ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
+    `, { replacements });
+
+    // 汇总统计
+    const [overallStats]: any = await sequelize.query(`
+      SELECT
+        COUNT(*) AS total_orders,
+        ISNULL(SUM(po.inbound_quantity), 0) AS total_inbound,
+        ISNULL(SUM(wr_agg.total_unqualified), 0) AS total_unqualified,
+        CASE WHEN ISNULL(SUM(po.inbound_quantity), 0) + ISNULL(SUM(wr_agg.total_unqualified), 0) > 0
+             THEN CAST(ISNULL(SUM(po.inbound_quantity), 0) * 100.0 / (ISNULL(SUM(po.inbound_quantity), 0) + ISNULL(SUM(wr_agg.total_unqualified), 0)) AS DECIMAL(5,2))
+             ELSE NULL END AS overall_yield_rate,
+        COUNT(CASE WHEN po.yield_rate IS NOT NULL THEN 1 END) AS calculated_count,
+        COUNT(CASE WHEN po.yield_rate IS NULL THEN 1 END) AS pending_count
+      FROM production_order po
+      LEFT JOIN (
+        SELECT production_order_number, SUM(unqualified_quantity) AS total_unqualified
+        FROM work_report
+        GROUP BY production_order_number
+      ) wr_agg ON wr_agg.production_order_number = po.production_order_number
+      ${whereClause}
+    `, { replacements });
+
+    res.json(success({
+      items,
+      total: countResult[0]?.total || 0,
+      page,
+      limit,
+      stats: overallStats[0] || {}
     }));
   } catch (err) {
     next(err);

@@ -7,6 +7,7 @@ import {
   updateProductionInspection,
   completeInspection,
   defectHandling,
+  deleteProductionInspection,
   exportProductionInspections
 } from './productionInspection.controller';
 
@@ -34,5 +35,8 @@ router.put('/:id/complete', completeInspection);
 
 // 不合格品处理
 router.put('/:id/defect-handling', defectHandling);
+
+// 删除检验记录
+router.delete('/:id', deleteProductionInspection);
 
 export default router;

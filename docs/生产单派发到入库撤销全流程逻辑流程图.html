@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>生产单派发→备料→报工→检验→入库→撤销 全流程逻辑流程图 - 睿信橡胶密封件MES系统</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:'default',flowchart:{curve:'basis',padding:16},stateDiagram:{curve:'basis'}});</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+  .page { max-width: 1300px; margin: 0 auto; padding: 32px; background: #fff; min-height: 100vh; }
+  .page-break { page-break-before: always; }
+  h1 { text-align: center; font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 20px; color: #1a1a2e; margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 16px; color: #1a1a2e; margin: 20px 0 10px; }
+  .intro { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; padding: 16px; margin-bottom: 24px; font-size: 14px; }
+  .mermaid { text-align: center; margin: 16px 0; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  .warn { background: #fff2f0; border-left: 4px solid #ff4d4f; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #a8071a; }
+  .info { background: #e6f7ff; border-left: 4px solid #1890ff; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #0050b3; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 4px; }
+  .badge-blue { background: #e6f7ff; color: #1890ff; }
+  .badge-green { background: #f6ffed; color: #52c41a; }
+  .badge-red { background: #fff1f0; color: #f5222d; }
+  .badge-orange { background: #fff7e6; color: #fa8c16; }
+  .badge-purple { background: #f9f0ff; color: #722ed1; }
+  @media print { body { background: #fff; } .page { padding: 20px; max-width: 100%; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>生产单派发→备料→报工→检验→入库→撤销<br/>全流程逻辑流程图</h1>
+<div class="subtitle">睿信橡胶密封件MES系统 | 从生产单派发到生产完工入库的全链路业务流程与撤销回退逻辑</div>
+
+<div class="intro">
+  <strong>文档说明：</strong>本文档完整梳理生产执行阶段的全链路业务逻辑，涵盖：<br>
+  <strong>正向流程：</strong>生产单派发 → 备料领料 → 报工 → 生产检验 → 合格入库<br>
+  <strong>逆向撤销：</strong>领料撤回、报工删除、生产入库撤回、返修回退<br>
+  <strong>状态变化：</strong>plan_status / preparation_status / task_status / inspect_status / inbound_status 五维度联动<br>
+  <strong>不合格品：</strong>返修 / 报废 / 让步接收 三种处理方式及其对生产流程的影响
+</div>
+
+<!-- ==================== 一、全流程总览 ==================== -->
+<h2>一、生产执行全流程总览</h2>
+<div class="mermaid">
+graph TB
+    subgraph 计划层["计划层"]
+        PP["生产计划<br/>production_plan<br/>approval_status=已审批"] --> PO["生产单<br/>production_order<br/>plan_status=未开始<br/>approval_status=已审批"]
+    end
+
+    subgraph 派发阶段["派发阶段"]
+        PO --> DISPATCH["调度派发<br/>dispatchAndGenerateCore"]
+        DISPATCH --> GEN_TASK["生成工序任务<br/>process_task × N<br/>task_status=未开始"]
+        DISPATCH --> GEN_PREP["生成备料单<br/>material_preparation<br/>preparation_status=未领料"]
+        DISPATCH --> GEN_BF["生成倒冲任务<br/>backflush_task<br/>status=待扣减"]
+        DISPATCH --> GEN_OS["生成委外申请<br/>outsourcing_req<br/>如有委外工序"]
+    end
+
+    subgraph 备料领料["备料领料阶段"]
+        GEN_PREP --> ISSUE["领料出库<br/>createMaterialIssue<br/>FIFO扣减原料仓库存"]
+        ISSUE --> LINE_IN1["线边仓入线<br/>lineside_inventory_transaction"]
+        ISSUE --> CHECK_PREP{"首道工序<br/>全部齐套?"}
+        CHECK_PREP -->|"是"| PREPARED["plan_status=已备料<br/>syncProductionStatus→待生产"]
+        CHECK_PREP -->|"否"| KEEP1["plan_status保持已派发"]
+
+        GEN_BF --> BF_MOVE["倒冲物料移库<br/>原料仓→线边仓<br/>跳过领料齐套检查"]
+        BF_MOVE --> BF_READY["倒冲物料就绪<br/>等待入库时扣减"]
+    end
+
+    subgraph 报工阶段["报工阶段"]
+        PREPARED --> WR["工序报工<br/>createWorkReport"]
+        BF_READY --> WR
+        KEEP1 --> WR
+        WR --> FIRST_WR{"首次报工?"}
+        FIRST_WR -->|"是"| PRODUCING["plan_status=生产中<br/>syncProductionStatus→生产中"]
+        FIRST_WR -->|"否"| CONTINUE["继续报工"]
+
+        WR --> TASK_UPDATE["更新工序完成数量<br/>syncTaskCompletion"]
+        WR --> LINE_SIDE["线边仓流转<br/>logWorkReportLinesideMovement"]
+        WR --> AUTO_INSP["自动创建检验单<br/>autoCreateInspections"]
+    end
+
+    subgraph 检验阶段["检验阶段"]
+        AUTO_INSP --> CHK_TYPE{"工序inspect_type"}
+        CHK_TYPE -->|"专检"| CREATE_PI["创建生产检验单<br/>production_inspection<br/>inspect_status=待检验"]
+        CHK_TYPE -->|"自检"| SELF_INSP["自检：工序直接完成<br/>inspect_status=无需检"]
+        CHK_TYPE -->|"无需检"| NO_INSP["无检验：工序直接放行"]
+
+        CREATE_PI --> INSP_EXEC["检验执行"]
+        INSP_EXEC --> INSP_RESULT{"检验结果"}
+        INSP_RESULT -->|"合格"| INSP_PASS["inspect_status=检验合格<br/>下道工序可报工"]
+        INSP_RESULT -->|"不合格"| INSP_FAIL["inspect_status=检验不合格<br/>阻塞下道工序报工"]
+    end
+
+    subgraph 入库阶段["入库阶段"]
+        WR --> ALL_DONE{"所有工序<br/>已完成+检验合格?"}
+        ALL_DONE -->|"是"| ORDER_DONE["plan_status=已完成"]
+        ALL_DONE -->|"否"| CONTINUE2["继续报工"]
+
+        ORDER_DONE --> INBOUND["生产入库<br/>confirmProductionInbound"]
+        INBOUND --> BF_DEDUCT["触发倒冲扣减<br/>executeBackflushDeduction<br/>齐套检查→FIFO扣减"]
+        INBOUND --> BATCH_CREATE["创建成品批次库存<br/>finished_batch_inventory"]
+        INBOUND --> LINE_OUT1["线边仓出线<br/>成品出线边"]
+        INBOUND --> INBOUND_STATUS["inbound_status更新<br/>未入库→部分/全部入库"]
+    end
+
+    subgraph 撤销回退["撤销回退（逆向操作）"]
+        ISSUE --> WITHDRAW_ISSUE["领料撤回<br/>DELETE material_issue<br/>409报工拦截"]
+        WR --> DELETE_WR["报工删除<br/>DELETE work_report<br/>plan_status回退"]
+        INBOUND --> WITHDRAW_INBOUND["入库撤回<br/>rollbackProductionInbound<br/>库存+倒冲+状态全部反转"]
+        INSP_FAIL --> NC_HANDLE["不合格品处理<br/>返修/报废/让步接收"]
+    end
+
+    style DISPATCH fill:#e6f7ff,stroke:#1890ff,color:#0050b3
+    style PREPARED fill:#f6ffed,stroke:#52c41a,color:#389e0d
+    style PRODUCING fill:#fff7e6,stroke:#fa8c16,color:#ad6800
+    style ORDER_DONE fill:#f6ffed,stroke:#52c41a,color:#389e0d
+    style INSP_FAIL fill:#fff2f0,stroke:#ff4d4f,color:#a8071a
+    style WITHDRAW_ISSUE fill:#fff2f0,stroke:#ff4d4f,color:#a8071a
+    style DELETE_WR fill:#fff2f0,stroke:#ff4d4f,color:#a8071a
+    style WITHDRAW_INBOUND fill:#fff2f0,stroke:#ff4d4f,color:#a8071a
+    style NC_HANDLE fill:#fff2f0,stroke:#ff4d4f,color:#a8071a
+</div>
+
+<div class="legend" style="display:flex;flex-wrap:wrap;gap:16px;margin:12px 0;font-size:13px;">
+  <span><span style="display:inline-block;width:16px;height:16px;border-radius:3px;background:#e6f7ff;border:1px solid #1890ff;"></span> 流程起点</span>
+  <span><span style="display:inline-block;width:16px;height:16px;border-radius:3px;background:#f6ffed;border:1px solid #52c41a;"></span> 正向推进</span>
+  <span><span style="display:inline-block;width:16px;height:16px;border-radius:3px;background:#fff7e6;border:1px solid #fa8c16;"></span> 中间状态</span>
+  <span><span style="display:inline-block;width:16px;height:16px;border-radius:3px;background:#fff2f0;border:1px solid #ff4d4f;"></span> 回退/撤销</span>
+</div>
+
+<!-- ==================== 二、生产单派发详细流程 ==================== -->
+<h2 class="page-break">二、生产单派发详细流程</h2>
+
+<h3>2.1 派发总体流程</h3>
+<div class="mermaid">
+graph TD
+    START(["用户勾选生产单<br/>点击派发"]) --> FE_CHECK{前端校验}
+    FE_CHECK -->|"plan_status≠未开始<br/>或approval_status≠已审批"| FE_ERR["提示并拦截"]
+    FE_ERR --> END_ERR1(["结束-失败"])
+
+    FE_CHECK -->|"校验通过"| OPEN["打开派发弹窗<br/>填写设备/模具/日期/班次"]
+    OPEN --> FE_CONFLICT{"前端排产冲突预检<br/>模具+日期+班次<br/>设备+日期+班次"}
+    FE_CONFLICT -->|"存在冲突"| CONFLICT_ERR["展示冲突详情"]
+    CONFLICT_ERR --> OPEN
+    FE_CONFLICT -->|"无冲突"| API["POST /api/orders/dispatch-and-generate"]
+
+    API --> BE_CONFLICT{"后端排产冲突检查"}
+    BE_CONFLICT -->|"本批次冲突"| BE_ERR1["返回400"]
+    BE_CONFLICT -->|"数据库冲突"| BE_ERR2["返回409"]
+    BE_ERR1 --> END_ERR2(["结束-失败"])
+    BE_ERR2 --> END_ERR2
+
+    BE_CONFLICT -->|"无冲突"| TX["开启数据库事务"]
+    TX --> LOOP["循环处理每个生产单"]
+    LOOP --> VERIFY{"验证生产单"}
+    VERIFY -->|"不存在/未审批/非未开始"| SKIP["记录错误，跳过"]
+    VERIFY -->|"验证通过"| DISPATCH["UPDATE production_order<br/>plan_status=已派发<br/>写入设备/模具/日期/班次"]
+
+    DISPATCH --> BASELINE["首次设置baseline日期"]
+    BASELINE --> SYNC_SO["回写销售订单明细<br/>production_status=计划中"]
+    SYNC_SO --> GEN_TASK["生成工序任务<br/>generateProcessTasks"]
+    GEN_TASK --> GEN_PREP["生成备料单<br/>generateMaterialPreparation"]
+    GEN_PREP --> GEN_BF{"检查倒冲工序<br/>flowing_backward=是?"}
+    GEN_BF -->|"有倒冲工序"| GEN_BF_TASK["生成倒冲任务清单<br/>backflush_task"]
+    GEN_BF -->|"无倒冲工序"| SKIP_BF["跳过"]
+    GEN_BF_TASK --> GEN_OS{"有委外工序<br/>is_outsourced=1?"}
+    SKIP_BF --> GEN_OS
+    GEN_OS -->|"有"| GEN_OS_REQ["生成委外申请<br/>outsourcing_req"]
+    GEN_OS -->|"无"| NEXT{"还有下一单?"}
+    GEN_OS_REQ --> NEXT
+    SKIP --> NEXT
+
+    NEXT -->|"是"| LOOP
+    NEXT -->|"否"| COMMIT["提交事务"]
+    COMMIT --> RESULT["返回派发结果"]
+    RESULT --> END_OK(["结束-成功"])
+</div>
+
+<h3>2.2 工序任务生成</h3>
+<div class="mermaid">
+graph LR
+    A["输入: 产品编号"] --> B["查询routing_header<br/>condition=启用<br/>approval_status=已审批<br/>is_primary=是优先"]
+    B --> C["取TOP 1<br/>获取工艺路线编号"]
+    C --> D["查询routing_detail明细<br/>按step_number排序"]
+    D --> E["遍历每条工序"]
+    E --> F["生成工序任务编号<br/>PT-YYYYMMDD-NNN"]
+    F --> G["INSERT process_task<br/>task_status=未开始<br/>approval_status=已审批<br/>inspect_status=无需检<br/>继承inspect_type/plan_name/spec_name"]
+</div>
+
+<h3>2.3 备料单生成</h3>
+<div class="mermaid">
+graph TD
+    START["开始生成备料单"] --> DUP{"material_preparation<br/>已存在?"}
+    DUP -->|"是"| SKIP["跳过"]
+    DUP -->|"否"| BOM1["匹配BOM<br/>优先routing_header关联bom_number<br/>否则按item_number查最新版本"]
+    BOM1 --> BOM2{"找到启用+已审批BOM?"}
+    BOM2 -->|"否"| SKIP2["跳过:无匹配BOM"]
+    BOM2 -->|"是"| FLAT["读取bom_detail第一层明细<br/>仅取第一层，不做递归展平"]
+    FLAT --> CALC["计算需求量<br/>倍率 = planned_qty / bom_base_qty<br/>需求量 = 倍率 × actual_qty"]
+    CALC --> INSERT["INSERT material_preparation<br/>approval_status=已审批<br/>remark=派发自动审批"]
+    INSERT --> DETAIL["INSERT material_preparation_detail<br/>step_number优先从routing_detail_material映射"]
+</div>
+
+<div class="note">
+  <strong>自动审批设计：</strong>派发时自动生成的工序任务和备料单直接置为 approval_status='已审批'，无需用户再次手动审批。备料单主表 remark 字段标记为'派发自动审批'用于追溯。
+</div>
+
+<!-- ==================== 三、备料领料流程 ==================== -->
+<h2 class="page-break">三、备料领料流程</h2>
+
+<h3>3.1 领料出库流程</h3>
+<div class="mermaid">
+graph TD
+    START(["领料员选择备料单<br/>勾选物料行"]) --> CREATE["POST /material-issues<br/>createMaterialIssue"]
+    CREATE --> CHECK1{"有批次号?"}
+    CHECK1 -->|"是"| FIFO["FIFO扣减批次库存<br/>material_batch_inventory<br/>按 inbound_date ASC"]
+    CHECK1 -->|"否"| SUMMARY["扣减汇总库存<br/>material_inventory"]
+
+    FIFO --> DEDUCT_OK["UPDATE batch quantity -= actual"]
+    DEDUCT_OK --> SYNC["同步汇总库存<br/>upsertMaterialInventory"]
+    SUMMARY --> SYNC
+
+    SYNC --> TXN1["INSERT material_inventory_transaction<br/>transaction_type=领料出库"]
+    TXN1 --> LINE1["INSERT lineside_inventory_transaction<br/>仓库→线边仓 入线"]
+    LINE1 --> UPDATE1["UPDATE material_preparation_detail<br/>issued_quantity += actual_quantity"]
+
+    UPDATE1 --> CHECK_PREP{"首道工序<br/>全部物料齐套?"}
+    CHECK_PREP -->|"是"| SET_PREPARED["production_order.plan_status=已备料<br/>syncProductionStatus→待生产"]
+    CHECK_PREP -->|"否"| KEEP_DISPATCHED["保持plan_status=已派发"]
+</div>
+
+<h3>3.2 倒冲物料路线（跳过领料齐套检查）</h3>
+<div class="mermaid">
+graph LR
+    A["倒冲物料<br/>is_backflush=1"] --> B["跳过领料齐套门控<br/>直接允许报工"]
+    A --> C["倒冲物料移库<br/>原料仓→线边仓"]
+    C --> D["等待入库时自动扣减<br/>executeBackflushDeduction<br/>齐套检查→FIFO扣减"]
+</div>
+
+<div class="note">
+  <strong>领料库存扣减优先级：</strong>① 有批次号+有默认仓库 → FIFO扣减material_batch_inventory ② 无批次号+有默认仓库 → 扣减material_inventory汇总 ③ 无默认仓库 → 自动查找库存最多的仓库。<br>
+  <strong>倒冲物料仓库优先级：</strong>routing_header.default_backflush_warehouse → routing_detail.default_repository → bom_detail.default_warehouse。
+</div>
+
+<!-- ==================== 四、报工流程 ==================== -->
+<h2 class="page-break">四、报工流程</h2>
+
+<h3>4.1 报工触发与级联</h3>
+<div class="mermaid">
+graph TD
+    START(["操作工选择工序<br/>填写报工信息"]) --> GATE{"物料门控检查"}
+    GATE -->|"is_backflush=1<br/>首道倒冲"| PASS1["跳过领料齐套检查<br/>直接放行"]
+    GATE -->|"非倒冲"| GATE2{"首道工序<br/>物料全部齐套?"}
+    GATE2 -->|"否"| BLOCK1["拒绝报工<br/>提示:物料未齐套"]
+    GATE2 -->|"是"| PASS2["允许报工"]
+
+    PASS1 --> CREATE_WR["INSERT work_report<br/>qualified + unqualified"]
+    PASS2 --> CREATE_WR
+
+    CREATE_WR --> SYNC_TASK["syncTaskCompletion<br/>completed_quantity += qualified"]
+    SYNC_TASK --> TASK_STATUS{"completed_quantity判断"}
+    TASK_STATUS -->|"completed > 0<br/>且 < planned"| TASK_PROGRESS["task_status=进行中"]
+    TASK_STATUS -->|"completed >= planned"| TASK_DONE["task_status=已完成"]
+
+    CREATE_WR --> PO_STATUS{"plan_status判断"}
+    PO_STATUS -->|"首次报工"| PO_PRODUCING["plan_status=生产中<br/>syncProductionStatus→生产中"]
+    PO_STATUS -->|"所有工序完成"| PO_DONE["plan_status=已完成<br/>syncProductionStatus→生产完成"]
+    PO_STATUS -->|"部分工序完成"| PO_KEEP["保持plan_status"]
+
+    CREATE_WR --> LINE_SIDE["logWorkReportLinesideMovement<br/>线边仓流转记录"]
+    CREATE_WR --> AUTO_INSP["autoCreateInspections<br/>自动创建检验记录"]
+
+    TASK_DONE --> INSP_CHECK{"inspect_type?"}
+    INSP_CHECK -->|"专检"| INSP_WAIT["inspect_status=待检验<br/>阻塞下道工序"]
+    INSP_CHECK -->|"自检"| SELF_OK["inspect_status=无需检<br/>工序直接完成"]
+    INSP_CHECK -->|"无需检"| NO_OK["inspect_status=无需检<br/>工序直接放行"]
+</div>
+
+<h3>4.2 检验门控机制（下道工序报工前检查）</h3>
+<div class="mermaid">
+graph TD
+    START(["下道工序报工请求"]) --> CHECK["查询上道工序<br/>inspect_status"]
+    CHECK --> GATE{"检验门控判断"}
+    GATE -->|"无需检"| PASS["放行"]
+    GATE -->|"检验合格"| PASS
+    GATE -->|"已处理"| PASS
+    GATE -->|"待检验"| BLOCK1["阻止报工<br/>提示:上道工序待检验"]
+    GATE -->|"检验中"| BLOCK2["阻止报工<br/>提示:上道工序检验中"]
+    GATE -->|"检验不合格"| BLOCK3["阻止报工<br/>提示:上道工序检验不合格<br/>请先进行不合格品处理"]
+    GATE -->|"NULL(旧数据)"| WARN["兼容放行<br/>记录日志"]
+
+    PASS --> OK(["允许报工"])
+    BLOCK1 --> FAIL(["报工失败"])
+    BLOCK2 --> FAIL
+    BLOCK3 --> FAIL
+</div>
+
+<!-- ==================== 五、生产检验流程 ==================== -->
+<h2 class="page-break">五、生产检验流程</h2>
+
+<h3>5.1 检验触发与创建</h3>
+<div class="mermaid">
+graph TD
+    START(["报工完成<br/>syncTaskCompletion"]) --> AUTO["autoCreateInspections<br/>自动创建检验记录"]
+    AUTO --> CHK_TYPE{"读取工序inspect_type"}
+
+    CHK_TYPE -->|"无需检"| NO_INSP["UPDATE process_task<br/>inspect_status=无需检<br/>工序直接放行"]
+    CHK_TYPE -->|"专检/自检"| CREATE_PI["createInspectionFromWorkReport<br/>INSERT production_inspection"]
+
+    CREATE_PI --> READ_PLAN["读取检验方案<br/>is_full_inspect / is_sampling<br/>sampling_type / sampling_ratio"]
+    READ_PLAN --> CALC["计算检验数量<br/>全检=报工数量<br/>抽检=按规则计算"]
+    CALC --> COPY_ITEMS["复制检验规范明细<br/>inspection_spec_item<br/>→ production_inspection_item"]
+    COPY_ITEMS --> UPDATE_TASK["UPDATE process_task<br/>inspect_status=待检验"]
+</div>
+
+<h3>5.2 检验执行与结果回写</h3>
+<div class="mermaid">
+graph TD
+    START(["检验员执行"]) --> GET["获取检验单<br/>getProductionInspectionDetail"]
+    GET --> INPUT["填写检验结果<br/>qualified/unqualified_qty<br/>items[].actual_value/item_result"]
+    INPUT --> UPDATE["updateProductionInspection<br/>UPDATE process_task<br/>inspect_status=检验中"]
+    UPDATE --> COMPLETE["completeInspection<br/>完成检验"]
+    COMPLETE --> CHECK{"unqualified_quantity > 0?"}
+
+    CHECK -->|"否"| PASS["inspection_result=合格"]
+    PASS --> TASK_PASS["UPDATE process_task<br/>inspect_status=检验合格"]
+    TASK_PASS --> ORDER_CHECK{"检查所有工序<br/>task_status=已完成<br/>且inspect_status∈检验合格,无需检,已处理"}
+    ORDER_CHECK -->|"全部满足"| ORDER_DONE["UPDATE production_order<br/>plan_status=已完成<br/>syncProductionStatus→生产完成"]
+    ORDER_CHECK -->|"尚有未完工序"| ORDER_KEEP["保持plan_status"]
+
+    CHECK -->|"是"| FAIL["inspection_result=不合格"]
+    FAIL --> TASK_FAIL["UPDATE process_task<br/>inspect_status=检验不合格<br/>阻塞下道工序报工"]
+</div>
+
+<div class="note">
+  <strong>生产单完成增强条件：</strong>从"所有工序 task_status=已完成"增强为"所有工序 task_status=已完成 <strong>且</strong> inspect_status∈{检验合格,无需检,已处理}"。
+</div>
+
+<!-- ==================== 六、不合格品处理 ==================== -->
+<h2 class="page-break">六、生产检验不合格品处理</h2>
+
+<div class="mermaid">
+graph TB
+    NC["NC单<br/>source_type=生产检验<br/>handling_status=待处理"] --> CHOOSE{"选择处理方式"}
+
+    CHOOSE -->|"返修"| RW_FLOW
+    CHOOSE -->|"报废"| SCRAP_FLOW
+    CHOOSE -->|"让步接收"| CONC_FLOW
+
+    subgraph 返修流程["返修流程"]
+        RW_FLOW["1. 创建返修单<br/>RW-YYYYMMDD-NNN<br/>rework_status=待返修"] --> RW2["2. 回退目标工序<br/>planned_quantity += unqualifiedQty<br/>task_status=未开始<br/>inspect_status=无需检<br/>completed_quantity=0"]
+        RW2 --> RW3["3. 删除返修工序后<br/>的报工单+关联检验单<br/>避免数据不一致"]
+        RW3 --> RW4["4. production_order<br/>plan_status=生产中<br/>syncProductionStatus→生产中"]
+        RW4 --> RW5["5. 返修执行<br/>rework_status→返修中→返修完成"]
+        RW5 --> RW6{"再检验结果"}
+        RW6 -->|"合格"| RW7["NC→已完成<br/>工序inspect_status=已处理"]
+        RW6 -->|"不合格"| RW8["NC→返修不合格<br/>可再次选择处理方式"]
+        RW8 --> CHOOSE
+    end
+
+    subgraph 报废流程["报废流程"]
+        SCRAP_FLOW["1. 查找报废仓库<br/>warehouse_type=报废仓库"] --> SCRAP2["2. 创建报废入库单<br/>stock_in_type=报废入库"]
+        SCRAP2 --> SCRAP3["3. UPDATE process_task<br/>inspect_status=已处理<br/>下道工序可继续"]
+        SCRAP3 --> SCRAP4["4. NC→已完成"]
+    end
+
+    subgraph 让步接收流程["让步接收流程"]
+        CONC_FLOW["1. 调整检验数量<br/>qualified += concession_qty<br/>unqualified -= concession_qty"] --> CONC2["2. UPDATE process_task<br/>inspect_status=已处理<br/>下道工序可继续"]
+        CONC2 --> CONC3["3. NC→已完成<br/>concession_quantity记录"]
+    end
+</div>
+
+<table>
+<tr><th>处理方式</th><th>生产流程影响</th><th>系统操作</th></tr>
+<tr><td><span class="badge badge-blue">返修</span></td><td>目标工序回退到"未开始"；生产单从"已完成"→"生产中"；销售订单回退；删除返修工序后的报工和检验单</td><td>UPDATE process_task: task_status=未开始, inspect_status=无需检, completed_quantity=0<br>UPDATE production_order: plan_status=生产中<br>DELETE 返修工序后的报工单+检验单</td></tr>
+<tr><td><span class="badge badge-red">报废</span></td><td>不合格品报废入库，工序标记已处理，下道工序可继续</td><td>创建stock_in_type=报废入库<br>UPDATE process_task: inspect_status=已处理</td></tr>
+<tr><td><span class="badge badge-orange">让步接收</span></td><td>不合格品按合格品接收，工序标记已处理，下道工序可继续</td><td>UPDATE production_inspection: qualified/unqualified调整<br>UPDATE process_task: inspect_status=已处理</td></tr>
+</table>
+
+<!-- ==================== 七、生产入库流程 ==================== -->
+<h2 class="page-break">七、生产入库流程</h2>
+
+<div class="mermaid">
+graph TD
+    TRIGGER["触发条件<br/>production_order.plan_status=已完成"]
+    TRIGGER --> CREATE["创建生产入库单<br/>production_inbound_order<br/>approval_status=草稿<br/>inbound_status=未入库"]
+
+    CREATE --> CONFIRM["确认入库<br/>confirmProductionInbound"]
+
+    CONFIRM --> PRECHECK["入库前倒冲就绪检查<br/>checkBackflushReadiness<br/>校验线边仓库存"]
+    PRECHECK --> PRECHECK_R{"就绪检查通过?"}
+    PRECHECK_R -->|"否"| PRECHECK_FAIL["返回缺料明细<br/>阻止入库"]
+    PRECHECK_R -->|"是"| CONTINUE_INBOUND
+
+    CONTINUE_INBOUND --> UPDATE_BATCH["创建成品批次库存<br/>finished_batch_inventory<br/>quantity += 入库数量"]
+    CONTINUE_INBOUND --> SYNC_FIN["同步成品汇总库存<br/>finished_goods_inventory"]
+    CONTINUE_INBOUND --> INV_TXN["记录入库流水<br/>inventory_transaction<br/>transaction_type=入库<br/>source_type=生产入库"]
+    CONTINUE_INBOUND --> LINE_OUT["记录线边仓出线<br/>成品出线边<br/>lineside_inventory_transaction"]
+
+    CONTINUE_INBOUND --> BF_DEDUCT["触发倒冲扣减<br/>executeBackflushDeduction<br/>同一事务，失败则回滚"]
+    BF_DEDUCT --> BF_CALC["计算扣减量<br/>deductQty = inboundQty × bomActualQty / bomBaseQty<br/>4位小数精度"]
+    BF_CALC --> BF_FIFO["FIFO扣减线边仓批次库存<br/>material_batch_inventory"]
+    BF_FIFO --> BF_UPDATE["更新线边仓汇总库存<br/>material_inventory"]
+    BF_FIFO --> BF_TXN["记录倒冲出库流水<br/>material_inventory_transaction"]
+    BF_FIFO --> BF_LINE_OUT["记录线边仓出线<br/>lineside_inventory_transaction"]
+    BF_FIFO --> BF_TASK["更新倒冲任务状态<br/>backflush_task<br/>deduction_status更新"]
+    BF_FIFO --> BF_LOG["写入扣减日志<br/>backflush_deduction_log"]
+
+    CONTINUE_INBOUND --> UPDATE_PO["UPDATE production_order<br/>inbound_status更新"]
+    UPDATE_PO --> PO_INBOUND{"累计入库 vs 计划产量"}
+    PO_INBOUND -->|"部分入库"| PO_PARTIAL["inbound_status=部分入库"]
+    PO_INBOUND -->|"全部入库"| PO_FULL["inbound_status=全部入库"]
+
+    UPDATE_BATCH --> DONE(["入库完成"])
+    BF_TASK --> DONE
+    PO_PARTIAL --> DONE
+    PO_FULL --> DONE
+
+    PRECHECK_FAIL --> FAIL(["入库失败"])
+
+    style PRECHECK fill:#fff7e6,stroke:#fa8c16
+    style PRECHECK_FAIL fill:#ffccc7,stroke:#f5222d
+    style BF_DEDUCT fill:#ffe7ba,stroke:#fa8c16
+    style DONE fill:#f6ffed,stroke:#52c41a
+</div>
+
+<div class="note">
+  <strong>入库说明：</strong>生产完工后可多次分批入库。inbound_status 独立于 plan_status 流转：未入库→部分入库→全部入库。入库倒冲扣减与成品入库在同一个事务中原子完成，齐套检查不通过或倒冲扣减失败会阻止入库并回滚整个事务，保证账务平衡。
+</div>
+
+<!-- ==================== 八、撤销操作详细流程 ==================== -->
+<h2 class="page-break">八、撤销操作详细流程</h2>
+
+<h3>8.1 领料撤回（DELETE material_issue）</h3>
+<div class="mermaid">
+graph TD
+    START(["操作员点击撤回领料单"]) --> B1["BEGIN TRANSACTION"]
+    B1 --> B1a["查询material_issue主表+明细<br/>提取step_number"]
+    B1a --> B2{"B2.报工记录检查<br/>work_report<br/>step_number >= minStep<br/>是否存在?"}
+
+    B2 -->|"存在冲突"| BLOCK["ROLLBACK<br/>409 Conflict<br/>列出冲突工序+报工单号<br/>提示:需先删除报工记录"]
+    BLOCK --> BLOCK_MSG(["撤回被阻止"])
+
+    B2 -->|"无冲突"| B3["逐行回退库存"]
+    B3 --> B3a["material_inventory.quantity += actual<br/>汇总库存恢复"]
+    B3 --> B3b["material_batch_inventory.quantity += actual<br/>批次库存恢复"]
+    B3 --> B3c["INSERT material_inventory_transaction<br/>transaction_type=入库/领料撤回<br/>对冲流水记录"]
+    B3 --> B7["INSERT lineside_inventory_transaction<br/>线边仓→仓库 出线边对冲"]
+
+    B3 --> B4["UPDATE material_preparation_detail<br/>issued_quantity -= actual_quantity"]
+    B4 --> B5["重算preparation_status<br/>已领料→部分领料/未领料"]
+    B5 --> B6["重算production_order.plan_status<br/>已备料→已派发"]
+
+    B6 --> B8["DELETE material_issue_detail"]
+    B8 --> B9["DELETE material_issue"]
+    B9 --> B10["COMMIT"]
+    B10 --> SUCCESS(["撤回成功"])
+</div>
+
+<h3>8.2 报工删除（DELETE work_report）</h3>
+<div class="mermaid">
+graph TD
+    START(["删除报工单"]) --> CHECK{"approval_status=草稿?"}
+    CHECK -->|"否"| ERR["禁止删除<br/>需先撤回/反审"]
+    CHECK -->|"是"| DELETE["DELETE work_report"]
+
+    DELETE --> SYNC["syncTaskCompletion<br/>qtyDelta = -qualified_quantity"]
+    SYNC --> UPDATE_TASK["UPDATE process_task"]
+    UPDATE_TASK --> TASK_QTY["completed_quantity -= qualified_quantity"]
+    UPDATE_TASK --> TASK_STATUS{"completed_quantity判断"}
+    TASK_STATUS -->|"≤ 0"| STATUS_UNSTART["task_status=未开始"]
+    TASK_STATUS -->|"0 < qty < planned"| STATUS_PROGRESS["task_status=进行中"]
+
+    SYNC --> UPDATE_PO["重算production_order.plan_status"]
+    UPDATE_PO --> PO_CHECK{"所有工序completed判断"}
+    PO_CHECK -->|"全部completed=0"| PO_BACK1["plan_status=已备料<br/>从生产中回退"]
+    PO_CHECK -->|"有工序未完成"| PO_BACK2["plan_status=生产中<br/>从已完成回退"]
+
+    DELETE --> REVERSE_LINE["logWorkReportReverseLinesideMovement<br/>线边仓冲销"]
+    DELETE --> SYNC_SO["syncProductionStatus<br/>重算sales_order<br/>单向递进，不回退"]
+</div>
+
+<h3>8.3 生产入库撤回（rollbackProductionInbound）</h3>
+<div class="mermaid">
+graph TD
+    START(["入库撤回请求"]) --> CHECK1{"入库单status=已撤回?"}
+    CHECK1 -->|"已撤回"| ERR1["禁止重复撤回"]
+    CHECK1 -->|"未撤回"| CHECK2{"成品批次<br/>已被出库消耗?"}
+    CHECK2 -->|"剩余 < 入库量"| ERR2["禁止撤回<br/>需先撤回后续出库"]
+    CHECK2 -->|"库存充足"| TX["开启事务"]
+
+    TX --> STEP5["反转成品批次库存<br/>finished_batch_inventory<br/>quantity -= inboundQty<br/>若≤0则DELETE"]
+    STEP5 --> STEP6["同步成品汇总库存<br/>finished_goods_inventory"]
+    STEP6 --> STEP7["标记成品库存流水作废<br/>inventory_transaction<br/>status=作废<br/>void_operator/date"]
+
+    STEP7 --> STEP8["回退生产单入库数量和状态<br/>production_order<br/>inbound_quantity -= rollbackQty<br/>inbound_status重算<br/>全部入库→部分入库→未入库"]
+    STEP8 --> STEP9["反转倒冲扣减<br/>按backflush_deduction_log<br/>逐条回退"]
+    STEP9 --> STEP9a["物料批次加回<br/>material_batch_inventory<br/>quantity += deductQty"]
+    STEP9a --> STEP9b["物料汇总库存加回<br/>material_inventory"]
+    STEP9b --> STEP9c["标记物料流水作废<br/>material_inventory_transaction<br/>status=作废"]
+    STEP9c --> STEP9d["回退倒冲任务状态<br/>backflush_task<br/>deduction_status回退<br/>已完成→部分扣减→待扣减"]
+    STEP9d --> STEP9e["标记deduction_log=已撤回"]
+
+    STEP9e --> STEP10["删除批次追溯记录<br/>batch_traceability"]
+    STEP10 --> STEP11["更新入库单状态<br/>production_inbound_order<br/>status=已撤回<br/>withdraw_operator/date"]
+
+    STEP11 --> COMMIT["COMMIT"]
+    COMMIT --> SUCCESS(["撤回成功"])
+
+    ERR1 --> FAIL(["撤回失败"])
+    ERR2 --> FAIL
+</div>
+
+<div class="note">
+  <strong>入库撤回级联影响：</strong>入库撤回是最复杂的撤销操作，需要同时反转：<br>
+  ① 成品库存（批次+汇总）<br>
+  ② 成品入库流水（标记作废）<br>
+  ③ 生产单入库数量和状态<br>
+  ④ 倒冲扣减（物料批次+汇总+流水+倒冲任务状态+扣减日志）<br>
+  ⑤ 批次追溯记录删除<br>
+  所有操作在同一个事务中原子完成，保证账务平衡。
+</div>
+
+<!-- ==================== 九、五维度状态流转汇总 ==================== -->
+<h2 class="page-break">九、五维度状态流转汇总</h2>
+
+<h3>9.1 production_order.plan_status 状态机</h3>
+<div class="mermaid">
+stateDiagram-v2
+    direction LR
+    [*] --> 已派发: dispatchAndGenerateCore<br/>审批通过+无资源冲突
+
+    已派发 --> 已备料: 首道工序全部领完<br/>preparation_status=已领料
+    已派发 --> 生产中: 首道倒冲直接报工<br/>is_backflush=1
+
+    已备料 --> 已派发: 撤回领料<br/>DELETE material_issue
+    已备料 --> 生产中: 首次报工<br/>createWorkReport
+
+    生产中 --> 已备料: 删除所有报工<br/>DELETE work_report × N
+    生产中 --> 已完成: 全部工序完成<br/>且inspect_status∈合格,无需检,已处理
+
+    已完成 --> 生产中: 删除报工导致未完<br/>或返修回退
+</div>
+
+<h3>9.2 material_preparation.preparation_status 状态机</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 未领料: 派发自动生成
+
+    未领料 --> 部分领料: 部分物料领取
+    未领料 --> 已领料: 一次性全部领取
+    部分领料 --> 已领料: 全部物料领取
+
+    已领料 --> 部分领料: 撤回领料仍有剩余
+    已领料 --> 未领料: 撤回全部领料
+    部分领料 --> 未领料: 撤回剩余领料
+</div>
+
+<h3>9.3 process_task 双状态模型</h3>
+<div class="mermaid">
+stateDiagram-v2
+    direction LR
+
+    state task_status {
+        [*] --> 未开始: 派发生成
+        未开始 --> 进行中: completed_quantity > 0
+        进行中 --> 已完成: completed >= planned
+        进行中 --> 未开始: 删除报工 qty归零
+        已完成 --> 进行中: 删除报工 qty < planned
+    }
+
+    state inspect_status {
+        [*] --> 无需检: 工序inspect_type=无需检
+        [*] --> 待检验: 报工完成+启用检验
+        待检验 --> 检验中: 检验员开始执行
+        检验中 --> 检验合格: 无不合格品
+        检验中 --> 检验不合格: 有不合格品
+        检验不合格 --> 已处理: 返修/报废/让步接收
+        已处理 --> 检验合格: 返修后重新检验合格
+    }
+</div>
+
+<h3>9.4 production_order.inbound_status 状态机</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 未入库: 生产单创建
+
+    未入库 --> 部分入库: 首次确认入库<br/>inbound < planned
+    未入库 --> 全部入库: 一次性全部入库<br/>inbound >= planned
+    部分入库 --> 全部入库: 累计入库完成
+
+    全部入库 --> 部分入库: 入库撤回<br/>rollbackProductionInbound
+    部分入库 --> 未入库: 入库撤回<br/>inbound归零
+</div>
+
+<h3>9.5 通用审批状态机</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 草稿: 创建单据
+    草稿 --> 待审批: 提交审批
+    待审批 --> 已审批: 审批通过
+    待审批 --> 草稿: 撤回
+    已审批 --> 草稿: 反审批
+</div>
+
+<!-- ==================== 十、状态变化矩阵 ==================== -->
+<h2 class="page-break">十、状态变化矩阵</h2>
+
+<h3>10.1 plan_status 全状态变化矩阵</h3>
+<table>
+<tr><th>当前状态</th><th>目标状态</th><th>触发操作</th><th>前置条件</th><th>级联影响</th><th>可逆性</th></tr>
+<tr><td>未开始</td><td>已派发</td><td>dispatchAndGenerateCore</td><td>approval_status=已审批+无资源冲突</td><td>生成工序任务+备料单+委外申请<br/>syncProductionStatus→计划中</td><td>不可逆</td></tr>
+<tr><td>已派发</td><td>已备料</td><td>领料完成回调</td><td>首道工序全部领完</td><td>syncProductionStatus→待生产</td><td>可逆(撤回领料)</td></tr>
+<tr><td>已备料</td><td>已派发</td><td>DELETE material_issue</td><td>撤回后首道工序不再全部领完</td><td>库存恢复+对冲流水</td><td>可再领料</td></tr>
+<tr><td>已派发</td><td>生产中</td><td>createWorkReport</td><td>首道倒冲直接报工</td><td>syncProductionStatus→生产中</td><td>可逆(删除报工)</td></tr>
+<tr><td>已备料</td><td>生产中</td><td>createWorkReport</td><td>任意工序首次报工</td><td>syncProductionStatus→生产中</td><td>可逆(删除报工)</td></tr>
+<tr><td>生产中</td><td>已备料</td><td>DELETE work_report × N</td><td>删除全部报工后completed归零</td><td>process_task回退</td><td>可再报工</td></tr>
+<tr><td>生产中</td><td>已完成</td><td>createWorkReport</td><td>所有工序completed>=planned<br/>且inspect_status∈合格,无需检,已处理</td><td>syncProductionStatus→生产完成<br/>触发入库流程</td><td>可逆(删除报工)</td></tr>
+<tr><td>已完成</td><td>生产中</td><td>DELETE work_report</td><td>删除报工导致有工序未完成</td><td>process_task回退</td><td>可再报工</td></tr>
+<tr><td>已完成</td><td>生产中</td><td>返修回退</td><td>返修指定工序回退</td><td>目标工序planned_quantity回加<br/>删除后续报工+检验单<br/>syncProductionStatus→生产中</td><td>可再报工</td></tr>
+</table>
+
+<h3>10.2 preparation_status 全状态变化矩阵</h3>
+<table>
+<tr><th>当前状态</th><th>目标状态</th><th>触发操作</th><th>条件</th></tr>
+<tr><td>未领料</td><td>部分领料</td><td>领料出库</td><td>部分物料领取(issued < required)</td></tr>
+<tr><td>未领料</td><td>已领料</td><td>领料出库</td><td>全部物料一次领完</td></tr>
+<tr><td>部分领料</td><td>已领料</td><td>领料出库</td><td>剩余物料领完</td></tr>
+<tr><td>已领料</td><td>部分领料</td><td>DELETE material_issue</td><td>撤回部分领料(仍有剩余)</td></tr>
+<tr><td>已领料</td><td>未领料</td><td>DELETE material_issue</td><td>撤回全部领料(issued=0)</td></tr>
+<tr><td>部分领料</td><td>未领料</td><td>DELETE material_issue</td><td>撤回剩余领料(issued=0)</td></tr>
+</table>
+
+<h3>10.3 process_task.task_status 状态变化矩阵</h3>
+<table>
+<tr><th>当前状态</th><th>目标状态</th><th>触发操作</th><th>条件</th></tr>
+<tr><td>未开始</td><td>进行中</td><td>createWorkReport</td><td>completed_quantity > 0</td></tr>
+<tr><td>进行中</td><td>已完成</td><td>createWorkReport</td><td>completed >= planned</td></tr>
+<tr><td>进行中</td><td>未开始</td><td>DELETE work_report</td><td>completed归零</td></tr>
+<tr><td>已完成</td><td>进行中</td><td>DELETE work_report</td><td>completed回退且 < planned</td></tr>
+</table>
+
+<h3>10.4 process_task.inspect_status 状态变化矩阵</h3>
+<table>
+<tr><th>当前状态</th><th>目标状态</th><th>触发操作</th><th>条件</th></tr>
+<tr><td>无需检</td><td>待检验</td><td>报工完成+启用检验</td><td>inspect_type=专检/自检</td></tr>
+<tr><td>待检验</td><td>检验中</td><td>updateProductionInspection</td><td>检验员开始填写</td></tr>
+<tr><td>检验中</td><td>检验合格</td><td>completeInspection</td><td>unqualified_quantity=0</td></tr>
+<tr><td>检验中</td><td>检验不合格</td><td>completeInspection</td><td>unqualified_quantity > 0</td></tr>
+<tr><td>检验不合格</td><td>已处理</td><td>不合格品处理</td><td>返修/报废/让步接收</td></tr>
+<tr><td>已处理</td><td>检验合格</td><td>返修后重新检验</td><td>返修完成+再检验合格</td></tr>
+<tr><td>已完成→未开始</td><td>无需检</td><td>返修回退</td><td>返修指定工序回退</td></tr>
+</table>
+
+<h3>10.5 inbound_status 状态变化矩阵</h3>
+<table>
+<tr><th>当前状态</th><th>目标状态</th><th>触发操作</th><th>条件</th></tr>
+<tr><td>未入库</td><td>部分入库</td><td>confirmProductionInbound</td><td>inbound < planned</td></tr>
+<tr><td>未入库</td><td>全部入库</td><td>confirmProductionInbound</td><td>inbound >= planned</td></tr>
+<tr><td>部分入库</td><td>全部入库</td><td>confirmProductionInbound</td><td>累计inbound >= planned</td></tr>
+<tr><td>全部入库</td><td>部分入库</td><td>rollbackProductionInbound</td><td>撤回后仍有部分入库</td></tr>
+<tr><td>部分入库</td><td>未入库</td><td>rollbackProductionInbound</td><td>撤回后inbound归零</td></tr>
+</table>
+
+<!-- ==================== 十一、撤销操作级联影响汇总 ==================== -->
+<h2 class="page-break">十一、撤销操作级联影响汇总</h2>
+
+<h3>11.1 领料撤回数据影响</h3>
+<table>
+<tr><th>序号</th><th>表名</th><th>操作</th><th>字段变更</th><th>说明</th></tr>
+<tr><td>1</td><td>material_inventory</td><td>UPDATE</td><td>quantity + 领料量</td><td>汇总库存恢复</td></tr>
+<tr><td>2</td><td>material_batch_inventory</td><td>UPDATE</td><td>quantity + 领料量</td><td>批次库存恢复</td></tr>
+<tr><td>3</td><td>material_inventory_transaction</td><td>INSERT</td><td>transaction_type=入库/领料撤回</td><td>对冲流水记录</td></tr>
+<tr><td>4</td><td>material_preparation_detail</td><td>UPDATE</td><td>issued_quantity -= 领料量</td><td>回退已领数量</td></tr>
+<tr><td>5</td><td>material_preparation</td><td>UPDATE</td><td>preparation_status重算</td><td>已领料→部分/未领料</td></tr>
+<tr><td>6</td><td>production_order</td><td>UPDATE</td><td>plan_status重算</td><td>已备料→已派发(条件触发)</td></tr>
+<tr><td>7</td><td>lineside_inventory_transaction</td><td>INSERT</td><td>出线边对冲</td><td>线边仓回退仓库</td></tr>
+<tr><td>8</td><td>material_issue_detail</td><td>DELETE</td><td>—</td><td>删除领料明细</td></tr>
+<tr><td>9</td><td>material_issue</td><td>DELETE</td><td>—</td><td>删除领料单主表</td></tr>
+</table>
+
+<h3>11.2 报工删除数据影响</h3>
+<table>
+<tr><th>序号</th><th>表名</th><th>操作</th><th>字段变更</th></tr>
+<tr><td>1</td><td>work_report</td><td>DELETE</td><td>删除报工单</td></tr>
+<tr><td>2</td><td>process_task</td><td>UPDATE</td><td>completed_quantity -= qualified<br/>task_status重算</td></tr>
+<tr><td>3</td><td>production_order</td><td>UPDATE</td><td>plan_status重算</td></tr>
+<tr><td>4</td><td>lineside_inventory_transaction</td><td>INSERT</td><td>冲销线边仓流转</td></tr>
+<tr><td>5</td><td>sales_order_detail</td><td>UPDATE</td><td>production_status（单向递进，不回退）</td></tr>
+</table>
+
+<h3>11.3 生产入库撤回数据影响</h3>
+<table>
+<tr><th>序号</th><th>表名</th><th>操作</th><th>字段变更</th><th>说明</th></tr>
+<tr><td>1</td><td>finished_batch_inventory</td><td>UPDATE/DELETE</td><td>quantity -= inboundQty</td><td>成品批次库存反转</td></tr>
+<tr><td>2</td><td>finished_goods_inventory</td><td>UPDATE</td><td>同步汇总</td><td>成品汇总库存反转</td></tr>
+<tr><td>3</td><td>inventory_transaction</td><td>UPDATE</td><td>status=作废,void_operator/date</td><td>成品入库流水作废</td></tr>
+<tr><td>4</td><td>production_order</td><td>UPDATE</td><td>inbound_quantity -= rollbackQty<br/>inbound_status重算</td><td>生产单入库回退</td></tr>
+<tr><td>5</td><td>material_batch_inventory</td><td>UPDATE</td><td>quantity += deductQty</td><td>倒冲物料批次加回</td></tr>
+<tr><td>6</td><td>material_inventory</td><td>UPDATE</td><td>quantity += deductQty</td><td>倒冲物料汇总加回</td></tr>
+<tr><td>7</td><td>material_inventory_transaction</td><td>UPDATE</td><td>status=作废</td><td>倒冲出库流水作废</td></tr>
+<tr><td>8</td><td>backflush_task</td><td>UPDATE</td><td>deduction_status回退<br/>deducted_quantity -= deductQty</td><td>倒冲任务状态回退</td></tr>
+<tr><td>9</td><td>backflush_deduction_log</td><td>UPDATE</td><td>status=已撤回</td><td>扣减日志标记撤回</td></tr>
+<tr><td>10</td><td>batch_traceability</td><td>DELETE</td><td>—</td><td>删除批次追溯记录</td></tr>
+<tr><td>11</td><td>production_inbound_order</td><td>UPDATE</td><td>status=已撤回<br/>withdraw_operator/date</td><td>入库单标记已撤回</td></tr>
+</table>
+
+<!-- ==================== 十二、撤销互锁机制 ==================== -->
+<h2>十二、撤销互锁机制</h2>
+
+<h3>12.1 领料撤回 vs 报工记录互锁</h3>
+<div class="mermaid">
+graph TD
+    WITHDRAW["撤回领料单请求<br/>DELETE /material-issues/:id"]
+    WITHDRAW --> GET_DETAIL["查询material_issue_detail<br/>提取step_number"]
+    GET_DETAIL --> CALC_MIN["计算minStep<br/>=所有已领料工序的最小step_number"]
+    CALC_MIN --> QUERY_WR["查询work_report<br/>WHERE production_order_number = :orderNo<br/>AND step_number >= :minStep"]
+    QUERY_WR --> HAS_WR{"结果集是否为空?"}
+    HAS_WR -->|"否(存在报工)"| CONFLICT["构造冲突信息<br/>工序N(工序名称)[报工单号]<br/>409 Conflict"]
+    HAS_WR -->|"是(无报工)"| CONTINUE["继续执行库存回退"]
+</div>
+
+<div class="warn">
+  <strong>互锁原则：</strong>工序间存在严格前后依赖。如果领料工序或其后道工序已报工，说明物料已被消耗，此时撤回领料会导致库存与在制品不一致，必须先行删除报工记录。
+</div>
+
+<h3>12.2 生产入库撤回安全检查</h3>
+<div class="mermaid">
+graph TD
+    WITHDRAW["入库撤回请求<br/>rollbackProductionInbound"]
+    WITHDRAW --> CHECK1{"入库单status=已撤回?"}
+    CHECK1 -->|"已撤回"| ERR1["禁止重复操作"]
+    CHECK1 -->|"未撤回"| CHECK2{"成品批次已被出库消耗?"}
+    CHECK2 -->|"剩余 < 入库量"| ERR2["禁止撤回<br/>需先撤回后续出库<br/>批次X剩余Y需回退Z"]
+    CHECK2 -->|"库存充足"| OK["允许撤回<br/>继续执行反转"]
+</div>
+
+<h3>12.3 报工删除前置条件</h3>
+<div class="mermaid">
+graph TD
+    DELETE["删除报工单请求<br/>DELETE /work-reports/:id"]
+    DELETE --> CHECK{"approval_status=草稿?"}
+    CHECK -->|"否(已提交/已审批)"| ERR["禁止删除<br/>需先撤回审批(反审)"]
+    CHECK -->|"是(草稿)"| OK["允许删除<br/>继续执行回退"]
+</div>
+
+<!-- ==================== 十三、倒冲扣减量计算 ==================== -->
+<h2>十三、核心计算公式</h2>
+
+<h3>13.1 备料需求量计算</h3>
+<div style="background:#f0f5ff;border:1px solid #d6e4ff;border-radius:6px;padding:16px;margin:12px 0;font-family:monospace;font-size:14px;">
+  <div><strong>需求量 = (计划生产数量 / BOM基础量) × BOM实际用量</strong></div>
+  <div style="margin-top:8px;color:#666;">
+    required_quantity = (planned_quantity / bom_base_quantity) × actual_quantity<br>
+    adjusted_quantity = required_quantity（初始等于需求量）
+  </div>
+</div>
+
+<h3>13.2 倒冲扣减量计算</h3>
+<div style="background:#fff7e6;border:1px solid #ffe58f;border-radius:6px;padding:16px;margin:12px 0;font-family:monospace;font-size:14px;">
+  <div><strong>本次扣减量 = 入库数量 × (BOM单耗 / BOM基础量)</strong></div>
+  <div style="margin-top:8px;color:#666;">
+    deductQty = inboundQuantity × (bomActualQuantity / bomBaseQuantity)<br>
+    精度: Math.round(value × 10000) / 10000（4位小数）<br>
+    封顶: deductQty ≤ required - alreadyDeducted（不超过剩余量）
+  </div>
+</div>
+
+<!-- ==================== 十四、核心数据实体关系 ==================== -->
+<h2 class="page-break">十四、核心数据实体关系</h2>
+
+<div class="mermaid">
+erDiagram
+    production_order ||--o{ process_task : "派发生成"
+    production_order ||--o| material_preparation : "派发生成"
+    production_order ||--o{ production_inbound_order : "生产入库"
+    production_order ||--o| outsourcing_req : "派发时生成(委外)"
+
+    process_task ||--o{ work_report : "报工"
+    process_task ||--o| production_inspection : "报工触发检验"
+    process_task ||--o| backflush_task : "倒冲工序"
+
+    material_preparation ||--o{ material_preparation_detail : "备料明细"
+    material_preparation_detail ||--o{ material_issue : "领料出库"
+
+    work_report ||--o| production_inspection : "条件触发生产检验"
+    production_inspection ||--o| production_inspection_item : "检验明细"
+    production_inspection ||--o| nonconforming_product : "不合格创建NC"
+
+    nonconforming_product ||--o| rework_order : "返修"
+    nonconforming_product ||--o| stock_in : "报废"
+
+    production_inbound_order ||--o{ production_inbound_order_detail : "入库明细"
+    production_inbound_order_detail ||--o| finished_batch_inventory : "成品批次"
+</div>
+
+<!-- ==================== 十五、端到端时序图 ==================== -->
+<h2 class="page-break">十五、端到端时序图</h2>
+
+<div class="mermaid">
+sequenceDiagram
+    actor 调度员
+    actor 领料员
+    actor 操作工
+    actor 质检员
+    actor 库管员
+    participant WEP as PC端
+    participant APP as 移动端
+    participant API as 后端API
+    participant DB as 数据库
+
+    rect rgb(230, 247, 255)
+        Note over 调度员,DB: 阶段1 — 派发
+        调度员->>WEP: 选择生产单，点击派发
+        WEP->>API: POST /production-orders/dispatch-and-generate
+        API->>DB: 资源冲突检查（模具/设备/班次）
+        API->>DB: UPDATE plan_status=已派发
+        API->>DB: INSERT process_task × N
+        API->>DB: INSERT material_preparation + detail
+        API->>DB: INSERT outsourcing_req（如有委外）
+        API->>DB: COMMIT
+    end
+
+    rect rgb(246, 255, 237)
+        Note over 领料员,DB: 阶段2 — 备料领料
+        领料员->>APP: 扫码领料
+        APP->>API: POST /material-issues
+        API->>DB: FIFO扣减原料仓库存
+        API->>DB: INSERT 线边仓入线流水
+        API->>DB: UPDATE issued_quantity
+        API->>DB: 重算 preparation_status → plan_status
+    end
+
+    rect rgb(255, 251, 230)
+        Note over 操作工,DB: 阶段3 — 报工+检验
+        操作工->>APP: 选择工序报工
+        APP->>API: POST /work-reports
+        API->>DB: 物料门控检查（齐套/倒冲）
+        API->>DB: INSERT work_report
+        API->>DB: syncTaskCompletion
+        API->>DB: 重算 plan_status
+        API->>DB: autoCreateInspections
+        Note over 质检员,DB: 检验流程
+        质检员->>WEP: 执行检验
+        WEP->>API: updateProductionInspection → completeInspection
+        API->>DB: UPDATE inspect_status
+        alt 检验合格
+            API->>DB: inspect_status=检验合格
+        else 检验不合格
+            API->>DB: inspect_status=检验不合格
+            质检员->>WEP: 不合格品处理
+            WEP->>API: NC处理（返修/报废/让步接收）
+        end
+    end
+
+    rect rgb(246, 255, 237)
+        Note over 库管员,DB: 阶段4 — 生产入库
+        库管员->>WEP: 创建生产入库单 → 确认入库
+        WEP->>API: confirmProductionInbound
+        API->>DB: 倒冲就绪检查
+        API->>DB: 创建成品批次库存
+        API->>DB: 触发倒冲扣减
+        API->>DB: 更新 inbound_status
+    end
+
+    rect rgb(255, 242, 240)
+        Note over 库管员,DB: 阶段5 — 入库撤回(可选)
+        库管员->>WEP: 入库撤回
+        WEP->>API: rollbackProductionInbound
+        API->>DB: 反转成品库存+倒冲扣减+流水作废
+        API->>DB: 回退 inbound_status
+    end
+</div>
+
+<div style="margin-top:40px;text-align:center;color:#888;font-size:12px;">
+  文档生成时间：2026年5月15日 | 基于系统代码版本自动生成 | 涵盖派发→备料→报工→检验→入库→撤销全链路
+</div>
+
+</div>
+</body>
+</html>

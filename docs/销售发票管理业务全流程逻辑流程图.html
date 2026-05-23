@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>销售发票管理业务全流程逻辑流程图 - 睿信橡胶密封件MES系统</title>
+<script src="../../node_modules/mermaid/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:'default'});</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+  .page { max-width: 1300px; margin: 0 auto; padding: 32px; background: #fff; min-height: 100vh; }
+  h1 { text-align: center; font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 20px; color: #1a1a2e; margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 16px; color: #1a1a2e; margin: 20px 0 10px; }
+  .intro { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; padding: 16px; margin-bottom: 24px; font-size: 14px; }
+  .mermaid { text-align: center; margin: 16px 0; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  .warn { background: #fff1f0; border-left: 4px solid #f5222d; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 4px; }
+  .badge-blue { background: #e6f7ff; color: #1890ff; }
+  .badge-green { background: #f6ffed; color: #52c41a; }
+  .badge-red { background: #fff1f0; color: #f5222d; }
+  .badge-orange { background: #fff7e6; color: #fa8c16; }
+  .badge-purple { background: #f9f0ff; color: #722ed1; }
+  .badge-cyan { background: #e6fffb; color: #13c2c2; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>销售发票管理业务全流程逻辑流程图</h1>
+<div class="subtitle">睿信橡胶密封件MES系统 | 从销售发货、客户对账、录入发票、关联发货明细行、双向查询、到错误修正（编辑/撤消）及状态联动回退的全链路业务流程</div>
+
+<div class="intro">
+  <strong>文档说明：</strong>本文档完整展示销售发票管理业务的6个阶段：<br>
+  <strong>阶段1 销售发货完成：</strong>销售订单审批 → 发货申请 → 创建发货单 → 仓库出库确认 → 发货完成<br>
+  <strong>阶段2 客户对账：</strong>与客户核对发货数量/金额 → 确认开票需求 → 获取国家税务系统发票信息<br>
+  <strong>阶段3 录入发票与关联：</strong>创建发票（草稿）→ 选择发货明细行 → 填写开票数量（支持部分开票）→ 保存<br>
+  <strong>阶段4 审批发票：</strong>审批 → 联动更新发货明细行/销售订单明细行的开票状态（未开票/部分开票/已开票）<br>
+  <strong>阶段5 双向查询：</strong>发票→查看关联发货明细行；发货明细行/销售订单明细行→查看关联发票<br>
+  <strong>阶段6 错误修正：</strong>编辑发票（已审批自动撤消后编辑）、撤消审批、删除 → 联动回退开票状态和数量<br>
+  涵盖状态流转、数据变更矩阵、关键业务规则及各环节的数据实体关系。
+</div>
+
+<!-- ==================== 一、全流程总览 ==================== -->
+<h2>一、销售发票管理全流程总览</h2>
+
+<div class="note">
+  <strong>全流程阶段概览：</strong>共6个阶段，依次为：销售发货完成 → 客户对账 → 录入发票与关联 → 审批发票与状态联动 → 双向查询 → 错误修正与状态回退<br>
+  下方按阶段逐个展示详细流程图，各阶段之间以箭头衔接。
+</div>
+
+<!-- 阶段1 -->
+<h3>阶段1：销售发货完成</h3>
+<div class="mermaid">
+graph TB
+    SO[销售订单审批通过<br/>sales_order<br/>approval_status=已审批] --> SR[创建发货申请<br/>shipping_request<br/>status=待审核]
+    SR --> SR_APPROVE[发货申请审批<br/>status→已审核]
+    SR_APPROVE --> SHIP[创建发货单<br/>shipping_order<br/>status=待发货]
+    SHIP --> SHIP_CONFIRM[仓库出库确认<br/>FIFO批次扣减<br/>status→已发货]
+    SHIP_CONFIRM --> SHIP_DONE[✅ 发货完成<br/>shipping_order_detail.invoice_status=未开票<br/>sales_order_detail.invoice_status=未开票]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<!-- 阶段2 -->
+<h3>阶段2：客户对账</h3>
+<div class="mermaid">
+graph TB
+    SHIP_DONE2[发货完成] --> RECON[与客户核对发货数量/金额<br/>确认开票需求]
+    RECON --> TAX_INFO[获取国家税务系统<br/>发票代码/号码/金额等]
+    TAX_INFO --> READY[✅ 准备录入发票信息]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<!-- 阶段3 -->
+<h3>阶段3：录入发票与关联发货明细</h3>
+<div class="mermaid">
+graph TB
+    READY2[准备录入发票信息] --> CREATE_INV[创建销售发票<br/>sales_invoice<br/>approval_status=草稿]
+    CREATE_INV --> SEL_CUST[选择客户<br/>自动带出开票信息<br/>invoice_title/tax_id/bank等]
+    SEL_CUST --> SEL_DETAIL[选择可开票发货明细行<br/>仅已发货/已签收发货单<br/>且可开票数量>0]
+    SEL_DETAIL --> FILL_QTY[填写开票数量<br/>invoice_quantity<br/>≤ship_quantity-已开票数量]
+    FILL_QTY --> SAVE_INV[✅ 保存发票<br/>sales_invoice_line写入明细行<br/>⚠ 草稿不影响开票状态]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<!-- 阶段4 -->
+<h3>阶段4：审批发票与状态联动</h3>
+<div class="mermaid">
+graph TB
+    SAVE_INV2[保存发票草稿] --> APPROVE[审批发票<br/>approval_status→已审批]
+    APPROVE --> RECALC[重算关联明细行开票状态]
+    RECALC --> RECALC_SHIP[发货明细行<br/>shipping_order_detail<br/>.invoice_status重算]
+    RECALC --> RECALC_SO[销售订单明细行<br/>sales_order_detail<br/>.invoice_status重算]
+    RECALC_SHIP --> STATUS_RULE1{invoiced_qty<br/>vs ship_qty}
+    STATUS_RULE1 -->|=0| NOT_INV1[未开票]
+    STATUS_RULE1 -->|0&lt;qty&lt;ship| PART_INV1[部分开票]
+    STATUS_RULE1 -->|≥ship_qty| FULL_INV1[已开票]
+    RECALC_SO --> STATUS_RULE2{invoiced_qty<br/>vs order_qty}
+    STATUS_RULE2 -->|=0| NOT_INV2[未开票]
+    STATUS_RULE2 -->|0&lt;qty&lt;order| PART_INV2[部分开票]
+    STATUS_RULE2 -->|≥order_qty| FULL_INV2[已开票]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<!-- 阶段5 -->
+<h3>阶段5：双向查询</h3>
+<div class="mermaid">
+graph TB
+    Q1[发票→发货明细行<br/>通过invoice_number<br/>查询sales_invoice_line]
+    Q2[发货明细行→发票<br/>通过shipping_detail_id<br/>查询关联发票列表]
+    Q3[销售订单明细行→发票<br/>通过sales_detail_id<br/>查询关联发票列表]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<!-- 阶段6 -->
+<h3>阶段6：错误修正与状态回退</h3>
+<div class="mermaid">
+graph TB
+    EDIT[编辑发票] --> EDIT_CHK{审批状态?}
+    EDIT_CHK -->|已审批| AUTO_WD[自动撤消→草稿<br/>重算开票状态]
+    EDIT_CHK -->|草稿| DIRECT_EDIT[直接编辑]
+    AUTO_WD --> DIRECT_EDIT
+    DIRECT_EDIT --> EDIT_SAVE[✅ 保存修改<br/>重算开票状态]
+
+    WITHDRAW[撤消审批] --> WD_BACK[✅ 撤消→草稿<br/>重算开票状态<br/>开票数量回退]
+
+    DELETE[删除发票] --> DEL_CHK{审批状态?}
+    DEL_CHK -->|已审批| DEL_REJECT[❌ 拒绝删除<br/>请先撤消]
+    DEL_CHK -->|草稿| DEL_EXEC[✅ 删除明细+主表<br/>重算开票状态]
+</div>
+
+<!-- ==================== 二、销售发货完成详细流程 ==================== -->
+<h2>二、阶段1：销售发货完成详细流程</h2>
+
+<h3>2.1 销售订单审批</h3>
+<div class="mermaid">
+graph TB
+    A1["销售订单创建<br/>sales_order<br/>approval_status=草稿"] --> A2["填写客户+物料明细<br/>sales_order_detail<br/>shipping_status=未申请<br/>invoice_status=未开票"]
+    A2 --> A3["审批通过<br/>approval_status=已审批<br/>进入待发货列表"]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>2.2 创建发货申请</h3>
+<div class="mermaid">
+graph TB
+    B0["从待发货列表选择明细行<br/>筛选: shipping_status IN<br/>(未申请/未发货/部分发货)"] --> B1["创建发货申请<br/>shipping_request<br/>status=待审核<br/>系统给出建议发货量"]
+    B1 --> B2["审批发货申请<br/>status→已审核"]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>2.3 创建发货单</h3>
+<div class="mermaid">
+graph TB
+    C0["基于发货申请创建发货单<br/>shipping_order<br/>status=待发货"] --> C1["发货明细行写入<br/>shipping_order_detail<br/>关联sales_detail_id<br/>invoice_status=未开票"]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>2.4 仓库出库确认</h3>
+<div class="mermaid">
+graph TB
+    D0["仓库确认发货<br/>FIFO批次扣减<br/>成品库存出库"] --> D1["更新发货状态<br/>shipping_order.status→已发货<br/>回写shipped_quantity<br/>更新shipping_status"]
+    D1 --> D2["✅ 发货完成<br/>此时 invoice_status=未开票<br/>等待客户对账后开票"]
+</div>
+
+<div class="note">
+  <strong>前置条件：</strong>销售发货是发票管理的前置环节。只有 <code>shipping_order.status NOT IN ('已取消', '待发货')</code> 的发货单（即已发货或已签收），其明细行才可被选择用于开票。发货明细行的 <code>invoice_status</code> 初始值为 <code>'未开票'</code>，销售订单明细行的 <code>invoice_status</code> 初始值也为 <code>'未开票'</code>。
+</div>
+
+<!-- ==================== 三、客户对账详细流程 ==================== -->
+<h2>三、阶段2：客户对账详细流程</h2>
+
+<h3>3.1 对账准备</h3>
+<div class="mermaid">
+graph TB
+    A0["查询客户发货记录<br/>按客户维度汇总<br/>已发货/已签收发货单明细"] --> A1["核对发货数量<br/>发货单数量 vs 客户签收数量"]
+    A1 --> A2["核对金额<br/>含税金额/不含税金额/税率"]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>3.2 对账确认</h3>
+<div class="mermaid">
+graph TB
+    B0["对账结果"] --> B1{对账结果}
+    B1 -->|数量一致| B2["确认开票数量<br/>按发货明细行逐行确认"]
+    B1 -->|数量有差异| B3["调整后确认<br/>部分开票/分批开票"]
+    B1 -->|客户拒收| B4["走退货流程<br/>不参与本次开票"]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>3.3 获取税务发票信息</h3>
+<div class="mermaid">
+graph TB
+    C0["在国家税务系统开票<br/>获取发票代码/号码"] --> C1["记录发票关键信息<br/>invoice_code 发票代码<br/>invoice_no 发票号码<br/>invoice_type 发票类型<br/>invoice_date 开票日期<br/>税率/金额等"]
+    C1 --> C2["✅ 准备录入系统<br/>将税务发票信息录入MES<br/>关联发货明细行"]
+</div>
+
+<div class="note">
+  <strong>对账规则：</strong><br>
+  ① 客户对账是业务环节，不在系统中流转，但决定开票数量<br>
+  ② 一张税务发票可对应多个发货单的多行明细（合并开票）<br>
+  ③ 一个发货明细行也可拆分到多张发票（分批开票）<br>
+  ④ 开票数量不能超过发货数量减去已开票数量：invoice_quantity ≤ ship_quantity - 已审批发票的SUM(invoice_quantity)
+</div>
+
+<!-- ==================== 四、录入发票与关联详细流程 ==================== -->
+<h2>四、阶段3：录入发票与关联发货明细行详细流程</h2>
+
+<h3>4.1 创建发票主表</h3>
+<div class="mermaid">
+graph TB
+    A1["点击新建发票"] --> A2["系统生成发票编号<br/>SI-YYYYMMDD-NNN<br/>sales_invoice"]
+    A2 --> A3["填写税务发票信息<br/>invoice_code 发票代码<br/>invoice_no 发票号码<br/>invoice_type 增值税专用/普通"]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>4.2 选择客户（自动带出开票信息）</h3>
+<div class="mermaid">
+graph TB
+    B0["选择客户编号<br/>customer_number"] --> B1["系统自动带出客户开票信息"]
+    B1 --> B2["customer_name 客户名称<br/>invoice_title 开票抬头<br/>tax_id 税号<br/>invoice_address 开票地址<br/>invoice_phone 开票电话<br/>bank_name 开户银行<br/>bank_account_number 银行账号"]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>4.3 选择可开票发货明细行</h3>
+<div class="mermaid">
+graph TB
+    C0["点击选择发货明细"] --> C1["查询可开票明细行<br/>条件: shipping_order.status NOT IN (已取消,待发货)<br/>AND 客户编号匹配<br/>AND 可开票数量>0"]
+    C1 --> C2["显示待选列表<br/>shipping_order_number 发货单号<br/>item_number/item_name 物料<br/>ship_quantity 发货数量<br/>available_qty = ship_quantity - 已开票数量<br/>（排除当前编辑发票的已占数量）"]
+    C2 --> C3["勾选明细行<br/>可跨发货单选择<br/>支持同一发货单选多行"]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>4.4 填写开票数量（支持部分开票）</h3>
+<div class="mermaid">
+graph TB
+    D0["填写每行开票数量<br/>invoice_quantity"] --> D1{数量校验}
+    D1 -->|超出可开票数量| D2["❌ 超出可开票数量<br/>提示最大可开票数"]
+    D1 -->|≤available_qty| D3["✅ 校验通过<br/>自动计算金额<br/>amount_without_tax = qty × unit_price<br/>tax_amount = amount × tax_rate<br/>amount_with_tax = amount + tax"]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>4.5 保存发票</h3>
+<div class="mermaid">
+graph TB
+    E0["点击保存"] --> E1["保存主表<br/>sales_invoice<br/>approval_status=草稿"]
+    E1 --> E2["保存明细行<br/>sales_invoice_line<br/>每行记录:<br/>shipping_order_number<br/>shipping_detail_id<br/>sales_order_number<br/>sales_detail_id<br/>item_number/item_name<br/>ship_quantity/invoice_quantity<br/>unit_price/金额/税率"]
+    E2 --> E3["✅ 发票创建完成<br/>⚠ 草稿状态不影响开票状态<br/>仅审批后才联动更新"]
+</div>
+
+<div class="note">
+  <strong>部分开票核心逻辑：</strong><br>
+  ① 可开票数量 = ship_quantity - SUM(已审批发票的invoice_quantity) - SUM(非已作废非当前发票的invoice_quantity)<br>
+  ② 一个发货明细行可出现在多张发票中，每次填写部分数量<br>
+  ③ 跨发货单选择：同一客户的不同发货单明细行可合并到一张发票<br>
+  ④ 保存为草稿时不触发开票状态联动，仅审批后才计算
+</div>
+
+<!-- ==================== 五、审批发票与状态联动详细流程 ==================== -->
+<h2>五、阶段4：审批发票与开票状态联动详细流程</h2>
+
+<h3>5.1 审批发票</h3>
+<div class="mermaid">
+graph TB
+    A1["选择草稿发票<br/>approval_status=草稿"] --> A2["点击审批<br/>前端 Modal.confirm 确认<br/>提示: 审批后将联动更新<br/>发货明细行和销售订单明细行<br/>的开票状态"]
+    A2 --> A3["后端校验<br/>发票存在 + 状态为草稿"]
+    A3 --> A4["更新发票状态<br/>sales_invoice<br/>approval_status→已审批"]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>5.2 获取关联明细行ID</h3>
+<div class="mermaid">
+graph TB
+    B0["审批通过"] --> B1["查询 sales_invoice_line<br/>WHERE invoice_number = :id"]
+    B1 --> B2["收集 shipping_detail_id 列表<br/>发货明细行ID"]
+    B1 --> B3["收集 sales_detail_id 列表<br/>销售订单明细行ID"]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>5.3 重算发货明细行开票状态</h3>
+<div class="mermaid">
+graph TB
+    C0["遍历每个 shipping_detail_id"] --> C1["查询 ship_quantity<br/>和 SUM已审批发票.invoice_quantity"]
+    C1 --> C2{invoiced_qty<br/>vs ship_qty}
+    C2 -->|=0| C3["invoice_status = 未开票"]
+    C2 -->|0&lt;qty&lt;ship| C4["invoice_status = 部分开票"]
+    C2 -->|≥ship_qty| C5["invoice_status = 已开票"]
+    C3 --> C6["UPDATE shipping_order_detail<br/>SET invoice_status"]
+    C4 --> C6
+    C5 --> C6
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>5.4 重算销售订单明细行开票状态</h3>
+<div class="mermaid">
+graph TB
+    D0["遍历每个 sales_detail_id<br/>（去重 + 排除0值）"] --> D1["查询 order_quantity<br/>和 SUM已审批发票.invoice_quantity"]
+    D1 --> D2{invoiced_qty<br/>vs order_qty}
+    D2 -->|=0| D3["invoice_status = 未开票"]
+    D2 -->|0&lt;qty&lt;order| D4["invoice_status = 部分开票"]
+    D2 -->|≥order_qty| D5["invoice_status = 已开票"]
+    D3 --> D6["UPDATE sales_order_detail<br/>SET invoice_status"]
+    D4 --> D6
+    D5 --> D6
+    D6 --> E1["✅ 审批完成<br/>开票状态联动更新完毕"]
+</div>
+
+<div class="note">
+  <strong>开票状态计算公式：</strong><br>
+  ① <strong>发货明细行：</strong>invoiced_qty = SUM(sil.invoice_quantity) FROM sales_invoice_line sil INNER JOIN sales_invoice si WHERE si.approval_status = '已审批' AND sil.shipping_detail_id = :id<br>
+  ② <strong>销售订单明细行：</strong>invoiced_qty = SUM(sil.invoice_quantity) FROM sales_invoice_line sil INNER JOIN sales_invoice si WHERE si.approval_status = '已审批' AND sil.sales_detail_id = :id<br>
+  ③ <strong>状态判定：</strong>invoiced_qty = 0 → 未开票；0 < invoiced_qty < order_quantity → 部分开票；invoiced_qty ≥ order_quantity → 已开票<br>
+  ④ <strong>仅统计已审批发票：</strong>草稿发票的明细行不参与开票数量计算
+</div>
+
+<!-- ==================== 六、双向查询详细流程 ==================== -->
+<h2>六、阶段5：双向查询详细流程</h2>
+
+<h3>6.1 发票→查看关联发货明细行</h3>
+<div class="mermaid">
+graph TB
+    A1["打开销售发票详情<br/>invoice_number"] --> A2["查询 sales_invoice_line<br/>WHERE invoice_number = :id<br/>ORDER BY line_number"]
+    A2 --> A3["显示关联发货明细"]
+    A3 --> A4["每行包含:<br/>shipping_order_number 发货单号<br/>item_number/item_name 物料<br/>ship_quantity 发货数量<br/>invoice_quantity 开票数量<br/>unit_price 单价 / 金额 / 税率等"]
+</div>
+
+<h3>6.2 发货明细行→查看关联发票</h3>
+<div class="mermaid">
+graph TB
+    B1["在发货单详情页<br/>点击发货明细行的开票状态"] --> B2["调用API<br/>GET /sales-invoices/by-shipping-detail/:detailId"]
+    B2 --> B3["查询 sales_invoice_line sil<br/>INNER JOIN sales_invoice si<br/>WHERE sil.shipping_detail_id = :detailId<br/>ORDER BY si.invoice_date DESC"]
+    B3 --> B4["显示关联发票列表"]
+    B4 --> B5["每条包含:<br/>invoice_number 发票号<br/>invoice_code/invoice_no 税务信息<br/>invoice_date 开票日期<br/>invoice_quantity 本票开票数量<br/>approval_status 审批状态<br/>amount_with_tax 价税合计"]
+</div>
+
+<h3>6.3 销售订单明细行→查看关联发票</h3>
+<div class="mermaid">
+graph TB
+    C1["在销售订单详情页<br/>点击明细行的开票状态"] --> C2["调用API<br/>GET /sales-invoices/by-sales-detail/:detailId"]
+    C2 --> C3["查询 sales_invoice_line sil<br/>INNER JOIN sales_invoice si<br/>WHERE sil.sales_detail_id = :detailId<br/>ORDER BY si.invoice_date DESC"]
+    C3 --> C4["显示关联发票列表"]
+    C4 --> C5["每条包含:<br/>invoice_number 发票号<br/>shipping_order_number 发货单号<br/>invoice_quantity 本票开票数量<br/>金额 / 税率等"]
+</div>
+
+<h3>6.4 典型查询场景</h3>
+<div class="mermaid">
+graph TB
+    D1["场景A: 客户询问某张发票<br/>对应哪些发货单<br/>→ 发票详情页查看明细行"]
+    D2["场景B: 客户询问某次发货<br/>开了哪些发票<br/>→ 发货明细行→关联发票"]
+    D3["场景C: 查看某销售订单行<br/>累计开票金额<br/>→ 订单明细行→关联发票汇总"]
+    D4["场景D: 核对部分开票情况<br/>→ 查看开票状态<br/>未开票/部分开票/已开票"]
+</div>
+
+<div class="note">
+  <strong>双向查询设计：</strong><br>
+  ① <strong>正向查询：</strong>发票 → 发货明细行，通过 invoice_number 关联 sales_invoice_line 获取<br>
+  ② <strong>反向查询1：</strong>发货明细行 → 发票，通过 shipping_detail_id 关联查询<br>
+  ③ <strong>反向查询2：</strong>销售订单明细行 → 发票，通过 sales_detail_id 关联查询<br>
+  ④ <strong>多对多关系：</strong>一张发票可对应多行发货明细（合并开票），一行发货明细可出现在多张发票（分批开票）
+</div>
+
+<!-- ==================== 七、错误修正详细流程 ==================== -->
+<h2>七、阶段6：错误修正与状态回退详细流程</h2>
+
+<h3>7.1 错误修正场景</h3>
+<div class="mermaid">
+graph TB
+    A1["场景A: 发票信息录入错误<br/>金额/税率/发票号码等"] --> A_EDIT["编辑发票"]
+    A2["场景B: 发票不该审批<br/>需回退审批状态"] --> A_WD["撤消审批"]
+    A3["场景C: 发票创建错误<br/>需要删除重做"] --> A_DEL["删除发票"]
+    A4["场景D: 开票数量分配错误<br/>需要调整明细行"] --> A_EDIT
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>7.2 编辑发票流程</h3>
+<div class="mermaid">
+graph TB
+    B0["点击编辑发票"] --> B1{当前审批状态?}
+    B1 -->|草稿| B2["直接打开编辑"]
+    B1 -->|已审批| B3["前端确认提示<br/>编辑已审批发票将自动撤消<br/>相关明细行开票状态将回退"]
+    B3 --> B4{用户确认?}
+    B4 -->|取消| B_CANCEL["取消编辑"]
+    B4 -->|确认| B5["后端自动撤消<br/>sales_invoice<br/>approval_status→草稿"]
+    B5 --> B6["重算开票状态<br/>该发票不再计入<br/>已开票数量减少<br/>invoice_status可能回退:<br/>已开票→部分开票/未开票<br/>部分开票→未开票"]
+    B6 --> B2
+    B2 --> B7["编辑发票信息和明细行<br/>修改客户/金额/税率等<br/>调整发货明细行选择<br/>修改开票数量"]
+    B7 --> B8["保存（先删后插明细行）<br/>重算关联明细行开票状态"]
+    B8 --> B9["✅ 编辑完成<br/>状态为草稿<br/>需重新审批"]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>7.3 撤消审批流程</h3>
+<div class="mermaid">
+graph TB
+    C0["点击撤消审批"] --> C1["校验: 仅已审批发票可撤消"]
+    C1 --> C2["前端确认提示<br/>撤消后相关明细行开票状态将回退"]
+    C2 --> C3["更新发票状态<br/>sales_invoice<br/>approval_status→草稿"]
+    C3 --> C4["重算关联明细行开票状态<br/>该发票不再计入已开票数量<br/>shipping_order_detail.invoice_status 回退<br/>sales_order_detail.invoice_status 回退"]
+    C4 --> C5["✅ 撤消完成<br/>发票恢复为草稿<br/>可重新编辑或再次审批"]
+</div>
+
+<p style="text-align:center;font-size:20px;color:#1890ff;">⬇</p>
+
+<h3>7.4 删除发票流程</h3>
+<div class="mermaid">
+graph TB
+    D0["点击删除发票"] --> D1{当前审批状态?}
+    D1 -->|已审批| D2["❌ 拒绝删除<br/>提示: 请先撤消审批"]
+    D1 -->|草稿| D3["删除前获取关联明细行ID<br/>shipping_detail_id列表<br/>sales_detail_id列表"]
+    D3 --> D4["删除明细行<br/>DELETE sales_invoice_line<br/>WHERE invoice_number = :id"]
+    D4 --> D5["删除主表<br/>DELETE sales_invoice<br/>WHERE invoice_number = :id"]
+    D5 --> D6["重算关联明细行开票状态<br/>（草稿发票本就不计入<br/>已审批的开票数量）<br/>但如果有其他发票<br/>需重新计算"]
+    D6 --> D7["✅ 删除完成"]
+</div>
+
+<div class="warn">
+  <strong>⚠ 状态联动回退规则：</strong><br>
+  ① <strong>编辑已审批发票：</strong>系统自动撤消为草稿 → 该发票的invoice_quantity从已审批合计中移除 → 重算开票状态 → 编辑保存后再次重算（草稿不影响）<br>
+  ② <strong>撤消审批：</strong>approval_status→草稿 → 该发票不再计入已审批发票的SUM(invoice_quantity) → 开票状态可能从"已开票"→"部分开票"→"未开票"逐级回退<br>
+  ③ <strong>删除草稿发票：</strong>草稿发票本就不参与开票状态计算，但删除后需重算（因为非已作废的其他发票仍可能影响）<br>
+  ④ <strong>已审批发票禁止删除：</strong>必须先撤消为草稿，再删除
+</div>
+
+<!-- ==================== 八、单据状态流转 ==================== -->
+<h2>八、单据状态流转图</h2>
+
+<h3>8.1 销售发票（sales_invoice）状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 草稿: 创建发票
+    草稿 --> 已审批: 审批发票
+    已审批 --> 草稿: 撤消审批 / 编辑已审批发票（自动撤消）
+    草稿 --> [*]: 删除（草稿状态可删除）
+</div>
+
+<h3>8.2 发货明细行（shipping_order_detail）开票状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 未开票: 发货完成
+
+    未开票 --> 部分开票: 首次审批发票（invoice_quantity < ship_quantity）
+    未开票 --> 已开票: 首次审批发票（invoice_quantity ≥ ship_quantity）
+
+    部分开票 --> 部分开票: 继续审批发票（累计仍未满）
+    部分开票 --> 已开票: 继续审批发票（累计≥ship_quantity）
+    部分开票 --> 未开票: 撤消/编辑发票（累计归零）
+
+    已开票 --> 部分开票: 撤消/编辑发票（累计减少但仍>0）
+    已开票 --> 未开票: 撤消/编辑发票（累计归零）
+</div>
+
+<h3>8.3 销售订单明细行（sales_order_detail）开票状态流转</h3>
+<div class="mermaid">
+stateDiagram-v2
+    [*] --> 未开票: 订单审批通过
+
+    未开票 --> 部分开票: 首次审批发票（invoice_quantity < order_quantity）
+    未开票 --> 已开票: 首次审批发票（invoice_quantity ≥ order_quantity）
+
+    部分开票 --> 部分开票: 继续审批发票（累计仍未满）
+    部分开票 --> 已开票: 继续审批发票（累计≥order_quantity）
+    部分开票 --> 未开票: 撤消/编辑发票（累计归零）
+
+    已开票 --> 部分开票: 撤消/编辑发票（累计减少但仍>0）
+    已开票 --> 未开票: 撤消/编辑发票（累计归零）
+</div>
+
+<h3>8.4 发票操作与开票状态联动矩阵</h3>
+<div class="mermaid">
+graph LR
+    subgraph 操作与联动["操作 → 发票状态 → 开票状态联动"]
+        CREATE["创建发票<br/>(草稿)"] --> |"不影响"| S1["开票状态不变"]
+        APPROVE["审批发票"] --> |"草稿→已审批"| S2["开票状态前进<br/>未开票→部分开票→已开票"]
+        WITHDRAW["撤消审批"] --> |"已审批→草稿"| S3["开票状态回退<br/>已开票→部分开票→未开票"]
+        EDIT_APPROVED["编辑已审批发票"] --> |"自动撤消<br/>已审批→草稿"| S4["先回退（同撤消）<br/>再编辑后重算"]
+        EDIT_DRAFT["编辑草稿发票"] --> |"草稿→草稿"| S5["重算但不影响<br/>（草稿不计入）"]
+        DELETE["删除草稿发票"] --> |"删除主表+明细"| S6["重算（可能影响<br/>其他发票的关联）"]
+    end
+</div>
+
+<!-- ==================== 九、关键数据实体关系 ==================== -->
+<h2>九、关键数据实体关系</h2>
+<div class="mermaid">
+erDiagram
+    CUSTOMER ||--o{ SALES_ORDER : "客户下单"
+    SALES_ORDER ||--o{ SALES_ORDER_DETAIL : "订单明细"
+    SALES_ORDER_DETAIL ||--o{ SHIPPING_REQUEST_DETAIL : "发货申请关联"
+    SHIPPING_REQUEST ||--o{ SHIPPING_REQUEST_DETAIL : "申请明细"
+    SHIPPING_REQUEST ||--o{ SHIPPING_ORDER : "生成发货单"
+    SHIPPING_ORDER ||--o{ SHIPPING_ORDER_DETAIL : "发货明细"
+    SHIPPING_ORDER_DETAIL }o--|| SALES_ORDER_DETAIL : "关联销售明细"
+
+    SALES_INVOICE ||--o{ SALES_INVOICE_LINE : "发票明细行"
+    SALES_INVOICE_LINE }o--|| SHIPPING_ORDER_DETAIL : "关联发货明细（多对多）"
+    SALES_INVOICE_LINE }o--|| SALES_ORDER_DETAIL : "关联销售明细（多对多）"
+    SALES_INVOICE }o--|| CUSTOMER : "客户开票信息"
+
+    CUSTOMER {
+        string customer_number PK
+        string customer_name
+        string invoice_title
+        string tax_id
+        string invoice_address
+        string invoice_phone
+        string bank_name
+        string bank_account_number
+    }
+    SALES_INVOICE {
+        string invoice_number PK
+        string invoice_code
+        string invoice_no
+        string invoice_type
+        string customer_number FK
+        string customer_name
+        string invoice_title
+        string tax_id
+        date invoice_date
+        decimal tax_rate
+        decimal amount_without_tax
+        decimal tax_amount
+        decimal amount_with_tax
+        string approval_status
+    }
+    SALES_INVOICE_LINE {
+        string invoice_number FK
+        int line_number
+        string shipping_order_number FK
+        int shipping_detail_id FK
+        string sales_order_number FK
+        int sales_detail_id FK
+        string item_number
+        string item_name
+        decimal ship_quantity
+        decimal invoice_quantity
+        decimal unit_price
+        decimal amount_without_tax
+        decimal tax_rate
+        decimal tax_amount
+        decimal amount_with_tax
+    }
+    SHIPPING_ORDER_DETAIL {
+        int id PK
+        string shipping_order_number FK
+        int sales_detail_id FK
+        string item_number
+        decimal quantity
+        string invoice_status
+    }
+    SALES_ORDER_DETAIL {
+        int id PK
+        string sales_order_number FK
+        string item_number
+        decimal order_quantity
+        string invoice_status
+    }
+</div>
+
+<!-- ==================== 十、数据变更矩阵 ==================== -->
+<h2>十、数据变更矩阵</h2>
+
+<h3>10.1 各操作对数据库表的影响</h3>
+<table>
+<tr>
+  <th>数据库表</th>
+  <th>创建发票</th>
+  <th>审批发票</th>
+  <th>撤消审批</th>
+  <th>编辑已审批发票</th>
+  <th>编辑草稿发票</th>
+  <th>删除发票</th>
+</tr>
+<tr>
+  <td><span class="badge badge-blue">sales_invoice</span></td>
+  <td>写入(草稿)</td>
+  <td>→已审批</td>
+  <td>→草稿</td>
+  <td>先→草稿,再更新</td>
+  <td>更新</td>
+  <td style="color:#f5222d;font-weight:700;">删除（仅草稿）</td>
+</tr>
+<tr>
+  <td><span class="badge badge-blue">sales_invoice_line</span></td>
+  <td>写入明细行</td>
+  <td>—</td>
+  <td>—</td>
+  <td>先删后插</td>
+  <td>先删后插</td>
+  <td style="color:#f5222d;font-weight:700;">删除</td>
+</tr>
+<tr>
+  <td><span class="badge badge-green">shipping_order_detail<br/>.invoice_status</span></td>
+  <td>—</td>
+  <td>重算<br/>未开票→部分/已开票</td>
+  <td>重算<br/>已开票→部分/未开票</td>
+  <td>先回退<br/>再重算</td>
+  <td>重算</td>
+  <td>重算</td>
+</tr>
+<tr>
+  <td><span class="badge badge-green">sales_order_detail<br/>.invoice_status</span></td>
+  <td>—</td>
+  <td>重算<br/>未开票→部分/已开票</td>
+  <td>重算<br/>已开票→部分/未开票</td>
+  <td>先回退<br/>再重算</td>
+  <td>重算</td>
+  <td>重算</td>
+</tr>
+<tr>
+  <td><span class="badge badge-purple">customer</span></td>
+  <td>读取开票信息</td>
+  <td>—</td>
+  <td>—</td>
+  <td>—</td>
+  <td>—</td>
+  <td>—</td>
+</tr>
+</table>
+
+<div class="note">
+  <strong>关键差异说明：</strong><br>
+  ① <strong>创建发票（草稿）</strong>不影响开票状态，仅审批后才联动更新<br>
+  ② <strong>编辑已审批发票</strong>分两步：先自动撤消（回退开票状态），再保存编辑内容（草稿不影响开票状态）<br>
+  ③ <strong>删除仅限草稿</strong>：已审批发票必须先撤消再删除<br>
+  ④ <strong>重算逻辑</strong>：每次操作后对关联的发货明细行和销售订单明细行逐行重算开票状态
+</div>
+
+<!-- ==================== 十一、核心业务规则汇总 ==================== -->
+<h2>十一、核心业务规则汇总</h2>
+
+<h3>11.1 发票编号生成规则</h3>
+<table>
+<tr><th>规则</th><th>说明</th></tr>
+<tr><td>编号格式</td><td>SI-YYYYMMDD-NNN（如 SI-20260515-001）</td></tr>
+<tr><td>序列生成</td><td>按日期前缀查询当日最大编号，序列+1</td></tr>
+<tr><td>补零规则</td><td>序列号3位补零（001-999）</td></tr>
+</table>
+
+<h3>11.2 可开票发货明细行筛选规则</h3>
+<table>
+<tr><th>条件</th><th>说明</th></tr>
+<tr><td>发货单已发货/已签收</td><td><code>shipping_order.status NOT IN ('已取消', '待发货')</code></td></tr>
+<tr><td>客户编号匹配</td><td><code>shipping_order.customer_number = 选定客户</code></td></tr>
+<tr><td>可开票数量 > 0</td><td><code>ship_quantity - SUM(非已作废非当前发票的invoice_quantity) > 0</code></td></tr>
+<tr><td>排除已作废发票</td><td>计算已开票数量时排除 <code>approval_status = '已作废'</code> 的发票</td></tr>
+<tr><td>排除当前编辑发票</td><td>编辑时排除当前发票已占用的数量，避免自身占用导致可开票数量为0</td></tr>
+</table>
+
+<h3>11.3 开票数量校验规则</h3>
+<table>
+<tr><th>校验项</th><th>规则</th><th>错误提示</th></tr>
+<tr><td>开票数量 > 0</td><td>invoice_quantity 必须大于0</td><td>开票数量必须大于0</td></tr>
+<tr><td>不超过可开票数量</td><td>invoice_quantity ≤ available_qty</td><td>超出可开票数量</td></tr>
+<tr><td>不超过发货数量</td><td>invoice_quantity ≤ ship_quantity</td><td>开票数量不能超过发货数量</td></tr>
+</table>
+
+<h3>11.4 开票状态判定规则</h3>
+<table>
+<tr><th>维度</th><th>发货明细行</th><th>销售订单明细行</th></tr>
+<tr><td>比较基准</td><td>ship_quantity（发货数量）</td><td>order_quantity（订单数量）</td></tr>
+<tr><td>已开票数量</td><td>SUM(已审批发票.invoice_quantity)<br/>WHERE shipping_detail_id = :id</td><td>SUM(已审批发票.invoice_quantity)<br/>WHERE sales_detail_id = :id</td></tr>
+<tr><td>未开票</td><td>invoiced_qty = 0</td><td>invoiced_qty = 0</td></tr>
+<tr><td>部分开票</td><td>0 < invoiced_qty < ship_qty</td><td>0 < invoiced_qty < order_qty</td></tr>
+<tr><td>已开票</td><td>invoiced_qty ≥ ship_qty</td><td>invoiced_qty ≥ order_qty</td></tr>
+</table>
+
+<h3>11.5 发票操作权限规则</h3>
+<table>
+<tr><th>操作</th><th>草稿</th><th>已审批</th><th>说明</th></tr>
+<tr><td><span class="badge badge-blue">编辑</span></td><td>直接编辑</td><td>自动撤消后编辑</td><td>已审批发票编辑前自动撤消为草稿</td></tr>
+<tr><td><span class="badge badge-green">审批</span></td><td>可审批</td><td>不可重复审批</td><td>仅草稿→已审批</td></tr>
+<tr><td><span class="badge badge-orange">撤消</span></td><td>不可撤消</td><td>可撤消</td><td>仅已审批→草稿</td></tr>
+<tr><td><span class="badge badge-red">删除</span></td><td>可删除</td><td>不可删除</td><td>已审批需先撤消再删除</td></tr>
+</table>
+
+<h3>11.6 多对多关联对照</h3>
+<table>
+<tr><th>维度</th><th>说明</th><th>示例</th></tr>
+<tr><td><span class="badge badge-blue">一票多行</span></td><td>一张发票对应多个发货单的多行明细</td><td>合并开票：3个发货单的5行明细合开1张发票</td></tr>
+<tr><td><span class="badge badge-purple">一行多票</span></td><td>一个发货明细行拆分到多张发票</td><td>分批开票：1000个分2张发票，各开500</td></tr>
+<tr><td><span class="badge badge-cyan">正向查询</span></td><td>发票→发货明细行</td><td>查看某张发票关联了哪些发货单明细</td></tr>
+<tr><td><span class="badge badge-orange">反向查询</span></td><td>发货/订单明细行→发票</td><td>查看某次发货被开了哪些发票</td></tr>
+</table>
+
+<h3>11.7 关键数据库表结构注意</h3>
+<table>
+<tr><th>表名</th><th>注意事项</th><th>影响范围</th></tr>
+<tr><td>sales_invoice</td><td>invoice_number 为主键（非自增ID）<br/>approval_status 只有 草稿/已审批 两种</td><td>所有操作以 invoice_number 为标识</td></tr>
+<tr><td>sales_invoice_line</td><td>shipping_detail_id + sales_detail_id 均可为0<br/>（非必填关联）<br/>先删后插方式更新</td><td>编辑时整批删除后重新插入</td></tr>
+<tr><td>shipping_order_detail</td><td>invoice_status 字段为后加字段<br/>DEFAULT N'未开票'<br/>quantity 为发货数量</td><td>重算时对比 quantity vs SUM(invoice_quantity)</td></tr>
+<tr><td>sales_order_detail</td><td>invoice_status 字段为后加字段<br/>DEFAULT N'未开票'<br/>order_quantity 为订单数量</td><td>重算时对比 order_quantity vs SUM(invoice_quantity)</td></tr>
+</table>
+
+<h3>11.8 关键 API 端点一览</h3>
+<table>
+<tr><th>分类</th><th>方法</th><th>端点</th><th>说明</th></tr>
+<tr><td>发票CRUD</td><td>GET</td><td>/api/v1/sales-invoices</td><td>发票列表（分页/搜索/筛选）</td></tr>
+<tr><td>发票CRUD</td><td>GET</td><td>/api/v1/sales-invoices/:id</td><td>发票详情（含明细行）</td></tr>
+<tr><td>发票CRUD</td><td>POST</td><td>/api/v1/sales-invoices</td><td>创建发票</td></tr>
+<tr><td>发票CRUD</td><td>PUT</td><td>/api/v1/sales-invoices/:id</td><td>更新发票（已审批自动撤消）</td></tr>
+<tr><td>发票CRUD</td><td>DELETE</td><td>/api/v1/sales-invoices/:id</td><td>删除发票（仅草稿）</td></tr>
+<tr><td>审批操作</td><td>PUT</td><td>/api/v1/sales-invoices/:id/approve</td><td>审批发票</td></tr>
+<tr><td>审批操作</td><td>PUT</td><td>/api/v1/sales-invoices/:id/withdraw</td><td>撤消审批</td></tr>
+<tr><td>明细选择</td><td>GET</td><td>/api/v1/sales-invoices/available-shipping-details</td><td>获取可开票发货明细行</td></tr>
+<tr><td>双向查询</td><td>GET</td><td>/api/v1/sales-invoices/by-shipping-detail/:detailId</td><td>发货明细行→关联发票</td></tr>
+<tr><td>双向查询</td><td>GET</td><td>/api/v1/sales-invoices/by-sales-detail/:detailId</td><td>销售订单明细行→关联发票</td></tr>
+<tr><td>导入导出</td><td>GET</td><td>/api/v1/sales-invoices/export</td><td>导出发票</td></tr>
+<tr><td>导入导出</td><td>POST</td><td>/api/v1/sales-invoices/import</td><td>导入发票（待实现）</td></tr>
+</table>
+
+<div style="margin-top:40px;text-align:center;color:#888;font-size:12px;">
+  文档生成时间：2026年5月15日 | 基于系统代码版本自动生成 | 销售发票管理业务全流程逻辑流程图
+</div>
+
+</div>
+</body>
+</html>

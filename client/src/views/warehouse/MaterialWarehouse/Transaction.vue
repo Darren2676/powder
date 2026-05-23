@@ -85,7 +85,8 @@ const defaultDataColumns: any[] = [
   { title: '批次号', dataIndex: 'batch_number', key: 'batch_number', width: 110, resizable: true },
   { title: '供应商', dataIndex: 'supplier_name', key: 'supplier_name', width: 120, resizable: true },
   { title: '操作人', dataIndex: 'operator', key: 'operator', width: 80, resizable: true },
-  { title: '时间', dataIndex: 'operation_date', key: 'operation_date', width: 150, resizable: true }
+  { title: '时间', dataIndex: 'operation_date', key: 'operation_date', width: 150, resizable: true },
+  { title: '会计期间', dataIndex: 'accounting_period', key: 'accounting_period', width: 100, resizable: true }
 ]
 
 const {

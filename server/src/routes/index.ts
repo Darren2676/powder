@@ -24,7 +24,7 @@ router.use(planningRoutes);
 router.use(productionRoutes);
 router.use(warehouseRoutes);
 router.use(purchasingRoutes);
-router.use(qualityRoutes);
+router.use('/quality', qualityRoutes);
 router.use(financeRoutes);
 router.use(integrationRoutes);
 router.use(equipmentRoutes);

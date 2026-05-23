@@ -6,10 +6,10 @@ import { APPROVAL_STATUS } from '@/shared/constants/statuses';
 
 const fields = ['plan_name', 'inspector_id', 'inspector_name', 'inspect_department',
   'inspect_method', 'sampling_method', 'sampling_quantity', 'decimal_handling',
-  'is_destructive', 'applied_category'];
+  'is_destructive', 'enable_quality_chars', 'applied_category'];
 const headers = ['方案名称', '检验员账号(工号)', '检验员姓名', '检验部门',
   '检验方法', '抽检方式', '抽检数', '小数处理方式',
-  '是否破坏性检验', '应用于分类'];
+  '是否破坏性检验', '启用质量特性', '应用于分类'];
 
 export const getIncomingInspectPlans = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -34,7 +34,13 @@ export const getIncomingInspectPlans = async (req: Request, res: Response, next:
     const offset = (page - 1) * limit;
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY plan_name) AS _row_num
+        SELECT *, ROW_NUMBER() OVER (ORDER BY
+          CASE plan_name
+            WHEN N'C100809-GJ' THEN 0
+            WHEN N'C100809-TJ' THEN 1
+            ELSE 99
+          END, plan_name
+        ) AS _row_num
         FROM incoming_inspect_plan ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
@@ -56,9 +62,9 @@ export const createIncomingInspectPlan = async (req: Request, res: Response, nex
 
     await sequelize.query(`
       INSERT INTO incoming_inspect_plan (plan_name, inspector_id, inspector_name, inspect_department,
-        inspect_method, sampling_method, sampling_quantity, decimal_handling, is_destructive, applied_category)
+        inspect_method, sampling_method, sampling_quantity, sampling_ratio, decimal_handling, is_destructive, enable_quality_chars, applied_category)
       VALUES (:plan_name, :inspector_id, :inspector_name, :inspect_department,
-        :inspect_method, :sampling_method, :sampling_quantity, :decimal_handling, :is_destructive, :applied_category)
+        :inspect_method, :sampling_method, :sampling_quantity, :sampling_ratio, :decimal_handling, :is_destructive, :enable_quality_chars, :applied_category)
     `, {
       replacements: {
         plan_name: b.plan_name,
@@ -68,8 +74,10 @@ export const createIncomingInspectPlan = async (req: Request, res: Response, nex
         inspect_method: b.inspect_method || '',
         sampling_method: b.sampling_method || '',
         sampling_quantity: b.sampling_quantity != null ? Number(b.sampling_quantity) : 0,
+        sampling_ratio: b.sampling_ratio != null ? Number(b.sampling_ratio) : 0,
         decimal_handling: b.decimal_handling || '',
         is_destructive: b.is_destructive || '',
+        enable_quality_chars: b.enable_quality_chars || 'N',
         applied_category: b.applied_category || ''
       }
     });
@@ -89,8 +97,8 @@ export const updateIncomingInspectPlan = async (req: Request, res: Response, nex
         inspector_id = :inspector_id, inspector_name = :inspector_name,
         inspect_department = :inspect_department, inspect_method = :inspect_method,
         sampling_method = :sampling_method, sampling_quantity = :sampling_quantity,
-        decimal_handling = :decimal_handling, is_destructive = :is_destructive,
-        applied_category = :applied_category
+        sampling_ratio = :sampling_ratio, decimal_handling = :decimal_handling, is_destructive = :is_destructive,
+        enable_quality_chars = :enable_quality_chars, applied_category = :applied_category
       WHERE plan_name = :id
     `, {
       replacements: {
@@ -101,8 +109,10 @@ export const updateIncomingInspectPlan = async (req: Request, res: Response, nex
         inspect_method: b.inspect_method || '',
         sampling_method: b.sampling_method || '',
         sampling_quantity: b.sampling_quantity != null ? Number(b.sampling_quantity) : 0,
+        sampling_ratio: b.sampling_ratio != null ? Number(b.sampling_ratio) : 0,
         decimal_handling: b.decimal_handling || '',
         is_destructive: b.is_destructive || '',
+        enable_quality_chars: b.enable_quality_chars || 'N',
         applied_category: b.applied_category || ''
       }
     });
@@ -122,7 +132,7 @@ export const deleteIncomingInspectPlan = async (req: Request, res: Response, nex
 
 export const exportIncomingInspectPlans = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [items]: any = await sequelize.query(`SELECT * FROM incoming_inspect_plan ORDER BY plan_name`);
+    const [items]: any = await sequelize.query(`SELECT * FROM incoming_inspect_plan ORDER BY CASE plan_name WHEN N'C100809-GJ' THEN 0 WHEN N'C100809-TJ' THEN 1 ELSE 99 END, plan_name`);
     exportToExcel(items, fields, headers, 'incoming_inspect_plans', res);
   } catch (err) { next(err); }
 };

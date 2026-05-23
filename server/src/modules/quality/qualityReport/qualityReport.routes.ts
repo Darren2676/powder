@@ -6,7 +6,9 @@ import {
   getQualitySummary,
   getDefectAnalysis,
   getProcessQuality,
-  getProductQualitySummary
+  getProductQualitySummary,
+  getYieldRateReport,
+  getProductionOrderQualityPivot
 } from './qualityReport.controller';
 import {
   createPurchaseInspection,
@@ -15,7 +17,8 @@ import {
   updatePurchaseInspection,
   completePurchaseInspection,
   getPurchaseInspectionSummary,
-  defectHandlingPurchaseInspection
+  defectHandlingPurchaseInspection,
+  cancelDefectHandlingPurchaseInspection
 } from '../../purchasing/purchaseInspection/purchaseInspection.controller';
 
 const router = Router();
@@ -34,6 +37,12 @@ router.get('/process-quality', authenticate, getProcessQuality);
 
 // 按产品质量汇总
 router.get('/product-summary', authenticate, getProductQualitySummary);
+
+// 综合合格率报表
+router.get('/yield-rate', authenticate, getYieldRateReport);
+
+// 生产单质量透视报表 (行=生产单, 列=缺陷分类)
+router.get('/production-order-pivot', authenticate, getProductionOrderQualityPivot);
 
 // ==================== 采购质量检验 ====================
 
@@ -57,5 +66,8 @@ router.put('/purchase-inspections/:inspection_number/complete', authenticate, co
 
 // 不合格品处理
 router.put('/purchase-inspections/:inspection_number/defect-handling', authenticate, defectHandlingPurchaseInspection);
+
+// 撤销不合格品处理
+router.put('/purchase-inspections/:inspection_number/cancel-defect-handling', authenticate, cancelDefectHandlingPurchaseInspection);
 
 export default router;

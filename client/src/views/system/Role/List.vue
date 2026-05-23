@@ -67,11 +67,14 @@
     <!-- 新建/编辑角色弹窗 -->
     <a-modal
       v-model:open="modalVisible"
-      :title="editingRole ? '编辑角色' : '新建角色'"
+      :style="roleModalStyle"
       @ok="handleModalOk"
       :confirm-loading="modalLoading"
       width="480px"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="roleDragStart">{{ editingRole ? '编辑角色' : '新建角色' }}</div>
+      </template>
       <a-form :model="formState" :label-col="{ span: 6 }" :wrapper-col="{ span: 16 }" style="margin-top: 16px;">
         <a-form-item label="角色名称" required>
           <a-input v-model:value="formState.role_name" placeholder="请输入角色名称" />
@@ -97,11 +100,14 @@
     <!-- 分配权限弹窗 -->
     <a-modal
       v-model:open="permModalVisible"
-      title="分配权限"
+      :style="permModalStyle"
       @ok="handlePermOk"
       :confirm-loading="permModalLoading"
       width="720px"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="permDragStart">分配权限</div>
+      </template>
       <div style="margin-bottom: 12px;">
         <div style="display: flex; align-items: center; justify-content: space-between;">
           <div>
@@ -173,6 +179,7 @@ import { PlusOutlined, SafetyCertificateOutlined } from '@ant-design/icons-vue';
 import * as roleApi from '@/api/system/role';
 import { useMenuStore } from '@/store/menu';
 import { usePermissionStore } from '@/store/permission';
+import { useModalDrag } from '@/composables/useModalDrag';
 
 const menuStore = useMenuStore();
 const permStore = usePermissionStore();
@@ -203,6 +210,7 @@ const columns = [
 
 // 新建/编辑
 const modalVisible = ref(false);
+const { modalStyle: roleModalStyle, onDragStart: roleDragStart, resetDrag: roleResetDrag } = useModalDrag();
 const modalLoading = ref(false);
 const editingRole = ref<any>(null);
 const formState = reactive({
@@ -215,6 +223,7 @@ const formState = reactive({
 
 // 权限分配
 const permModalVisible = ref(false);
+const { modalStyle: permModalStyle, onDragStart: permDragStart, resetDrag: permResetDrag } = useModalDrag();
 const permModalLoading = ref(false);
 const permTreeLoading = ref(false);
 const permRoleId = ref<number>(0);
@@ -248,6 +257,7 @@ const handleTableChange = (pag: any) => {
 const handleCreate = () => {
   editingRole.value = null;
   Object.assign(formState, { role_name: '', role_code: '', description: '', sort_order: 0, status: '启用' });
+  roleResetDrag();
   modalVisible.value = true;
 };
 
@@ -260,6 +270,7 @@ const handleEdit = (record: any) => {
     sort_order: record.sort_order || 0,
     status: record.status || '启用'
   });
+  roleResetDrag();
   modalVisible.value = true;
 };
 
@@ -302,6 +313,7 @@ const handleDelete = async (record: any) => {
 const handleEditPerms = async (record: any) => {
   permRoleId.value = record.id;
   permRoleName.value = record.role_name;
+  permResetDrag();
   permModalVisible.value = true;
 
   // 加载权限树
@@ -423,3 +435,10 @@ onMounted(() => {
   fetchData();
 });
 </script>
+
+<style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+</style>

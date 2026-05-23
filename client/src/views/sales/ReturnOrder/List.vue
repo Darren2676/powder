@@ -18,6 +18,7 @@ import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
+import { useModalDrag } from '@/composables/useModalDrag'
 
 // ==================== 列表 ====================
 
@@ -161,6 +162,7 @@ const handleOpenCreate = () => {
   formData.details = []
   shippingSearchText.value = ''
   shippingData.value = null
+  formResetDrag()
   formVisible.value = true
 }
 
@@ -177,6 +179,7 @@ const handleOpenEdit = async (record: any) => {
   // 加载发货单并填充现有退货明细
   shippingSearchText.value = record.shipping_order_number
   shippingLoading.value = true
+  formResetDrag()
   formVisible.value = true
   try {
     // 加载发货单信息（获取可退数量）
@@ -271,6 +274,8 @@ const handleFormSubmit = async () => {
 
 // ==================== 详情弹窗 ====================
 const detailVisible = ref(false)
+const { modalStyle: detailModalStyle, onDragStart: detailDragStart, resetDrag: detailResetDrag } = useModalDrag()
+const { modalStyle: formModalStyle, onDragStart: formDragStart, resetDrag: formResetDrag } = useModalDrag()
 const detailLoading = ref(false)
 const detailHeader = ref<any>({})
 const detailItems = ref<any[]>([])
@@ -292,6 +297,7 @@ const detailBatchColumns = [
 ]
 
 const handleViewDetail = async (record: any) => {
+  detailResetDrag()
   detailVisible.value = true
   detailLoading.value = true
   try {
@@ -507,11 +513,14 @@ onMounted(async () => {
     <!-- 新建/编辑弹窗 -->
     <a-modal
       v-model:open="formVisible"
-      :title="isEditing ? '编辑退货单' : '新建退货单'"
       width="1200px"
+      :style="formModalStyle"
       :footer="null"
       :bodyStyle="{ maxHeight: '80vh', overflowY: 'auto' }"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="formDragStart">{{ isEditing ? '编辑退货单' : '新建退货单' }}</div>
+      </template>
       <a-form :label-col="{ span: 4 }" :wrapper-col="{ span: 19 }" style="margin-top: 16px">
         <!-- 基本信息 -->
         <a-row :gutter="16">
@@ -646,8 +655,12 @@ onMounted(async () => {
     </a-modal>
 
     <!-- 详情弹窗 -->
-    <a-modal v-model:open="detailVisible" title="退货单详情" width="1100px" :footer="null"
+    <a-modal v-model:open="detailVisible" width="1100px" :footer="null"
+      :style="detailModalStyle"
       :bodyStyle="{ maxHeight: '75vh', overflowY: 'auto' }">
+      <template #title>
+        <div class="drag-handle" @mousedown="detailDragStart">退货单详情</div>
+      </template>
       <a-spin :spinning="detailLoading">
         <a-descriptions bordered :column="3" size="small" style="margin-bottom: 16px">
           <a-descriptions-item label="退货单号">{{ detailHeader.return_order_number }}</a-descriptions-item>
@@ -719,3 +732,10 @@ onMounted(async () => {
     />
   </div>
 </template>
+
+<style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+</style>

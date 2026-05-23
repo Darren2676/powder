@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { ref, onMounted, createVNode } from 'vue'
+import { ref, computed, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined, DownloadOutlined, DownOutlined, ExclamationCircleOutlined, DeleteOutlined, SettingOutlined, CalculatorOutlined, SwapOutlined } from '@ant-design/icons-vue'
-import { getPieceRateWages, getPieceRateWageDetail, getPieceRateWageSummary, createPieceRateWage, updatePieceRateWage, deletePieceRateWage, calculatePieceRateWage, exportPieceRateWages } from '@/api/production/pieceRateWage'
+import { getPieceRateWages, getPieceRateWageDetail, getPieceRateWageSummary, createPieceRateWage, updatePieceRateWage, deletePieceRateWage, calculatePieceRateWage, exportPieceRateWages, exportPieceRateWagesSelected } from '@/api/production/pieceRateWage'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval } from '@/api/system/approval'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import dayjs from 'dayjs'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import { useTableList } from '@/composables/useTableList'
+import { useModalDrag } from '@/composables/useModalDrag'
 
 // ==================== 数据 ====================
 const dataList = ref<any[]>([])
@@ -22,6 +23,15 @@ const detailRows = ref<any[]>([])
 const summaryRows = ref<any[]>([])
 const activeTab = ref('detail')
 const calculating = ref(false)
+const selectedRowKeys = ref<string[]>([])
+const exportLoading = ref(false)
+const { modalStyle, onDragStart, resetDrag } = useModalDrag()
+
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  preserveSelectedRowKeys: true,
+  onChange: (keys: string[]) => { selectedRowKeys.value = keys }
+}))
 
 // ==================== 列定义 ====================
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getPieceRateWages)
@@ -114,6 +124,7 @@ const openCreate = () => {
   summaryRows.value = []
   activeTab.value = 'detail'
   modalVisible.value = true
+  resetDrag()
 }
 
 const openView = async (record: any) => {
@@ -129,6 +140,7 @@ const openView = async (record: any) => {
   } catch { summaryRows.value = [] }
   activeTab.value = 'detail'
   modalVisible.value = true
+  resetDrag()
 }
 
 const openEdit = async (record: any) => {
@@ -140,6 +152,7 @@ const openEdit = async (record: any) => {
   summaryRows.value = []
   activeTab.value = 'detail'
   modalVisible.value = true
+  resetDrag()
 }
 
 const handleDelete = (record: any) => {
@@ -290,6 +303,31 @@ const handleExport = async () => {
   link.remove()
 }
 
+const handleExportSelected = async () => {
+  if (!selectedRowKeys.value.length) {
+    message.warning('请先勾选要导出的行')
+    return
+  }
+  exportLoading.value = true
+  try {
+    const res = await exportPieceRateWagesSelected({ ids: selectedRowKeys.value })
+    const blob = new Blob([res.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'piece_rate_wages_selected.xlsx'
+    link.click()
+    window.URL.revokeObjectURL(url)
+    message.success('导出成功')
+  } catch {
+    message.error('导出选中行失败')
+  } finally {
+    exportLoading.value = false
+  }
+}
+
 // ==================== 数字格式化 ====================
 const formatMoney = (val: any) => {
   const num = parseFloat(val) || 0
@@ -300,7 +338,7 @@ const formatMoney = (val: any) => {
 <template>
   <div style="padding: 20px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <h2 style="margin:0">计件工资管理</h2>
+      <h2 style="margin:0">计件工资计算</h2>
       <div style="display:flex;gap:8px;align-items:center">
         <a-input-search v-model:value="searchText" placeholder="搜索编号/名称" style="width:240px" @search="handleSearch" allow-clear />
         <a-select v-model:value="filterApproval" placeholder="审批状态" style="width:120px" allow-clear @change="handleSearch">
@@ -314,12 +352,13 @@ const formatMoney = (val: any) => {
         </a-select>
         <a-button @click="handleRefresh"><template #icon><ReloadOutlined /></template></a-button>
         <a-button @click="handleExport"><template #icon><DownloadOutlined /></template>导出</a-button>
+        <a-button :disabled="selectedRowKeys.length === 0" :loading="exportLoading" @click="handleExportSelected"><DownloadOutlined /> 导出选中{{ selectedRowKeys.length ? ` (${selectedRowKeys.length})` : '' }}</a-button>
         <a-button @click="openColumnSetting"><template #icon><SettingOutlined /></template></a-button>
         <a-button type="primary" @click="openCreate"><template #icon><PlusOutlined /></template>新建</a-button>
       </div>
     </div>
 
-    <a-table :columns="columns" :data-source="dataList" :loading="loading" :pagination="{ current: pagination.current, pageSize: pagination.pageSize, total: pagination.total, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }" @change="handleTableChange" @resizeColumn="handleResizeColumn" row-key="wage_number" :scroll="{ x: 'max-content' }" size="small">
+    <a-table :columns="columns" :data-source="dataList" :loading="loading" :pagination="{ current: pagination.current, pageSize: pagination.pageSize, total: pagination.total, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }" @change="handleTableChange" @resizeColumn="handleResizeColumn" row-key="wage_number" :row-selection="rowSelection" :scroll="{ x: 'max-content' }" size="small">
       <template #bodyCell="{ column, record, index }">
         <template v-if="column.key === 'rowIndex'">
           {{ (pagination.current - 1) * pagination.pageSize + index + 1 }}
@@ -370,9 +409,16 @@ const formatMoney = (val: any) => {
         </template>
       </template>
     </a-table>
+    <div v-if="selectedRowKeys.length" style="margin-top:8px;color:#999;font-size:13px">
+      已选择 <span style="color:#1890ff;font-weight:600">{{ selectedRowKeys.length }}</span> 条记录
+      <a-button type="link" size="small" @click="selectedRowKeys = []">清空</a-button>
+    </div>
 
     <!-- 编辑/查看弹窗 -->
-    <a-modal v-model:open="modalVisible" :title="modalTitle" width="1400px" :footer="isView ? null : undefined" @ok="handleSave" :cancel-text="isView ? '关闭' : '取消'">
+    <a-modal v-model:open="modalVisible" width="1400px" :style="modalStyle" :footer="isView ? null : undefined" @ok="handleSave" :cancel-text="isView ? '关闭' : '取消'">
+      <template #title>
+        <div class="drag-handle" @mousedown="onDragStart">{{ modalTitle }}</div>
+      </template>
       <a-form layout="vertical">
         <a-row :gutter="16">
           <a-col :span="6"><a-form-item label="名称" required>
@@ -466,3 +512,10 @@ const formatMoney = (val: any) => {
     />
   </div>
 </template>
+
+<style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+</style>

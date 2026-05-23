@@ -1,17 +1,23 @@
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted } from 'vue'
-import { message } from 'ant-design-vue'
-import { SearchOutlined, ReloadOutlined, SettingOutlined, DownloadOutlined, SwapOutlined } from '@ant-design/icons-vue'
+import { ref, computed, reactive, onMounted, createVNode } from 'vue'
+import { message, Modal } from 'ant-design-vue'
+import { SearchOutlined, ReloadOutlined, SettingOutlined, DownloadOutlined, SwapOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { getPurchaseReqDetailsPage, exportPurchaseReqDetailsSelected, toOrder } from '@/api/purchasing/purchaseReq'
+import { queryPurchasePrice } from '@/api/purchasing/purchasePrice'
 import { getSuppliers } from '@/api/master-data/supplier'
+import { getAssignableUsers } from '@/api/system/user'
 import { useAuthStore } from '@/store/auth'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
+import { useModalDrag } from '@/composables/useModalDrag'
 import { generateExportFilename } from '@/utils/exportFilename'
 import dayjs from 'dayjs'
 
 const authStore = useAuthStore()
+
+// 转采购订单弹窗拖拽
+const { modalStyle: toOrderModalStyle, onDragStart: toOrderDragStart, resetDrag: toOrderResetDrag } = useModalDrag()
 
 const loading = ref(false)
 const dataSource = ref<any[]>([])
@@ -135,8 +141,11 @@ const handleExportSelected = async () => {
 const toOrderVisible = ref(false)
 const toOrderLoading = ref(false)
 const toOrderSelectedRows = ref<any[]>([])
+const mergeSameItems = ref(false)
+const toOrderUnitPrices = ref<Record<number, number>>({})
 const toOrderForm = reactive({ supplier_number: '', supplier_name: '', delivery_date: null as string | null, procurement_manager: '', linkman: '', contacts: '' })
 const supplierOptions = ref<any[]>([])
+const userOptions = ref<any[]>([])
 
 // 按申请单号分组
 const toOrderGrouped = computed(() => {
@@ -146,8 +155,33 @@ const toOrderGrouped = computed(() => {
     if (!map.has(key)) map.set(key, [])
     map.get(key)!.push(row)
   }
-  return [...map.entries()].map(([reqNumber, rows]) => ({ reqNumber, rows }))
+  return [...map.entries()].map(([reqNumber, rows]) => ({
+    reqNumber,
+    rows: mergeSameItems.value ? mergeRows(rows) : rows
+  }))
 })
+
+// 合并相同物料编码的行
+const mergeRows = (rows: any[]) => {
+  const map = new Map<string, any>()
+  for (const row of rows) {
+    const key = row.item_number
+    if (!map.has(key)) {
+      map.set(key, { ...row, _sourceIds: [row.id], _sourceRows: [row] })
+    } else {
+      const existing = map.get(key)!
+      const existingReq = parseFloat(existing.request_quantity) || 0
+      const existingOrdered = parseFloat(existing.ordered_quantity) || 0
+      const rowReq = parseFloat(row.request_quantity) || 0
+      const rowOrdered = parseFloat(row.ordered_quantity) || 0
+      existing.request_quantity = existingReq + rowReq
+      existing.ordered_quantity = existingOrdered + rowOrdered
+      existing._sourceIds.push(row.id)
+      existing._sourceRows.push(row)
+    }
+  }
+  return [...map.values()]
+}
 
 const fetchSuppliers = async () => {
   if (supplierOptions.value.length) return
@@ -157,7 +191,15 @@ const fetchSuppliers = async () => {
   } catch { /* ignore */ }
 }
 
-const onToOrderSupplierSelect = (val: string) => {
+const fetchUsers = async () => {
+  if (userOptions.value.length) return
+  try {
+    const res: any = await getAssignableUsers()
+    if (res?.success) userOptions.value = res.data || []
+  } catch { /* ignore */ }
+}
+
+const onToOrderSupplierSelect = async (val: string) => {
   const sup = supplierOptions.value.find((s: any) => s.supplier_number === val)
   if (sup) {
     toOrderForm.supplier_number = sup.supplier_number
@@ -166,6 +208,27 @@ const onToOrderSupplierSelect = (val: string) => {
     toOrderForm.linkman = sup.linkman || ''
     toOrderForm.contacts = sup.contacts || ''
   }
+  // 自动从采购价目表查询单价
+  await fetchToOrderPrices()
+}
+
+const fetchToOrderPrices = async () => {
+  if (!toOrderForm.supplier_number || !toOrderSelectedRows.value.length) return
+  const itemNumbers = [...new Set(toOrderSelectedRows.value.map((r: any) => r.item_number).filter(Boolean))]
+  if (!itemNumbers.length) return
+  try {
+    const res: any = await queryPurchasePrice({
+      supplier_number: toOrderForm.supplier_number,
+      item_numbers: itemNumbers.join(',')
+    })
+    const priceData = res.data || {}
+    for (const row of toOrderSelectedRows.value) {
+      const priceInfo = priceData[row.item_number]
+      if (priceInfo && priceInfo.unit_price > 0) {
+        toOrderUnitPrices.value[row.id] = priceInfo.unit_price
+      }
+    }
+  } catch { /* 忽略查价失败 */ }
 }
 
 const handleOpenToOrder = async () => {
@@ -174,7 +237,34 @@ const handleOpenToOrder = async () => {
   // 过滤：仅已审批且尚有未转单数量的行
   const valid = selected.filter((r: any) => r.approval_status === '已审批' && (parseFloat(r.request_quantity) || 0) > (parseFloat(r.ordered_quantity) || 0))
   if (!valid.length) { message.warning('选中行中没有可转单的明细（需已审批且有剩余数量）'); return }
+
+  // 检查是否有相同物料编码的行
+  const itemMap = new Map<string, number>()
+  for (const row of valid) {
+    itemMap.set(row.item_number, (itemMap.get(row.item_number) || 0) + 1)
+  }
+  const duplicateItems = [...itemMap.entries()].filter(([, count]) => count > 1)
+
+  if (duplicateItems.length > 0) {
+    const itemNames = duplicateItems.map(([item]) => item).join('、')
+    Modal.confirm({
+      title: '检测到相同物料编码',
+      icon: createVNode(ExclamationCircleOutlined),
+      content: `以下物料编码存在多条明细：${itemNames}。是否合并相同物料的数量？`,
+      okText: '合并',
+      cancelText: '不合并',
+      onOk: () => { openToOrderModal(valid, true) },
+      onCancel: () => { openToOrderModal(valid, false) }
+    })
+  } else {
+    openToOrderModal(valid, false)
+  }
+}
+
+const openToOrderModal = async (valid: any[], merge: boolean) => {
+  mergeSameItems.value = merge
   toOrderSelectedRows.value = valid
+  toOrderUnitPrices.value = {}
   toOrderForm.supplier_number = ''
   toOrderForm.supplier_name = ''
   toOrderForm.delivery_date = null
@@ -182,8 +272,18 @@ const handleOpenToOrder = async () => {
   toOrderForm.linkman = ''
   toOrderForm.contacts = ''
   toOrderVisible.value = true
-  await fetchSuppliers()
+  toOrderResetDrag()
+  await Promise.all([fetchSuppliers(), fetchUsers()])
 }
+
+// 采购负责人模糊搜索选项
+const procurementManagerOptions = computed(() => {
+  const search = toOrderForm.procurement_manager?.toLowerCase() || ''
+  if (!search) return userOptions.value.map(u => ({ value: u.real_name || u.username }))
+  return userOptions.value
+    .filter(u => (u.real_name || '').toLowerCase().includes(search) || (u.username || '').toLowerCase().includes(search))
+    .map(u => ({ value: u.real_name || u.username }))
+})
 
 const handleToOrder = async () => {
   if (!toOrderForm.supplier_number) { message.warning('请选择供应商'); return }
@@ -198,7 +298,9 @@ const handleToOrder = async () => {
         linkman: toOrderForm.linkman,
         contacts: toOrderForm.contacts,
         delivery_date: toOrderForm.delivery_date,
-        detail_ids: group.rows.map((r: any) => r.id)
+        detail_ids: group.rows.flatMap((r: any) => r._sourceIds || [r.id]),
+        merge_same_items: mergeSameItems.value,
+        unit_prices: toOrderUnitPrices.value
       })
     }
     message.success(`转采购订单成功，共处理 ${toOrderGrouped.value.length} 个申请单`)
@@ -311,7 +413,10 @@ onMounted(async () => {
     />
 
     <!-- 转采购订单弹窗 -->
-    <a-modal v-model:open="toOrderVisible" title="转采购订单" width="900px" :confirm-loading="toOrderLoading" @ok="handleToOrder" ok-text="确认转单">
+    <a-modal v-model:open="toOrderVisible" width="900px" :style="toOrderModalStyle" :confirm-loading="toOrderLoading" @ok="handleToOrder" ok-text="确认转单">
+      <template #title>
+        <div class="drag-handle" @mousedown="toOrderDragStart">转采购订单</div>
+      </template>
       <a-form layout="vertical">
         <a-row :gutter="16">
           <a-col :span="8"><a-form-item label="供应商" required>
@@ -320,9 +425,12 @@ onMounted(async () => {
             </a-select>
           </a-form-item></a-col>
           <a-col :span="8"><a-form-item label="交货日期"><a-date-picker v-model:value="toOrderForm.delivery_date" style="width:100%" value-format="YYYY-MM-DD" /></a-form-item></a-col>
-          <a-col :span="8"><a-form-item label="采购负责人"><a-input v-model:value="toOrderForm.procurement_manager" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="采购负责人"><a-auto-complete v-model:value="toOrderForm.procurement_manager" :options="procurementManagerOptions" placeholder="输入姓名搜索或直接录入" style="width:100%" allow-clear /></a-form-item></a-col>
         </a-row>
       </a-form>
+      <div v-if="mergeSameItems" style="margin-bottom: 8px">
+        <a-alert type="info" show-icon message="已启用合并模式：相同物料编码的明细行数量已合并" />
+      </div>
       <h4>将转单的明细行 (按申请单号分组，每组生成一个采购订单)</h4>
       <div v-for="group in toOrderGrouped" :key="group.reqNumber" style="margin-bottom: 12px">
         <a-tag color="blue" style="margin-bottom: 4px">{{ group.reqNumber }} ({{ group.rows.length }} 行)</a-tag>
@@ -334,7 +442,9 @@ onMounted(async () => {
             { title: '单位', dataIndex: 'basic_unit', width: 60 },
             { title: '申请数量', dataIndex: 'request_quantity', width: 90 },
             { title: '已转单', dataIndex: 'ordered_quantity', width: 80 },
-            { title: '可转数量', key: 'remaining', width: 90 }
+            { title: '可转数量', key: 'remaining', width: 90 },
+            { title: '单价', key: 'unit_price', width: 110 },
+            { title: '金额', key: 'amount', width: 110 }
           ]"
           :data-source="group.rows"
           :pagination="false"
@@ -345,9 +455,22 @@ onMounted(async () => {
             <template v-if="column.key === 'remaining'">
               {{ ((parseFloat(record.request_quantity) || 0) - (parseFloat(record.ordered_quantity) || 0)).toFixed(2) }}
             </template>
+            <template v-else-if="column.key === 'unit_price'">
+              <a-input-number v-model:value="toOrderUnitPrices[record.id]" :min="0" :precision="2" size="small" style="width:100%" placeholder="自动" />
+            </template>
+            <template v-else-if="column.key === 'amount'">
+              {{ (((parseFloat(record.request_quantity) || 0) - (parseFloat(record.ordered_quantity) || 0)) * (toOrderUnitPrices[record.id] || 0)).toFixed(2) }}
+            </template>
           </template>
         </a-table>
       </div>
     </a-modal>
   </div>
 </template>
+
+<style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+</style>

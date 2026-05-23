@@ -11,6 +11,7 @@ const MyTasks = () => import('@/views/system/Workflow/MyTasks.vue');
 const DocumentCompletionConfigList = () => import('@/views/system/DocumentCompletionConfig/List.vue');
 const ManualClosePending = () => import('@/views/system/ManualClose/Pending.vue');
 const ApiKeyList = () => import('@/views/system/ApiKey/List.vue');
+const AutoStockCount = () => import('@/views/system/AutoStockCount/Index.vue');
 
 export const systemRoutes: RouteRecordRaw[] = [
   { path: 'users', name: 'UserManagement', component: UserManagement, meta: {"title":"用户管理","permissionCode":"users"} },
@@ -23,4 +24,5 @@ export const systemRoutes: RouteRecordRaw[] = [
   { path: 'document-completion-config', name: 'DocumentCompletionConfig', component: DocumentCompletionConfigList, meta: {"title":"单据自动完成配置","permissionCode":"system"} },
   { path: 'manual-close-pending', name: 'ManualClosePending', component: ManualClosePending, meta: {"title":"手动关闭审批","permissionCode":"manual_close"} },
   { path: 'api-keys', name: 'ApiKeyList', component: ApiKeyList, meta: {"title":"API密钥管理","permissionCode":"system"} },
+  { path: 'auto-stock-count', name: 'AutoStockCount', component: AutoStockCount, meta: {"title":"自动创建成品仓库月未盘点表","permissionCode":"system"} },
 ];

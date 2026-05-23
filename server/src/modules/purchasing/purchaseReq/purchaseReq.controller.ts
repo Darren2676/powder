@@ -420,12 +420,77 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
 
     const transaction = await sequelize.transaction();
     try {
+      // ========== 自动从采购价目表查询单价 ==========
+      // 查询该供应商所有已审批且在有效期内的价目表明细
+      const priceMap = new Map<string, number>() // item_number → unit_price
+      if (b.supplier_number) {
+        const [priceLists]: any = await sequelize.query(`
+          SELECT h.price_list_number, h.price_type
+          FROM purchase_price_list h
+          WHERE h.supplier_number = :supplier_number
+            AND h.approval_status = N'已审批'
+            AND h.effective_date <= CAST(GETDATE() AS DATE)
+            AND (h.expiration_date IS NULL OR h.expiration_date >= CAST(GETDATE() AS DATE))
+        `, { replacements: { supplier_number: b.supplier_number }, transaction })
+
+        if (priceLists.length) {
+          const plNumbers = priceLists.map((p: any) => p.price_list_number)
+          const priceTypeMap = new Map<string, string>()
+          for (const p of priceLists) priceTypeMap.set(p.price_list_number, p.price_type || '含税')
+
+          const [priceDetails]: any = await sequelize.query(`
+            SELECT d.price_list_number, d.item_number, d.tax_inclusive_price, d.tax_exclusive_price,
+                   d.enable_tiered_pricing, d.start_quantity, d.end_quantity
+            FROM purchase_price_list_detail d
+            WHERE d.price_list_number IN (:plNumbers)
+            ORDER BY d.item_number, d.line_number
+          `, { replacements: { plNumbers }, transaction })
+
+          for (const d of selectedDetails) {
+            const reqQty = parseFloat(d.request_quantity) || 0
+            const orderedQty = parseFloat(d.ordered_quantity) || 0
+            const remaining = reqQty - orderedQty
+            if (remaining <= 0) continue
+            const itemNumber = d.item_number || ''
+            if (priceMap.has(itemNumber)) continue // 已找到价格则跳过
+
+            // 查找该物料的价目表明细
+            const matchingDetails = priceDetails.filter((pd: any) => pd.item_number === itemNumber)
+            if (!matchingDetails.length) continue
+
+            // 阶梯价匹配：找满足数量区间的行
+            let matched: any = null
+            const tieredDetails = matchingDetails.filter((pd: any) => pd.enable_tiered_pricing)
+            if (tieredDetails.length) {
+              // 找到数量区间匹配的阶梯价
+              matched = tieredDetails.find((pd: any) => {
+                const startQty = parseFloat(pd.start_quantity) || 0
+                const endQty = pd.end_quantity != null ? parseFloat(pd.end_quantity) : Infinity
+                return remaining >= startQty && remaining <= endQty
+              })
+              // 未匹配到区间则取第一个阶梯的最低价
+              if (!matched) matched = tieredDetails[0]
+            }
+            if (!matched) matched = matchingDetails[0]
+
+            // 根据价目表的price_type决定取含税还是未税价
+            const pl = priceLists.find((p: any) => p.price_list_number === matched.price_list_number)
+            const priceType = pl?.price_type || '含税'
+            const unitPrice = priceType === '未税'
+              ? parseFloat(matched.tax_exclusive_price) || 0
+              : parseFloat(matched.tax_inclusive_price) || 0
+            if (unitPrice > 0) priceMap.set(itemNumber, unitPrice)
+          }
+        }
+      }
+
       // 计算总金额
       let totalAmount = 0;
       for (const d of selectedDetails) {
         const qty = parseFloat(d.request_quantity) || 0;
         const remaining = qty - (parseFloat(d.ordered_quantity) || 0);
-        const unitPrice = parseFloat(b.unit_prices?.[d.id]) || 0;
+        // 优先使用前端手工传入的单价，其次使用价目表自动匹配的单价
+        const unitPrice = parseFloat(b.unit_prices?.[d.id]) || priceMap.get(d.item_number || '') || 0;
         totalAmount += remaining * unitPrice;
       }
 
@@ -457,6 +522,68 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
       });
 
       // 创建采购订单明细行 + 回写申请单明细
+      if (b.merge_same_items) {
+        // 合并模式：相同物料编码合并为一行
+        const itemMap = new Map<string, any[]>()
+        for (const d of selectedDetails) {
+          const reqQty = parseFloat(d.request_quantity) || 0
+          const orderedQty = parseFloat(d.ordered_quantity) || 0
+          const remaining = reqQty - orderedQty
+          if (remaining <= 0) continue
+          const key = d.item_number || ''
+          if (!itemMap.has(key)) itemMap.set(key, [])
+          itemMap.get(key)!.push({ ...d, remaining })
+        }
+        let lineIdx = 0
+        for (const [, items] of itemMap) {
+          lineIdx++
+          const first = items[0]
+          const totalQty = items.reduce((s: number, r: any) => s + r.remaining, 0)
+          // 优先前端手工单价，其次价目表价格，最后取0
+          const manualPrices = items.map((r: any) => parseFloat(b.unit_prices?.[r.id]) || 0).filter((p: number) => p > 0)
+          const unitPrice = manualPrices.length
+            ? manualPrices.reduce((s: number, p: number) => s + p, 0) / manualPrices.length
+            : (priceMap.get(first.item_number || '') || 0)
+
+          await sequelize.query(`
+            INSERT INTO purchase_order_detail (purchase_order_number, line_number, item_number, item_name, specifications,
+              basic_unit, order_quantity, unit_price, total_amount, received_quantity, delivery_date,
+              receive_status, source_req_number, source_req_detail_id, remark)
+            VALUES (:purchase_order_number, :line_number, :item_number, :item_name, :specifications,
+              :basic_unit, :order_quantity, :unit_price, :total_amount, 0, :delivery_date,
+              N'未到货', :source_req_number, :source_req_detail_id, :remark)
+          `, {
+            replacements: {
+              purchase_order_number,
+              line_number: lineIdx * 10,
+              item_number: first.item_number || '',
+              item_name: first.item_name || '',
+              specifications: first.specifications || '',
+              basic_unit: first.basic_unit || '',
+              order_quantity: totalQty,
+              unit_price: unitPrice,
+              total_amount: totalQty * unitPrice,
+              delivery_date: b.delivery_date || first.expected_date || null,
+              source_req_number: id,
+              source_req_detail_id: first.id,
+              remark: items.map((r: any) => r.remark || '').filter(Boolean).join('; ')
+            },
+            transaction
+          })
+
+          // 回写所有原始申请单明细行
+          for (const d of items) {
+            const reqQty = parseFloat(d.request_quantity) || 0
+            const orderedQty = parseFloat(d.ordered_quantity) || 0
+            const newOrdered = reqQty
+            const newStatus = '已转单'
+            await sequelize.query(`
+              UPDATE purchase_req_detail SET ordered_quantity = :newOrdered, status = :newStatus WHERE id = :detailId
+            `, { replacements: { newOrdered, newStatus, detailId: d.id }, transaction })
+          }
+        }
+      } else {
+        // 不合并：每个明细行单独生成采购订单行
       for (let i = 0; i < selectedDetails.length; i++) {
         const d = selectedDetails[i];
         const reqQty = parseFloat(d.request_quantity) || 0;
@@ -464,7 +591,7 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
         const remaining = reqQty - orderedQty;
         if (remaining <= 0) continue;
 
-        const unitPrice = parseFloat(b.unit_prices?.[d.id]) || 0;
+        const unitPrice = parseFloat(b.unit_prices?.[d.id]) || priceMap.get(d.item_number || '') || 0;
 
         await sequelize.query(`
           INSERT INTO purchase_order_detail (purchase_order_number, line_number, item_number, item_name, specifications,
@@ -498,6 +625,7 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
         await sequelize.query(`
           UPDATE purchase_req_detail SET ordered_quantity = :newOrdered, status = :newStatus WHERE id = :detailId
         `, { replacements: { newOrdered, newStatus, detailId: d.id }, transaction });
+      }
       }
 
       // 更新申请单主表执行状态

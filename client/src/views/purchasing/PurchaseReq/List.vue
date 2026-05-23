@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, createVNode } from 'vue'
+import { ref, reactive, computed, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined, DownloadOutlined, DeleteOutlined, EyeOutlined, EditOutlined, ExclamationCircleOutlined, SwapOutlined, DownOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getPurchaseReqs, getPurchaseReqDetail, createPurchaseReq, updatePurchaseReq, deletePurchaseReq, exportPurchaseReqs, toOrder } from '@/api/purchasing/purchaseReq'
+import { queryPurchasePrice } from '@/api/purchasing/purchasePrice'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getSuppliers } from '@/api/master-data/supplier'
+import { getAssignableUsers } from '@/api/system/user'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval, batchSubmitForApproval, batchApproveRecords, batchWithdrawApproval, batchReverseApproval } from '@/api/system/approval'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
@@ -12,9 +14,15 @@ import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
+import { useModalDrag } from '@/composables/useModalDrag'
 import { useAuthStore } from '@/store/auth'
 
 const authStore = useAuthStore()
+
+// 转采购订单弹窗拖拽
+const { modalStyle: toOrderModalStyle, onDragStart: toOrderDragStart, resetDrag: toOrderResetDrag } = useModalDrag()
+// 编辑/查看弹窗拖拽
+const { modalStyle: editModalStyle, onDragStart: editDragStart, resetDrag: editResetDrag } = useModalDrag()
 
 // ==================== 数据 ====================
 
@@ -35,12 +43,16 @@ const detailRows = ref<any[]>([])
 
 const itemOptions = ref<any[]>([])
 const supplierOptions = ref<any[]>([])
+const userOptions = ref<any[]>([])
 
 // 转采购订单
 const toOrderVisible = ref(false)
 const toOrderReqNumber = ref('')
 const toOrderDetails = ref<any[]>([])
 const toOrderSelectedIds = ref<number[]>([])
+const toOrderMergeSameItems = ref(false)
+const toOrderLoading = ref(false)
+const toOrderUnitPrices = ref<Record<number, number>>({})
 const toOrderForm = reactive({ supplier_number: '', supplier_name: '', delivery_date: null as string | null, procurement_manager: '', linkman: '', contacts: '' })
 
 // ==================== 列定义 ====================
@@ -67,18 +79,26 @@ const {
   fixedRight: [{ title: '操作', key: 'action', width: 150, fixed: 'right' as const }]
 })
 
-const detailColumns = [
-  { title: '物料编码', dataIndex: 'item_number', key: 'item_number', width: 140 },
-  { title: '物料名称', dataIndex: 'item_name', key: 'item_name', width: 160 },
-  { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 120 },
-  { title: '单位', dataIndex: 'basic_unit', key: 'basic_unit', width: 70 },
-  { title: '申请数量', dataIndex: 'request_quantity', key: 'request_quantity', width: 100 },
-  { title: '已转单数量', dataIndex: 'ordered_quantity', key: 'ordered_quantity', width: 100 },
-  { title: '期望到货日', dataIndex: 'expected_date', key: 'expected_date', width: 110, customRender: ({ text }: any) => text ? dayjs(text).format('YYYY-MM-DD') : '' },
-  { title: '建议供应商', dataIndex: 'suggested_supplier_name', key: 'suggested_supplier_name', width: 130 },
-  { title: '行状态', dataIndex: 'status', key: 'status', width: 90 },
-  { title: '操作', key: 'action', width: 80 }
+const defaultDetailDataColumns: any[] = [
+  { title: '物料编码', dataIndex: 'item_number', key: 'item_number', width: 140, resizable: true },
+  { title: '物料名称', dataIndex: 'item_name', key: 'item_name', width: 160, resizable: true },
+  { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 120, resizable: true },
+  { title: '单位', dataIndex: 'basic_unit', key: 'basic_unit', width: 70, resizable: true },
+  { title: '申请数量', dataIndex: 'request_quantity', key: 'request_quantity', width: 100, resizable: true },
+  { title: '已转单数量', dataIndex: 'ordered_quantity', key: 'ordered_quantity', width: 100, resizable: true },
+  { title: '期望到货日', dataIndex: 'expected_date', key: 'expected_date', width: 110, resizable: true },
+  { title: '建议供应商', dataIndex: 'suggested_supplier_name', key: 'suggested_supplier_name', width: 130, resizable: true },
+  { title: '行状态', dataIndex: 'status', key: 'status', width: 90, resizable: true }
 ]
+
+const {
+  columns: detailColumns, columnSettingVisible: detailColSettingVisible, columnSettingList: detailColSettingList, columnSettingSaving: detailColSettingSaving,
+  openColumnSetting: openDetailColSetting, moveColumnUp: detailColMoveUp, moveColumnDown: detailColMoveDown, saveColumnSetting: saveDetailColSetting, resetColumnSetting: resetDetailColSetting,
+  loadColumnPreference: loadDetailColPreference, handleResizeColumn: handleDetailResizeColumn
+} = useColumnPreference('purchase_req_detail', defaultDetailDataColumns, {
+  fixedLeft: [],
+  fixedRight: [{ title: '操作', key: 'action', width: 80, fixed: 'right' as const }]
+})
 
 // ==================== 加载 ====================
 const fetchList = async () => {
@@ -95,15 +115,16 @@ const fetchList = async () => {
 
 const loadDropdowns = async () => {
   try {
-    const [itemRes, supRes]: any = await Promise.all([
-      getItems({ limit: 9999 }), getSuppliers({ limit: 9999 })
+    const [itemRes, supRes, userRes]: any = await Promise.all([
+      getItems({ limit: 9999 }), getSuppliers({ limit: 9999 }), getAssignableUsers()
     ])
     itemOptions.value = itemRes.data?.items || []
     supplierOptions.value = supRes.data?.items || []
+    userOptions.value = userRes.data || []
   } catch { /* ignore */ }
 }
 
-onMounted(() => { loadColumnPreference(); fetchList(); loadDropdowns() })
+onMounted(() => { loadColumnPreference(); loadDetailColPreference(); fetchList(); loadDropdowns() })
 
 const handleRefresh = () => { fetchList() }
 const openCreate = () => {
@@ -112,6 +133,7 @@ const openCreate = () => {
   formData.value = {}
   detailRows.value = []
   modalVisible.value = true
+  editResetDrag()
 }
 
 
@@ -123,6 +145,7 @@ const openView = async (record: any) => {
   formData.value = res.data?.header || {}
   detailRows.value = res.data?.details || []
   modalVisible.value = true
+  editResetDrag()
 }
 
 const openEdit = async (record: any) => {
@@ -132,6 +155,7 @@ const openEdit = async (record: any) => {
   formData.value = res.data?.header || {}
   detailRows.value = (res.data?.details || []).map((d: any) => ({ ...d }))
   modalVisible.value = true
+  editResetDrag()
 }
 
 const handleDelete = (record: any) => {
@@ -266,6 +290,8 @@ const openToOrder = async (record: any) => {
   const res: any = await getPurchaseReqDetail(record.purchase_req_number)
   toOrderDetails.value = (res.data?.details || []).filter((d: any) => (parseFloat(d.request_quantity) || 0) > (parseFloat(d.ordered_quantity) || 0))
   toOrderSelectedIds.value = []
+  toOrderMergeSameItems.value = false
+  toOrderUnitPrices.value = {}
   toOrderForm.supplier_number = ''
   toOrderForm.supplier_name = ''
   toOrderForm.delivery_date = null
@@ -273,9 +299,10 @@ const openToOrder = async (record: any) => {
   toOrderForm.linkman = ''
   toOrderForm.contacts = ''
   toOrderVisible.value = true
+  toOrderResetDrag()
 }
 
-const onToOrderSupplierSelect = (val: string) => {
+const onToOrderSupplierSelect = async (val: string) => {
   const sup = supplierOptions.value.find((s: any) => s.supplier_number === val)
   if (sup) {
     toOrderForm.supplier_number = sup.supplier_number
@@ -284,23 +311,89 @@ const onToOrderSupplierSelect = (val: string) => {
     toOrderForm.linkman = sup.linkman || ''
     toOrderForm.contacts = sup.contacts || ''
   }
+  // 自动从采购价目表查询单价
+  await fetchToOrderPrices()
 }
 
-const handleToOrder = async () => {
+const fetchToOrderPrices = async () => {
+  if (!toOrderForm.supplier_number || !toOrderDetails.value.length) return
+  const itemNumbers = [...new Set(toOrderDetails.value.map((d: any) => d.item_number).filter(Boolean))]
+  if (!itemNumbers.length) return
+  try {
+    const res: any = await queryPurchasePrice({
+      supplier_number: toOrderForm.supplier_number,
+      item_numbers: itemNumbers.join(',')
+    })
+    const priceData = res.data || {}
+    // 将查到的价格填入 toOrderUnitPrices
+    for (const d of toOrderDetails.value) {
+      const priceInfo = priceData[d.item_number]
+      if (priceInfo && priceInfo.unit_price > 0) {
+        toOrderUnitPrices.value[d.id] = priceInfo.unit_price
+      }
+    }
+  } catch { /* 忽略查价失败 */ }
+}
+
+// 采购负责人模糊搜索选项
+const procurementManagerOptions = computed(() => {
+  const search = toOrderForm.procurement_manager?.toLowerCase() || ''
+  if (!search) return userOptions.value.map(u => ({ value: u.real_name || u.username }))
+  return userOptions.value
+    .filter(u => (u.real_name || '').toLowerCase().includes(search) || (u.username || '').toLowerCase().includes(search))
+    .map(u => ({ value: u.real_name || u.username }))
+})
+
+const handleToOrder = () => {
   if (!toOrderSelectedIds.value.length) { message.warning('请选择要转单的明细行'); return }
   if (!toOrderForm.supplier_number) { message.warning('请选择供应商'); return }
-  await toOrder(toOrderReqNumber.value, {
-    supplier_number: toOrderForm.supplier_number,
-    supplier_name: toOrderForm.supplier_name,
-    procurement_manager: toOrderForm.procurement_manager,
-    linkman: toOrderForm.linkman,
-    contacts: toOrderForm.contacts,
-    delivery_date: toOrderForm.delivery_date,
-    detail_ids: toOrderSelectedIds.value
-  })
-  message.success('转采购订单成功')
-  toOrderVisible.value = false
-  fetchList()
+
+  // 检查选中行中是否有相同物料编码
+  const selectedRows = toOrderDetails.value.filter((r: any) => toOrderSelectedIds.value.includes(r.id))
+  const itemMap = new Map<string, number>()
+  for (const row of selectedRows) {
+    itemMap.set(row.item_number, (itemMap.get(row.item_number) || 0) + 1)
+  }
+  const hasDuplicates = [...itemMap.values()].some(count => count > 1)
+
+  if (hasDuplicates && !toOrderMergeSameItems.value) {
+    const duplicateItems = [...itemMap.entries()].filter(([, count]) => count > 1).map(([item]) => item).join('、')
+    Modal.confirm({
+      title: '检测到相同物料编码',
+      icon: createVNode(ExclamationCircleOutlined),
+      content: `以下物料编码存在多条明细：${duplicateItems}。是否合并相同物料的数量？`,
+      okText: '合并',
+      cancelText: '不合并',
+      onOk: () => { toOrderMergeSameItems.value = true; doToOrder() },
+      onCancel: () => { toOrderMergeSameItems.value = false; doToOrder() }
+    })
+  } else {
+    doToOrder()
+  }
+}
+
+const doToOrder = async () => {
+  toOrderLoading.value = true
+  try {
+    await toOrder(toOrderReqNumber.value, {
+      supplier_number: toOrderForm.supplier_number,
+      supplier_name: toOrderForm.supplier_name,
+      procurement_manager: toOrderForm.procurement_manager,
+      linkman: toOrderForm.linkman,
+      contacts: toOrderForm.contacts,
+      delivery_date: toOrderForm.delivery_date,
+      detail_ids: toOrderSelectedIds.value,
+      merge_same_items: toOrderMergeSameItems.value,
+      unit_prices: toOrderUnitPrices.value
+    })
+    message.success('转采购订单成功')
+    toOrderVisible.value = false
+    fetchList()
+  } catch (e: any) {
+    message.error(e?.response?.data?.message || e?.message || '转采购订单失败')
+  } finally {
+    toOrderLoading.value = false
+  }
 }
 
 // ==================== 导出 ====================
@@ -432,7 +525,10 @@ const handleBatchAction = (action: string) => {
     </a-table>
 
     <!-- 编辑/查看弹窗 -->
-    <a-modal v-model:open="modalVisible" :title="modalTitle" width="1000px" @ok="handleSave" :ok-button-props="{ style: isView ? { display: 'none' } : {} }" :cancel-text="isView ? '关闭' : '取消'">
+    <a-modal v-model:open="modalVisible" width="1000px" :style="editModalStyle" @ok="handleSave" :ok-button-props="{ style: isView ? { display: 'none' } : {} }" :cancel-text="isView ? '关闭' : '取消'">
+      <template #title>
+        <div class="drag-handle" @mousedown="editDragStart">{{ modalTitle }}</div>
+      </template>
       <a-form layout="vertical">
         <a-row :gutter="16">
           <a-col :span="6"><a-form-item label="申请日期"><a-date-picker v-model:value="formData.request_date" :disabled="isView" style="width:100%" value-format="YYYY-MM-DD" /></a-form-item></a-col>
@@ -455,9 +551,12 @@ const handleBatchAction = (action: string) => {
 
       <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0 8px">
         <h4 style="margin:0">物料明细</h4>
-        <a-button v-if="!isView" size="small" type="primary" @click="addDetailRow"><PlusOutlined /> 添加行</a-button>
+        <div style="display:flex;gap:8px">
+          <a-button size="small" @click="openDetailColSetting"><SettingOutlined /> 列设置</a-button>
+          <a-button v-if="!isView" size="small" type="primary" @click="addDetailRow"><PlusOutlined /> 添加行</a-button>
+        </div>
       </div>
-      <a-table :columns="detailColumns" :data-source="detailRows" :pagination="false" row-key="(r: any, i: number) => i" size="small" :scroll="{ x: 1000 }">
+      <a-table :columns="detailColumns" :data-source="detailRows" :pagination="false" row-key="(r: any, i: number) => i" size="small" :scroll="{ x: 'max-content' }" @resizeColumn="handleDetailResizeColumn">
         <template #bodyCell="{ column, record, index }">
           <template v-if="column.key === 'item_number' && !isView">
             <a-select v-model:value="record.item_number" show-search option-filter-prop="label" style="width:100%" @change="(v: string) => onItemSelect(v, record)" placeholder="搜索物料">
@@ -467,8 +566,9 @@ const handleBatchAction = (action: string) => {
           <template v-else-if="column.key === 'request_quantity' && !isView">
             <a-input-number v-model:value="record.request_quantity" :min="0" style="width:100%" />
           </template>
-          <template v-else-if="column.key === 'expected_date' && !isView">
-            <a-date-picker v-model:value="record.expected_date" style="width:100%" value-format="YYYY-MM-DD" />
+          <template v-else-if="column.key === 'expected_date'">
+            <a-date-picker v-if="!isView" v-model:value="record.expected_date" style="width:100%" value-format="YYYY-MM-DD" />
+            <span v-else>{{ record.expected_date ? dayjs(record.expected_date).format('YYYY-MM-DD') : '' }}</span>
           </template>
           <template v-else-if="column.key === 'suggested_supplier_name' && !isView">
             <a-select v-model:value="record.suggested_supplier_number" show-search option-filter-prop="label" style="width:100%" allow-clear @change="(v: string) => onSuggestedSupplierSelect(v, record)" placeholder="选择供应商">
@@ -483,7 +583,10 @@ const handleBatchAction = (action: string) => {
     </a-modal>
 
     <!-- 转采购订单弹窗 -->
-    <a-modal v-model:open="toOrderVisible" title="转采购订单" width="900px" @ok="handleToOrder" ok-text="确认转单">
+    <a-modal v-model:open="toOrderVisible" width="900px" :style="toOrderModalStyle">
+      <template #title>
+        <div class="drag-handle" @mousedown="toOrderDragStart">转采购订单</div>
+      </template>
       <a-form layout="vertical">
         <a-row :gutter="16">
           <a-col :span="8"><a-form-item label="供应商" required>
@@ -492,9 +595,12 @@ const handleBatchAction = (action: string) => {
             </a-select>
           </a-form-item></a-col>
           <a-col :span="8"><a-form-item label="交货日期"><a-date-picker v-model:value="toOrderForm.delivery_date" style="width:100%" value-format="YYYY-MM-DD" /></a-form-item></a-col>
-          <a-col :span="8"><a-form-item label="采购负责人"><a-input v-model:value="toOrderForm.procurement_manager" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="采购负责人"><a-auto-complete v-model:value="toOrderForm.procurement_manager" :options="procurementManagerOptions" placeholder="输入姓名搜索或直接录入" style="width:100%" allow-clear /></a-form-item></a-col>
         </a-row>
       </a-form>
+      <div v-if="toOrderMergeSameItems" style="margin-bottom: 8px">
+        <a-alert type="info" show-icon message="已启用合并模式：相同物料编码的明细行数量将合并" />
+      </div>
       <h4>选择要转单的明细行 (仅显示尚有未转单数量的行)</h4>
       <a-table :columns="[
         { title: '', key: 'select', width: 50 },
@@ -504,7 +610,9 @@ const handleBatchAction = (action: string) => {
         { title: '单位', dataIndex: 'basic_unit', width: 60 },
         { title: '申请数量', dataIndex: 'request_quantity', width: 90 },
         { title: '已转单', dataIndex: 'ordered_quantity', width: 80 },
-        { title: '可转数量', key: 'remaining', width: 90 }
+        { title: '可转数量', key: 'remaining', width: 90 },
+        { title: '单价', key: 'unit_price', width: 110 },
+        { title: '金额', key: 'amount', width: 110 }
       ]" :data-source="toOrderDetails" :pagination="false" row-key="id" size="small">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'select'">
@@ -513,8 +621,18 @@ const handleBatchAction = (action: string) => {
           <template v-else-if="column.key === 'remaining'">
             {{ ((parseFloat(record.request_quantity) || 0) - (parseFloat(record.ordered_quantity) || 0)).toFixed(2) }}
           </template>
+          <template v-else-if="column.key === 'unit_price'">
+            <a-input-number v-model:value="toOrderUnitPrices[record.id]" :min="0" :precision="2" size="small" style="width:100%" placeholder="自动" />
+          </template>
+          <template v-else-if="column.key === 'amount'">
+            {{ (((parseFloat(record.request_quantity) || 0) - (parseFloat(record.ordered_quantity) || 0)) * (toOrderUnitPrices[record.id] || 0)).toFixed(2) }}
+          </template>
         </template>
       </a-table>
+      <template #footer>
+        <a-button @click="toOrderVisible = false">取消</a-button>
+        <a-button type="primary" :loading="toOrderLoading" @click="handleToOrder">确认转单</a-button>
+      </template>
     </a-modal>
     <ApprovalLogModal v-model:open="approvalLogVisible" module="purchase_req" :record-id="approvalLogRecordId" />
 
@@ -528,5 +646,23 @@ const handleBatchAction = (action: string) => {
       @save="saveColumnSetting"
       @reset="resetColumnSetting"
     />
+
+    <ColumnSettingDrawer
+      :open="detailColSettingVisible"
+      :settingList="detailColSettingList"
+      :saving="detailColSettingSaving"
+      @update:open="detailColSettingVisible = $event"
+      @moveUp="detailColMoveUp"
+      @moveDown="detailColMoveDown"
+      @save="saveDetailColSetting"
+      @reset="resetDetailColSetting"
+    />
   </div>
 </template>
+
+<style scoped>
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
+</style>

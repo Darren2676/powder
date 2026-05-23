@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>报废仓处理业务流程图 - MES系统</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+    min-height: 100vh;
+    padding: 40px;
+    color: #e2e8f0;
+  }
+
+  .container {
+    max-width: 1400px;
+    margin: 0 auto;
+    background: #1a2332;
+    border-radius: 16px;
+    padding: 40px;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 28px;
+    color: #38bdf8;
+    margin-bottom: 8px;
+    letter-spacing: 2px;
+  }
+
+  .subtitle {
+    text-align: center;
+    font-size: 14px;
+    color: #94a3b8;
+    margin-bottom: 32px;
+  }
+
+  .flowchart {
+    display: grid;
+    gap: 24px;
+    position: relative;
+  }
+
+  /* Phase sections */
+  .phase {
+    background: rgba(30, 41, 59, 0.8);
+    border-radius: 12px;
+    padding: 24px;
+    border-left: 4px solid;
+    position: relative;
+  }
+  .phase::before {
+    content: attr(data-phase);
+    position: absolute;
+    top: -12px;
+    left: 20px;
+    background: #1a2332;
+    padding: 2px 16px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1px;
+  }
+
+  .phase-inspection { border-color: #f59e0b; }
+  .phase-inspection::before { background: #f59e0b; color: #000; }
+  .phase-inspection .phase-title { color: #f59e0b; }
+
+  .phase-nc { border-color: #ef4444; }
+  .phase-nc::before { background: #ef4444; color: #fff; }
+  .phase-nc .phase-title { color: #ef4444; }
+
+  .phase-scrap-in { border-color: #8b5cf6; }
+  .phase-scrap-in::before { background: #8b5cf6; color: #fff; }
+  .phase-scrap-in .phase-title { color: #8b5cf6; }
+
+  .phase-disposal { border-color: #06b6d4; }
+  .phase-disposal::before { background: #06b6d4; color: #fff; }
+  .phase-disposal .phase-title { color: #06b6d4; }
+
+  .phase-report { border-color: #10b981; }
+  .phase-report::before { background: #10b981; color: #fff; }
+  .phase-report .phase-title { color: #10b981; }
+
+  .phase-title {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .phase-title .icon { font-size: 20px; }
+
+  /* Steps within each phase */
+  .steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .step {
+    background: rgba(51, 65, 85, 0.6);
+    border: 1px solid rgba(100, 116, 139, 0.3);
+    border-radius: 8px;
+    padding: 12px 16px;
+    position: relative;
+    min-width: 160px;
+    flex: 1;
+  }
+
+  .step-label {
+    font-size: 10px;
+    color: #94a3b8;
+    margin-bottom: 4px;
+  }
+
+  .step-title {
+    font-size: 14px;
+    font-weight: bold;
+    color: #f1f5f9;
+    margin-bottom: 4px;
+  }
+
+  .step-desc {
+    font-size: 12px;
+    color: #94a3b8;
+    line-height: 1.5;
+  }
+
+  .step-data {
+    font-size: 11px;
+    color: #64748b;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed rgba(100, 116, 139, 0.3);
+  }
+
+  .step-data strong { color: #8b5cf6; }
+
+  /* Arrows between steps */
+  .arrow {
+    display: flex;
+    align-items: center;
+    font-size: 18px;
+    color: #64748b;
+    flex-shrink: 0;
+  }
+
+  .arrow-down {
+    width: 100%;
+    justify-content: center;
+    font-size: 24px;
+    color: #475569;
+    padding: 4px 0;
+  }
+
+  /* Decision nodes */
+  .decision {
+    background: rgba(139, 92, 246, 0.15);
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    border-radius: 8px;
+    padding: 12px 16px;
+    text-align: center;
+    min-width: 140px;
+    position: relative;
+  }
+
+  .decision::after {
+    content: '?';
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: #8b5cf6;
+    color: #fff;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+  }
+
+  .decision .step-title { color: #c4b5fd; }
+
+  /* Branch outcomes */
+  .branch {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .branch-outcome {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .branch-outcome.danger {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+  }
+
+  .branch-outcome .tag {
+    background: #10b981;
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: bold;
+    white-space: nowrap;
+  }
+
+  .branch-outcome.danger .tag {
+    background: #ef4444;
+  }
+
+  .branch-outcome .action {
+    color: #d1d5db;
+  }
+
+  /* Status badges */
+  .status {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: bold;
+  }
+  .status-draft { background: #64748b; color: #fff; }
+  .status-pending { background: #f59e0b; color: #000; }
+  .status-approved { background: #10b981; color: #fff; }
+  .status-rejected { background: #ef4444; color: #fff; }
+  .status-reversed { background: #6366f1; color: #fff; }
+
+  /* Database table references */
+  .db-ref {
+    display: inline-block;
+    background: rgba(99, 102, 241, 0.2);
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 11px;
+    color: #a5b4fc;
+    font-family: monospace;
+  }
+
+  /* Report section */
+  .report-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  .report-card {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  .report-card h4 {
+    color: #34d399;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+
+  .report-card ul {
+    list-style: none;
+    font-size: 12px;
+    color: #94a3b8;
+  }
+
+  .report-card li {
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(100, 116, 139, 0.2);
+  }
+
+  .report-card li:last-child { border-bottom: none; }
+
+  .report-card li::before {
+    content: '├─ ';
+    color: #64748b;
+  }
+
+  /* System modules */
+  .system-note {
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px dashed rgba(99, 102, 241, 0.4);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: #a5b4fc;
+    text-align: center;
+    margin: 8px 0;
+  }
+
+  .system-note strong { color: #818cf8; }
+
+  /* Footer */
+  .footer {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(100, 116, 139, 0.3);
+    text-align: center;
+    font-size: 12px;
+    color: #64748b;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    justify-content: center;
+    gap: 24px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #94a3b8;
+  }
+
+  .legend-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+  }
+
+  /* Print styles */
+  @media print {
+    body { background: #fff; color: #333; padding: 20px; }
+    .container { background: #fff; box-shadow: none; border: 1px solid #ddd; }
+    .phase { background: #f8f9fa; border-color: #666; }
+    .phase::before { background: #666; color: #fff; }
+    .step { background: #e9ecef; border-color: #ccc; }
+    .step-title { color: #333; }
+    .step-desc { color: #666; }
+    h1 { color: #0066cc; }
+    .phase-title { color: #333; }
+    .branch-outcome { background: #e8f5e9; border-color: #4caf50; }
+    .branch-outcome .tag { background: #4caf50; color: #fff; }
+    .report-card { background: #e8f5e9; border-color: #4caf50; }
+    .report-card h4 { color: #2e7d32; }
+    .db-ref { background: #e3f2fd; border-color: #2196f3; color: #1565c0; }
+    .system-note { background: #e3f2fd; border-color: #2196f3; color: #1565c0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>报废仓处理完整业务流程</h1>
+  <p class="subtitle">MES系统 · 不合格品报废处理 → 报废仓入库 → 报废处置出库 → 报表统计</p>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item"><div class="legend-color" style="background:#f59e0b"></div>检验阶段</div>
+    <div class="legend-item"><div class="legend-color" style="background:#ef4444"></div>不合格处理</div>
+    <div class="legend-item"><div class="legend-color" style="background:#8b5cf6"></div>报废入库</div>
+    <div class="legend-item"><div class="legend-color" style="background:#06b6d4"></div>报废处置</div>
+    <div class="legend-item"><div class="legend-color" style="background:#10b981"></div>报表统计</div>
+    <div class="legend-item"><div class="legend-color" style="background:#6366f1"></div>数据库操作</div>
+  </div>
+
+  <div class="flowchart">
+
+    <!-- ==================== Phase 1: 检验阶段 ==================== -->
+    <div class="phase phase-inspection" data-phase="阶段一：检验阶段">
+      <div class="phase-title"><span class="icon">🔍</span> 来料/生产/委外检验</div>
+      <div class="steps">
+        <div class="step">
+          <div class="step-label">步骤 1</div>
+          <div class="step-title">采购收货 / 生产报工 / 委外收货</div>
+          <div class="step-desc">物料到达或生产完成，触发检验流程</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step">
+          <div class="step-label">步骤 2</div>
+          <div class="step-title">质量检验</div>
+          <div class="step-desc">按检验规范执行检验，记录合格/不合格数量</div>
+          <div class="step-data">
+            <strong>表：</strong><span class="db-ref">purchase_inspection</span>
+            <span class="db-ref">production_inspection</span>
+            <span class="db-ref">outsourcing_inspection</span>
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step decision">
+          <div class="step-label">判定</div>
+          <div class="step-title">检验结果</div>
+          <div class="step-desc">合格 vs 不合格</div>
+        </div>
+      </div>
+
+      <div class="arrow-down">⬇️</div>
+
+      <div class="branch">
+        <div class="branch-outcome">
+          <span class="tag">合格</span>
+          <span class="action">→ 正常入库流程（合格品仓），结束本流程</span>
+        </div>
+        <div class="branch-outcome danger">
+          <span class="tag">不合格</span>
+          <span class="action">→ 自动生成不合格品记录，进入阶段二</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== Phase 2: 不合格处理 ==================== -->
+    <div class="phase phase-nc" data-phase="阶段二：不合格品处理">
+      <div class="phase-title"><span class="icon">⚠️</span> 不合格品处理单</div>
+      <div class="steps">
+        <div class="step">
+          <div class="step-label">步骤 3</div>
+          <div class="step-title">自动生成不合格品单</div>
+          <div class="step-desc">检验不合格时自动创建NC单，记录不合格数量</div>
+          <div class="step-data">
+            <strong>表：</strong><span class="db-ref">nonconforming_product</span>
+            <br><strong>来源：</strong>来料检验 / 生产检验 / 委外检验
+            <br><strong>状态：</strong><span class="status status-draft">待处理</span>
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step">
+          <div class="step-label">步骤 4</div>
+          <div class="step-title">选择处理方式</div>
+          <div class="step-desc">质量管理员选择处理方式（5种可选）</div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step decision">
+          <div class="step-label">处理选择</div>
+          <div class="step-title">5种处理方式</div>
+          <div class="step-desc">挑选 / 拒收 / 报废 / 特采 / 退货</div>
+        </div>
+      </div>
+
+      <div class="arrow-down">⬇️</div>
+
+      <div class="branch">
+        <div class="branch-outcome"><span class="tag">挑选</span><span class="action">→ 分拣后合格品入库</span></div>
+        <div class="branch-outcome"><span class="tag">拒收</span><span class="action">→ 退回供应商</span></div>
+        <div class="branch-outcome danger"><span class="tag">报废</span><span class="action">→ 生成报废入库单，进入阶段三（本流程主线）</span></div>
+        <div class="branch-outcome"><span class="tag">特采</span><span class="action">→ 让步接收，合格品入库</span></div>
+        <div class="branch-outcome"><span class="tag">退货</span><span class="action">→ 退货入库到待检仓</span></div>
+      </div>
+    </div>
+
+    <!-- ==================== Phase 3: 报废入库 ==================== -->
+    <div class="phase phase-scrap-in" data-phase="阶段三：报废入库（自动）">
+      <div class="phase-title"><span class="icon">📦</span> 报废入库单自动生成</div>
+      <div class="steps">
+        <div class="step">
+          <div class="step-label">步骤 5</div>
+          <div class="step-title">生成报废入库单</div>
+          <div class="step-desc">选择"报废"后自动创建入库单（stock_in_type='报废入库'）</div>
+          <div class="step-data">
+            <strong>表：</strong><span class="db-ref">stock_in</span>
+            <br><strong>类型：</strong>报废入库
+            <br><strong>仓库：</strong>08号报废仓库（warehouse_type='报废仓库'）
+            <br><strong>状态：</strong><span class="status status-draft">草稿</span>
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step">
+          <div class="step-label">步骤 6</div>
+          <div class="step-title">提交审批</div>
+          <div class="step-desc">提交报废入库单审批</div>
+          <div class="step-data">
+            <strong>状态：</strong><span class="status status-draft">草稿</span> → <span class="status status-pending">审批中</span>
+            <br><strong>表：</strong><span class="db-ref">approval_log</span>
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step decision">
+          <div class="step-label">审批</div>
+          <div class="step-title">审批结果</div>
+          <div class="step-desc">通过 / 驳回 / 反审</div>
+        </div>
+      </div>
+
+      <div class="arrow-down">⬇️</div>
+
+      <div class="branch">
+        <div class="branch-outcome">
+          <span class="tag">审批通过</span>
+          <span class="action">→ <strong>自动更新库存</strong>（Phase 3 核心）</span>
+        </div>
+      </div>
+
+      <div class="system-note">
+        <strong>🔧 自动库存更新流程（审批通过后自动执行）</strong>
+      </div>
+
+      <div class="steps" style="margin-top: 12px;">
+        <div class="step" style="background:rgba(139,92,246,0.1); border-color:rgba(139,92,246,0.3);">
+          <div class="step-label">自动 6A</div>
+          <div class="step-title">写入报废批次库存</div>
+          <div class="step-desc">为报废物料生成批次号，写入 finished_batch_inventory</div>
+          <div class="step-data">
+            <strong>quality_status =</strong> <span class="status status-rejected">不合格品</span>
+            <br><strong>表：</strong><span class="db-ref">finished_batch_inventory</span>
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step" style="background:rgba(139,92,246,0.1); border-color:rgba(139,92,246,0.3);">
+          <div class="step-label">自动 6B</div>
+          <div class="step-title">更新汇总库存</div>
+          <div class="step-desc">更新不合格品汇总数量</div>
+          <div class="step-data">
+            <strong>表：</strong><span class="db-ref">finished_goods_inventory</span>
+            <br><strong>quality_status = 不合格品</strong>
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step" style="background:rgba(139,92,246,0.1); border-color:rgba(139,92,246,0.3);">
+          <div class="step-label">自动 6C</div>
+          <div class="step-title">记录库存流水</div>
+          <div class="step-desc">写入库存事务流水记录，完整可追溯</div>
+          <div class="step-data">
+            <strong>source_type =</strong> '报废入库'
+            <br><strong>表：</strong><span class="db-ref">inventory_transaction</span>
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step" style="background:rgba(139,92,246,0.1); border-color:rgba(139,92,246,0.3);">
+          <div class="step-label">自动 6D</div>
+          <div class="step-title">更新NC单状态</div>
+          <div class="step-desc">更新不合格品单状态为"已完成"</div>
+          <div class="step-data">
+            <strong>表：</strong><span class="db-ref">nonconforming_product</span>
+            <br><strong>handling_status =</strong> '已完成'
+          </div>
+        </div>
+      </div>
+
+      <div class="arrow-down">⬇️</div>
+
+      <div class="branch">
+        <div class="branch-outcome">
+          <span class="tag">反审</span>
+          <span class="action">→ <strong>自动回退库存</strong>：删除/扣减批次库存 → 同步汇总库存 → 标记流水作废 → 若批次已被消耗则阻止反审</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== Phase 4: 报废处置 ==================== -->
+    <div class="phase phase-disposal" data-phase="阶段四：报废仓处置出库">
+      <div class="phase-title"><span class="icon">🔧</span> 报废仓处置出库</div>
+      <div class="steps">
+        <div class="step">
+          <div class="step-label">步骤 7</div>
+          <div class="step-title">查看报废仓库存</div>
+          <div class="step-desc">按物料汇总查看报废仓库存，可点击批次明细查看具体批次</div>
+          <div class="step-data">
+            <strong>接口：</strong><span class="db-ref">GET /scrap-disposal/inventory</span>
+            <br><strong>查询条件：</strong>warehouse_type = '报废仓库'
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step">
+          <div class="step-label">步骤 8</div>
+          <div class="step-title">创建报废处置申请</div>
+          <div class="step-desc">选择要处置的物料和数量，填写处置原因</div>
+          <div class="step-data">
+            <strong>接口：</strong><span class="db-ref">POST /scrap-disposal/disposals</span>
+            <br><strong>表：</strong><span class="db-ref">scrap_disposal</span> + <span class="db-ref">scrap_disposal_detail</span>
+            <br><strong>单号：</strong>SD-YYYYMMDD-NNN
+            <br><strong>状态：</strong><span class="status status-draft">待确认</span>
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step">
+          <div class="step-label">步骤 9</div>
+          <div class="step-title">确认处置（执行出库）</div>
+          <div class="step-desc">确认后执行FIFO批次扣减，更新库存</div>
+          <div class="step-data">
+            <strong>接口：</strong><span class="db-ref">POST /scrap-disposal/disposals/:number/confirm</span>
+            <br><strong>扣减逻辑：</strong>FIFO先进先出
+            <br><strong>状态：</strong><span class="status status-draft">待确认</span> → <span class="status status-approved">已确认</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="arrow-down">⬇️</div>
+
+      <div class="steps" style="margin-top: 12px;">
+        <div class="step" style="background:rgba(6,182,212,0.1); border-color:rgba(6,182,212,0.3);">
+          <div class="step-label">自动 9A</div>
+          <div class="step-title">FIFO批次扣减</div>
+          <div class="step-desc">按入库日期从早到晚扣减批次库存</div>
+          <div class="step-data">
+            <strong>表：</strong><span class="db-ref">finished_batch_inventory</span>
+            <br><strong>扣减顺序：</strong>inbound_date ASC, id ASC
+            <br><strong>批次为0时删除记录</strong>
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step" style="background:rgba(6,182,212,0.1); border-color:rgba(6,182,212,0.3);">
+          <div class="step-label">自动 9B</div>
+          <div class="step-title">同步汇总库存</div>
+          <div class="step-desc">同步更新不合格品汇总数量</div>
+          <div class="step-data">
+            <strong>表：</strong><span class="db-ref">finished_goods_inventory</span>
+            <br><strong>quality_status = 不合格品</strong>
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="step" style="background:rgba(6,182,212,0.1); border-color:rgba(6,182,212,0.3);">
+          <div class="step-label">自动 9C</div>
+          <div class="step-title">记录出库流水</div>
+          <div class="step-desc">写入库存事务流水记录</div>
+          <div class="step-data">
+            <strong>source_type =</strong> '报废处置'
+            <br><strong>表：</strong><span class="db-ref">inventory_transaction</span>
+            <br><strong>流水类型：</strong>出库
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== Phase 5: 报表统计 ==================== -->
+    <div class="phase phase-report" data-phase="阶段五：报表与统计">
+      <div class="phase-title"><span class="icon">📊</span> 报表与统计</div>
+      <div class="report-grid">
+        <div class="report-card">
+          <h4>📋 报废单管理报表</h4>
+          <ul>
+            <li>报废入库单列表（草稿/审批中/已审批）</li>
+            <li>按物料统计报废数量</li>
+            <li>按来源统计（来料/生产/委外）</li>
+            <li>审批状态筛选</li>
+            <li>导出Excel报表</li>
+          </ul>
+          <div class="step-data" style="margin-top:8px">
+            <strong>表：</strong><span class="db-ref">stock_in</span> (type='报废入库')
+          </div>
+        </div>
+        <div class="report-card">
+          <h4>📦 报废仓库存报表</h4>
+          <ul>
+            <li>按物料汇总当前库存</li>
+            <li>批次明细查询（批次号/数量/入库日期）</li>
+            <li>库存流水查询（入库→处置）</li>
+            <li>库存预警（超期积压）</li>
+          </ul>
+          <div class="step-data" style="margin-top:8px">
+            <strong>表：</strong><span class="db-ref">finished_batch_inventory</span>
+            <br><span class="db-ref">finished_goods_inventory</span>
+            <br><span class="db-ref">inventory_transaction</span>
+          </div>
+        </div>
+        <div class="report-card">
+          <h4>🔧 报废处置报表</h4>
+          <ul>
+            <li>处置申请单列表（待确认/已确认/已驳回）</li>
+            <li>按原因统计处置数量</li>
+            <li>处置效率统计（申请→确认时长）</li>
+            <li>确认人/时间追踪</li>
+          </ul>
+          <div class="step-data" style="margin-top:8px">
+            <strong>表：</strong><span class="db-ref">scrap_disposal</span>
+            <br><span class="db-ref">scrap_disposal_detail</span>
+          </div>
+        </div>
+        <div class="report-card">
+          <h4>📈 质量统计分析</h4>
+          <ul>
+            <li>不合格品处理统计（5种方式占比）</li>
+            <li>报废率分析（按物料/供应商/生产线）</li>
+            <li>报废成本估算（关联物料单价）</li>
+            <li>趋势分析（按月报废数量趋势）</li>
+          </ul>
+          <div class="step-data" style="margin-top:8px">
+            <strong>表：</strong><span class="db-ref">nonconforming_product</span>
+            <br><span class="db-ref">inspection tables</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== Complete Data Flow Summary ==================== -->
+    <div class="phase phase-report" data-phase="数据流向总览">
+      <div class="phase-title"><span class="icon">🔄</span> 数据流向总结</div>
+      <div class="steps" style="flex-direction:column;">
+        <div class="step" style="width:100%;">
+          <div class="step-title">1. 检验不合格 → 不合格品记录</div>
+          <div class="step-data">
+            <span class="db-ref">purchase_inspection</span> / <span class="db-ref">production_inspection</span> → <span class="db-ref">nonconforming_product</span>
+            <br>字段映射：unqualified_quantity → handling_quantity, handling_status = '待处理'
+          </div>
+        </div>
+        <div class="step" style="width:100%;">
+          <div class="step-title">2. 选择报废 → 报废入库单</div>
+          <div class="step-data">
+            <span class="db-ref">nonconforming_product</span> → <span class="db-ref">stock_in</span> (stock_in_type='报废入库')
+            <br>仓库：warehouse_type='报废仓库' (08号仓), approval_status='草稿'
+          </div>
+        </div>
+        <div class="step" style="width:100%;">
+          <div class="step-title">3. 审批通过 → 自动更新库存</div>
+          <div class="step-data">
+            <span class="db-ref">stock_in</span> → <span class="db-ref">finished_batch_inventory</span> (新增批次, quality_status='不合格品')
+            <br><span class="db-ref">stock_in</span> → <span class="db-ref">finished_goods_inventory</span> (汇总数量增加)
+            <br><span class="db-ref">stock_in</span> → <span class="db-ref">inventory_transaction</span> (source_type='报废入库')
+          </div>
+        </div>
+        <div class="step" style="width:100%;">
+          <div class="step-title">4. 报废处置 → FIFO出库</div>
+          <div class="step-data">
+            <span class="db-ref">scrap_disposal</span> → <span class="db-ref">finished_batch_inventory</span> (FIFO批次扣减, quantity减少)
+            <br><span class="db-ref">scrap_disposal</span> → <span class="db-ref">finished_goods_inventory</span> (汇总数量减少)
+            <br><span class="db-ref">scrap_disposal</span> → <span class="db-ref">inventory_transaction</span> (source_type='报废处置')
+          </div>
+        </div>
+        <div class="step" style="width:100%;">
+          <div class="step-title">5. 报表统计 → 多表联查</div>
+          <div class="step-data">
+            <span class="db-ref">nonconforming_product</span> + <span class="db-ref">stock_in</span> + <span class="db-ref">scrap_disposal</span> + <span class="db-ref">inventory_transaction</span> + <span class="db-ref">finished_batch_inventory</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    MES系统 · 报废仓处理业务流程图 · 生成时间：2026-05-13
+  </div>
+</div>
+
+</body>
+</html>

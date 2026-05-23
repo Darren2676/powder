@@ -432,28 +432,29 @@ async function executeConfirmStockIn(siNumber: string, operator: string, transac
   }
 
   for (const d of details) {
+    const needsInspection = itemInspectionMap[d.item_number || ''] === true;
     const qualifiedQty = parseFloat(d.qualified_quantity) || 0;
-    if (qualifiedQty <= 0) continue;
+    const stockInQty = parseFloat(d.stock_in_quantity) || 0;
+    const entryQty = needsInspection ? stockInQty : qualifiedQty;
+    if (entryQty <= 0) continue;
 
     // 根据物料来料检验标志分流仓库
     // 优先级：待检仓（需检验） > 行级仓库（stock_in_detail.warehouse_number） > 表头仓库
-    const needsInspection = itemInspectionMap[d.item_number || ''] === true;
     let whNumber: string, whName: string, sourceType: string;
     if (needsInspection) {
       whNumber = inspWhNumber;
       whName = inspWhName;
       sourceType = '来料待检';
     } else if (d.warehouse_number) {
-      // 使用行级仓库
       whNumber = d.warehouse_number;
       whName = d.warehouse_name || '';
       sourceType = '采购入库';
     } else {
-      // 兜底到表头仓库
       whNumber = header.warehouse_number;
       whName = header.warehouse_name;
       sourceType = '采购入库';
     }
+    const inspectStatus = needsInspection ? '待检验' : '免检';
 
     // 生成批次号
     const batchNo = await generateBatchNumber('MB', transaction);
@@ -475,7 +476,7 @@ async function executeConfirmStockIn(siNumber: string, operator: string, transac
         basic_unit: d.basic_unit || '',
         warehouse_number: whNumber,
         warehouse_name: whName,
-        quantity: qualifiedQty,
+        quantity: entryQty,
         supplier_number: header.supplier_number || '',
         supplier_name: header.supplier_name || ''
       },
@@ -498,7 +499,7 @@ async function executeConfirmStockIn(siNumber: string, operator: string, transac
         specifications: d.specifications || '',
         basic_unit: d.basic_unit || '',
         warehouse_name: whName,
-        quantity: qualifiedQty
+        quantity: entryQty
       },
       transaction
     });
@@ -510,8 +511,8 @@ async function executeConfirmStockIn(siNumber: string, operator: string, transac
       `SELECT quantity FROM material_inventory WHERE item_number = :itemNo AND warehouse_number = :whNo`,
       { replacements: { itemNo: d.item_number, whNo: whNumber }, transaction }
     );
-    const afterQty = invRows.length ? parseFloat(invRows[0].quantity) : qualifiedQty;
-    const beforeQty = afterQty - qualifiedQty;
+    const afterQty = invRows.length ? parseFloat(invRows[0].quantity) : entryQty;
+    const beforeQty = afterQty - entryQty;
 
     await sequelize.query(`
       INSERT INTO material_inventory_transaction (transaction_number, transaction_type, source_type, source_number,
@@ -531,7 +532,7 @@ async function executeConfirmStockIn(siNumber: string, operator: string, transac
         basic_unit: d.basic_unit || '',
         warehouse_number: whNumber,
         warehouse_name: whName,
-        quantity: qualifiedQty,
+        quantity: entryQty,
         beforeQty, afterQty,
         batchNo,
         supplier_number: header.supplier_number || '',
@@ -542,14 +543,14 @@ async function executeConfirmStockIn(siNumber: string, operator: string, transac
       transaction
     });
 
-    // 更新入库明细批次号
+    // 更新入库明细批次号和检验状态
     await sequelize.query(
-      `UPDATE stock_in_detail SET batch_number = :batchNo WHERE id = :detailId`,
-      { replacements: { batchNo, detailId: d.id }, transaction }
+      `UPDATE stock_in_detail SET batch_number = :batchNo, inspect_status = :inspectStatus WHERE id = :detailId`,
+      { replacements: { batchNo, inspectStatus, detailId: d.id }, transaction }
     );
 
-    // 回写 PO 明细
-    if (d.purchase_detail_id) {
+    // 回写 PO 明细（需检验物料跳过，等检验完成后回写）
+    if (!needsInspection && d.purchase_detail_id) {
       await sequelize.query(`
         UPDATE purchase_order_detail SET
           received_quantity = received_quantity + :qty,
