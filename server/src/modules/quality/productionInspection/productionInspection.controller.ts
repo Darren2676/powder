@@ -65,7 +65,23 @@ export const getProductionInspectionDetail = async (req: Request, res: Response,
     const [records]: any = await sequelize.query(`SELECT * FROM production_inspection WHERE inspection_number = :id`, { replacements: { id } });
     if (!records.length) { res.status(404).json({ success: false, message: '检验记录不存在' }); return; }
     const [items]: any = await sequelize.query(`SELECT * FROM production_inspection_item WHERE inspection_number = :id ORDER BY sort_order`, { replacements: { id } });
-    res.json(success({ ...records[0], items }, '获取检验详情成功'));
+
+    // 获取缺陷明细行（不启用质量特性时使用）
+    const [defects]: any = await sequelize.query(`SELECT * FROM production_inspection_defect WHERE inspection_number = :id ORDER BY line_number`, { replacements: { id } });
+
+    // 获取缺陷分类/缺陷/缺陷原因 下拉选项
+    const [defectClasses]: any = await sequelize.query(`SELECT defect_class_name FROM defect_class ORDER BY defect_class_name`);
+    const [defectsList]: any = await sequelize.query(`SELECT defect_name, defect_class_name FROM defect ORDER BY defect_name`);
+    const [defectReasons]: any = await sequelize.query(`SELECT defect_reason_name FROM defect_reason ORDER BY defect_reason_name`);
+
+    res.json(success({
+      ...records[0], items, defects,
+      options: {
+        defect_classes: defectClasses.map((d: any) => d.defect_class_name),
+        defects: defectsList,
+        defect_reasons: defectReasons.map((d: any) => d.defect_reason_name)
+      }
+    }, '获取检验详情成功'));
   } catch (err) { next(err); }
 };
 
@@ -140,6 +156,35 @@ export const updateProductionInspection = async (req: Request, res: Response, ne
         }
       }
 
+      // 保存缺陷明细行（不启用质量特性时使用）
+      if (Array.isArray(b.defects)) {
+        await sequelize.query(
+          `DELETE FROM production_inspection_defect WHERE inspection_number = :id`,
+          { replacements: { id }, transaction }
+        );
+        for (let i = 0; i < b.defects.length; i++) {
+          const d = b.defects[i];
+          if (!d.defect_name && !d.defect_class_name) continue;
+          await sequelize.query(`
+            INSERT INTO production_inspection_defect
+              (inspection_number, line_number, defect_class_name, defect_name, defect_reason_name, unqualified_quantity, inspect_result, remark)
+            VALUES (:inspection_number, :line_number, :defect_class_name, :defect_name, :defect_reason_name, :unqualified_quantity, :inspect_result, :remark)
+          `, {
+            replacements: {
+              inspection_number: id,
+              line_number: i + 1,
+              defect_class_name: d.defect_class_name || '',
+              defect_name: d.defect_name || '',
+              defect_reason_name: d.defect_reason_name || '',
+              unqualified_quantity: d.unqualified_quantity || 0,
+              inspect_result: d.inspect_result || '',
+              remark: d.remark || ''
+            },
+            transaction
+          });
+        }
+      }
+
       await transaction.commit();
       res.json(success(null, '更新检验记录成功'));
     } catch (err) {
@@ -153,40 +198,83 @@ export const updateProductionInspection = async (req: Request, res: Response, ne
 export const completeInspection = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const b = req.body;
     const [records]: any = await sequelize.query(`SELECT * FROM production_inspection WHERE inspection_number = :id`, { replacements: { id } });
     if (!records.length) { res.status(404).json({ success: false, message: '检验记录不存在' }); return; }
     const record = records[0];
     if (record.status === '已完成') { res.status(403).json({ success: false, message: '该检验记录已完成' }); return; }
 
-    const qualifiedQty = parseFloat(record.qualified_quantity) || 0;
-    const unqualifiedQty = parseFloat(record.unqualified_quantity) || 0;
-    const totalQty = parseFloat(record.total_quantity) || 0;
+    // 使用请求中的合格/不合格数量，或回退到记录中的值
+    const qualifiedQty = b.qualified_quantity != null ? Number(b.qualified_quantity) : (parseFloat(record.qualified_quantity) || 0);
+    const unqualifiedQty = b.unqualified_quantity != null ? Number(b.unqualified_quantity) : (parseFloat(record.unqualified_quantity) || 0);
 
     // 判定结果：如果不合格数量 > 0 则为不合格，否则合格
     const result = unqualifiedQty > 0 ? '不合格' : '合格';
 
-    await sequelize.query(`
-      UPDATE production_inspection SET
-        inspection_result = :result,
-        status = N'已完成',
-        inspection_date = :inspection_date
-      WHERE inspection_number = :id
-    `, {
-      replacements: {
-        id,
-        result,
-        inspection_date: dayjs().format('YYYY/MM/DD HH:mm')
+    const transaction = await sequelize.transaction();
+    try {
+      await sequelize.query(`
+        UPDATE production_inspection SET
+          inspection_result = :result,
+          qualified_quantity = :qualified_quantity,
+          unqualified_quantity = :unqualified_quantity,
+          status = N'已完成',
+          inspection_date = :inspection_date
+        WHERE inspection_number = :id
+      `, {
+        replacements: {
+          id,
+          result,
+          qualified_quantity: qualifiedQty,
+          unqualified_quantity: unqualifiedQty,
+          inspection_date: dayjs().format('YYYY/MM/DD HH:mm')
+        },
+        transaction
+      });
+
+      // 保存缺陷明细行（先删后插）
+      if (Array.isArray(b.defects)) {
+        await sequelize.query(
+          `DELETE FROM production_inspection_defect WHERE inspection_number = :id`,
+          { replacements: { id }, transaction }
+        );
+        for (let i = 0; i < b.defects.length; i++) {
+          const d = b.defects[i];
+          if (!d.defect_name && !d.defect_class_name) continue;
+          await sequelize.query(`
+            INSERT INTO production_inspection_defect
+              (inspection_number, line_number, defect_class_name, defect_name, defect_reason_name, unqualified_quantity, inspect_result, remark)
+            VALUES (:inspection_number, :line_number, :defect_class_name, :defect_name, :defect_reason_name, :unqualified_quantity, :inspect_result, :remark)
+          `, {
+            replacements: {
+              inspection_number: id,
+              line_number: i + 1,
+              defect_class_name: d.defect_class_name || '',
+              defect_name: d.defect_name || '',
+              defect_reason_name: d.defect_reason_name || '',
+              unqualified_quantity: d.unqualified_quantity || 0,
+              inspect_result: d.inspect_result || '',
+              remark: d.remark || ''
+            },
+            transaction
+          });
+        }
       }
-    });
 
-    // 回写工序任务检验状态
-    const inspectStatus = result === '合格' ? '检验合格' : '检验不合格';
-    await sequelize.query(
-      `UPDATE process_task SET inspect_status = :inspectStatus WHERE process_task_number = :taskNo`,
-      { replacements: { inspectStatus, taskNo: record.process_task_number } }
-    );
+      await transaction.commit();
 
-    res.json(success({ inspection_result: result }, `检验完成，判定结果：${result}`));
+      // 回写工序任务检验状态
+      const inspectStatus = result === '合格' ? '检验合格' : '检验不合格';
+      await sequelize.query(
+        `UPDATE process_task SET inspect_status = :inspectStatus WHERE process_task_number = :taskNo`,
+        { replacements: { inspectStatus, taskNo: record.process_task_number } }
+      );
+
+      res.json(success({ inspection_result: result }, `检验完成，判定结果：${result}`));
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
   } catch (err) { next(err); }
 };
 
@@ -268,11 +356,43 @@ export const deleteProductionInspection = async (req: Request, res: Response, ne
       return;
     }
 
+    // === 门控：只允许删除当前生产单最后工序的检验记录 ===
+    const pon = record.production_order_number;
+    const currentStep = record.step_number;
+    if (pon) {
+      // 查询同生产单中工序号更高的检验记录
+      const [laterInspections]: any = await sequelize.query(
+        `SELECT TOP 1 pi.inspection_number, pi.step_number, pi.standard_process_name FROM production_inspection pi WHERE pi.production_order_number = :pon AND pi.step_number > :currentStep`,
+        { replacements: { pon, currentStep } }
+      );
+      if (laterInspections.length > 0) {
+        const later = laterInspections[0];
+        res.status(403).json({ success: false, message: `该生产单存在更高工序(${later.step_number} - ${later.standard_process_name || ''})的检验记录，只能从后道工序依次向前删除。请先删除工序 ${later.step_number} 的检验记录。` });
+        return;
+      }
+
+      // 查询同工序中是否有创建时间更晚的检验记录
+      const [laterSameStep]: any = await sequelize.query(
+        `SELECT TOP 1 pi.inspection_number FROM production_inspection pi WHERE pi.production_order_number = :pon AND pi.step_number = :currentStep AND pi.creation_date > (SELECT creation_date FROM production_inspection WHERE inspection_number = :id)`,
+        { replacements: { pon, currentStep, id: inspectionNumber } }
+      );
+      if (laterSameStep.length > 0) {
+        res.status(403).json({ success: false, message: `该工序存在更晚的检验记录，只能删除最后一条检验记录。` });
+        return;
+      }
+    }
+
     const transaction = await sequelize.transaction();
     try {
       // 删除检验明细项
       await sequelize.query(
         `DELETE FROM production_inspection_item WHERE inspection_number = :id`,
+        { replacements: { id: inspectionNumber }, transaction }
+      );
+
+      // 删除缺陷明细
+      await sequelize.query(
+        `DELETE FROM production_inspection_defect WHERE inspection_number = :id`,
         { replacements: { id: inspectionNumber }, transaction }
       );
 
@@ -319,9 +439,47 @@ export const createInspectionFromWorkReport = async (params: {
   const inspectionNumber = await generateInspectionNumber(transaction);
   const now = dayjs().format('YYYY/MM/DD HH:mm');
 
+  // 查询物料主数据的 enable_prod_quality_chars
+  const [itemRows]: any = await sequelize.query(
+    `SELECT TOP 1 enable_prod_quality_chars FROM item_master WHERE item_number = :item_number`,
+    { replacements: { item_number: params.item_number }, ...txOpt }
+  );
+  const itemEnableChars = (itemRows.length > 0 && itemRows[0].enable_prod_quality_chars === 'Y') ? 'Y' : '';
+
+  // 查询检验方案的 enable_quality_chars
+  let planEnableChars = '';
+  if (params.inspection_plan_name) {
+    const [planRows]: any = await sequelize.query(
+      `SELECT TOP 1 enable_quality_chars FROM inspection_plan WHERE plan_name = :plan_name`,
+      { replacements: { plan_name: params.inspection_plan_name }, ...txOpt }
+    );
+    if (planRows.length > 0 && planRows[0].enable_quality_chars === 'Y') {
+      planEnableChars = 'Y';
+    }
+  }
+
+  // 查询检验规范的 enable_quality_chars 和 defect_categories
+  let specEnableChars = '';
+  let defect_categories = '';
+  if (params.inspection_spec_name) {
+    const [specRows]: any = await sequelize.query(
+      `SELECT TOP 1 enable_quality_chars, defect_categories FROM inspection_spec WHERE spec_name = :spec_name`,
+      { replacements: { spec_name: params.inspection_spec_name }, ...txOpt }
+    );
+    if (specRows.length > 0 && specRows[0].enable_quality_chars === 'Y') {
+      specEnableChars = 'Y';
+    }
+    if (specRows.length > 0) {
+      defect_categories = specRows[0].defect_categories || '';
+    }
+  }
+
+  // 优先级：物料主数据 > 检验方案 > 检验规范
+  const enable_quality_chars = itemEnableChars || planEnableChars || specEnableChars || 'N';
+
   await sequelize.query(`
-    INSERT INTO production_inspection (inspection_number, work_report_number, process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, inspect_type, inspection_plan_name, inspection_spec_name, total_quantity, qualified_quantity, unqualified_quantity, inspection_result, status, creation_date, creation_man)
-    VALUES (:inspection_number, :work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_number, :item_name, :specifications, :inspect_type, :inspection_plan_name, :inspection_spec_name, :total_quantity, 0, 0, N'待检', N'待检', :creation_date, :creation_man)
+    INSERT INTO production_inspection (inspection_number, work_report_number, process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, inspect_type, inspection_plan_name, inspection_spec_name, total_quantity, qualified_quantity, unqualified_quantity, inspection_result, status, creation_date, creation_man, enable_quality_chars, defect_categories)
+    VALUES (:inspection_number, :work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_number, :item_name, :specifications, :inspect_type, :inspection_plan_name, :inspection_spec_name, :total_quantity, 0, 0, N'待检', N'待检', :creation_date, :creation_man, :enable_quality_chars, :defect_categories)
   `, {
     replacements: {
       inspection_number: inspectionNumber,
@@ -338,13 +496,15 @@ export const createInspectionFromWorkReport = async (params: {
       inspection_spec_name: params.inspection_spec_name,
       total_quantity: params.total_quantity,
       creation_date: now,
-      creation_man: params.creation_man
+      creation_man: params.creation_man,
+      enable_quality_chars,
+      defect_categories
     },
     ...txOpt
   });
 
-  // 根据检验规范复制明细项
-  if (params.inspection_spec_name) {
+  // 仅在启用质量特性时，根据检验规范复制明细项
+  if (enable_quality_chars === 'Y' && params.inspection_spec_name) {
     const [specItems]: any = await sequelize.query(
       `SELECT char_name, inspect_requirement, data_type, upper_limit, standard_value, lower_limit, sort_order FROM inspection_spec_item WHERE spec_name = :specName ORDER BY sort_order`,
       { replacements: { specName: params.inspection_spec_name }, ...txOpt }

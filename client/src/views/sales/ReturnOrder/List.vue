@@ -3,11 +3,13 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import {
   SearchOutlined, ReloadOutlined, PlusOutlined, EyeOutlined,
-  EditOutlined, DeleteOutlined, SettingOutlined, DownOutlined, HistoryOutlined
+  EditOutlined, DeleteOutlined, SettingOutlined, DownOutlined, HistoryOutlined,
+  StopOutlined
 } from '@ant-design/icons-vue'
 import {
   getReturnOrders, getReturnOrderDetail, getShippingOrderForReturn,
-  createReturnOrder, updateReturnOrder, deleteReturnOrder
+  createReturnOrder, updateReturnOrder, deleteReturnOrder,
+  cancelReturnOrder
 } from '@/api/sales/returnOrder'
 import { reverseApproval } from '@/api/system/approval'
 import { startWorkflow, withdrawWorkflow, getInstanceByRecord } from '@/api/system/workflow'
@@ -56,7 +58,7 @@ const {
 })
 
 const typeColors: Record<string, string> = { '退款退货': 'orange', '退货换货': 'blue' }
-const statusColors: Record<string, string> = { '待确认': 'processing', '已确认': 'success', '已驳回': 'default' }
+const statusColors: Record<string, string> = { '待确认': 'processing', '已确认': 'success', '已驳回': 'default', '已取消': 'error' }
 
 const formatDateTime = (date: any) => date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '-'
 
@@ -400,6 +402,31 @@ const handleDelete = (record: any) => {
   })
 }
 
+// ==================== 撤消退货单 ====================
+const handleCancelReturn = (record: any) => {
+  const inboundWarning = record.inbound_status === '已入库'
+    ? '\n\n⚠ 此退货单已入库，撤消后将自动回冲库存并作废入库流水。'
+    : ''
+  Modal.confirm({
+    title: '撤消确认',
+    content: `确认撤消退货单「${record.return_order_number}」？${inboundWarning}`,
+    okText: '确认撤消',
+    okType: 'danger' as any,
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        const res: any = await cancelReturnOrder(record.return_order_number)
+        if (res?.success) {
+          message.success('退货单已撤消')
+          fetchData()
+        }
+      } catch (err: any) {
+        message.error(err.response?.data?.message || '撤消失败')
+      }
+    }
+  })
+}
+
 // 总退货数量
 const totalReturnQty = computed(() => {
   return formData.details.reduce((sum: number, d: any) => sum + (Number(d.return_quantity) || 0), 0)
@@ -436,6 +463,7 @@ onMounted(async () => {
           <a-select-option value="待确认">待确认</a-select-option>
           <a-select-option value="已确认">已确认</a-select-option>
           <a-select-option value="已驳回">已驳回</a-select-option>
+          <a-select-option value="已取消">已取消</a-select-option>
         </a-select>
         <a-select v-model:value="filterApprovalStatus" placeholder="审批状态" style="width: 120px" allow-clear @change="handleSearch">
           <a-select-option value="草稿">草稿</a-select-option>
@@ -496,6 +524,9 @@ onMounted(async () => {
                     @click="handleWithdraw(record)">撤回提交</a-menu-item>
                   <a-menu-item v-if="record.approval_status === '已审批'"
                     @click="handleReverse(record)"><span style="color: #ff4d4f">反审退回</span></a-menu-item>
+                  <a-menu-divider v-if="record.status === '已确认'" />
+                  <a-menu-item v-if="record.status === '已确认'"
+                    @click="handleCancelReturn(record)"><StopOutlined style="margin-right:4px" /><span style="color: #ff4d4f">撤消</span></a-menu-item>
                   <a-menu-divider />
                   <a-menu-item @click="handleShowApprovalLog(record)">
                     <HistoryOutlined /> 审批历史</a-menu-item>

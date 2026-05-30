@@ -32,3 +32,7 @@ export function updateShippingOrderStatus(shipping_order_number: string, data: {
 export function getShippingOrderPrintData(shipping_order_number: string) {
   return request.get(`/shipping-orders/${shipping_order_number}/print`)
 }
+
+export function cancelShippingOrder(shipping_order_number: string) {
+  return request.post(`/shipping-orders/${shipping_order_number}/cancel`)
+}

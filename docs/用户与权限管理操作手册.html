@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>用户与权限管理操作使用手册</title>
+<style>
+  @page { size: A4; margin: 18mm 20mm 18mm 20mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Microsoft YaHei", "SimSun", sans-serif;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #333;
+    max-width: 100%;
+  }
+  h1 { font-size: 22px; text-align: center; margin: 0 0 4px; padding-bottom: 10px; border-bottom: 2px solid #1890ff; }
+  h2 { font-size: 17px; margin: 28px 0 12px; padding: 6px 0 6px 10px; border-left: 4px solid #1890ff; background: #f0f7ff; }
+  h3 { font-size: 15px; margin: 20px 0 8px; color: #1890ff; }
+  h4 { font-size: 14px; margin: 14px 0 6px; color: #555; }
+  p { margin: 6px 0; }
+  .subtitle { text-align: center; color: #888; font-size: 12px; margin-bottom: 20px; }
+
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 12px; }
+  th, td { border: 1px solid #d9d9d9; padding: 6px 10px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; white-space: nowrap; }
+  td { vertical-align: top; }
+
+  ul, ol { margin: 6px 0 6px 24px; }
+  li { margin: 2px 0; }
+
+  .flow { background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .flow ol { margin-left: 20px; }
+  .flow ol li { margin: 4px 0; font-weight: 500; }
+
+  .note { background: #fff7e6; border: 1px solid #ffd591; border-radius: 6px; padding: 10px 14px; margin: 10px 0; }
+  .note strong { color: #fa8c16; }
+
+  .warn { background: #fff1f0; border: 1px solid #ffa39e; border-radius: 6px; padding: 10px 14px; margin: 10px 0; }
+  .warn strong { color: #ff4d4f; }
+
+  .info { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; padding: 10px 14px; margin: 10px 0; }
+  .info strong { color: #1890ff; }
+
+  .toc { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 6px; padding: 14px 20px; margin: 16px 0; }
+  .toc h3 { margin-top: 0; margin-bottom: 8px; }
+  .toc ul { list-style: none; margin-left: 0; }
+  .toc li { margin: 4px 0; }
+  .toc a { color: #1890ff; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  .page-break { page-break-before: always; }
+
+  code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: 11px; color: #fff; margin: 0 2px; }
+  .tag-blue { background: #1890ff; }
+  .tag-green { background: #52c41a; }
+  .tag-orange { background: #fa8c16; }
+  .tag-red { background: #ff4d4f; }
+  .tag-purple { background: #722ed1; }
+  .tag-default { background: #d9d9d9; color: #666; }
+
+  .roadmap { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 12px 0; padding: 12px 16px; background: #f0f7ff; border: 1px solid #91d5ff; border-radius: 8px; }
+  .roadmap-step { display: flex; align-items: center; gap: 4px; padding: 4px 10px; background: #fff; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 12px; white-space: nowrap; }
+  .roadmap-arrow { font-size: 16px; color: #1890ff; }
+  .roadmap-step .num { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; background: #1890ff; color: #fff; font-size: 11px; font-weight: 700; margin-right: 2px; }
+</style>
+</head>
+<body>
+
+<h1>用户与权限管理操作使用手册</h1>
+<p class="subtitle">涵盖：部门管理 → 权限菜单管理 → 角色管理 → 用户管理 — 从新建用户到最终授权的完整流程</p>
+
+<div class="toc">
+<h3>📑 目录</h3>
+<ul>
+  <li><a href="#overview">总体概览</a> — 四模块关系图与授权流程</li>
+  <li><a href="#s1">一、部门管理</a> — 建立组织架构树、查看部门人员</li>
+  <li><a href="#s2">二、权限菜单管理</a> — 定义系统菜单与页面、配置路由与图标</li>
+  <li><a href="#s3">三、角色管理</a> — 创建角色、分配权限树（菜单/页面/操作/字段）</li>
+  <li><a href="#s4">四、用户管理</a> — 新建用户、编辑角色与部门、账户安全操作、登录日志、安全策略配置</li>
+  <li><a href="#s5">五、完整授权流程演示</a> — 从零开始：建部门 → 建权限 → 建角色分配权限 → 建用户授权</li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<!-- 总体概览 -->
+<!-- ============================================================ -->
+<h2 id="overview">总体概览</h2>
+
+<h3>四模块关系</h3>
+<p>系统的用户权限管理由四个模块组成，它们之间存在严格的依赖关系：</p>
+
+<div class="roadmap">
+  <span class="roadmap-step"><span class="num">1</span> 部门管理</span>
+  <span class="roadmap-arrow">→</span>
+  <span class="roadmap-step"><span class="num">2</span> 权限菜单管理</span>
+  <span class="roadmap-arrow">→</span>
+  <span class="roadmap-step"><span class="num">3</span> 角色管理</span>
+  <span class="roadmap-arrow">→</span>
+  <span class="roadmap-step"><span class="num">4</span> 用户管理</span>
+</div>
+
+<table>
+  <tr><th style="width:120px;">模块</th><th style="width:160px;">导航路径</th><th>作用</th></tr>
+  <tr><td><strong>部门管理</strong></td><td>系统设置 → 部门管理</td><td>建立公司组织架构树，定义部门层级关系。用户创建时可选择所属部门。</td></tr>
+  <tr><td><strong>权限菜单管理</strong></td><td>系统设置 → 权限菜单管理</td><td>定义系统所有菜单和功能页面，配置路由路径与图标。这是权限授权的"原材料"。</td></tr>
+  <tr><td><strong>角色管理</strong></td><td>系统设置 → 角色管理</td><td>创建角色（如管理员、生产经理、质检员），为每个角色分配可访问的权限树。一个角色 = 一组权限集合。</td></tr>
+  <tr><td><strong>用户管理</strong></td><td>系统设置 → 用户管理</td><td>创建系统登录用户，分配角色、部门，管理账户状态（激活/停用/禁用/锁定）。用户通过角色获得权限。</td></tr>
+</table>
+
+<h3>授权核心逻辑</h3>
+<p>用户登录后，系统根据其<strong>角色</strong>关联的<strong>权限列表</strong>，动态渲染菜单树并控制页面访问：</p>
+<ol>
+  <li><strong>用户</strong> 拥有一个 <strong>角色</strong>（如 staff / manager / admin）</li>
+  <li><strong>角色</strong> 拥有一个 <strong>权限集合</strong>（通过权限树勾选）</li>
+  <li><strong>权限</strong> 分为四种类型：<span class="tag tag-blue">菜单</span>（一级/二级模块）、<span class="tag tag-green">页面</span>（功能页面）、<span class="tag tag-orange">操作</span>（增删改查按钮）、<span class="tag tag-purple">字段</span>（敏感字段可见性）</li>
+  <li>系统根据用户的角色权限，仅显示该用户有权限访问的菜单和页面</li>
+</ol>
+
+<div class="page-break"></div>
+
+<!-- ============================================================ -->
+<!-- 一、部门管理 -->
+<!-- ============================================================ -->
+<h2 id="s1">一、部门管理</h2>
+
+<h3>1.1 功能概述</h3>
+<p>部门管理用于建立公司的<strong>组织架构树</strong>，支持无限层级的父子部门结构。用户创建时可绑定所属部门，部门也可查看其下的所有用户。</p>
+
+<h3>1.2 页面布局</h3>
+<ul>
+  <li><strong>左侧</strong>：部门树形结构，以树状图展示所有部门及其层级关系</li>
+  <li><strong>右侧</strong>：选中部门的子部门列表（表格形式），支持搜索和状态筛选</li>
+  <li><strong>顶部面包屑</strong>：显示当前选中部门的完整路径（如：生产部 > 注塑车间 > A班组）</li>
+</ul>
+
+<h3>1.3 新建部门</h3>
+<div class="flow">
+<ol>
+  <li>点击页面右上角 <strong>"新建"</strong> 按钮</li>
+  <li>在弹窗中填写部门信息</li>
+  <li>点击确定完成创建，左侧树和右侧列表自动刷新</li>
+</ol>
+</div>
+
+<h4>部门表单字段说明</h4>
+<table>
+  <tr><th style="width:110px;">字段</th><th style="width:80px;">必填</th><th>说明</th></tr>
+  <tr><td>部门编码</td><td>是</td><td>部门唯一编码，如 PROD、QA、HR</td></tr>
+  <tr><td>部门名称</td><td>是</td><td>部门显示名称，如 生产部、质检部</td></tr>
+  <tr><td>上级部门</td><td>否</td><td>树形选择器选择父部门。留空则为顶级部门。</td></tr>
+  <tr><td>排序号</td><td>否</td><td>数字越小越靠前，用于控制同级部门的显示顺序</td></tr>
+  <tr><td>描述</td><td>否</td><td>部门描述信息（可选）</td></tr>
+</table>
+
+<h4>快捷创建子部门</h4>
+<p>在右侧列表中，每个部门行提供 <strong>"添加子部门"</strong> 按钮，点击后自动将上级部门设置为当前部门，方便快速建立层级结构。</p>
+
+<h3>1.4 编辑与停用</h3>
+<ul>
+  <li><strong>编辑</strong>：修改部门编码、名称、上级部门、排序、描述，还可切换启用/停用状态</li>
+  <li><strong>停用</strong>：将已启用的部门标记为停用。停用后的部门不会在用户创建/编辑的部门选择中出现。</li>
+  <li>编辑上级部门时，系统会自动<strong>排除自身及其子部门</strong>，防止循环引用</li>
+</ul>
+
+<h3>1.5 查看部门人员</h3>
+<p>点击部门行的 <strong>"查看人员"</strong> 按钮，右侧滑出抽屉面板，列出该部门下所有用户，显示用户名、真实姓名、角色标签和邮箱。</p>
+
+<div class="note">
+<strong>提示：</strong>新建用户时，"部门"下拉列表的数据来源即为部门管理中状态为"启用"的部门。请确保在创建用户前已建立好部门结构。
+</div>
+
+<div class="page-break"></div>
+
+<!-- ============================================================ -->
+<!-- 二、权限菜单管理 -->
+<!-- ============================================================ -->
+<h2 id="s2">二、权限菜单管理</h2>
+
+<h3>2.1 功能概述</h3>
+<p>权限菜单管理用于定义系统所有的<strong>菜单项</strong>和<strong>功能页面</strong>，是整个权限体系的"原材料"。每个菜单/页面都会在角色管理的权限树中出现，供管理员分配给角色。</p>
+
+<h3>2.2 权限层级结构</h3>
+<p>权限采用<strong>树形层级</strong>结构：</p>
+<pre><code>顶级菜单（如：销售管理）
+  ├── 二级菜单（如：销售订单）
+  │     └── 页面（如：销售订单列表）
+  └── 二级菜单（如：销售发货）
+        └── 页面（如：发货单列表）</code></pre>
+
+<h3>2.3 新建菜单</h3>
+<div class="flow">
+<ol>
+  <li>点击 <strong>"新建菜单"</strong> 按钮</li>
+  <li>权限类型选择 <strong>"菜单/子菜单"</strong></li>
+  <li>可选选择父级菜单（留空为顶级菜单）</li>
+  <li>填写菜单信息，选择图标</li>
+  <li>点击确定保存</li>
+</ol>
+</div>
+
+<h4>菜单表单字段</h4>
+<table>
+  <tr><th style="width:110px;">字段</th><th style="width:80px;">必填</th><th>说明</th></tr>
+  <tr><td>权限名称</td><td>是</td><td>菜单显示名称，如"销售管理"、"生产管理"</td></tr>
+  <tr><td>权限编码</td><td>是</td><td>唯一编码，如 sales、production。创建后不可修改。</td></tr>
+  <tr><td>权限类型</td><td>是</td><td><span class="tag tag-blue">菜单</span> 或 <span class="tag tag-green">页面</span></td></tr>
+  <tr><td>父级菜单</td><td>否</td><td>选择上级菜单，带缩进显示层级</td></tr>
+  <tr><td>菜单Key</td><td>否</td><td>用于路由匹配的唯一标识，如 sales-management</td></tr>
+  <tr><td>路由路径</td><td>否</td><td>前端路由路径，如 /sales-orders（页面类型必填）</td></tr>
+  <tr><td>图标</td><td>否</td><td>从40+图标库中选择，仅菜单类型可设置</td></tr>
+  <tr><td>排序</td><td>否</td><td>控制同级菜单的显示顺序</td></tr>
+</table>
+
+<h3>2.4 新建页面</h3>
+<p>在菜单行点击 <strong>"添加页面"</strong> 按钮，系统自动将权限类型设为"页面"、父级菜单设为当前菜单。页面类型需要填写<strong>路由路径</strong>。</p>
+
+<h3>2.5 编辑与删除</h3>
+<ul>
+  <li><strong>编辑</strong>：修改权限名称、菜单Key、路由路径、图标、排序、状态（启用/禁用）</li>
+  <li><strong>删除</strong>：删除权限节点（含子节点将被级联删除）</li>
+  <li>保存后系统自动刷新当前用户的菜单树和权限缓存，变更<strong>立即生效</strong></li>
+</ul>
+
+<div class="warn">
+<strong>注意：</strong>删除权限节点会同时删除其下所有子权限，且会影响已分配该权限的角色。请谨慎操作。
+</div>
+
+<div class="page-break"></div>
+
+<!-- ============================================================ -->
+<!-- 三、角色管理 -->
+<!-- ============================================================ -->
+<h2 id="s3">三、角色管理</h2>
+
+<h3>3.1 功能概述</h3>
+<p>角色管理是权限体系的<strong>核心枢纽</strong>。每个角色代表一组权限的集合，用户通过被赋予角色来获得对应的菜单访问和操作权限。</p>
+
+<h3>3.2 角色列表信息</h3>
+<table>
+  <tr><th>列</th><th>说明</th></tr>
+  <tr><td>角色名称</td><td>角色的显示名称，如"生产管理员"</td></tr>
+  <tr><td>角色编码</td><td>角色唯一编码，如 production_admin</td></tr>
+  <tr><td>类型</td><td><span class="tag tag-blue">系统角色</span>（系统预置，不可删除）/ <span class="tag tag-default">自定义</span>（用户创建）</td></tr>
+  <tr><td>状态</td><td><span class="tag tag-green">启用</span> / <span class="tag tag-red">禁用</span></td></tr>
+  <tr><td>用户数</td><td>使用该角色的用户数量（蓝色徽标）</td></tr>
+  <tr><td>权限数</td><td>该角色拥有的权限项数量（绿色徽标）</td></tr>
+</table>
+
+<h3>3.3 新建角色</h3>
+<div class="flow">
+<ol>
+  <li>点击 <strong>"新建角色"</strong> 按钮</li>
+  <li>填写角色名称、角色编码、描述、排序</li>
+  <li>点击确定保存</li>
+  <li>新创建的角色默认<strong>没有任何权限</strong>，需要执行"分配权限"操作</li>
+</ol>
+</div>
+
+<h4>角色表单字段</h4>
+<table>
+  <tr><th style="width:110px;">字段</th><th style="width:80px;">必填</th><th>说明</th></tr>
+  <tr><td>角色名称</td><td>是</td><td>如"生产操作员"、"质检主管"</td></tr>
+  <tr><td>角色编码</td><td>是</td><td>唯一编码，创建后不可修改</td></tr>
+  <tr><td>描述</td><td>否</td><td>对角色的说明</td></tr>
+  <tr><td>排序</td><td>否</td><td>数字越小越靠前</td></tr>
+  <tr><td>状态</td><td>-</td><td>编辑时可切换：启用/禁用</td></tr>
+</table>
+
+<h3>3.4 分配权限（核心操作）</h3>
+<p>点击角色行的 <strong>"分配权限"</strong> 按钮，弹出权限分配对话框：</p>
+
+<div class="flow">
+<ol>
+  <li>系统加载完整的<strong>权限树</strong>（来自权限菜单管理模块）</li>
+  <li>权限树按四种类型显示，配以颜色图例：
+    <ul>
+      <li><span class="tag tag-blue">菜单</span> 一级/二级模块</li>
+      <li><span class="tag tag-green">页面</span> 功能页面</li>
+      <li><span class="tag tag-orange">操作</span> 增删改查按钮</li>
+      <li><span class="tag tag-purple">字段</span> 敏感字段</li>
+    </ul>
+  </li>
+  <li>勾选需要的权限节点（父节点会自动半选/全选）</li>
+  <li>支持 <strong>"全选"</strong> 和 <strong>"取消全选"</strong> 快捷操作</li>
+  <li>顶部实时显示已选权限数量</li>
+  <li>点击确认保存，系统自动分配权限并刷新缓存</li>
+</ol>
+</div>
+
+<div class="info">
+<strong>智能权限计算：</strong>系统根据用户勾选的叶子节点，自动向上推导所有需要选中的父节点ID。保存后，用户的菜单树和权限缓存会<strong>立即刷新生效</strong>。
+</div>
+
+<h3>3.5 编辑与删除</h3>
+<ul>
+  <li><strong>编辑</strong>：修改角色名称、描述、排序、状态</li>
+  <li><strong>删除</strong>：仅自定义角色可删除，系统角色不可删除</li>
+</ul>
+
+<div class="page-break"></div>
+
+<!-- ============================================================ -->
+<!-- 四、用户管理 -->
+<!-- ============================================================ -->
+<h2 id="s4">四、用户管理</h2>
+
+<h3>4.1 功能概述</h3>
+<p>用户管理是系统账户的全生命周期管理中心，包含三个子标签页：<strong>用户管理</strong>、<strong>登录日志</strong>、<strong>安全设置</strong>。</p>
+
+<h3>4.2 Tab 1：用户管理</h3>
+
+<h4>用户列表</h4>
+<table>
+  <tr><th>列</th><th>说明</th></tr>
+  <tr><td>ID</td><td>用户唯一标识</td></tr>
+  <tr><td>用户名</td><td>登录用户名</td></tr>
+  <tr><td>员工编号/姓名</td><td>关联的员工信息</td></tr>
+  <tr><td>真实姓名</td><td>用户真实姓名</td></tr>
+  <tr><td>手机号</td><td>用户手机号码</td></tr>
+  <tr><td>邮箱</td><td>用户电子邮箱</td></tr>
+  <tr><td>角色</td><td>颜色标签显示：<span class="tag tag-red">管理员</span> <span class="tag tag-blue">经理</span> <span class="tag tag-green">员工</span></td></tr>
+  <tr><td>部门</td><td>所属部门名称</td></tr>
+  <tr><td>状态</td><td>激活/停用/禁用 + 锁定标记（<span class="tag tag-red">已锁定</span>）</td></tr>
+  <tr><td>创建时间</td><td>账户创建时间</td></tr>
+</table>
+
+<h4>筛选功能</h4>
+<ul>
+  <li><strong>角色筛选</strong>：按管理员/经理/员工快速过滤</li>
+  <li><strong>状态筛选</strong>：按激活/停用/禁用筛选</li>
+  <li><strong>搜索</strong>：按用户名或姓名模糊搜索</li>
+</ul>
+
+<h4>行选择</h4>
+<p>用户列表使用<strong>单选</strong>模式，选中一个用户后可在"安全设置"标签页中对该用户执行安全操作。</p>
+
+<h4>新建用户</h4>
+<div class="flow">
+<ol>
+  <li>点击 <strong>"新增"</strong> 按钮，弹出创建用户对话框</li>
+  <li>填写用户基本信息</li>
+  <li>选择关联员工（自动填充姓名和部门）</li>
+  <li>选择角色和部门</li>
+  <li>点击"创建"完成</li>
+</ol>
+</div>
+
+<h4>新建用户表单字段</h4>
+<table>
+  <tr><th style="width:120px;">字段</th><th style="width:60px;">必填</th><th>说明</th></tr>
+  <tr><td>用户名</td><td>是</td><td>系统登录用户名，需唯一</td></tr>
+  <tr><td>密码</td><td>是</td><td>至少6个字符</td></tr>
+  <tr><td>选择员工</td><td>否</td><td>下拉搜索选择已有员工，选择后自动填充员工姓名、真实姓名、部门</td></tr>
+  <tr><td>员工姓名</td><td>自动</td><td>选择员工后自动填充，只读</td></tr>
+  <tr><td>真实姓名</td><td>自动</td><td>选择员工后自动填充</td></tr>
+  <tr><td>邮箱</td><td>否</td><td>用户电子邮箱（选填）</td></tr>
+  <tr><td>手机号</td><td>是</td><td>用户手机号码</td></tr>
+  <tr><td>角色</td><td>是</td><td>选择：管理员 / 经理 / 员工。决定用户可访问的菜单和功能。</td></tr>
+  <tr><td>部门</td><td>否</td><td>选择用户所属部门</td></tr>
+  <tr><td>状态</td><td>否</td><td>激活 / 停用 / 禁用（默认激活）</td></tr>
+</table>
+
+<div class="note">
+<strong>提示：</strong>选择员工时，系统会自动关联员工档案中的姓名和部门信息，减少手动输入。员工数据来源于"基础数据 → 员工管理"模块。
+</div>
+
+<h4>编辑用户</h4>
+<p>点击操作列的 <strong>"编辑"</strong> 按钮，可修改用户的：<strong>角色</strong>、<strong>部门</strong>、<strong>状态</strong>（激活/停用/禁用）。</p>
+
+<h4>"更多"下拉菜单</h4>
+<p>每个用户行提供"更多"下拉菜单，包含以下操作：</p>
+<table>
+  <tr><th>操作</th><th>图标</th><th>条件</th><th>说明</th></tr>
+  <tr><td>重置密码</td><td>🔑</td><td>始终可用</td><td>为该用户设置新密码</td></tr>
+  <tr><td>解锁</td><td>🔓</td><td>用户被锁定时显示</td><td>解除登录失败导致的账户锁定</td></tr>
+  <tr><td>停用</td><td>⏸</td><td>用户为"激活"状态</td><td>停用后用户无法登录</td></tr>
+  <tr><td>禁用</td><td>🚫</td><td>用户为"激活"状态</td><td>禁用后用户无法登录系统</td></tr>
+  <tr><td>激活</td><td>▶</td><td>用户为"停用"状态</td><td>恢复停用的用户为激活状态</td></tr>
+  <tr><td>启用</td><td>✅</td><td>用户为"禁用"状态</td><td>恢复禁用的用户为激活状态</td></tr>
+  <tr><td>删除</td><td>🗑</td><td>用户为"停用"状态</td><td>永久删除用户（不可恢复）</td></tr>
+</table>
+
+<h4>用户状态说明</h4>
+<table>
+  <tr><th>状态</th><th>含义</th><th>能否登录</th><th>可转换到</th></tr>
+  <tr><td><span class="tag tag-green">激活 (active)</span></td><td>正常使用中</td><td>是</td><td>停用、禁用</td></tr>
+  <tr><td><span class="tag tag-orange">停用 (inactive)</span></td><td>临时停用</td><td>否</td><td>激活、删除</td></tr>
+  <tr><td><span class="tag tag-red">禁用 (disabled)</span></td><td>被禁用</td><td>否</td><td>启用</td></tr>
+  <tr><td><span class="tag tag-red">已锁定</span></td><td>登录失败超限自动锁定</td><td>否（临时）</td><td>解锁（恢复原状态）</td></tr>
+</table>
+
+<h3>4.3 Tab 2：登录日志</h3>
+<p>记录所有用户的登录历史，用于安全审计：</p>
+<table>
+  <tr><th>字段</th><th>说明</th></tr>
+  <tr><td>用户名</td><td>登录用户名</td></tr>
+  <tr><td>登录时间</td><td>精确到秒的登录时间戳</td></tr>
+  <tr><td>IP地址</td><td>登录来源IP</td></tr>
+  <tr><td>状态</td><td><span class="tag tag-green">成功</span> / <span class="tag tag-red">失败</span></td></tr>
+  <tr><td>失败原因</td><td>登录失败时的具体原因（如密码错误、账户锁定等）</td></tr>
+  <tr><td>设备类型</td><td>登录设备类型标签</td></tr>
+  <tr><td>设备ID</td><td>设备唯一标识</td></tr>
+</table>
+<p>支持按<strong>用户名</strong>、<strong>状态</strong>（成功/失败）、<strong>日期范围</strong>组合查询。</p>
+
+<h3>4.4 Tab 3：安全设置</h3>
+<p>安全设置分为两个区域：<strong>用户安全操作</strong>（针对选中用户的快捷操作）和<strong>系统安全策略</strong>。</p>
+
+<h4>用户安全操作</h4>
+<p>先在用户列表中<strong>选中一个用户</strong>，然后在此处可执行：</p>
+<ul>
+  <li><strong>重置密码</strong>：输入新密码和确认密码，为该用户重置密码</li>
+  <li><strong>解锁账户</strong>：解除因登录失败超限导致的锁定</li>
+  <li><strong>禁用/启用账户</strong>：快速切换用户状态</li>
+</ul>
+
+<h4>密码策略配置</h4>
+<table>
+  <tr><th>配置项</th><th>说明</th><th>默认值</th></tr>
+  <tr><td>密码最小长度</td><td>用户密码的最小字符数</td><td>6</td></tr>
+  <tr><td>需要大写字母</td><td>密码是否必须包含大写字母</td><td>否</td></tr>
+  <tr><td>需要小写字母</td><td>密码是否必须包含小写字母</td><td>否</td></tr>
+  <tr><td>需要数字</td><td>密码是否必须包含数字</td><td>否</td></tr>
+  <tr><td>需要特殊字符</td><td>密码是否必须包含特殊字符</td><td>否</td></tr>
+</table>
+
+<h4>登录安全配置</h4>
+<table>
+  <tr><th>配置项</th><th>说明</th><th>默认值</th></tr>
+  <tr><td>最大登录失败次数</td><td>连续登录失败达到此次数后锁定账户</td><td>5次</td></tr>
+  <tr><td>账户锁定时长(分钟)</td><td>账户被锁定后自动解锁的时长</td><td>30分钟</td></tr>
+  <tr><td>启用登录日志</td><td>是否记录用户登录日志</td><td>启用</td></tr>
+</table>
+<p>修改后点击右上角 <strong>"保存设置"</strong> 按钮使配置生效。</p>
+
+<div class="page-break"></div>
+
+<!-- ============================================================ -->
+<!-- 五、完整授权流程演示 -->
+<!-- ============================================================ -->
+<h2 id="s5">五、完整授权流程演示</h2>
+
+<h3>5.1 场景说明</h3>
+<p>假设需要为<strong>质检部的新员工"张三"</strong>创建系统账户，他只应看到质量管理相关的功能。按照以下四步完成从零到授权的完整流程：</p>
+
+<h3>5.2 第一步：建立部门结构</h3>
+<div class="flow">
+<ol>
+  <li>进入 <strong>系统设置 → 部门管理</strong></li>
+  <li>如果"质检部"不存在，点击"新建"：
+    <ul>
+      <li>部门编码：<code>QA</code></li>
+      <li>部门名称：<code>质检部</code></li>
+      <li>上级部门：留空（作为顶级部门）</li>
+      <li>排序号：<code>10</code></li>
+    </ul>
+  </li>
+  <li>如需子部门（如"来料检验组"），选中"质检部"后点击"新建"或在质检部行点击"添加子部门"：
+    <ul>
+      <li>部门编码：<code>QA-IN</code></li>
+      <li>部门名称：<code>来料检验组</code></li>
+      <li>上级部门：自动设为"质检部"</li>
+    </ul>
+  </li>
+</ol>
+</div>
+
+<h3>5.3 第二步：确认权限菜单</h3>
+<div class="flow">
+<ol>
+  <li>进入 <strong>系统设置 → 权限菜单管理</strong></li>
+  <li>检查是否已存在"质量管理"菜单及其子页面。如不存在：
+    <ul>
+      <li>新建菜单：权限名称="质量管理"，编码=<code>quality</code>，类型=菜单</li>
+      <li>在"质量管理"菜单下添加页面：来料检验、生产检验、不合格处理等</li>
+    </ul>
+  </li>
+  <li>确认每个页面的<strong>路由路径</strong>已正确填写</li>
+</ol>
+</div>
+
+<div class="note">
+<strong>提示：</strong>通常权限菜单在系统初始化时已配置完整，此步骤主要是确认必要的菜单和页面是否都已存在且启用。
+</div>
+
+<h3>5.4 第三步：创建角色并分配权限（关键步骤）</h3>
+<div class="flow">
+<ol>
+  <li>进入 <strong>系统设置 → 角色管理</strong></li>
+  <li>点击 <strong>"新建角色"</strong>：
+    <ul>
+      <li>角色名称：<code>质检操作员</code></li>
+      <li>角色编码：<code>qc_operator</code></li>
+      <li>描述：<code>负责来料检验和生产检验的操作人员</code></li>
+      <li>排序：<code>20</code></li>
+    </ul>
+  </li>
+  <li>角色创建后，点击该角色的 <strong>"分配权限"</strong> 按钮</li>
+  <li>在权限树中展开"质量管理"节点，勾选质检员需要的页面：
+    <ul>
+      <li>☑ 来料检验通知</li>
+      <li>☑ 收料检验方案</li>
+      <li>☑ 生产检验管理</li>
+      <li>☑ 不合格品待处理</li>
+    </ul>
+  </li>
+  <li>还可以勾选基础数据中与质量相关的页面（如检验规范、缺陷分类等）</li>
+  <li>确认已选权限数量，点击确定保存</li>
+</ol>
+</div>
+
+<h3>5.5 第四步：创建用户并授权</h3>
+<div class="flow">
+<ol>
+  <li>进入 <strong>系统设置 → 用户管理</strong></li>
+  <li>点击 <strong>"新增"</strong> 按钮，填写：
+    <ul>
+      <li>用户名：<code>zhangsan</code></li>
+      <li>密码：<code>abc123456</code>（至少6位）</li>
+      <li>选择员工：搜索并选择"张三"（自动填充姓名和部门）</li>
+      <li>手机号：<code>13800138000</code></li>
+      <li>角色：选择系统预置的 <code>staff</code> 或自定义的 <code>qc_operator</code></li>
+      <li>部门：<code>来料检验组</code></li>
+      <li>状态：<code>激活</code></li>
+    </ul>
+  </li>
+  <li>点击"创建"完成</li>
+  <li>用户"张三"使用用户名 <code>zhangsan</code> 和密码 <code>abc123456</code> 登录系统</li>
+  <li>登录后系统菜单仅显示分配给他的角色权限范围内的功能</li>
+</ol>
+</div>
+
+<div class="info">
+<strong>验证授权效果：</strong>创建完成后，可以让张三登录系统，确认他只能看到质量管理相关的菜单。如果他需要额外的权限，只需在角色管理中为"质检操作员"角色分配更多权限，该角色下所有用户的权限会自动同步更新。
+</div>
+
+<h3>5.6 完整流程图</h3>
+<div class="roadmap">
+  <span class="roadmap-step"><span class="num">1</span> 创建部门<br>（质检部/来料检验组）</span>
+  <span class="roadmap-arrow">→</span>
+  <span class="roadmap-step"><span class="num">2</span> 确认权限菜单<br>（质量管理相关页面）</span>
+  <span class="roadmap-arrow">→</span>
+  <span class="roadmap-step"><span class="num">3</span> 创建角色+分配权限<br>（质检操作员 → 勾选菜单）</span>
+  <span class="roadmap-arrow">→</span>
+  <span class="roadmap-step"><span class="num">4</span> 新建用户+指定角色<br>（张三 → 质检操作员）</span>
+  <span class="roadmap-arrow">→</span>
+  <span class="roadmap-step"><span class="num">✓</span> 完成<br>用户登录仅见授权菜单</span>
+</div>
+
+<h3>5.7 日常维护操作</h3>
+<table>
+  <tr><th>场景</th><th>操作</th><th>影响</th></tr>
+  <tr><td>员工调岗</td><td>编辑用户 → 修改部门和角色</td><td>即时生效，新角色权限立即应用</td></tr>
+  <tr><td>员工离职</td><td>更多 → 停用（保留数据）/ 删除（清除用户）</td><td>停用后无法登录，数据保留</td></tr>
+  <tr><td>忘记密码</td><td>更多 → 重置密码</td><td>管理员为用户设置临时密码</td></tr>
+  <tr><td>登录锁定</td><td>更多 → 解锁</td><td>解除锁定，用户恢复登录能力</td></tr>
+  <tr><td>新增功能页面</td><td>权限菜单管理 → 新建页面 → 角色管理 → 为相关角色勾选新页面</td><td>角色下所有用户同步获得新权限</td></tr>
+  <tr><td>收回权限</td><td>角色管理 → 分配权限 → 取消勾选</td><td>角色下所有用户同步失去该权限</td></tr>
+  <tr><td>调整安全策略</td><td>用户管理 → 安全设置标签页</td><td>全局生效，影响所有用户</td></tr>
+</table>
+
+</body>
+</html>

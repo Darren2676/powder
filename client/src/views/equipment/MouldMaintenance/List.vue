@@ -3,7 +3,7 @@ import { ref, reactive, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import {
   ReloadOutlined, ExclamationCircleOutlined, PlusOutlined,
-  DownloadOutlined, UploadOutlined, DownOutlined
+  DownloadOutlined, UploadOutlined, DownOutlined, SettingOutlined
 } from '@ant-design/icons-vue'
 import {
   getMouldMaintenances, createMouldMaintenance, updateMouldMaintenance,
@@ -11,6 +11,8 @@ import {
 } from '@/api/equipment/mouldMaintenance'
 import { getMoulds } from '@/api/equipment/mould'
 import { generateExportFilename } from '@/utils/exportFilename'
+import { useColumnPreference } from '@/composables/useColumnPreference'
+import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 
 defineOptions({ name: 'MouldMaintenanceList' })
 
@@ -98,20 +100,28 @@ const handleMouldSelect = async (val: string, form: any) => {
   } catch { currentStrokes.value = 0 }
 }
 
-const columns = [
-  { title: '维修日期', dataIndex: 'maintenance_date', key: 'maintenance_date', width: 110 },
-  { title: '模具编号', dataIndex: 'mould_number', key: 'mould_number', width: 120 },
-  { title: '模具名称', dataIndex: 'mould_name', key: 'mould_name', width: 120 },
-  { title: '维修类型', dataIndex: 'maintenance_type', key: 'maintenance_type', width: 90 },
-  { title: '维修内容', dataIndex: 'description', key: 'description', ellipsis: true },
-  { title: '故障原因', dataIndex: 'fault_reason', key: 'fault_reason', width: 150, ellipsis: true },
-  { title: '更换部件', dataIndex: 'replaced_parts', key: 'replaced_parts', width: 120, ellipsis: true },
-  { title: '费用', dataIndex: 'cost', key: 'cost', width: 90 },
-  { title: '执行人', dataIndex: 'performed_by', key: 'performed_by', width: 90 },
-  { title: '维修时模次', dataIndex: 'strokes_at_maintenance', key: 'strokes_at_maintenance', width: 110 },
-  { title: '创建人', dataIndex: 'created_by', key: 'created_by', width: 90 },
-  { title: '操作', key: 'action', width: 120, fixed: 'right' as const }
+const defaultDataColumns: any[] = [
+  { title: '维修日期', dataIndex: 'maintenance_date', key: 'maintenance_date', width: 110, sorter: (a: any, b: any) => (a.maintenance_date || '').localeCompare(b.maintenance_date || ''), resizable: true },
+  { title: '模具编号', dataIndex: 'mould_number', key: 'mould_number', width: 120, resizable: true },
+  { title: '模具名称', dataIndex: 'mould_name', key: 'mould_name', width: 120, resizable: true },
+  { title: '维修类型', dataIndex: 'maintenance_type', key: 'maintenance_type', width: 90, resizable: true },
+  { title: '维修内容', dataIndex: 'description', key: 'description', ellipsis: true, resizable: true },
+  { title: '故障原因', dataIndex: 'fault_reason', key: 'fault_reason', width: 150, ellipsis: true, resizable: true },
+  { title: '更换部件', dataIndex: 'replaced_parts', key: 'replaced_parts', width: 120, ellipsis: true, resizable: true },
+  { title: '费用', dataIndex: 'cost', key: 'cost', width: 90, resizable: true },
+  { title: '执行人', dataIndex: 'performed_by', key: 'performed_by', width: 90, resizable: true },
+  { title: '维修时模次', dataIndex: 'strokes_at_maintenance', key: 'strokes_at_maintenance', width: 110, resizable: true },
+  { title: '创建人', dataIndex: 'created_by', key: 'created_by', width: 90, resizable: true }
 ]
+
+const {
+  columns, columnSettingVisible, columnSettingList, columnSettingSaving,
+  openColumnSetting, moveColumnUp, moveColumnDown, saveColumnSetting, resetColumnSetting,
+  loadColumnPreference, handleResizeColumn
+} = useColumnPreference('mould_maintenance_list', defaultDataColumns, {
+  fixedLeft: [{ title: '行号', key: 'rowIndex', width: 60, fixed: 'left' as const }],
+  fixedRight: [{ title: '操作', key: 'action', width: 120, fixed: 'right' as const }]
+})
 
 const fetchData = async () => {
   loading.value = true
@@ -247,7 +257,7 @@ const handleFileChange = async (event: Event) => {
   finally { target.value = '' }
 }
 
-onMounted(() => { fetchData() })
+onMounted(() => { loadColumnPreference(); fetchData() })
 </script>
 
 <template>
@@ -269,13 +279,17 @@ onMounted(() => { fetchData() })
           <a-button @click="handleImportClick"><template #icon><UploadOutlined /></template>导入</a-button>
           <input ref="fileInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleFileChange" />
           <a-button type="primary" @click="handleCreate"><template #icon><PlusOutlined /></template>新建</a-button>
+          <a-button @click="openColumnSetting"><template #icon><SettingOutlined /></template>列设置</a-button>
         </a-space>
       </template>
 
       <a-table :columns="columns" :data-source="dataSource" :loading="loading"
-        row-key="id" :pagination="pagination" :scroll="{ x: 1600, y: 'calc(100vh - 280px)' }"
-        size="small" @change="handleTableChange">
-        <template #bodyCell="{ column, record }">
+        row-key="id" :pagination="pagination" :scroll="{ x: 'max-content', y: 'calc(100vh - 280px)' }"
+        size="small" bordered @change="handleTableChange" @resizeColumn="handleResizeColumn">
+        <template #bodyCell="{ column, record, index }">
+          <template v-if="column.key === 'rowIndex'">
+            {{ (pagination.current - 1) * pagination.pageSize + index + 1 }}
+          </template>
           <template v-if="column.key === 'maintenance_type'">
             <a-tag :color="record.maintenance_type === '翻新' ? 'purple' : record.maintenance_type === '维修' ? 'orange' : 'blue'">{{ record.maintenance_type }}</a-tag>
           </template>
@@ -299,6 +313,18 @@ onMounted(() => { fetchData() })
         </template>
       </a-table>
     </a-card>
+
+    <!-- 列设置抽屉 -->
+    <ColumnSettingDrawer
+      :open="columnSettingVisible"
+      :settingList="columnSettingList"
+      :saving="columnSettingSaving"
+      @update:open="columnSettingVisible = $event"
+      @moveUp="moveColumnUp"
+      @moveDown="moveColumnDown"
+      @save="saveColumnSetting"
+      @reset="resetColumnSetting"
+    />
 
     <!-- 新建弹窗 -->
     <a-modal v-model:open="createModalVisible" title="新建模具维修记录" :confirm-loading="createLoading" @ok="handleCreateSubmit" width="600px">

@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Seals MES 开发环境系统监控指南</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", "SimSun", sans-serif; font-size: 11pt; line-height: 1.7; color: #1a1a2e; }
+
+  .cover { page-break-after: always; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; }
+  .cover-line { width: 80%; border-top: 3px solid #1a3a6b; margin: 24px auto; }
+  .cover h1 { font-size: 28pt; color: #1a3a6b; letter-spacing: 4px; margin-bottom: 8px; }
+  .cover h2 { font-size: 16pt; color: #4a6a9b; font-weight: normal; margin-bottom: 32px; }
+  .cover .meta { font-size: 11pt; color: #666; line-height: 2; }
+
+  h1 { font-size: 18pt; color: #1a3a6b; border-bottom: 2px solid #1a3a6b; padding-bottom: 6px; margin: 28px 0 16px; }
+  h2 { font-size: 14pt; color: #2a5a8b; margin: 20px 0 12px; }
+  h3 { font-size: 12pt; color: #3a6a9b; margin: 16px 0 8px; }
+  p { margin: 6px 0; text-indent: 2em; }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 10pt; }
+  th, td { border: 1px solid #c0c8d4; padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: #e8eff8; color: #1a3a6b; font-weight: 600; white-space: nowrap; }
+  tr:nth-child(even) td { background: #f7f9fc; }
+
+  .code-block { background: #f0f3f8; border: 1px solid #d0d8e4; border-radius: 4px; padding: 12px 16px; margin: 10px 0; font-family: "Consolas", "Courier New", monospace; font-size: 9.5pt; line-height: 1.5; white-space: pre-wrap; word-break: break-all; color: #2a2a3e; }
+
+  ul, ol { margin: 6px 0 6px 2em; }
+  li { margin: 3px 0; }
+
+  .info-box { background: #e3f2fd; border-left: 4px solid #1565c0; padding: 10px 16px; margin: 12px 0; border-radius: 0 4px 4px 0; }
+  .highlight-box { background: #fffde7; border-left: 4px solid #f9a825; padding: 10px 16px; margin: 12px 0; border-radius: 0 4px 4px 0; }
+  .danger-box { background: #fce4ec; border-left: 4px solid #c62828; padding: 10px 16px; margin: 12px 0; border-radius: 0 4px 4px 0; }
+  .success-box { background: #e8f5e9; border-left: 4px solid #2e7d32; padding: 10px 16px; margin: 12px 0; border-radius: 0 4px 4px 0; }
+
+  .flow-container { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 16px 0; }
+  .flow-box { display: inline-block; padding: 8px 16px; border-radius: 6px; font-size: 10.5pt; font-weight: 600; text-align: center; min-width: 72px; }
+  .flow-arrow { font-size: 14pt; color: #888; }
+  .bg-green { background: #e8f5e9; color: #2e7d32; border: 1px solid #2e7d32; }
+  .bg-blue { background: #e3f2fd; color: #1565c0; border: 1px solid #1565c0; }
+  .bg-orange { background: #fff3e0; color: #e65100; border: 1px solid #e65100; }
+  .bg-red { background: #fce4ec; color: #c62828; border: 1px solid #c62828; }
+  .bg-purple { background: #f3e5f5; color: #6a1b9a; border: 1px solid #6a1b9a; }
+  .bg-teal { background: #e0f2f1; color: #00695c; border: 1px solid #00695c; }
+
+  .page-break { page-break-before: always; }
+  .toc a { text-decoration: none; color: #1a3a6b; }
+  .toc li { margin: 4px 0; }
+</style>
+</head>
+<body>
+
+<!-- 封面 -->
+<div class="cover">
+  <div class="cover-line"></div>
+  <h1>Seals MES 系统</h1>
+  <h2>开发环境系统监控指南</h2>
+  <div class="cover-line"></div>
+  <div class="meta">
+    <p>文档版本：V1.0</p>
+    <p>编制日期：2026年5月15日</p>
+    <p>适用环境：Windows 开发环境</p>
+  </div>
+</div>
+
+<!-- 目录 -->
+<h1>目 录</h1>
+<div class="toc">
+<ol>
+  <li><a href="#s1">系统架构概览</a></li>
+  <li><a href="#s2">健康检查接口</a></li>
+  <li><a href="#s3">进程与服务监控</a></li>
+  <li><a href="#s4">日志系统</a></li>
+  <li><a href="#s5">SSE 实时推送监控</a></li>
+  <li><a href="#s6">关键配置文件</a></li>
+  <li><a href="#s7">快速诊断脚本</a></li>
+  <li><a href="#s8">生产环境监控</a></li>
+  <li><a href="#s9">常见故障排查</a></li>
+  <li><a href="#s10">监控最佳实践</a></li>
+</ol>
+</div>
+
+<!-- 1. 系统架构概览 -->
+<div class="page-break"></div>
+<h1 id="s1">1. 系统架构概览</h1>
+
+<h2>1.1 三端架构</h2>
+<div class="flow-container">
+  <span class="flow-box bg-blue">Web前端<br/>:5173</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box bg-green">后端API<br/>:3000</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box bg-orange">SQL Server<br/>:1433</span>
+</div>
+<div style="margin: 8px 0; text-align:center;">
+  <span class="flow-box bg-purple">移动端<br/>:5174</span>
+  <span class="flow-arrow">→</span>
+  <span style="display:inline-block;width:80px;"></span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box bg-teal">文件上传<br/>/uploads</span>
+</div>
+
+<h2>1.2 技术栈监控能力</h2>
+<table>
+  <tr><th>层次</th><th>技术栈</th><th>监控能力</th></tr>
+  <tr><td>前端</td><td>Vue 3 + Vite + Ant Design Vue</td><td>Vite HMR 热更新、浏览器 DevTools</td></tr>
+  <tr><td>后端</td><td>Express + TypeScript + Sequelize</td><td>健康检查、Pino日志、SSE推送、请求追踪</td></tr>
+  <tr><td>数据库</td><td>SQL Server</td><td>健康检查连通性、Sequelize查询日志</td></tr>
+  <tr><td>进程管理</td><td>nodemon (dev) / PM2 (prod)</td><td>进程状态、内存、自动重启</td></tr>
+</table>
+
+<!-- 2. 健康检查接口 -->
+<h1 id="s2">2. 健康检查接口</h1>
+
+<h2>2.1 接口定义</h2>
+<table>
+  <tr><th>项目</th><th>说明</th></tr>
+  <tr><td>路径</td><td><code>GET /api/v1/health</code></td></tr>
+  <tr><td>认证</td><td>无需认证（公开端点）</td></tr>
+  <tr><td>成功状态码</td><td>200</td></tr>
+  <tr><td>降级状态码</td><td>503（数据库异常）</td></tr>
+</table>
+
+<h2>2.2 返回结构</h2>
+<div class="code-block">{
+  "status": "healthy",        // healthy | degraded
+  "timestamp": "2026-05-26T15:00:13.000Z",
+  "uptime": "2h 35m",        // 服务运行时长
+  "database": "ok",           // ok | error
+  "memory": {
+    "rss": "156MB",           // 进程驻留内存
+    "heapUsed": "89MB",       // V8堆已用
+    "heapTotal": "128MB"      // V8堆总量
+  }
+}</div>
+
+<h2>2.3 实现逻辑</h2>
+<div class="code-block">// server/src/app.ts
+app.get(`${API_PREFIX}/health`, async (_req, res) => {
+  const uptime = process.uptime();
+  const memUsage = process.memoryUsage();
+  let dbStatus = 'ok';
+  try {
+    await sequelize.authenticate();    // 测试数据库连接
+  } catch {
+    dbStatus = 'error';
+  }
+  res.status(dbStatus === 'ok' ? 200 : 503).json({
+    status: dbStatus === 'ok' ? 'healthy' : 'degraded',
+    timestamp: new Date().toISOString(),
+    uptime: `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m`,
+    database: dbStatus,
+    memory: {
+      rss: `${Math.round(memUsage.rss / 1024 / 1024)}MB`,
+      heapUsed: `${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`,
+      heapTotal: `${Math.round(memUsage.heapTotal / 1024 / 1024)}MB`
+    }
+  });
+});</div>
+
+<h2>2.4 字段说明</h2>
+<table>
+  <tr><th>字段</th><th>类型</th><th>含义</th><th>异常阈值</th></tr>
+  <tr><td>status</td><td>string</td><td>服务整体状态</td><td>degraded 表示数据库异常</td></tr>
+  <tr><td>uptime</td><td>string</td><td>进程运行时长</td><td>频繁重置需排查</td></tr>
+  <tr><td>database</td><td>string</td><td>数据库连通性</td><td>error 表示连接失败</td></tr>
+  <tr><td>memory.rss</td><td>string</td><td>进程驻留内存</td><td>超过 800MB 需关注</td></tr>
+  <tr><td>memory.heapUsed</td><td>string</td><td>V8堆已用内存</td><td>接近 heapTotal 需关注</td></tr>
+</table>
+
+<!-- 3. 进程与服务监控 -->
+<div class="page-break"></div>
+<h1 id="s3">3. 进程与服务监控</h1>
+
+<h2>3.1 端口检查</h2>
+<div class="code-block"># 检查后端服务（端口 3000）
+netstat -ano | findstr :3000
+
+# 检查 Web 前端（端口 5173）
+netstat -ano | findstr :5173
+
+# 检查移动端（端口 5174）
+netstat -ano | findstr :5174</div>
+
+<h2>3.2 进程管理</h2>
+<table>
+  <tr><th>操作</th><th>命令</th><th>说明</th></tr>
+  <tr><td>查看端口占用</td><td><code>netstat -ano | findstr :3000</code></td><td>获取 PID</td></tr>
+  <tr><td>杀死进程</td><td><code>Stop-Process -Id &lt;PID&gt; -Force</code></td><td>PowerShell 命令</td></tr>
+  <tr><td>启动后端</td><td><code>cd server; npm run dev</code></td><td>nodemon 热重载</td></tr>
+  <tr><td>启动前端</td><td><code>cd client; npm run dev</code></td><td>Vite 开发服务器</td></tr>
+  <tr><td>启动移动端</td><td><code>cd client-mobile; npm run dev</code></td><td>Vite 开发服务器</td></tr>
+</table>
+
+<div class="highlight-box">
+  <strong>PowerShell 注意事项：</strong>PowerShell 不支持 <code>&&</code> 作为命令分隔符，请使用分号 <code>;</code> 代替。
+</div>
+
+<h2>3.3 nodemon 开发模式</h2>
+<p>后端使用 nodemon 监听文件变更，自动重启服务。关键行为：</p>
+<table>
+  <tr><th>事件</th><th>行为</th></tr>
+  <tr><td>.ts 文件修改保存</td><td>自动重启服务</td></tr>
+  <tr><td>重启中收到请求</td><td>请求排队等待</td></tr>
+  <tr><td>手动重启</td><td>终端输入 <code>rs</code> 回车</td></tr>
+  <tr><td>忽略目录</td><td>dist/ 目录变更不触发重启</td></tr>
+</table>
+
+<!-- 4. 日志系统 -->
+<div class="page-break"></div>
+<h1 id="s4">4. 日志系统</h1>
+
+<h2>4.1 Pino 结构化日志</h2>
+<p>系统采用 Pino 作为日志框架，提供结构化 JSON 输出、日志级别控制、请求追踪和模块标识。</p>
+
+<h3>4.1.1 配置文件</h3>
+<div class="code-block">// server/src/config/logger.ts
+const logger = pino({
+  level: process.env.LOG_LEVEL || (isDev ? 'debug' : 'info'),
+  transport: isDev
+    ? { target: 'pino-pretty', options: { colorize: true, translateTime: 'SYS:yyyy-mm-dd HH:MM:ss.l' } }
+    : undefined,
+  base: { service: 'seals-mes', env: process.env.NODE_ENV || 'development' },
+  timestamp: pino.stdTimeFunctions.isoTime,
+});</div>
+
+<h3>4.1.2 日志级别</h3>
+<table>
+  <tr><th>级别</th><th>用途</th><th>开发环境</th><th>生产环境</th></tr>
+  <tr><td>debug</td><td>调试信息、变量值</td><td>✅ 输出</td><td>❌ 不输出</td></tr>
+  <tr><td>info</td><td>常规操作日志</td><td>✅ 输出</td><td>✅ 输出</td></tr>
+  <tr><td>warn</td><td>警告、4xx错误</td><td>✅ 输出</td><td>✅ 输出</td></tr>
+  <tr><td>error</td><td>错误、5xx异常</td><td>✅ 输出</td><td>✅ 输出</td></tr>
+  <tr><td>fatal</td><td>致命错误</td><td>✅ 输出</td><td>✅ 输出</td></tr>
+</table>
+
+<h3>4.1.3 日志级别控制</h3>
+<div class="code-block"># 在 server/.env 中设置（降低日志噪音）
+LOG_LEVEL=info
+
+# 可选值：debug, info, warn, error, fatal
+# 不设置时：开发环境默认 debug，生产环境默认 info</div>
+
+<h2>4.2 模块日志标识</h2>
+<p>通过 <code>createLogger(module)</code> 创建带模块标识的子日志器，方便按模块过滤：</p>
+<table>
+  <tr><th>模块标识</th><th>关注内容</th><th>文件位置</th></tr>
+  <tr><td>http</td><td>每个HTTP请求的方法/路径/状态码/耗时</td><td>requestLogger.middleware.ts</td></tr>
+  <tr><td>finishedGoods</td><td>出入库操作、库存变动、批次生成</td><td>finishedGoods.ts</td></tr>
+  <tr><td>approval</td><td>审批流执行、状态流转</td><td>approval.service.ts</td></tr>
+  <tr><td>subscriber-taskCompletion</td><td>报工→工序状态同步</td><td>taskCompletion.subscriber.ts</td></tr>
+  <tr><td>subscriber-lineside</td><td>线边仓流转</td><td>linesideMovement.subscriber.ts</td></tr>
+  <tr><td>stockCountScheduler</td><td>自动盘点定时任务</td><td>stockCountScheduler.service.ts</td></tr>
+  <tr><td>eventWorker</td><td>事件工作器循环</td><td>eventWorker.service.ts</td></tr>
+  <tr><td>workReport-autoInbound</td><td>报工自动入库</td><td>autoInbound.ts</td></tr>
+  <tr><td>workReport-taskSync</td><td>报工→任务同步</td><td>taskSync.ts</td></tr>
+  <tr><td>salesOrderSync</td><td>销售订单状态同步</td><td>salesOrderSync.service.ts</td></tr>
+  <tr><td>backflushTask</td><td>倒冲任务执行</td><td>backflushTask.service.ts</td></tr>
+  <tr><td>workflow</td><td>工作流引擎</td><td>workflow.engine.ts</td></tr>
+  <tr><td>productionYield</td><td>生产产出计算</td><td>productionYield.service.ts</td></tr>
+</table>
+
+<h2>4.3 HTTP 请求日志</h2>
+<p>每个 HTTP 请求自动记录完整生命周期：</p>
+<div class="code-block">// 请求开始
+[INFO] http: GET /api/v1/return-orders { requestId: "uuid-xxx", method: "GET", path: "/api/v1/return-orders", userId: 1 }
+
+// 请求完成（含耗时）
+[INFO] http: GET /api/v1/return-orders 200 45ms { requestId: "uuid-xxx", statusCode: 200, duration: 45 }
+
+// 4xx 警告
+[WARN] http: POST /api/v1/return-orders/RT-xxx/cancel 400 12ms { statusCode: 400, duration: 12 }
+
+// 5xx 错误
+[ERROR] http: GET /api/v1/return-orders 500 2300ms { statusCode: 500, duration: 2300 }</div>
+
+<div class="info-box">
+  <strong>性能基线：</strong>正常 API 响应 &lt; 200ms；200ms~1s 需关注慢查询；&gt; 1s 通常为数据库性能问题。
+</div>
+
+<h2>4.4 日志输出格式</h2>
+<table>
+  <tr><th>环境</th><th>输出格式</th><th>示例</th></tr>
+  <tr><td>开发环境</td><td>pino-pretty 美化输出（彩色、时间格式化）</td><td><code>[2026-05-26 15:00:13.534] INFO: 工序状态变更订阅者已注册</code></td></tr>
+  <tr><td>生产环境</td><td>JSON 格式（便于 ELK 采集）</td><td><code>{"level":"info","time":"2026-05-26T07:00:13.534Z","msg":"工序状态变更订阅者已注册"}</code></td></tr>
+</table>
+
+<!-- 5. SSE 实时推送 -->
+<div class="page-break"></div>
+<h1 id="s5">5. SSE 实时推送监控</h1>
+
+<h2>5.1 架构说明</h2>
+<p>系统内置 SSE（Server-Sent Events）推送服务，用于移动端实时接收通知。每个用户连接维护一个 Response 对象，心跳保活每30秒发送注释行，连接断开时自动清理。</p>
+
+<h2>5.2 事件类型</h2>
+<table>
+  <tr><th>事件类型</th><th>说明</th><th>触发场景</th></tr>
+  <tr><td>notification</td><td>系统通知</td><td>消息推送</td></tr>
+  <tr><td>approval</td><td>审批通知</td><td>审批流状态变更</td></tr>
+  <tr><td>task_update</td><td>任务更新</td><td>生产任务状态变更</td></tr>
+  <tr><td>system</td><td>系统消息</td><td>全局广播</td></tr>
+</table>
+
+<h2>5.3 心跳机制</h2>
+<div class="code-block">// 每 30 秒发送心跳
+:heartbeat    // SSE 注释行，客户端自动忽略
+
+// 客户端通过心跳判断连接存活
+// 超过 60 秒未收到心跳或数据 → 判定连接断开 → 自动重连</div>
+
+<!-- 6. 关键配置文件 -->
+<h1 id="s6">6. 关键配置文件</h1>
+
+<h2>6.1 环境变量 (.env)</h2>
+<div class="code-block"># server/.env
+PORT=3000                     # 后端服务端口
+DB_HOST=127.0.0.1             # 数据库主机
+DB_PORT=1433                  # 数据库端口
+DB_NAME=SEALSMES              # 数据库名称
+DB_USER=sa                    # 数据库用户
+DB_PASSWORD=********          # 数据库密码
+JWT_SECRET=********           # JWT签名密钥
+JWT_EXPIRES_IN=24h            # Token有效期
+JWT_REFRESH_EXPIRES_IN=7d     # 刷新Token有效期
+UPLOAD_DIR=uploads            # 上传目录
+MAX_FILE_SIZE=10485760        # 最大文件大小(10MB)
+LOG_LEVEL=debug               # 日志级别(可选，不设置则默认)</div>
+
+<h2>6.2 PM2 生产部署配置</h2>
+<div class="code-block">// ecosystem.config.js
+module.exports = {
+  apps: [{
+    name: 'seals-mes-server',
+    script: 'src/server.ts',
+    interpreter: 'npx',
+    interpreter_args: 'ts-node -r tsconfig-paths/register',
+    cwd: './server',
+    instances: 1,                  // Windows: fork模式单进程
+    exec_mode: 'fork',             // Linux生产: 改为 cluster + instances: 'max'
+    max_memory_restart: '1G',      // 内存超1G自动重启
+    env_production: {
+      NODE_ENV: 'production',
+      PORT: 3000
+    }
+  }]
+};</div>
+
+<h2>6.3 Vite 开发代理</h2>
+<div class="code-block">// client/vite.config.ts
+server: {
+  proxy: {
+    '/api/v1': {
+      target: 'http://localhost:3000',   // 后端地址
+      changeOrigin: true
+    },
+    '/uploads': {
+      target: 'http://localhost:3000',
+      changeOrigin: true
+    }
+  }
+}</div>
+<div class="danger-box">
+  <strong>重要：</strong>Vite 仅代理 <code>/api/v1</code> 和 <code>/uploads</code> 前缀的请求。如果 API 路径写错（如 <code>/api/</code> 而非 <code>/api/v1/</code>），请求会被 SPA fallback 拦截，返回前端 index.html 而非 API 响应。
+</div>
+
+<!-- 7. 快速诊断脚本 -->
+<div class="page-break"></div>
+<h1 id="s7">7. 快速诊断脚本</h1>
+
+<h2>7.1 健康检查</h2>
+<div class="code-block"># PowerShell 一键检查
+Invoke-RestMethod http://localhost:3000/api/v1/health
+
+# 仅检查数据库连通性
+(Invoke-RestMethod http://localhost:3000/api/v1/health).database
+
+# 仅查看内存
+(Invoke-RestMethod http://localhost:3000/api/v1/health).memory</div>
+
+<h2>7.2 端口状态快速检查</h2>
+<div class="code-block"># 检查三端服务是否运行
+$services = @( @{Name="后端"; Port=3000}, @{Name="Web前端"; Port=5173}, @{Name="移动端"; Port=5174} )
+foreach ($s in $services) {
+  $result = netstat -ano | findstr ":$($s.Port) " | findstr "LISTENING"
+  if ($result) { Write-Host "$($s.Name) (:$($s.Port)): ✅ 运行中" -ForegroundColor Green }
+  else { Write-Host "$($s.Name) (:$($s.Port)): ❌ 未启动" -ForegroundColor Red }
+}</div>
+
+<h2>7.3 请求耗时测试</h2>
+<div class="code-block"># 测量API响应时间
+Measure-Command { Invoke-RestMethod http://localhost:3000/api/v1/health } | Select-Object TotalMilliseconds</div>
+
+<!-- 8. 生产环境监控 -->
+<h1 id="s8">8. 生产环境监控</h1>
+
+<h2>8.1 PM2 常用命令</h2>
+<table>
+  <tr><th>命令</th><th>用途</th></tr>
+  <tr><td><code>pm2 list</code></td><td>查看进程状态、重启次数、CPU/内存占用</td></tr>
+  <tr><td><code>pm2 monit</code></td><td>实时监控面板（CPU/内存曲线）</td></tr>
+  <tr><td><code>pm2 logs</code></td><td>实时日志流（Ctrl+C 退出）</td></tr>
+  <tr><td><code>pm2 logs seals-mes-server --lines 100</code></td><td>查看最近100行日志</td></tr>
+  <tr><td><code>pm2 restart seals-mes-server</code></td><td>重启服务</td></tr>
+  <tr><td><code>pm2 stop seals-mes-server</code></td><td>停止服务</td></tr>
+  <tr><td><code>pm2 describe seals-mes-server</code></td><td>查看进程详细信息</td></tr>
+</table>
+
+<h2>8.2 NSSM Windows 服务方式</h2>
+<p>如需将后端注册为 Windows 服务（开机自启），可使用 NSSM：</p>
+<div class="code-block"># 安装服务
+nssm install seals-mes "C:\Program Files\nodejs\node.exe" "D:\rubber\Seals MES System\server\src\server.ts"
+
+# 配置自动重启
+nssm set seals-mes AppParameters "--require tsconfig-paths/register src/server.ts"
+nssm set seals-mes AppDirectory "D:\rubber\Seals MES System\server"
+nssm set seals-mes StartServiceDelay 5000
+
+# 启动/停止
+nssm start seals-mes
+nssm stop seals-mes</div>
+
+<h2>8.3 内存监控阈值</h2>
+<table>
+  <tr><th>指标</th><th>正常范围</th><th>告警阈值</th><th>危险阈值</th></tr>
+  <tr><td>rss</td><td>&lt; 300MB</td><td>300~500MB</td><td>&gt; 500MB</td></tr>
+  <tr><td>heapUsed</td><td>&lt; 200MB</td><td>200~400MB</td><td>&gt; 400MB</td></tr>
+  <tr><td>heapTotal</td><td>&lt; 300MB</td><td>300~500MB</td><td>&gt; 500MB</td></tr>
+  <tr><td>uptime</td><td>持续增长</td><td>频繁重置</td><td>每分钟重启</td></tr>
+</table>
+<div class="info-box">
+  PM2 配置了 <code>max_memory_restart: '1G'</code>，进程内存超过 1GB 时自动重启。
+</div>
+
+<!-- 9. 常见故障排查 -->
+<div class="page-break"></div>
+<h1 id="s9">9. 常见故障排查</h1>
+
+<table>
+  <tr><th>#</th><th>症状</th><th>可能原因</th><th>排查步骤</th></tr>
+  <tr>
+    <td>1</td>
+    <td>API 请求返回管理驾驶舱页面</td>
+    <td>Vite 代理未匹配 API 路径</td>
+    <td>① 检查 URL 是否以 <code>/api/v1/</code> 开头<br/>② 检查 vite.config.ts 代理规则</td>
+  </tr>
+  <tr>
+    <td>2</td>
+    <td>401 未提供认证令牌</td>
+    <td>新标签页不携带 Authorization header</td>
+    <td>① 检查打印URL是否携带 <code>?token=xxx</code><br/>② 检查 auth.middleware.ts 是否支持 query token</td>
+  </tr>
+  <tr>
+    <td>3</td>
+    <td>端口 3000 被占用</td>
+    <td>旧进程未释放</td>
+    <td>① <code>netstat -ano | findstr :3000</code><br/>② <code>Stop-Process -Id &lt;PID&gt; -Force</code><br/>③ 重新启动</td>
+  </tr>
+  <tr>
+    <td>4</td>
+    <td>数据库连接失败</td>
+    <td>SQL Server 未启动或 .env 配置错误</td>
+    <td>① 检查 SQL Server 服务状态<br/>② 验证 .env 中 DB_HOST/DB_PORT/DB_NAME<br/>③ <code>Invoke-RestMethod /api/v1/health</code> 查看 database 字段</td>
+  </tr>
+  <tr>
+    <td>5</td>
+    <td>API 响应慢（&gt;1s）</td>
+    <td>数据库慢查询</td>
+    <td>① 查看请求日志中的 duration<br/>② 检查 SQL Server 活动监视器<br/>③ 考虑添加索引</td>
+  </tr>
+  <tr>
+    <td>6</td>
+    <td>前端修改不生效</td>
+    <td>Vite HMR 未触发 / 浏览器缓存</td>
+    <td>① 强制刷新 (Ctrl+Shift+R)<br/>② 检查终端 Vite 是否检测到文件变更</td>
+  </tr>
+  <tr>
+    <td>7</td>
+    <td>后端修改不生效</td>
+    <td>nodemon 未检测到变更</td>
+    <td>① 检查终端 nodemon 是否重启<br/>② 手动输入 <code>rs</code> 触发重启</td>
+  </tr>
+  <tr>
+    <td>8</td>
+    <td>内存持续增长</td>
+    <td>内存泄漏</td>
+    <td>① 定期检查 <code>/api/v1/health</code> 内存字段<br/>② 使用 Node.js --inspect 调试<br/>③ PM2 自动重启兜底</td>
+  </tr>
+</table>
+
+<!-- 10. 监控最佳实践 -->
+<h1 id="s10">10. 监控最佳实践</h1>
+
+<h2>10.1 开发环境日常检查清单</h2>
+<table>
+  <tr><th>#</th><th>检查项</th><th>频率</th><th>方法</th></tr>
+  <tr><td>1</td><td>三端服务运行状态</td><td>每日开始开发前</td><td>端口检查脚本</td></tr>
+  <tr><td>2</td><td>后端健康检查</td><td>功能测试前</td><td>Invoke-RestMethod /api/v1/health</td></tr>
+  <tr><td>3</td><td>后端日志异常</td><td>持续</td><td>终端观察 ERROR/WARN 级别</td></tr>
+  <tr><td>4</td><td>API 响应时间</td><td>功能测试时</td><td>请求日志 duration 字段</td></tr>
+  <tr><td>5</td><td>数据库连接状态</td><td>数据库操作异常时</td><td>health 接口 database 字段</td></tr>
+</table>
+
+<h2>10.2 日志使用规范</h2>
+<div class="success-box">
+  <strong>推荐做法：</strong>
+  <ul>
+    <li>业务关键操作使用 <code>log.info()</code>（入库、出库、审批、确认等）</li>
+    <li>可恢复异常使用 <code>log.warn()</code>（入库失败但不影响确认）</li>
+    <li>不可恢复错误使用 <code>log.error()</code>（数据库异常、事务回滚）</li>
+    <li>调试信息使用 <code>log.debug()</code>（变量值、中间计算结果）</li>
+    <li>每条日志携带上下文对象：<code>log.info({ orderNo }, '订单创建成功')</code></li>
+  </ul>
+</div>
+
+<div class="danger-box">
+  <strong>避免做法：</strong>
+  <ul>
+    <li>禁止使用 <code>console.log()</code>，统一使用 Pino 日志器</li>
+    <li>禁止在日志中输出敏感信息（密码、Token、个人信息）</li>
+    <li>禁止在生产环境使用 <code>LOG_LEVEL=debug</code></li>
+  </ul>
+</div>
+
+<h2>10.3 告警建议</h2>
+<table>
+  <tr><th>告警项</th><th>条件</th><th>级别</th><th>通知方式</th></tr>
+  <tr><td>服务宕机</td><td>health 接口连续 3 次超时</td><td>P0-紧急</td><td>即时通知</td></tr>
+  <tr><td>数据库异常</td><td>health.database = 'error'</td><td>P0-紧急</td><td>即时通知</td></tr>
+  <tr><td>内存泄漏</td><td>rss 连续 5 分钟 &gt; 500MB</td><td>P1-重要</td><td>5分钟内通知</td></tr>
+  <tr><td>频繁重启</td><td>PM2 restarts &gt; 3次/小时</td><td>P1-重要</td><td>5分钟内通知</td></tr>
+  <tr><td>慢请求</td><td>duration &gt; 3s</td><td>P2-一般</td><td>日志记录</td></tr>
+  <tr><td>5xx 错误</td><td>statusCode &gt;= 500</td><td>P1-重要</td><td>5分钟内通知</td></tr>
+</table>
+
+</body>
+</html>

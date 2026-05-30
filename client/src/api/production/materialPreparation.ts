@@ -43,3 +43,6 @@ export function getPreparationDetails(prepNumber: string) {
 export function updatePreparationDetails(prepNumber: string, details: any[]) {
   return request.put(`/material-preparations/${encodeURIComponent(prepNumber)}/details`, { details })
 }
+
+export const updateDetailAutoWeigh = (preparationNumber: string, ids: number[], autoWeigh: string) =>
+  request({ url: `/material-preparations/${encodeURIComponent(preparationNumber)}/details-auto-weigh`, method: 'PATCH', data: { ids, auto_weigh: autoWeigh } })

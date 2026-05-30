@@ -144,25 +144,48 @@ export const getPendingInbound = async (req: Request, res: Response, next: NextF
     const offset = (pageNum - 1) * pageSize;
     const offsetEnd = offset + pageSize;
 
-    let whereClause = `WHERE plan_status = N'已完成' AND approval_status = N'已审批' AND (inbound_status IS NULL OR inbound_status IN (N'未入库', N'部分入库'))`;
+    let whereClause = `WHERE po.plan_status = N'已完成' AND po.approval_status = N'已审批' AND (po.inbound_status IS NULL OR po.inbound_status IN (N'未入库', N'部分入库'))`;
     const replacements: any = { offset, offsetEnd };
 
     if (search) {
-      whereClause += ` AND (production_order_number LIKE :search OR item_number LIKE :search OR item_name LIKE :search OR production_number LIKE :search)`;
+      whereClause += ` AND (po.production_order_number LIKE :search OR po.item_number LIKE :search OR po.item_name LIKE :search OR po.production_number LIKE :search)`;
       replacements.search = `%${search}%`;
     }
 
     const [countResult]: any = await sequelize.query(
-      `SELECT COUNT(*) as total FROM production_order ${whereClause}`, { replacements }
+      `SELECT COUNT(*) as total FROM production_order po ${whereClause}`, { replacements }
     );
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT *,
-               ISNULL(inbound_quantity, 0) as inbound_qty,
-               (planned_quantity - ISNULL(inbound_quantity, 0)) as pending_inbound_qty,
-               ROW_NUMBER() OVER (ORDER BY production_date DESC, production_order_number DESC) AS _row_num
-        FROM production_order ${whereClause}
+        SELECT po.*,
+               ISNULL(po.inbound_quantity, 0) as inbound_qty,
+               -- 最后一道工序报工正品数：取该生产单最大 step_number 的所有报工 qualified_quantity 之和
+               -- 报工审批与生产单状态独立，此处不过滤 approval_status
+               ISNULL((
+                 SELECT SUM(ISNULL(wr.qualified_quantity, 0))
+                 FROM work_report wr
+                 WHERE wr.production_order_number = po.production_order_number
+                   AND wr.step_number = (SELECT MAX(step_number) FROM work_report WHERE production_order_number = po.production_order_number)
+               ), 0) as last_step_qualified,
+               -- 待入库 = 末道报工正品数 - 已入库数量
+               CASE
+                 WHEN ISNULL((
+                   SELECT SUM(ISNULL(wr.qualified_quantity, 0))
+                   FROM work_report wr
+                   WHERE wr.production_order_number = po.production_order_number
+                     AND wr.step_number = (SELECT MAX(step_number) FROM work_report WHERE production_order_number = po.production_order_number)
+                 ), 0) - ISNULL(po.inbound_quantity, 0) > 0
+                 THEN ISNULL((
+                   SELECT SUM(ISNULL(wr.qualified_quantity, 0))
+                   FROM work_report wr
+                   WHERE wr.production_order_number = po.production_order_number
+                     AND wr.step_number = (SELECT MAX(step_number) FROM work_report WHERE production_order_number = po.production_order_number)
+                 ), 0) - ISNULL(po.inbound_quantity, 0)
+                 ELSE 0
+               END as pending_inbound_qty,
+               ROW_NUMBER() OVER (ORDER BY po.production_date DESC, po.production_order_number DESC) AS _row_num
+        FROM production_order po ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
 

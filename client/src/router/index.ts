@@ -85,6 +85,8 @@ const routePermissionMap: Record<string, string> = {
   'ShippingByOrderSummary': 'shipping-by-order-summary',
   'OrderProductionSummary': 'order-production-summary',
   'SalesDashboard': 'sales-order-dashboard',
+  'SampleRequestList': 'sample-requests',
+  'SampleRequestCreate': 'sample-request-create',
   'MpsReport': 'mps-report',
   'PlanList': 'plans',
   'MrpPage': 'mrp',

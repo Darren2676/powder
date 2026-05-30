@@ -2,7 +2,7 @@
 import { ref, reactive, computed, onMounted, createVNode } from 'vue'
 import { useRoute } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { PlusOutlined, ReloadOutlined, ExclamationCircleOutlined, DownOutlined, SwapOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, ExclamationCircleOutlined, DownOutlined, SwapOutlined, SettingOutlined, PrinterOutlined } from '@ant-design/icons-vue'
 import { getPurchaseReturns, getPurchaseReturnDetail, createPurchaseReturn, updatePurchaseReturn, deletePurchaseReturn, submitPurchaseReturn, approvePurchaseReturn, withdrawPurchaseReturn, executeReturn, exchangeStockIn, getPOReceivedItems } from '@/api/purchasing/purchaseReturn'
 import { getPurchaseOrders } from '@/api/purchasing/purchaseOrder'
 import { getWarehouses } from '@/api/master-data/warehouse'
@@ -289,6 +289,11 @@ const handleExchangeStockIn = (record: any) => {
   })
 }
 
+const handlePrint = (record: any) => {
+  const token = localStorage.getItem('token') || ''
+  window.open(`/api/v1/purchase-returns/${encodeURIComponent(record.return_number)}/print?token=${encodeURIComponent(token)}`, '_blank')
+}
+
 const isReturnEditable = (record: any) => (record.approval_status || '').trim() === '草稿'
 const canExecuteReturn = (record: any) => (record.approval_status || '').trim() === '已审批' && record.return_status !== '已退货'
 const canExchangeStockIn = (record: any) => record.return_type === '退货换货' && record.return_status === '已退货' && record.exchange_status !== '已换货'
@@ -346,6 +351,7 @@ const canExchangeStockIn = (record: any) => record.return_type === '退货换货
                 <a-menu>
                   <a-menu-item v-if="isReturnEditable(record)" @click="handleApprove(record)">提交审批</a-menu-item>
                   <a-menu-item v-if="(record.approval_status || '').trim() === '待审批'" @click="handleApprove(record)">审批</a-menu-item>
+                  <a-menu-item v-if="(record.approval_status || '').trim() !== '草稿'" @click="handlePrint(record)"><PrinterOutlined style="margin-right:4px" />打印</a-menu-item>
                   <a-menu-item v-if="(record.approval_status || '').trim() === '已审批'" @click="handleWithdraw(record)">撤消</a-menu-item>
                   <a-menu-item v-if="isReturnEditable(record)" @click="openEdit(record)">编辑</a-menu-item>
                   <a-menu-item v-if="canExecuteReturn(record)" @click="handleExecuteReturn(record)">

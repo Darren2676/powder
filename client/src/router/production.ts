@@ -10,6 +10,7 @@ const MaterialPreparationByProcess = () => import('@/views/production/MaterialPr
 const MaterialIssue = () => import('@/views/production/MaterialPreparation/MaterialIssue.vue');
 const MaterialIssueByProcess = () => import('@/views/production/MaterialPreparation/MaterialIssueByProcess.vue');
 const BackflushTaskList = () => import('@/views/production/MaterialPreparation/BackflushTask.vue');
+const SplitBackflushTask = () => import('@/views/production/MaterialPreparation/SplitBackflushTask.vue');
 const WorkReportList = () => import('@/views/production/WorkReport/List.vue');
 const ContinuousReport = () => import('@/views/production/WorkReport/ContinuousReport.vue');
 const OutsourcingReqList = () => import('@/views/production/OutsourcingReq/List.vue');
@@ -36,6 +37,7 @@ export const productionRoutes: RouteRecordRaw[] = [
   { path: 'material-issue', name: 'MaterialIssue', component: MaterialIssue, meta: {"title":"生产备料"} },
   { path: 'material-issue-by-process', name: 'MaterialIssueByProcess', component: MaterialIssueByProcess, meta: {"title":"按工序备料"} },
   { path: 'backflush-tasks', name: 'BackflushTaskList', component: BackflushTaskList, meta: {"title":"倒冲任务清单"} },
+  { path: 'split-backflush-task', name: 'SplitBackflushTask', component: SplitBackflushTask, meta: {"title":"拆分备料任务"} },
   { path: 'work-reports', name: 'WorkReportList', component: WorkReportList, meta: {"title":"工序报工"} },
   { path: 'continuous-report', name: 'ContinuousReport', component: ContinuousReport, meta: {"title":"连续报工"} },
   { path: 'outsourcing-reqs', name: 'OutsourcingReqList', component: OutsourcingReqList, meta: {"title":"工序委外申请"} },

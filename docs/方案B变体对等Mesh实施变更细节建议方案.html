@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>方案 B 变体（对等 Mesh）实施变更细节建议方案</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 16mm 14mm; }
+  body {
+    font-family: "Microsoft YaHei", "SimHei", "PingFang SC", sans-serif;
+    font-size: 12px;
+    line-height: 1.7;
+    color: #1a1a1a;
+    max-width: 100%; padding: 0; margin: 0;
+  }
+  h1 { font-size: 20px; text-align: center; margin: 0 0 18px 0; padding-bottom: 10px; border-bottom: 2px solid #1890ff; color: #0d1a26; }
+  h2 { font-size: 15px; margin: 22px 0 8px 0; padding: 5px 0 5px 10px; border-left: 4px solid #1890ff; background: #f0f5ff; color: #0d1a26; page-break-after: avoid; }
+  h3 { font-size: 13px; margin: 14px 0 6px 0; color: #1a3a5c; page-break-after: avoid; }
+  h4 { font-size: 12px; margin: 10px 0 4px 0; color: #2a4a6c; }
+  p { margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 11px; page-break-inside: avoid; }
+  th { background: #1890ff; color: #fff; padding: 5px 6px; text-align: left; font-weight: 600; }
+  td { padding: 4px 6px; border: 1px solid #d9d9d9; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafafa; }
+  pre { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 3px; padding: 8px 10px; font-size: 10.5px; line-height: 1.4; overflow-x: auto; white-space: pre-wrap; word-break: break-all; font-family: Consolas, "Courier New", monospace; page-break-inside: avoid; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 10.5px; background: #f0f0f0; padding: 1px 3px; border-radius: 2px; }
+  pre code { background: none; padding: 0; }
+  ul, ol { margin: 4px 0; padding-left: 20px; }
+  li { margin: 2px 0; }
+  strong { color: #cf1322; }
+  hr { border: none; border-top: 1px solid #e0e0e0; margin: 16px 0; }
+  .footer { text-align: center; font-size: 10px; color: #999; margin-top: 20px; padding-top: 6px; border-top: 1px solid #e0e0e0; }
+  .note { background: #fff7e6; border: 1px solid #ffd591; border-radius: 3px; padding: 8px 10px; margin: 6px 0; font-size: 11px; }
+  .note strong { color: #d46b08; }
+  .tag { display: inline-block; background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; border-radius: 3px; padding: 1px 6px; font-size: 10px; margin: 0 2px; }
+  .tag-p0 { background: #fff1f0; color: #cf1322; border-color: #ffa39e; }
+  .tag-p1 { background: #fff7e6; color: #d46b08; border-color: #ffd591; }
+  .tag-p2 { background: #f6ffed; color: #389e0d; border-color: #b7eb8f; }
+</style>
+</head>
+<body>
+
+<h1>方案 B 变体（对等 Mesh）实施变更细节建议方案</h1>
+<p style="text-align:center;color:#666;">Seals MES System — 异地分布式部署实施规划 &nbsp;|&nbsp; 2026年5月</p>
+
+<!-- ==================== 一、方案概述 ==================== -->
+<h2>一、方案概述</h2>
+
+<h3>1.1 核心理念</h3>
+<p>总部不设独立中心数据库，总部和所有工厂地位<strong>完全对等</strong>。每个节点（含总部）都拥有完整的本地 SQL Server 实例，节点之间<strong>相互同步</strong>全部业务数据。总部只是网络中的一个"普通节点"，通过自身本地库即可查看全系统汇总报表。</p>
+
+<h3>1.2 拓扑结构</h3>
+<pre>        ┌───────────────────────────────────────────┐
+        │              全 Mesh 对等网络               │
+        │                                           │
+        │   ┌─────────┐          ┌─────────┐       │
+        │   │ 总部(HQ) │◄────────►│ 工厂 A  │       │
+        │   │ XYMES_HQ │          │ XYMES_A │       │
+        │   └────┬─────┘          └────┬─────┘       │
+        │        │    ▲                │    ▲         │
+        │        │    │                │    │         │
+        │        ▼    │                ▼    │         │
+        │   ┌─────────┐          ┌─────────┐       │
+        │   │ 工厂 B  │◄────────►│ 工厂 C  │       │
+        │   │ XYMES_B │          │ XYMES_C │       │
+        │   └─────────┘          └─────────┘       │
+        │                                           │
+        │   每个箭头 = 双向数据同步                   │
+        │   每个节点 = 完整数据集副本                  │
+        └───────────────────────────────────────────┘</pre>
+
+<h3>1.3 与原方案 B 的关键区别</h3>
+<table>
+<tr><th>维度</th><th>原方案 B (星型)</th><th>方案 B 变体 (对等 Mesh)</th></tr>
+<tr><td>中心节点</td><td>总部有独立中心库</td><td><strong>无中心节点，全员对等</strong></td></tr>
+<tr><td>数据流向</td><td>工厂→总部单向上报</td><td><strong>所有节点互相同步</strong></td></tr>
+<tr><td>总部角色</td><td>数据汇总者+主数据下发者</td><td><strong>普通节点，与其他厂相同</strong></td></tr>
+<tr><td>总部断网</td><td>无法汇总，但各厂正常</td><td>总部离线后恢复时补同步</td></tr>
+<tr><td>主数据维护</td><td>总部独占修改</td><td><strong>任一节点可改，变更广播</strong></td></tr>
+<tr><td>每个节点数据量</td><td>总部全量，工厂仅自己</td><td><strong>每个节点全量</strong></td></tr>
+<tr><td>跨厂查询</td><td>需汇总库/Linked Server</td><td><strong>查本地库，零延迟</strong></td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 二、系统架构层变更 ==================== -->
+<h2>二、系统架构层变更</h2>
+
+<h3>2.1 新增模块与文件</h3>
+<table>
+<tr><th>新增路径</th><th>职责</th><th>优先级</th></tr>
+<tr><td><code>server/src/config/site.config.ts</code></td><td>站点标识配置：读取 <code>SITE_PREFIX</code>, <code>SITE_NAME</code>, <code>DEPLOY_MODE</code>, <code>SYNC_PEERS</code></td><td><span class="tag tag-p0">P0</span></td></tr>
+<tr><td><code>server/src/config/sync.config.ts</code></td><td>同步策略配置：同步间隔、重试策略、批量大小、同步表清单</td><td><span class="tag tag-p1">P1</span></td></tr>
+<tr><td><code>server/src/modules/sync/*</code></td><td>数据同步模块：push / pull / snapshot / peer discovery 四个控制器 + service</td><td><span class="tag tag-p1">P1</span></td></tr>
+<tr><td><code>server/src/modules/conflict/*</code></td><td>冲突处理模块：冲突检测、LWW 自动合并、人工仲裁接口</td><td><span class="tag tag-p1">P1</span></td></tr>
+<tr><td><code>server/src/modules/report-aggregation/*</code></td><td>汇总报表模块：按 <code>site_prefix</code> 分组聚合查询，替代跨库查询</td><td><span class="tag tag-p1">P1</span></td></tr>
+<tr><td><code>server/src/middleware/siteGuard.middleware.ts</code></td><td>站点写入守卫：拦截非归属站点对业务数据的写操作</td><td><span class="tag tag-p0">P0</span></td></tr>
+</table>
+
+<h3>2.2 数据库配置层改造</h3>
+<h4>当前状态</h4>
+<p>文件：<code>server/src/config/database.ts</code>（31行），单库直连，连接池 <code>max:10, min:2</code></p>
+<h4>变更内容</h4>
+<table>
+<tr><th>改造项</th><th>现状</th><th>变更</th></tr>
+<tr><td>连接配置</td><td>硬编码 <code>host: process.env.DB_HOST || '127.0.0.1'</code></td><td>不变（每个节点连自己的本地库）</td></tr>
+<tr><td>连接池</td><td><code>max: 10, min: 2</code></td><td>适当上调 <code>max: 15</code>（同步服务额外占用连接）</td></tr>
+<tr><td>超时配置</td><td><code>requestTimeout: 120000</code></td><td>增加 <code>connectTimeout: 30000</code>，同步推送到远端 peer 时超时保护</td></tr>
+</table>
+
+<h3>2.3 应用入口层改造</h3>
+<h4>app.ts 变更</h4>
+<table>
+<tr><th>改造项</th><th>位置</th><th>变更</th></tr>
+<tr><td>健康检查扩展</td><td>L73-93</td><td>返回 <code>site_prefix</code>, <code>sync_status</code>, <code>last_sync_at</code></td></tr>
+<tr><td>同步路由注册</td><td>L95 前</td><td>新增 <code>routes.use('/sync', syncRoutes)</code></td></tr>
+<tr><td>站点守卫中间件</td><td>全局中间件</td><td>在 <code>authenticate</code> 之后注册 <code>siteGuard</code>，为所有写操作注入 <code>site_prefix</code> 校验</td></tr>
+<tr><td>同步服务启动</td><td>L98-106 旁</td><td>新增 <code>startSyncService()</code> 启动同步轮询/监听</td></tr>
+</table>
+
+<h4>server.ts 变更</h4>
+<table>
+<tr><th>改造项</th><th>变更</th></tr>
+<tr><td>实例标识</td><td>启动时打印 <code>SITE_PREFIX</code> 和 <code>SYNC_PEERS</code> 配置</td></tr>
+<tr><td>注册到 Mesh</td><td>启动时向 <code>SYNC_PEERS</code> 中各节点发送 <code>POST /api/sync/announce</code> 声明本节点上线</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 三、编号生成层改造 ==================== -->
+<h2>三、编号生成层改造（核心改造，影响面最广）</h2>
+
+<h3>3.1 当前问题</h3>
+<p>所有编号生成函数都使用 <code>SELECT MAX(xxx_number) as max_num FROM 表 WHERE xxx_number LIKE :prefix</code> 模式。在单库场景下不会冲突，但在对等 Mesh 中：</p>
+<ul>
+<li>每个节点只写入自己 <code>site_prefix</code> 的数据，编号查询时需增加 <code>WHERE site_prefix = :sitePrefix</code> 条件</li>
+<li>编号格式需加入站点前缀，如 <code>M-HF-20260515-001</code></li>
+</ul>
+
+<h3>3.2 改造方式</h3>
+<pre>改造前（以 generateProductionNumber 为例）：
+  prefix = 'M' + YYYYMMDD
+  SELECT MAX(production_number) FROM Production_plan WHERE production_number LIKE prefix+'%'
+  → M20260515001
+
+改造后：
+  sitePrefix = process.env.SITE_PREFIX    // 如 'HF'
+  prefix = 'M-' + sitePrefix + '-' + YYYYMMDD + '-'
+  SELECT MAX(production_number) FROM Production_plan 
+    WHERE production_number LIKE prefix+'%' AND site_prefix = :sitePrefix
+  → M-HF-20260515-001</pre>
+
+<div class="note"><strong>建议：</strong>先抽取一个统一的编号生成基础函数 <code>generateNumber(table, column, prefix, sitePrefix, transaction)</code>，减少重复代码。统一改造入口后再加站点前缀，避免遗漏。</div>
+
+<h3>3.3 documentNumber.service.ts 中的 18 个生成函数</h3>
+<table>
+<tr><th>#</th><th>函数名</th><th>当前前缀格式</th><th>改造后格式</th></tr>
+<tr><td>1</td><td><code>generateProductionNumber</code></td><td><code>M20260515</code></td><td><code>M-HF-20260515</code></td></tr>
+<tr><td>2</td><td><code>generateOrderNumber</code></td><td><code>P20260515</code></td><td><code>P-HF-20260515</code></td></tr>
+<tr><td>3</td><td><code>generateWRNumber</code></td><td><code>WR-20260515</code></td><td><code>WR-HF-20260515</code></td></tr>
+<tr><td>4</td><td><code>generateTaskNumber</code></td><td><code>PT-20260515</code></td><td><code>PT-HF-20260515</code></td></tr>
+<tr><td>5</td><td><code>generatePrepNumber</code></td><td><code>MP-20260515</code></td><td><code>MP-HF-20260515</code></td></tr>
+<tr><td>6</td><td><code>generateInboundOrderNumber</code></td><td><code>PI-20260515</code></td><td><code>PI-HF-20260515</code></td></tr>
+<tr><td>7</td><td><code>generateShippingOrderNumber</code></td><td><code>SM-20260515</code></td><td><code>SM-HF-20260515</code></td></tr>
+<tr><td>8</td><td><code>generateForecastNumber</code></td><td><code>SF-20260515</code></td><td><code>SF-HF-20260515</code></td></tr>
+<tr><td>9</td><td><code>generateLinesideTxnNumber</code></td><td><code>LS-20260515</code></td><td><code>LS-HF-20260515</code></td></tr>
+<tr><td>10</td><td><code>generateOutsourcingReqNumber</code></td><td><code>OSR-20260515</code></td><td><code>OSR-HF-20260515</code></td></tr>
+<tr><td>11</td><td><code>generateOutsourcingOrderNumber</code></td><td><code>OS-20260515</code></td><td><code>OS-HF-20260515</code></td></tr>
+<tr><td>12</td><td><code>generateOutsourcingIssueNumber</code></td><td><code>OMI-20260515</code></td><td><code>OMI-HF-20260515</code></td></tr>
+<tr><td>13</td><td><code>generateOutsourcingReceiptNumber</code></td><td><code>ORC-20260515</code></td><td><code>ORC-HF-20260515</code></td></tr>
+<tr><td>14</td><td><code>generateOutsourcingInspectionNumber</code></td><td><code>OQI-20260515</code></td><td><code>OQI-HF-20260515</code></td></tr>
+<tr><td>15</td><td><code>generateOutsourcingSettlementNumber</code></td><td><code>OST-20260515</code></td><td><code>OST-HF-20260515</code></td></tr>
+<tr><td>16</td><td><code>generateOutsourcingReturnStockinNumber</code></td><td><code>ORS-20260515</code></td><td><code>ORS-HF-20260515</code></td></tr>
+<tr><td>17</td><td><code>generateBackflushTaskNumber</code></td><td><code>BT-20260515</code></td><td><code>BT-HF-20260515</code></td></tr>
+<tr><td>18</td><td><code>generateSemiProductionInboundOrderNumber</code></td><td><code>SPIO-20260515</code></td><td><code>SPIO-HF-20260515</code></td></tr>
+</table>
+
+<h3>3.4 Controller 中内联的编号生成（27处，未走 documentNumber.service.ts）</h3>
+<p>这些需要<strong>先迁移到 documentNumber.service.ts</strong>，再统一改造：</p>
+<table>
+<tr><th>#</th><th>文件路径</th><th>内联编号字段</th></tr>
+<tr><td>1</td><td>purchasing/purchaseReq/purchaseReq.controller.ts</td><td><code>purchase_req_number</code>, <code>purchase_order_number</code></td></tr>
+<tr><td>2</td><td>purchasing/purchaseOrder/purchaseOrder.controller.ts</td><td><code>purchase_order_number</code></td></tr>
+<tr><td>3</td><td>purchasing/receivingNotice/receivingNotice.controller.ts</td><td><code>receiving_number</code>, <code>stock_in_number</code></td></tr>
+<tr><td>4</td><td>purchasing/purchaseReturn/purchaseReturn.controller.ts</td><td><code>return_number</code></td></tr>
+<tr><td>5</td><td>purchasing/purchasePrice/purchasePrice.controller.ts</td><td><code>price_list_number</code></td></tr>
+<tr><td>6</td><td>purchasing/purchaseCalc/purchaseCalc.controller.ts</td><td><code>purchase_req_number</code></td></tr>
+<tr><td>7</td><td>purchasing/purchaseInvoice/purchaseInvoice.controller.ts</td><td><code>invoice_number</code></td></tr>
+<tr><td>8</td><td>sales/salesOrder/salesOrder.controller.ts</td><td><code>sales_order_number</code></td></tr>
+<tr><td>9</td><td>sales/returnOrder/returnOrder.controller.ts</td><td><code>return_order_number</code></td></tr>
+<tr><td>10</td><td>sales/salesPrice/salesPrice.controller.ts</td><td><code>price_list_number</code></td></tr>
+<tr><td>11</td><td>sales/salesInvoice/salesInvoice.controller.ts</td><td><code>invoice_number</code></td></tr>
+<tr><td>12</td><td>sales/shippingRequest/shippingRequest.controller.ts</td><td><code>request_number</code></td></tr>
+<tr><td>13</td><td>production/materialPreparation/materialPreparation.controller.ts</td><td><code>preparation_number</code></td></tr>
+<tr><td>14</td><td>production/materialReturn/materialReturn.controller.ts</td><td><code>return_number</code></td></tr>
+<tr><td>15</td><td>production/outsourcingPrice/outsourcingPrice.controller.ts</td><td><code>price_list_number</code></td></tr>
+<tr><td>16</td><td>production/pieceRateWage/pieceRateWage.controller.ts</td><td><code>wage_number</code></td></tr>
+<tr><td>17</td><td>warehouse/stockIn/stockIn.controller.ts</td><td><code>stock_in_number</code></td></tr>
+<tr><td>18</td><td>warehouse/stockCount/stockCount.controller.ts</td><td><code>count_number</code></td></tr>
+<tr><td>19</td><td>warehouse/packingOrder/packingOrder.controller.ts</td><td><code>packing_number</code></td></tr>
+<tr><td>20</td><td>warehouse/scrapDisposal/scrapDisposal.controller.ts</td><td><code>disposal_number</code></td></tr>
+<tr><td>21</td><td>warehouse/abnormalIO/abnormalIO.controller.ts</td><td><code>request_number</code></td></tr>
+<tr><td>22</td><td>quality/productionInspection/productionInspection.controller.ts</td><td><code>inspection_number</code></td></tr>
+<tr><td>23</td><td>quality/nonconformingProduct/nonconformingProduct.controller.ts</td><td><code>nonconforming_number</code>, <code>stock_in_number</code></td></tr>
+<tr><td>24</td><td>quality/reworkOrder/reworkOrder.controller.ts</td><td><code>rework_order_number</code></td></tr>
+<tr><td>25</td><td>quality/scrapInboundOrder/scrapInboundOrder.controller.ts</td><td><code>stock_in_number</code></td></tr>
+<tr><td>26</td><td>finance/standardCost/standardCost.controller.ts</td><td><code>cost_list_number</code></td></tr>
+<tr><td>27</td><td>finance/pieceRatePrice/pieceRatePrice.controller.ts</td><td><code>price_list_number</code></td></tr>
+</table>
+
+<div class="note"><strong>工作量评估：</strong>18 个 service 函数改造 + 27 处内联迁移 = <strong>约 45 个改造点</strong>，是全部工作量中占比最大的一项（约 50%）。</div>
+
+<hr>
+
+<!-- ==================== 四、数据库表结构变更 ==================== -->
+<h2>四、数据库表结构变更</h2>
+
+<h3>4.1 所有业务主表新增字段</h3>
+<table>
+<tr><th>新增字段</th><th>类型</th><th>默认值</th><th>说明</th></tr>
+<tr><td><code>site_prefix</code></td><td><code>NVARCHAR(10) NOT NULL</code></td><td>当前站点前缀</td><td>数据归属标识，只有归属站点可写入</td></tr>
+<tr><td><code>version</code></td><td><code>INT NOT NULL</code></td><td><code>1</code></td><td>乐观锁版本号，同步时冲突检测用</td></tr>
+<tr><td><code>last_synced_at</code></td><td><code>DATETIME NULL</code></td><td><code>NULL</code></td><td>最后一次同步时间戳</td></tr>
+</table>
+
+<p>SQL 示例：</p>
+<pre>-- 所有业务表执行以下迁移
+ALTER TABLE production_order ADD site_prefix NVARCHAR(10) NOT NULL DEFAULT 'HQ';
+ALTER TABLE production_order ADD version INT NOT NULL DEFAULT 1;
+ALTER TABLE production_order ADD last_synced_at DATETIME NULL;
+
+-- 为 site_prefix 创建索引（加速按站点过滤和同步查询）
+CREATE INDEX IX_production_order_site ON production_order(site_prefix);</pre>
+
+<h3>4.2 新增系统表</h3>
+<table>
+<tr><th>表名</th><th>用途</th><th>核心字段</th></tr>
+<tr><td><code>sync_log</code></td><td>变更日志</td><td><code>id, table_name, record_id, operation(C/U/D), payload(JSON), source_site, target_site, status(pending/synced/failed), retry_count, created_at</code></td></tr>
+<tr><td><code>sync_conflict_log</code></td><td>冲突记录</td><td><code>id, table_name, record_id, local_version, remote_version, local_data, remote_data, resolution(pending/auto_resolved/manual), created_at</code></td></tr>
+<tr><td><code>sync_peer_status</code></td><td>各 peer 连接状态</td><td><code>peer_url, status(online/offline), last_sync_at, last_error, created_at, updated_at</code></td></tr>
+<tr><td><code>sync_checkpoint</code></td><td>同步进度检查点</td><td><code>peer_url, table_name, last_synced_id, last_synced_at</code></td></tr>
+</table>
+
+<h3>4.3 涉及的业务表数量</h3>
+<p>根据 <code>IDENTITY(1,1)</code> 和 <code>CREATE TABLE</code> 搜索结果，约 <strong>40+ 张业务表</strong> 需要加 <code>site_prefix</code> + <code>version</code> 字段，主要涉及：</p>
+<ul>
+<li><strong>计划域</strong>：Production_plan, production_order, process_task, material_preparation, backflush_task</li>
+<li><strong>生产域</strong>：work_report, production_inbound_order, semi_production_inbound_order, production_inspection, production_inspection_defect</li>
+<li><strong>采购域</strong>：purchase_req, purchase_order, purchase_receiving_notice, purchase_return, purchase_price_list, purchase_invoice, purchase_quality_inspection, purchase_inspection_defect</li>
+<li><strong>销售域</strong>：sales_order, sales_forecast, shipping_request, shipping_order, return_order, sales_price_list, sales_invoice</li>
+<li><strong>仓库域</strong>：stock_in, stock_count, packing_order, scrap_disposal, abnormal_io_request, material_return, inventory_transaction, material_inventory_transaction, lineside_inventory_transaction, rework_order, nonconforming_product</li>
+<li><strong>委外域</strong>：outsourcing_req, outsourcing_order, outsourcing_material_issue, outsourcing_receipt, outsourcing_inspection, outsourcing_settlement, outsourcing_return_stockin, outsourcing_price_list</li>
+<li><strong>财务域</strong>：standard_cost_header, piece_rate_price_header, piece_rate_wage_header</li>
+<li><strong>基础数据域</strong>：item_master, customer, supplier, bom_header, routing_header, warehouse, work_center 等（主数据同样需归属标识）</li>
+</ul>
+
+<hr>
+
+<!-- ==================== 五、事件系统层改造 ==================== -->
+<h2>五、事件系统层改造</h2>
+
+<h3>5.1 EventBus 改造</h3>
+<p>当前文件：<code>server/src/shared/eventBus.ts</code>（66行），基于 Node.js EventEmitter 的进程内事件总线</p>
+<table>
+<tr><th>改造项</th><th>变更</th></tr>
+<tr><td>事件发布</td><td>每次业务事件 <code>emitAsync()</code> 后，同时写入 <code>sync_log</code> 表（变更捕获）</td></tr>
+<tr><td>新增事件</td><td><code>SYNC_CONFLICT_DETECTED</code>, <code>SYNC_COMPLETED</code>, <code>SYNC_PEER_OFFLINE</code></td></tr>
+</table>
+
+<h3>5.2 EventStore 改造</h3>
+<p>当前文件：<code>server/src/services/eventStore.service.ts</code>（139行），<code>system_events</code> 表</p>
+<table>
+<tr><th>改造项</th><th>变更</th></tr>
+<tr><td>事件记录</td><td>增加 <code>source_site</code> 字段</td></tr>
+<tr><td>事件消费</td><td>增加分布式锁（避免多节点重复消费同一事件）</td></tr>
+</table>
+
+<h3>5.3 EventWorker 改造</h3>
+<p>当前文件：<code>server/src/services/eventWorker.service.ts</code>（149行），轮询消费 pending 事件</p>
+<table>
+<tr><th>改造项</th><th>变更</th></tr>
+<tr><td>分布式锁</td><td>执行前获取数据库级锁（<code>sp_getapplock</code>），仅一个节点执行</td></tr>
+<tr><td>site_prefix 过滤</td><td>避免重复消费非本站事件</td></tr>
+</table>
+
+<h3>5.4 定时任务防重</h3>
+<p>当前文件：<code>server/src/services/stockCountScheduler.service.ts</code>（node-cron 单进程执行）</p>
+<table>
+<tr><th>改造项</th><th>变更</th></tr>
+<tr><td>分布式锁</td><td>执行前获取数据库级锁（<code>sp_getapplock</code>），仅一个节点执行</td></tr>
+<tr><td>同步结果</td><td>盘点结果通过 <code>sync_log</code> 同步到其他节点，其他节点不重复执行</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 六、文件上传层改造 ==================== -->
+<h2>六、文件上传层改造</h2>
+
+<p>当前文件：<code>server/src/middleware/upload.middleware.ts</code>（66行），本地 <code>uploads/</code> 目录</p>
+
+<table>
+<tr><th>改造项</th><th>变更</th></tr>
+<tr><td>文件元数据</td><td>新增 <code>file_attachment</code> 表，记录文件名、站点、同步状态</td></tr>
+<tr><td>同步策略</td><td>方案1（轻量）：rsync 定时同步；方案2：MinIO/S3 对象存储；方案3：API 拉取</td></tr>
+</table>
+
+<div class="note"><strong>建议：</strong>初期采用方案1，rsync 每5分钟同步 <code>uploads/</code> 目录，实施成本最低。</div>
+
+<hr>
+
+<!-- ==================== 七、前端变更 ==================== -->
+<h2>七、前端变更</h2>
+
+<h3>7.1 API 地址动态化</h3>
+<p>当前文件：<code>client/src/utils/request.ts</code>，<code>baseURL: '/api/v1'</code></p>
+<table>
+<tr><th>改造项</th><th>变更</th></tr>
+<tr><td>API 地址</td><td>改为 <code>import.meta.env.VITE_API_BASE || '/api/v1'</code></td></tr>
+<tr><td>站点标识请求头</td><td>请求头增加 <code>X-Site-Prefix</code>，后端可据此过滤数据</td></tr>
+</table>
+
+<h3>7.2 全局站点标识展示</h3>
+<table>
+<tr><th>改造项</th><th>变更</th></tr>
+<tr><td>登录后</td><td>顶部导航栏显示当前站点名称（如"合肥工厂"）</td></tr>
+<tr><td>页面标题</td><td>列表页可选按 <code>site_prefix</code> 过滤显示（仅本厂 / 全部站点）</td></tr>
+<tr><td>只读提示</td><td>非 <code>site_prefix</code> 归属的数据行，操作按钮灰显 + 提示"此数据归属XX站点，仅可查看"</td></tr>
+</table>
+
+<h3>7.3 移动端</h3>
+<p><code>client-mobile/src/api/request.ts</code> 同理改造 API 地址动态化和站点展示。</p>
+
+<hr>
+
+<!-- ==================== 八、日常数据变更细节 ==================== -->
+<h2>八、日常数据变更细节</h2>
+
+<h3>8.1 数据写入流程（改造后）</h3>
+<pre>用户在工厂A提交报工单：
+  1. Controller 接收请求
+  2. siteGuard.middleware 校验 → 自动注入 site_prefix='A'
+  3. 编号生成 → WR-A-20260515-001
+  4. INSERT work_report (..., site_prefix='A', version=1)
+  5. INSERT sync_log (table='work_report', record_id='WR-A-20260515-001', 
+       operation='C', source_site='A', status='pending')
+  6. EventBus.emit('WorkReportCreated', {..., site_prefix: 'A'})
+  7. 同步服务检测到 pending sync_log → 推送到 SYNC_PEERS</pre>
+
+<h3>8.2 数据同步流程</h3>
+<pre>定时轮询（每30秒）：
+  1. 查询 sync_log WHERE status='pending' AND retry_count < 3
+  2. 按 target_site 分组打包
+  3. POST /api/sync/push → 各 peer
+  4. peer 接收后：
+     a. 检查 version：若本地 version >= 远程 version → 冲突，写入 sync_conflict_log
+     b. 若本地不存在或 version < 远程 → UPSERT + version = 远程 version
+     c. 写入 sync_log 本地（标记 source_site 为来源）
+  5. 推送成功 → 更新 sync_log.status = 'synced'
+  6. 推送失败 → retry_count++，下次重试</pre>
+
+<h3>8.3 各数据类型同步策略</h3>
+<table>
+<tr><th>数据类型</th><th>涉及表</th><th>归属</th><th>同步方向</th><th>同步频率</th></tr>
+<tr><td><strong>基础数据</strong>（物料、客户、供应商、BOM、工艺路线等）</td><td>item_master, customer, supplier, bom_header, routing_header 等</td><td>任一站点可创建</td><td>全 Mesh 广播</td><td>实时（变更即推）</td></tr>
+<tr><td><strong>生产数据</strong>（计划、报工、入库）</td><td>Production_plan, work_report, production_inbound_order 等</td><td>创建站点归属</td><td>全 Mesh 广播</td><td>准实时（30秒）</td></tr>
+<tr><td><strong>库存数据</strong></td><td>material_inventory, lineside_inventory 等</td><td>仓库所属站点</td><td>全 Mesh 广播</td><td>准实时（30秒）</td></tr>
+<tr><td><strong>销售订单</strong></td><td>sales_order, sales_order_detail</td><td>创建站点归属</td><td>全 Mesh 广播</td><td>实时</td></tr>
+<tr><td><strong>采购订单</strong></td><td>purchase_order, purchase_req</td><td>创建站点归属</td><td>全 Mesh 广播</td><td>准实时</td></tr>
+<tr><td><strong>质量数据</strong></td><td>production_inspection, nonconforming_product 等</td><td>检验站点归属</td><td>全 Mesh 广播</td><td>准实时</td></tr>
+<tr><td><strong>用户/权限</strong></td><td>users, role, permission 等</td><td>任一站点可改</td><td>全 Mesh 广播</td><td>实时</td></tr>
+<tr><td><strong>财务数据</strong></td><td>standard_cost_header, piece_rate_wage_header 等</td><td>创建站点归属</td><td>全 Mesh 广播</td><td>每小时</td></tr>
+<tr><td><strong>文件附件</strong></td><td>uploads/ 目录</td><td>上传站点归属</td><td>rsync/API</td><td>每5分钟</td></tr>
+</table>
+
+<h3>8.4 冲突处理策略</h3>
+<table>
+<tr><th>冲突场景</th><th>发生概率</th><th>处理方式</th></tr>
+<tr><td>两站同时修改同一基础数据（如同名客户）</td><td>中</td><td>乐观锁：<code>version</code> 不匹配 → 拒绝后到达的变更，写入 <code>sync_conflict_log</code>，提示用户手动合并</td></tr>
+<tr><td>网络分区后，同一记录被两地修改</td><td>低</td><td>LWW（Last-Write-Wins）：以 <code>updated_at</code> 时间戳为准，自动合并，记录到 <code>sync_conflict_log</code> 供人工复核</td></tr>
+<tr><td>编号重复</td><td>极低</td><td>站点前缀天然隔离，不冲突</td></tr>
+<tr><td>从节点上线后大量积压同步</td><td>低</td><td>全量快照 + 增量：新节点先 <code>GET /api/sync/snapshot</code> 获取全量，然后切换到增量同步</td></tr>
+</table>
+
+<h3>8.5 汇总报表查询方式</h3>
+<pre>-- 总部用户查看全系统生产计划（查本地库，零跨库延迟）
+SELECT 'HQ' AS site, * FROM Production_plan WHERE site_prefix = 'HQ'
+UNION ALL
+SELECT 'A'  AS site, * FROM Production_plan WHERE site_prefix = 'A'
+UNION ALL
+SELECT 'B'  AS site, * FROM Production_plan WHERE site_prefix = 'B'
+UNION ALL
+SELECT 'C'  AS site, * FROM Production_plan WHERE site_prefix = 'C'
+ORDER BY production_number;
+
+-- 工厂A用户执行同一条 SQL，同样能看到全系统数据
+-- （因为工厂A也同步了 HQ/B/C 的数据）
+→ 每个节点都有完整副本</pre>
+
+<hr>
+
+<!-- ==================== 九、实施优先级与分期建议 ==================== -->
+<h2>九、实施优先级与分期建议</h2>
+
+<h3>Phase 1：基础准备（2-3 周）</h3>
+<table>
+<tr><th>序号</th><th>任务</th><th>涉及文件</th><th>工作量</th></tr>
+<tr><td>1.1</td><td>新增 <code>site.config.ts</code>, <code>sync.config.ts</code></td><td>新增2文件</td><td>0.5天</td></tr>
+<tr><td>1.2</td><td><code>.env</code> 增加 <code>SITE_PREFIX</code>, <code>SYNC_PEERS</code> 等变量</td><td><code>.env</code></td><td>0.5天</td></tr>
+<tr><td>1.3</td><td>编号生成统一改造（18个函数 + 27处内联迁移）</td><td><code>documentNumber.service.ts</code> + 27个 controller</td><td>5天</td></tr>
+<tr><td>1.4</td><td>所有业务表增加 <code>site_prefix</code>, <code>version</code>, <code>last_synced_at</code></td><td><code>models/index.ts</code> 迁移脚本</td><td>3天</td></tr>
+<tr><td>1.5</td><td>新增 <code>siteGuard.middleware.ts</code></td><td>新增1文件</td><td>1天</td></tr>
+<tr><td>1.6</td><td>健康检查端点扩展</td><td><code>app.ts</code></td><td>0.5天</td></tr>
+</table>
+
+<h3>Phase 2：同步模块开发（3-4 周）</h3>
+<table>
+<tr><th>序号</th><th>任务</th><th>涉及文件</th><th>工作量</th></tr>
+<tr><td>2.1</td><td><code>sync_log</code> / <code>sync_conflict_log</code> / <code>sync_peer_status</code> / <code>sync_checkpoint</code> 建表</td><td>迁移脚本</td><td>1天</td></tr>
+<tr><td>2.2</td><td>同步服务核心（变更捕获 + push/pull）</td><td><code>modules/sync/*</code> 新增4-5文件</td><td>5天</td></tr>
+<tr><td>2.3</td><td>冲突检测与自动合并（LWW + 乐观锁）</td><td><code>modules/conflict/*</code> 新增2-3文件</td><td>3天</td></tr>
+<tr><td>2.4</td><td>EventBus 桥接同步：业务事件自动写入 <code>sync_log</code></td><td><code>eventBus.ts</code> 改造</td><td>2天</td></tr>
+<tr><td>2.5</td><td>定时任务分布式锁</td><td><code>stockCountScheduler.service.ts</code></td><td>1天</td></tr>
+<tr><td>2.6</td><td>EventWorker 分布式锁</td><td><code>eventWorker.service.ts</code></td><td>1天</td></tr>
+</table>
+
+<h3>Phase 3：前端适配（2 周）</h3>
+<table>
+<tr><th>序号</th><th>任务</th><th>涉及文件</th><th>工作量</th></tr>
+<tr><td>3.1</td><td>API 地址动态化</td><td><code>request.ts</code> (PC + Mobile)</td><td>1天</td></tr>
+<tr><td>3.2</td><td>站点标识展示 + 数据过滤</td><td>顶部导航组件 + 列表页</td><td>3天</td></tr>
+<tr><td>3.3</td><td>非归属数据只读保护</td><td>各列表/编辑页</td><td>2天</td></tr>
+<tr><td>3.4</td><td>同步状态监控页面</td><td>新增页面</td><td>2天</td></tr>
+</table>
+
+<h3>Phase 4：集成测试与部署（2-3 周）</h3>
+<table>
+<tr><th>序号</th><th>任务</th><th>工作量</th></tr>
+<tr><td>4.1</td><td>双节点联调测试（HQ + Factory A）</td><td>3天</td></tr>
+<tr><td>4.2</td><td>断网恢复测试</td><td>2天</td></tr>
+<tr><td>4.3</td><td>冲突场景测试</td><td>2天</td></tr>
+<tr><td>4.4</td><td>性能压测（同步延迟、数据库负载）</td><td>2天</td></tr>
+<tr><td>4.5</td><td>部署自动化脚本</td><td>3天</td></tr>
+</table>
+
+<p><strong>总预估工期：9-12 周</strong></p>
+
+<hr>
+
+<!-- ==================== 十、关键风险与应对 ==================== -->
+<h2>十、关键风险与应对</h2>
+<table>
+<tr><th>风险</th><th>影响</th><th>应对措施</th></tr>
+<tr><td>40+ 表加 <code>site_prefix</code> 字段，历史数据需回填</td><td>大表 ALTER 可能锁表</td><td>分批执行，低峰期操作；默认值填充当前站点前缀</td></tr>
+<tr><td>编号格式变更，前端/报表中硬编码的编号解析失效</td><td>现有数据编号无站点前缀</td><td>新旧编号兼容：旧数据 <code>site_prefix</code> 回填但编号不变，仅新数据使用新格式</td></tr>
+<tr><td>全量数据同步导致网络/磁盘压力</td><td>每节点存储 = 单厂数据 × 节点数</td><td>橡胶密封件行业数据量小，4节点约200GB，普通服务器可承载</td></tr>
+<tr><td>同步延迟导致用户看到过期数据</td><td>操作失误</td><td>前端展示数据来源站点 + 最后同步时间；非归属数据加"同步于XX:XX"标签</td></tr>
+<tr><td>同步服务单点故障</td><td>某个节点同步中断</td><td>sync_log 持久化 + 重试机制；节点恢复后自动补偿积压数据</td></tr>
+<tr><td>网络分区期间多节点同时修改基础数据</td><td>数据冲突</td><td>乐观锁 + LWW 自动合并 + 人工仲裁兜底</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 十一、文件改造清单总览 ==================== -->
+<h2>十一、文件改造清单总览</h2>
+<table>
+<tr><th>文件路径</th><th>改造内容</th><th>优先级</th></tr>
+<tr><td>server/.env</td><td>新增 SITE_PREFIX, DEPLOY_MODE, SYNC_PEERS</td><td><span class="tag tag-p0">P0</span></td></tr>
+<tr><td>server/src/config/site.config.ts</td><td><strong>新增</strong>：站点配置管理</td><td><span class="tag tag-p0">P0</span></td></tr>
+<tr><td>server/src/config/sync.config.ts</td><td><strong>新增</strong>：同步配置，含 SYNC_PEERS 对等节点列表</td><td><span class="tag tag-p1">P1</span></td></tr>
+<tr><td>server/src/config/database.ts</td><td>连接池放大 + 超时配置</td><td><span class="tag tag-p0">P0</span></td></tr>
+<tr><td>server/src/app.ts</td><td>健康检查扩展 + 同步路由 + 站点守卫</td><td><span class="tag tag-p0">P0</span></td></tr>
+<tr><td>server/src/server.ts</td><td>实例标识、启动时注册到 Mesh</td><td><span class="tag tag-p0">P0</span></td></tr>
+<tr><td>server/src/middleware/siteGuard.middleware.ts</td><td><strong>新增</strong>：站点写入守卫</td><td><span class="tag tag-p0">P0</span></td></tr>
+<tr><td>server/src/services/documentNumber.service.ts</td><td>18个函数站点前缀化 + 统一基础函数</td><td><span class="tag tag-p0">P0</span></td></tr>
+<tr><td>27个 controller 文件</td><td>内联编号生成迁移到 documentNumber.service.ts + 站点前缀</td><td><span class="tag tag-p0">P0</span></td></tr>
+<tr><td>server/src/models/index.ts</td><td>40+ 业务表增加 site_prefix / version / last_synced_at 迁移</td><td><span class="tag tag-p0">P0</span></td></tr>
+<tr><td>server/src/shared/eventBus.ts</td><td>事件发布时写入 sync_log + 新增同步事件</td><td><span class="tag tag-p1">P1</span></td></tr>
+<tr><td>server/src/services/eventStore.service.ts</td><td>增加 source_site 字段 + 分布式锁</td><td><span class="tag tag-p1">P1</span></td></tr>
+<tr><td>server/src/services/eventWorker.service.ts</td><td>分布式锁 + site_prefix 过滤</td><td><span class="tag tag-p1">P1</span></td></tr>
+<tr><td>server/src/services/stockCountScheduler.service.ts</td><td>分布式锁防重</td><td><span class="tag tag-p1">P1</span></td></tr>
+<tr><td>server/src/middleware/upload.middleware.ts</td><td>文件元数据记录 + 同步策略</td><td><span class="tag tag-p1">P1</span></td></tr>
+<tr><td>server/src/modules/sync/*</td><td><strong>新增</strong>：数据同步模块（push/pull/snapshot/peer）</td><td><span class="tag tag-p1">P1</span></td></tr>
+<tr><td>server/src/modules/conflict/*</td><td><strong>新增</strong>：冲突处理模块</td><td><span class="tag tag-p1">P1</span></td></tr>
+<tr><td>server/src/modules/report-aggregation/*</td><td><strong>新增</strong>：汇总报表模块</td><td><span class="tag tag-p1">P1</span></td></tr>
+<tr><td>client/src/utils/request.ts</td><td>API 地址动态化 + 站点请求头</td><td><span class="tag tag-p0">P0</span></td></tr>
+<tr><td>client-mobile/src/api/request.ts</td><td>API 地址动态化 + 站点请求头</td><td><span class="tag tag-p0">P0</span></td></tr>
+<tr><td>前端各列表/编辑页</td><td>站点标识展示 + 非归属数据只读保护</td><td><span class="tag tag-p1">P1</span></td></tr>
+<tr><td>ecosystem.config.js</td><td>多实例 cluster 模式</td><td><span class="tag tag-p0">P0</span></td></tr>
+</table>
+
+<div class="footer">Seals MES System — 方案 B 变体（对等 Mesh）实施变更细节建议方案 &nbsp;|&nbsp; 宁国市睿信信息技术有限责任公司</div>
+</body>
+</html>

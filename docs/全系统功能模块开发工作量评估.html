@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Seals MES System — 全系统功能模块开发工作量评估</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 16mm 14mm; }
+  body {
+    font-family: "Microsoft YaHei", "SimHei", "PingFang SC", sans-serif;
+    font-size: 12px;
+    line-height: 1.7;
+    color: #1a1a1a;
+    max-width: 100%; padding: 0; margin: 0;
+  }
+  h1 { font-size: 20px; text-align: center; margin: 0 0 6px 0; padding-bottom: 10px; border-bottom: 2px solid #1890ff; color: #0d1a26; }
+  h2 { font-size: 15px; margin: 22px 0 8px 0; padding: 5px 0 5px 10px; border-left: 4px solid #1890ff; background: #f0f5ff; color: #0d1a26; page-break-after: avoid; }
+  h3 { font-size: 13px; margin: 14px 0 6px 0; color: #1a3a5c; page-break-after: avoid; }
+  h4 { font-size: 12px; margin: 10px 0 4px 0; color: #2a4a6c; }
+  p { margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 11px; page-break-inside: avoid; }
+  th { background: #1890ff; color: #fff; padding: 5px 6px; text-align: left; font-weight: 600; }
+  td { padding: 4px 6px; border: 1px solid #d9d9d9; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafafa; }
+  pre { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 3px; padding: 8px 10px; font-size: 10.5px; line-height: 1.4; overflow-x: auto; white-space: pre-wrap; word-break: break-all; font-family: Consolas, "Courier New", monospace; page-break-inside: avoid; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 10.5px; background: #f0f0f0; padding: 1px 3px; border-radius: 2px; }
+  pre code { background: none; padding: 0; }
+  ul, ol { margin: 4px 0; padding-left: 20px; }
+  li { margin: 2px 0; }
+  strong { color: #cf1322; }
+  hr { border: none; border-top: 1px solid #e0e0e0; margin: 16px 0; }
+  .footer { text-align: center; font-size: 10px; color: #999; margin-top: 20px; padding-top: 6px; border-top: 1px solid #e0e0e0; }
+  .note { background: #fff7e6; border: 1px solid #ffd591; border-radius: 3px; padding: 8px 10px; margin: 6px 0; font-size: 11px; }
+  .note strong { color: #d46b08; }
+  .tag { display: inline-block; background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; border-radius: 3px; padding: 1px 6px; font-size: 10px; margin: 0 2px; }
+  .summary-table td { text-align: center; }
+  .highlight { background: #f6ffed; }
+  .chart-bar { display: inline-block; height: 16px; background: linear-gradient(90deg, #1890ff, #36cfc9); border-radius: 2px; vertical-align: middle; }
+</style>
+</head>
+<body>
+
+<h1>Seals MES System — 全系统功能模块开发工作量评估</h1>
+<p style="text-align:center;color:#666;">宁国市睿信信息技术有限责任公司 &nbsp;|&nbsp; 2026年5月</p>
+
+<!-- ==================== 系统概述 ==================== -->
+<h2>一、系统概述</h2>
+<p>Seals MES System 是面向橡胶密封件制造行业的制造执行系统（MES），涵盖主数据管理、销售管理、采购管理、生产管理、仓储管理、质量管理、设备管理、财务管理、计划排程、系统集成等核心业务领域。</p>
+
+<h3>1.1 技术栈</h3>
+<table>
+<tr><th>层</th><th>技术</th></tr>
+<tr><td>前端</td><td>Vue 3 + TypeScript + Ant Design Vue + Vite</td></tr>
+<tr><td>后端</td><td>Node.js + Express + TypeScript + Sequelize（raw SQL）</td></tr>
+<tr><td>数据库</td><td>SQL Server</td></tr>
+<tr><td>公共服务</td><td>审批引擎 / 工作流引擎 / 文档编号服务 / 事件驱动架构 / SSE 实时推送</td></tr>
+</table>
+
+<h3>1.2 系统规模统计</h3>
+<table class="summary-table">
+<tr><th>指标</th><th>数量</th></tr>
+<tr><td>前端 Vue 页面</td><td><strong>174</strong> 个</td></tr>
+<tr><td>后端 Controller</td><td><strong>115</strong> 个</td></tr>
+<tr><td>后端 Route 模块</td><td><strong>111</strong> 个</td></tr>
+<tr><td>后端 Service（模块内）</td><td><strong>3</strong> 个</td></tr>
+<tr><td>后端 Service（公共层）</td><td><strong>26</strong> 个</td></tr>
+<tr><td>功能模块大类</td><td><strong>12</strong> 个</td></tr>
+<tr><td>子模块</td><td><strong>约 80+</strong> 个</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 评估方法 ==================== -->
+<h2>二、评估方法</h2>
+
+<h3>2.1 评估维度</h3>
+<table>
+<tr><th>维度</th><th>权重</th><th>说明</th></tr>
+<tr><td>数据库复杂度</td><td>20%</td><td>表数量、外键关系、迁移脚本复杂度</td></tr>
+<tr><td>后端 API 复杂度</td><td>30%</td><td>接口数量、业务逻辑（状态机/审批/事务/计算）、Service 层复杂度</td></tr>
+<tr><td>前端页面复杂度</td><td>35%</td><td>页面数量、交互复杂度（弹窗/下拉/表格/图表）、Composable 复用度</td></tr>
+<tr><td>联调测试</td><td>15%</td><td>业务流程验证、边界场景、跨模块联调</td></tr>
+</table>
+
+<h3>2.2 估时标准</h3>
+<table>
+<tr><th>页面类型</th><th>后端估时</th><th>前端估时</th><th>说明</th></tr>
+<tr><td>简单列表页（CRUD）</td><td>1~1.5天</td><td>1~1.5天</td><td>单表 CRUD，复用 useTableList + useColumnPreference</td></tr>
+<tr><td>主从列表页（头+行）</td><td>2~3天</td><td>2.5~3.5天</td><td>主表+明细表，含创建/编辑弹窗、审批集成</td></tr>
+<tr><td>详情页（复杂）</td><td>—</td><td>2~4天</td><td>含时间轴/多Tab/图表/附件/审批步骤展示</td></tr>
+<tr><td>报表/仪表盘页</td><td>1~2天</td><td>2~3天</td><td>ECharts 图表 + KPI 卡片 + 数据表格</td></tr>
+<tr><td>审批流程集成</td><td>0.5~1天</td><td>1~2天</td><td>含提交/审批/撤回/驳回 + 工作流引擎对接</td></tr>
+<tr><td>导入/导出功能</td><td>1~1.5天</td><td>0.5天</td><td>Excel 模板下载 + 批量导入 + 导出</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 模块明细评估 ==================== -->
+<h2>三、模块明细评估</h2>
+
+<!-- ===== 1. 基础数据 ===== -->
+<h3>3.1 基础数据（master-data）</h3>
+<table>
+<tr><th>子模块</th><th>前端页面</th><th>后端接口</th><th>审批</th><th>功能说明</th><th>后端估时</th><th>前端估时</th><th>联调</th></tr>
+<tr><td>物料主数据</td><td>1</td><td>CRUD</td><td>✅</td><td>物料编码/名称/规格/单位/分类，含审批</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>物料分类</td><td>1</td><td>CRUD</td><td>—</td><td>树形分类管理</td><td>0.8</td><td>1.2</td><td>0.3</td></tr>
+<tr><td>物料属性</td><td>1</td><td>CRUD</td><td>—</td><td>物料属性字典</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>产品</td><td>1</td><td>CRUD</td><td>—</td><td>产品编号/名称/客户关联</td><td>0.5</td><td>1</td><td>0.2</td></tr>
+<tr><td>产品分类</td><td>1</td><td>CRUD</td><td>—</td><td>产品分类字典</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>客户管理</td><td>2</td><td>CRUD+详情</td><td>✅</td><td>客户信息+联系人+地址，含审批</td><td>1.5</td><td>2.5</td><td>0.5</td></tr>
+<tr><td>客户物料映射</td><td>1</td><td>CRUD</td><td>—</td><td>客户物料编号对照</td><td>0.8</td><td>1</td><td>0.2</td></tr>
+<tr><td>供应商管理</td><td>2</td><td>CRUD+详情</td><td>✅</td><td>供应商信息+联系人，含审批</td><td>1.5</td><td>2.5</td><td>0.5</td></tr>
+<tr><td>设计BOM</td><td>2</td><td>头+行CRUD</td><td>✅</td><td>BOM 头行结构+树形查看器+版本管理，含审批+导入</td><td>3</td><td>4</td><td>1</td></tr>
+<tr><td>制造BOM</td><td>3</td><td>头+行CRUD</td><td>✅</td><td>制造BOM+模具映射+树形查看器，含审批+导入</td><td>3</td><td>4</td><td>1</td></tr>
+<tr><td>成本BOM</td><td>1</td><td>查询+计算</td><td>—</td><td>成本核算BOM</td><td>2</td><td>1.5</td><td>0.5</td></tr>
+<tr><td>工艺路线</td><td>1</td><td>头+行CRUD</td><td>✅</td><td>工序路线+工序明细，含审批</td><td>2</td><td>2.5</td><td>0.5</td></tr>
+<tr><td>标准工序</td><td>1</td><td>CRUD</td><td>—</td><td>工序库管理</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>工程更改</td><td>2</td><td>11接口</td><td>—</td><td>生命周期+变更日志+时间轴视图（已评估：10.5天）</td><td>3.8</td><td>5.6</td><td>1.1</td></tr>
+<tr><td>仓库</td><td>1</td><td>CRUD</td><td>—</td><td>仓库基础信息</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>库位</td><td>1</td><td>CRUD</td><td>—</td><td>仓库库位管理</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>工作中心</td><td>1</td><td>CRUD</td><td>—</td><td>工作中心定义</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>车间</td><td>1</td><td>CRUD</td><td>—</td><td>车间管理</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>生产线</td><td>1</td><td>CRUD</td><td>—</td><td>生产线管理</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>班组</td><td>1</td><td>CRUD</td><td>—</td><td>班组管理</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>班次</td><td>1</td><td>CRUD</td><td>—</td><td>班次定义</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>单位</td><td>1</td><td>CRUD</td><td>—</td><td>计量单位</td><td>0.3</td><td>0.5</td><td>0.1</td></tr>
+<tr><td>员工</td><td>1</td><td>CRUD</td><td>—</td><td>员工信息</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>物流公司</td><td>1</td><td>CRUD</td><td>—</td><td>物流公司信息</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>物料流水</td><td>1</td><td>只读查询</td><td>—</td><td>物料出入库流水记录</td><td>1</td><td>1</td><td>0.3</td></tr>
+<tr style="background:#f0f5ff"><td colspan="5" style="text-align:right;font-weight:bold;">基础数据小计</td><td style="font-weight:bold;">24.4</td><td style="font-weight:bold;">33.7</td><td style="font-weight:bold;">7.2</td></tr>
+</table>
+
+<!-- ===== 2. 销售管理 ===== -->
+<h3>3.2 销售管理（sales）</h3>
+<table>
+<tr><th>子模块</th><th>前端页面</th><th>后端接口</th><th>审批</th><th>功能说明</th><th>后端估时</th><th>前端估时</th><th>联调</th></tr>
+<tr><td>销售订单</td><td>2</td><td>头+行CRUD</td><td>✅</td><td>订单头行+客户关联+价格+审批+导入</td><td>3</td><td>4</td><td>1</td></tr>
+<tr><td>销售预测</td><td>2</td><td>头+行CRUD</td><td>✅</td><td>预测头行+审批+MPS消耗</td><td>2.5</td><td>3</td><td>0.8</td></tr>
+<tr><td>样品申请</td><td>3</td><td>CRUD+创建+详情</td><td>✅</td><td>样品申请全流程（已评估）</td><td>3.5</td><td>5</td><td>1</td></tr>
+<tr><td>发货申请</td><td>3</td><td>CRUD+待处理+待处理详情</td><td>✅</td><td>发货申请+待审核列表</td><td>2.5</td><td>3.5</td><td>0.8</td></tr>
+<tr><td>发货单</td><td>2</td><td>头+行CRUD</td><td>✅</td><td>发货执行+装箱+打印</td><td>2.5</td><td>3</td><td>0.8</td></tr>
+<tr><td>退货单</td><td>2</td><td>头+行CRUD</td><td>✅</td><td>退货管理+审批</td><td>2</td><td>2.5</td><td>0.5</td></tr>
+<tr><td>销售开票</td><td>1</td><td>CRUD</td><td>✅</td><td>销售发票管理</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>销售价目表</td><td>1</td><td>CRUD+导入</td><td>—</td><td>客户价格管理+导入</td><td>1.5</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>销售报表</td><td>1</td><td>聚合查询</td><td>—</td><td>销售统计图表</td><td>1</td><td>2</td><td>0.3</td></tr>
+<tr><td>订单生产汇总</td><td>1</td><td>聚合查询</td><td>—</td><td>订单与生产关联统计</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>发货按订单汇总</td><td>1</td><td>聚合查询</td><td>—</td><td>发货统计</td><td>0.8</td><td>1.5</td><td>0.2</td></tr>
+<tr><td>发货预警</td><td>1</td><td>查询</td><td>—</td><td>逾期/临期发货预警</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr style="background:#f0f5ff"><td colspan="5" style="text-align:right;font-weight:bold;">销售管理小计</td><td style="font-weight:bold;">22.8</td><td style="font-weight:bold;">31</td><td style="font-weight:bold;">6.8</td></tr>
+</table>
+
+<!-- ===== 3. 采购管理 ===== -->
+<h3>3.3 采购管理（purchasing）</h3>
+<table>
+<tr><th>子模块</th><th>前端页面</th><th>后端接口</th><th>审批</th><th>功能说明</th><th>后端估时</th><th>前端估时</th><th>联调</th></tr>
+<tr><td>采购申请</td><td>2</td><td>头+行CRUD</td><td>✅</td><td>采购申请+审批+导入</td><td>2.5</td><td>3</td><td>0.8</td></tr>
+<tr><td>采购订单</td><td>2</td><td>头+行CRUD</td><td>✅</td><td>采购订单+审批+收货关联</td><td>3</td><td>3.5</td><td>0.8</td></tr>
+<tr><td>收货通知</td><td>1</td><td>CRUD</td><td>✅</td><td>收货登记+质检关联</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>采购退货</td><td>1</td><td>CRUD</td><td>✅</td><td>退货管理</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>采购开票</td><td>1</td><td>CRUD</td><td>✅</td><td>采购发票管理</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>采购价目表</td><td>1</td><td>CRUD+导入</td><td>—</td><td>供应商价格管理+导入</td><td>1.5</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>采购需求报表</td><td>1</td><td>聚合计算</td><td>—</td><td>MRP 采购需求汇总</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>采购仪表盘</td><td>1</td><td>聚合查询</td><td>—</td><td>采购统计图表</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr style="background:#f0f5ff"><td colspan="5" style="text-align:right;font-weight:bold;">采购管理小计</td><td style="font-weight:bold;">14</td><td style="font-weight:bold;">17.5</td><td style="font-weight:bold;">4.2</td></tr>
+</table>
+
+<!-- ===== 4. 生产管理 ===== -->
+<h3>3.4 生产管理（production）</h3>
+<table>
+<tr><th>子模块</th><th>前端页面</th><th>后端接口</th><th>审批</th><th>功能说明</th><th>后端估时</th><th>前端估时</th><th>联调</th></tr>
+<tr><td>生产单</td><td>1</td><td>CRUD+派工</td><td>✅</td><td>生产单管理+审批+自动派工</td><td>3</td><td>2.5</td><td>0.8</td></tr>
+<tr><td>工序任务</td><td>1</td><td>CRUD+状态流转</td><td>—</td><td>工序任务派工+开工+完工</td><td>2</td><td>2</td><td>0.5</td></tr>
+<tr><td>报工单</td><td>2</td><td>CRUD+连续报工</td><td>✅</td><td>报工+合格/不合格+连续报工模式</td><td>2.5</td><td>3</td><td>0.8</td></tr>
+<tr><td>备料单</td><td>5</td><td>多接口</td><td>—</td><td>备料+按工序+投料+倒冲+领料</td><td>4</td><td>5</td><td>1.5</td></tr>
+<tr><td>物料成本</td><td>1</td><td>快照+计算</td><td>—</td><td>物料成本快照</td><td>2</td><td>1.5</td><td>0.5</td></tr>
+<tr><td>派工打印</td><td>1</td><td>查询+打印</td><td>—</td><td>派工单打印</td><td>0.5</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>甘特图</td><td>2</td><td>查询</td><td>—</td><td>ECharts甘特图+进度展示</td><td>1</td><td>3</td><td>0.5</td></tr>
+<tr><td>工序看板</td><td>1</td><td>实时推送</td><td>—</td><td>SSE 实时工序看板</td><td>2</td><td>2</td><td>0.5</td></tr>
+<tr><td>生产进度仪表盘</td><td>1</td><td>聚合查询</td><td>—</td><td>生产进度统计</td><td>1</td><td>2</td><td>0.3</td></tr>
+<tr><td>计件工资</td><td>1</td><td>CRUD+计算</td><td>—</td><td>计件工资核算</td><td>1.5</td><td>1.5</td><td>0.5</td></tr>
+<tr><td>委外申请</td><td>1</td><td>CRUD</td><td>✅</td><td>委外申请+审批</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>委外订单</td><td>1</td><td>CRUD</td><td>✅</td><td>委外订单管理</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>委外发料</td><td>1</td><td>CRUD</td><td>—</td><td>委外发料</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>委外收货</td><td>1</td><td>CRUD</td><td>—</td><td>委外收货</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>委外检验</td><td>1</td><td>CRUD</td><td>—</td><td>委外质检</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>委外结算</td><td>1</td><td>CRUD</td><td>✅</td><td>委外费用结算</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>委外价目表</td><td>1</td><td>CRUD</td><td>—</td><td>委外价格管理</td><td>0.8</td><td>1</td><td>0.2</td></tr>
+<tr><td>WIP 在制品</td><td>3</td><td>查询</td><td>—</td><td>按订单/工作中心/线边事务</td><td>2</td><td>3</td><td>0.5</td></tr>
+<tr style="background:#f0f5ff"><td colspan="5" style="text-align:right;font-weight:bold;">生产管理小计</td><td style="font-weight:bold;">30.8</td><td style="font-weight:bold;">38.5</td><td style="font-weight:bold;">8.8</td></tr>
+</table>
+
+<!-- ===== 5. 仓储管理 ===== -->
+<h3>3.5 仓储管理（warehouse）</h3>
+<table>
+<tr><th>子模块</th><th>前端页面</th><th>后端接口</th><th>审批</th><th>功能说明</th><th>后端估时</th><th>前端估时</th><th>联调</th></tr>
+<tr><td>成品仓-入库</td><td>1</td><td>CRUD</td><td>✅</td><td>成品入库</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>成品仓-出库</td><td>1</td><td>CRUD</td><td>✅</td><td>成品出库</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>成品仓-入库单</td><td>1</td><td>查询</td><td>—</td><td>入库单查看</td><td>0.8</td><td>1</td><td>0.2</td></tr>
+<tr><td>成品仓-退货入库</td><td>1</td><td>CRUD</td><td>✅</td><td>退货入库</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>成品仓-库存查询</td><td>1</td><td>查询</td><td>—</td><td>库存余量查询</td><td>0.5</td><td>1</td><td>0.2</td></tr>
+<tr><td>成品仓-库存台账</td><td>1</td><td>查询</td><td>—</td><td>收发存台账</td><td>0.8</td><td>1.5</td><td>0.2</td></tr>
+<tr><td>成品仓-月报</td><td>1</td><td>聚合</td><td>—</td><td>月度库存报表</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>成品仓-异常出入</td><td>1</td><td>CRUD</td><td>✅</td><td>异常出入库</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>成品仓-装箱单</td><td>1</td><td>CRUD+打印</td><td>—</td><td>装箱单</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>成品仓-事务</td><td>1</td><td>查询</td><td>—</td><td>库存事务记录</td><td>0.5</td><td>1</td><td>0.2</td></tr>
+<tr><td>材料仓-入库</td><td>1</td><td>CRUD</td><td>✅</td><td>材料入库</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>材料仓-出库</td><td>1</td><td>CRUD</td><td>✅</td><td>材料出库</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>材料仓-生产入库</td><td>1</td><td>CRUD</td><td>✅</td><td>生产入库</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>材料仓-退货出库</td><td>1</td><td>CRUD</td><td>✅</td><td>退货出库</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>材料仓-半成品入库</td><td>1</td><td>CRUD</td><td>✅</td><td>半成品入库</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>材料仓-库存</td><td>1</td><td>查询</td><td>—</td><td>材料库存查询</td><td>0.5</td><td>1</td><td>0.2</td></tr>
+<tr><td>材料仓-安全库存</td><td>1</td><td>查询+预警</td><td>—</td><td>安全库存预警</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>材料仓-月报</td><td>1</td><td>聚合</td><td>—</td><td>月度材料报表</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>材料仓-事务</td><td>1</td><td>查询</td><td>—</td><td>材料事务记录</td><td>0.5</td><td>1</td><td>0.2</td></tr>
+<tr><td>采购入库</td><td>1</td><td>CRUD</td><td>✅</td><td>采购入库关联</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>盘点</td><td>2</td><td>CRUD+报表</td><td>✅</td><td>盘点+盘点报告+自动盘点调度</td><td>2</td><td>3</td><td>0.8</td></tr>
+<tr><td>废品处置</td><td>2</td><td>CRUD+月报</td><td>✅</td><td>废品处置+月报</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>废品库存</td><td>1</td><td>查询</td><td>—</td><td>废品库存查询</td><td>0.5</td><td>1</td><td>0.2</td></tr>
+<tr><td>废品事务</td><td>1</td><td>查询</td><td>—</td><td>废品事务记录</td><td>0.5</td><td>1</td><td>0.2</td></tr>
+<tr style="background:#f0f5ff"><td colspan="5" style="text-align:right;font-weight:bold;">仓储管理小计</td><td style="font-weight:bold;">24.1</td><td style="font-weight:bold;">36</td><td style="font-weight:bold;">7.9</td></tr>
+</table>
+
+<!-- ===== 6. 质量管理 ===== -->
+<h3>3.6 质量管理（quality）</h3>
+<table>
+<tr><th>子模块</th><th>前端页面</th><th>后端接口</th><th>审批</th><th>功能说明</th><th>后端估时</th><th>前端估时</th><th>联调</th></tr>
+<tr><td>缺陷类别</td><td>1</td><td>CRUD</td><td>—</td><td>缺陷分类</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>缺陷</td><td>1</td><td>CRUD</td><td>—</td><td>缺陷字典</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>缺陷原因</td><td>1</td><td>CRUD</td><td>—</td><td>缺陷原因字典</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>质量特性</td><td>1</td><td>CRUD</td><td>—</td><td>质量特性定义</td><td>0.5</td><td>0.8</td><td>0.2</td></tr>
+<tr><td>检验规格</td><td>1</td><td>CRUD</td><td>—</td><td>检验规格定义</td><td>0.8</td><td>1</td><td>0.3</td></tr>
+<tr><td>来料检验规格</td><td>1</td><td>CRUD</td><td>—</td><td>来料检验规格</td><td>0.8</td><td>1</td><td>0.3</td></tr>
+<tr><td>检验计划</td><td>1</td><td>CRUD</td><td>—</td><td>生产检验计划</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>来料检验计划</td><td>1</td><td>CRUD</td><td>—</td><td>来料检验计划</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>生产检验</td><td>1</td><td>CRUD</td><td>—</td><td>生产过程检验记录</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>不合格品</td><td>2</td><td>CRUD+待处理</td><td>✅</td><td>不合格品管理+待处理列表</td><td>2</td><td>3</td><td>0.8</td></tr>
+<tr><td>返工单</td><td>1</td><td>CRUD</td><td>✅</td><td>返工管理</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>质量报表(5页)</td><td>5</td><td>聚合查询</td><td>—</td><td>总览+产品汇总+订单透视+采购检验+良率</td><td>3</td><td>6</td><td>1</td></tr>
+<tr><td>废品处置报告</td><td>1</td><td>聚合查询</td><td>—</td><td>废品处置统计</td><td>0.8</td><td>1.5</td><td>0.2</td></tr>
+<tr><td>废品入库单</td><td>1</td><td>CRUD</td><td>—</td><td>废品入库</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>废品库存报表</td><td>1</td><td>查询</td><td>—</td><td>废品库存统计</td><td>0.5</td><td>1</td><td>0.2</td></tr>
+<tr><td>废品订单报表</td><td>1</td><td>查询</td><td>—</td><td>废品订单统计</td><td>0.5</td><td>1</td><td>0.2</td></tr>
+<tr><td>废品质量报表</td><td>1</td><td>聚合</td><td>—</td><td>废品质量分析</td><td>0.8</td><td>1.5</td><td>0.3</td></tr>
+<tr style="background:#f0f5ff"><td colspan="5" style="text-align:right;font-weight:bold;">质量管理小计</td><td style="font-weight:bold;">17.2</td><td style="font-weight:bold;">26.7</td><td style="font-weight:bold;">5.8</td></tr>
+</table>
+
+<!-- ===== 7. 设备管理 ===== -->
+<h3>3.7 设备管理（equipment）</h3>
+<table>
+<tr><th>子模块</th><th>前端页面</th><th>后端接口</th><th>审批</th><th>功能说明</th><th>后端估时</th><th>前端估时</th><th>联调</th></tr>
+<tr><td>设备台账</td><td>1</td><td>CRUD</td><td>—</td><td>设备基础信息</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>设备停机</td><td>1</td><td>CRUD</td><td>—</td><td>设备停机记录</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>设备维保计划</td><td>1</td><td>CRUD</td><td>✅</td><td>维保计划+审批</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>设备OEE</td><td>1</td><td>聚合计算</td><td>—</td><td>OEE 仪表盘</td><td>2</td><td>2.5</td><td>0.5</td></tr>
+<tr><td>模具管理</td><td>1</td><td>CRUD</td><td>—</td><td>模具台账</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>模具维保</td><td>1</td><td>CRUD</td><td>—</td><td>模具维保记录</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr style="background:#f0f5ff"><td colspan="5" style="text-align:right;font-weight:bold;">设备管理小计</td><td style="font-weight:bold;">7.5</td><td style="font-weight:bold;">10.5</td><td style="font-weight:bold;">2.2</td></tr>
+</table>
+
+<!-- ===== 8. 计划排程 ===== -->
+<h3>3.8 计划排程（planning）</h3>
+<table>
+<tr><th>子模块</th><th>前端页面</th><th>后端接口</th><th>审批</th><th>功能说明</th><th>后端估时</th><th>前端估时</th><th>联调</th></tr>
+<tr><td>MPS 主生产计划</td><td>1</td><td>计算+报表</td><td>—</td><td>主生产计划计算+预测消耗+报表</td><td>3</td><td>2</td><td>1</td></tr>
+<tr><td>MRP 物料需求</td><td>2</td><td>BFS展开+运算</td><td>—</td><td>MRP 运算+历史记录+BOM展开</td><td>5</td><td>3</td><td>1.5</td></tr>
+<tr><td>生产计划</td><td>1</td><td>CRUD</td><td>✅</td><td>生产计划管理</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr style="background:#f0f5ff"><td colspan="5" style="text-align:right;font-weight:bold;">计划排程小计</td><td style="font-weight:bold;">9.5</td><td style="font-weight:bold;">7</td><td style="font-weight:bold;">3</td></tr>
+</table>
+
+<!-- ===== 9. 财务管理 ===== -->
+<h3>3.9 财务管理（finance）</h3>
+<table>
+<tr><th>子模块</th><th>前端页面</th><th>后端接口</th><th>审批</th><th>功能说明</th><th>后端估时</th><th>前端估时</th><th>联调</th></tr>
+<tr><td>报销单</td><td>2</td><td>CRUD+审批流</td><td>✅</td><td>报销单+明细+附件+工作流审批（已评估）</td><td>3.5</td><td>5</td><td>1</td></tr>
+<tr><td>标准成本</td><td>1</td><td>CRUD</td><td>—</td><td>标准成本管理</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>计件单价</td><td>1</td><td>CRUD</td><td>—</td><td>计件工资单价</td><td>0.8</td><td>1</td><td>0.2</td></tr>
+<tr><td>会计期间</td><td>1</td><td>CRUD</td><td>—</td><td>会计期间管理</td><td>0.8</td><td>1</td><td>0.2</td></tr>
+<tr style="background:#f0f5ff"><td colspan="5" style="text-align:right;font-weight:bold;">财务管理小计</td><td style="font-weight:bold;">6.1</td><td style="font-weight:bold;">8.5</td><td style="font-weight:bold;">1.7</td></tr>
+</table>
+
+<!-- ===== 10. 系统管理 ===== -->
+<h3>3.10 系统管理（system）</h3>
+<table>
+<tr><th>子模块</th><th>前端页面</th><th>后端接口</th><th>审批</th><th>功能说明</th><th>后端估时</th><th>前端估时</th><th>联调</th></tr>
+<tr><td>用户管理</td><td>1</td><td>CRUD+认证</td><td>—</td><td>用户注册/登录/管理</td><td>2</td><td>2</td><td>0.5</td></tr>
+<tr><td>角色管理</td><td>1</td><td>CRUD</td><td>—</td><td>角色+权限分配</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>权限管理</td><td>1</td><td>CRUD</td><td>—</td><td>菜单/按钮权限</td><td>1.5</td><td>2</td><td>0.5</td></tr>
+<tr><td>部门管理</td><td>2</td><td>树形CRUD</td><td>—</td><td>部门树+树组件</td><td>1.5</td><td>2.5</td><td>0.5</td></tr>
+<tr><td>工作流设计</td><td>3</td><td>全功能</td><td>—</td><td>流程设计器+列表+我的待办（核心引擎）</td><td>8</td><td>10</td><td>2</td></tr>
+<tr><td>单据完结配置</td><td>1</td><td>CRUD</td><td>—</td><td>单据自动完结规则</td><td>1</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>手动关闭</td><td>1</td><td>批量操作</td><td>—</td><td>单据批量关闭</td><td>1.5</td><td>2</td><td>0.3</td></tr>
+<tr><td>API Key</td><td>1</td><td>CRUD</td><td>—</td><td>API 密钥管理</td><td>0.8</td><td>1</td><td>0.2</td></tr>
+<tr><td>自动盘点</td><td>1</td><td>调度配置</td><td>—</td><td>自动盘点调度</td><td>1.5</td><td>1.5</td><td>0.3</td></tr>
+<tr><td>驾驶舱</td><td>1</td><td>聚合查询</td><td>—</td><td>全局数据驾驶舱</td><td>1.5</td><td>2.5</td><td>0.5</td></tr>
+<tr><td>登录/注册</td><td>2</td><td>认证</td><td>—</td><td>JWT 认证</td><td>1.5</td><td>2</td><td>0.3</td></tr>
+<tr style="background:#f0f5ff"><td colspan="5" style="text-align:right;font-weight:bold;">系统管理小计</td><td style="font-weight:bold;">22.3</td><td style="font-weight:bold;">29</td><td style="font-weight:bold;">5.9</td></tr>
+</table>
+
+<!-- ===== 11. 系统集成 ===== -->
+<h3>3.11 系统集成（integration）</h3>
+<table>
+<tr><th>子模块</th><th>前端页面</th><th>后端接口</th><th>审批</th><th>功能说明</th><th>后端估时</th><th>前端估时</th><th>联调</th></tr>
+<tr><td>信合云质检对接</td><td>6</td><td>API对接</td><td>—</td><td>库存查询+事务+包装质检+汇总+产线</td><td>5</td><td>6</td><td>2</td></tr>
+<tr><td>批次追溯</td><td>1</td><td>查询</td><td>—</td><td>批次正反向追溯</td><td>2</td><td>2</td><td>0.5</td></tr>
+<tr style="background:#f0f5ff"><td colspan="5" style="text-align:right;font-weight:bold;">系统集成小计</td><td style="font-weight:bold;">7</td><td style="font-weight:bold;">8</td><td style="font-weight:bold;">2.5</td></tr>
+</table>
+
+<!-- ===== 12. 公共服务层 ===== -->
+<h3>3.12 公共服务层（services）</h3>
+<table>
+<tr><th>服务</th><th>功能说明</th><th>估时</th></tr>
+<tr><td>审批服务（approval.service）</td><td>统一审批引擎：提交/审批/撤回/驳回/反审</td><td>5</td></tr>
+<tr><td>工作流引擎（workflow.engine）</td><td>流程定义/节点/连线/实例/任务/历史，BFS 审批人解析</td><td>8</td></tr>
+<tr><td>工作流钩子（workflow.hooks）</td><td>工作流事件钩子</td><td>1</td></tr>
+<tr><td>文档编号服务（documentNumber）</td><td>自动编号生成（前缀+日期+序号）</td><td>2</td></tr>
+<tr><td>库存服务（inventory/warehouse）</td><td>出入库事务+FIFO+安全库存+库存快照</td><td>5</td></tr>
+<tr><td>倒冲服务（backflushTask）</td><td>自动倒冲+回冲计算</td><td>3</td></tr>
+<tr><td>派工服务（orderDispatch）</td><td>自动派工+工序任务生成+备料计算</td><td>5</td></tr>
+<tr><td>MRP 运算（mouldMRP）</td><td>BOM BFS 展开+净需求计算+建议单据</td><td>5</td></tr>
+<tr><td>报工服务（workReport）</td><td>报工逻辑+合格/不合格/累计数量</td><td>2</td></tr>
+<tr><td>预测服务（forecast）</td><td>预测消耗+MPS 关联</td><td>2</td></tr>
+<tr><td>物料成本快照（materialCostSnapshot）</td><td>成本快照+差异分析</td><td>2</td></tr>
+<tr><td>手动关闭（manualClose）</td><td>批量关闭+分组处理</td><td>1.5</td></tr>
+<tr><td>单据自动完结（documentAutoComplete）</td><td>规则引擎+自动完结</td><td>2</td></tr>
+<tr><td>事件驱动架构（eventStore/eventWorker）</td><td>事件存储+异步处理+订阅</td><td>3</td></tr>
+<tr><td>SSE 实时推送（sse）</td><td>Server-Sent Events</td><td>1.5</td></tr>
+<tr><td>盘点调度（stockCountScheduler）</td><td>自动盘点任务调度</td><td>1.5</td></tr>
+<tr><td>销售订单同步（salesOrderSync）</td><td>订单状态同步</td><td>1</td></tr>
+<tr><td>线边移动（linesideMovement）</td><td>线边库存移动</td><td>1.5</td></tr>
+<tr><td>良率计算（productionYield）</td><td>生产良率统计</td><td>1</td></tr>
+<tr><td>信合云服务（xinheyun）</td><td>外部系统对接</td><td>3</td></tr>
+<tr style="background:#f0f5ff"><td colspan="2" style="text-align:right;font-weight:bold;">公共服务层小计</td><td style="font-weight:bold;">61</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 汇总 ==================== -->
+<h2>四、全系统工作量汇总</h2>
+
+<table class="summary-table">
+<tr><th>功能模块</th><th>后端(天)</th><th>前端(天)</th><th>联调(天)</th><th>合计(天)</th><th>占比</th></tr>
+<tr><td>基础数据</td><td>24.4</td><td>33.7</td><td>7.2</td><td>65.3</td><td>13.1%</td></tr>
+<tr><td>销售管理</td><td>22.8</td><td>31</td><td>6.8</td><td>60.6</td><td>12.1%</td></tr>
+<tr><td>采购管理</td><td>14</td><td>17.5</td><td>4.2</td><td>35.7</td><td>7.2%</td></tr>
+<tr><td>生产管理</td><td>30.8</td><td>38.5</td><td>8.8</td><td>78.1</td><td>15.6%</td></tr>
+<tr><td>仓储管理</td><td>24.1</td><td>36</td><td>7.9</td><td>68</td><td>13.6%</td></tr>
+<tr><td>质量管理</td><td>17.2</td><td>26.7</td><td>5.8</td><td>49.7</td><td>9.9%</td></tr>
+<tr><td>设备管理</td><td>7.5</td><td>10.5</td><td>2.2</td><td>20.2</td><td>4.0%</td></tr>
+<tr><td>计划排程</td><td>9.5</td><td>7</td><td>3</td><td>19.5</td><td>3.9%</td></tr>
+<tr><td>财务管理</td><td>6.1</td><td>8.5</td><td>1.7</td><td>16.3</td><td>3.3%</td></tr>
+<tr><td>系统管理</td><td>22.3</td><td>29</td><td>5.9</td><td>57.2</td><td>11.4%</td></tr>
+<tr><td>系统集成</td><td>7</td><td>8</td><td>2.5</td><td>17.5</td><td>3.5%</td></tr>
+<tr><td>公共服务层</td><td>61</td><td>—</td><td>—</td><td>61</td><td>12.2%</td></tr>
+<tr class="highlight"><td><strong>总计</strong></td><td style="font-weight:bold;">246.7</td><td style="font-weight:bold;">246.4</td><td style="font-weight:bold;">56</td><td style="font-weight:bold;">549.1</td><td style="font-weight:bold;">100%</td></tr>
+</table>
+
+<div class="note">
+<strong>说明：</strong>
+<ul>
+<li>公共服务层估时仅计入后端开发，其服务被各业务模块前端通过 API 调用间接消耗</li>
+<li>各模块联调估时含模块内 CRUD 流程验证 + 边界场景 + 跨模块关联测试</li>
+<li>占比按含公共服务层总量计算（549.1天），不含公共服务层时各模块占比会等比放大</li>
+</ul>
+</div>
+
+<h3>4.1 按角色汇总</h3>
+<table class="summary-table">
+<tr><th>角色</th><th>估时</th><th>说明</th></tr>
+<tr><td>后端开发</td><td><strong>246.7 天</strong></td><td>含数据库、API、服务层、菜单权限</td></tr>
+<tr><td>前端开发</td><td><strong>246.4 天</strong></td><td>含页面、API 接口定义、路由、组件</td></tr>
+<tr><td>联调测试</td><td><strong>56 天</strong></td><td>含业务流程验证、边界测试、集成测试</td></tr>
+<tr class="highlight"><td><strong>总计</strong></td><td><strong>549.1 天</strong>（约 <strong>27.5 周 / 1人</strong>）</td><td></td></tr>
+</table>
+
+<h3>4.2 并行开发建议</h3>
+<table class="summary-table">
+<tr><th>团队配置</th><th>预计工期</th><th>说明</th></tr>
+<tr><td>1后端 + 1前端</td><td>约 <strong>14 周</strong>（3.5个月）</td><td>后端先行，前端紧跟，联调并行</td></tr>
+<tr><td>2后端 + 2前端</td><td>约 <strong>8 周</strong>（2个月）</td><td>按模块分对并行：A组(基础数据+销售+采购)、B组(生产+仓储+质量)</td></tr>
+<tr><td>3后端 + 3前端</td><td>约 <strong>6 周</strong>（1.5个月）</td><td>三组并行：基础+系统、业务(销售+采购+财务)、生产(仓储+质量+设备+计划)</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 复杂度分析 ==================== -->
+<h2>五、关键复杂度因素</h2>
+
+<h3>5.1 增加工作量的因素</h3>
+<table>
+<tr><th>因素</th><th>影响范围</th><th>增加估时</th></tr>
+<tr><td><strong>工作流审批引擎</strong></td><td>20+ 模块含审批</td><td>≈15天（含引擎+各模块对接）</td></tr>
+<tr><td><strong>MRP 运算逻辑</strong></td><td>计划排程</td><td>≈10天（BFS展开+净需求+建议单据）</td></tr>
+<tr><td><strong>自动派工+备料计算</strong></td><td>生产管理</td><td>≈8天（工序任务生成+材料需求计算）</td></tr>
+<tr><td><strong>库存事务+FIFO</strong></td><td>仓储管理</td><td>≈7天（出入库事务+先进先出+安全库存）</td></tr>
+<tr><td><strong>事件驱动+SSE实时</strong></td><td>生产看板+全局</td><td>≈5天（事件存储+异步+推送）</td></tr>
+<tr><td><strong>信合云外部对接</strong></td><td>系统集成</td><td>≈7天（API对接+数据转换+异常处理）</td></tr>
+<tr><td><strong>倒冲回冲计算</strong></td><td>生产管理</td><td>≈4天</td></tr>
+</table>
+
+<h3>5.2 减少工作量的因素</h3>
+<table>
+<tr><th>因素</th><th>影响范围</th><th>节省估时</th></tr>
+<tr><td><strong>useTableList + useColumnPreference</strong></td><td>80+ 列表页</td><td>≈30天（搜索/分页/列设置零开发）</td></tr>
+<tr><td><strong>统一审批服务 approval.service</strong></td><td>20+ 模块</td><td>≈20天（审批逻辑不复写）</td></tr>
+<tr><td><strong>工作流引擎 workflow.engine</strong></td><td>可配置审批流</td><td>≈15天（可视化配置替代硬编码）</td></tr>
+<tr><td><strong>文档编号服务 documentNumber</strong></td><td>所有业务单据</td><td>≈10天（编号规则统一）</td></tr>
+<tr><td><strong>Ant Design Vue 组件库</strong></td><td>全局</td><td>≈20天（无需自建UI组件）</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 开发优先级建议 ==================== -->
+<h2>六、开发优先级建议</h2>
+<table>
+<tr><th>优先级</th><th>模块</th><th>理由</th></tr>
+<tr><td><span class="tag">P0 必需</span></td><td>系统管理（用户/角色/权限/菜单）</td><td>所有模块的前置依赖</td></tr>
+<tr><td><span class="tag">P0 必需</span></td><td>基础数据（物料/客户/供应商/BOM/工艺）</td><td>业务数据的基础</td></tr>
+<tr><td><span class="tag">P1 核心</span></td><td>销售管理（订单+预测+发货）</td><td>业务源头，驱动生产</td></tr>
+<tr><td><span class="tag">P1 核心</span></td><td>生产管理（生产单+报工+备料）</td><td>MES 核心</td></tr>
+<tr><td><span class="tag">P1 核心</span></td><td>仓储管理（出入库+库存）</td><td>物料流转核心</td></tr>
+<tr><td><span class="tag">P2 重要</span></td><td>采购管理（申请+订单+收货）</td><td>供应链保障</td></tr>
+<tr><td><span class="tag">P2 重要</span></td><td>质量管理（检验+不合格品+报表）</td><td>质量管控</td></tr>
+<tr><td><span class="tag">P2 重要</span></td><td>计划排程（MPS+MRP）</td><td>智能排产</td></tr>
+<tr><td><span class="tag">P3 增强</span></td><td>设备管理（台账+OEE+维保）</td><td>设备管理</td></tr>
+<tr><td><span class="tag">P3 增强</span></td><td>财务管理（报销+成本）</td><td>财务核算</td></tr>
+<tr><td><span class="tag">P3 增强</span></td><td>系统集成（信合云+追溯）</td><td>外部对接</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 已完成模块记录 ==================== -->
+<h2>七、已完成模块实际耗时</h2>
+
+<div class="note">
+<strong>说明：</strong>以下为已开发完成模块的实际耗时记录，供后续评估校准参考。
+</div>
+
+<table>
+<tr><th>模块</th><th>估时</th><th>实际耗时</th><th>偏差</th><th>主要偏差原因</th></tr>
+<tr><td>工程更改管理</td><td>10.5天</td><td>10.4天</td><td>&lt;1%</td><td>—</td></tr>
+<tr><td>样品申请管理</td><td>9.5天</td><td>—</td><td>—</td><td>待记录</td></tr>
+<tr><td>报销单管理</td><td>9.5天</td><td>—</td><td>—</td><td>待记录</td></tr>
+</table>
+
+<div class="footer">Seals MES System — 全系统功能模块开发工作量评估 &nbsp;|&nbsp; 宁国市睿信信息技术有限责任公司 &nbsp;|&nbsp; 2026年5月</div>
+</body>
+</html>

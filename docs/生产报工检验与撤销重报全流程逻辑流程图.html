@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>生产报工·检验·撤销重报全流程逻辑流程图 - 睿信橡胶密封件MES系统</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',flowchart:{useMaxWidth:true,htmlLabels:true,curve:'basis'},stateDiagram:{curve:'basis'}});</script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+  .page { max-width: 1300px; margin: 0 auto; padding: 32px; background: #fff; min-height: 100vh; }
+  h1 { text-align: center; font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 20px; color: #1a1a2e; margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 16px; color: #1a1a2e; margin: 20px 0 10px; }
+  .intro { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; padding: 16px; margin-bottom: 24px; font-size: 14px; }
+  .mermaid { text-align: center; margin: 16px 0; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  .warn { background: #fff1f0; border-left: 4px solid #f5222d; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  .info { background: #e6f7ff; border-left: 4px solid #1890ff; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #0050b3; }
+  .success { background: #f6ffed; border-left: 4px solid #52c41a; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #389e0d; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-right: 4px; }
+  .badge-blue { background: #e6f7ff; color: #1890ff; }
+  .badge-green { background: #f6ffed; color: #52c41a; }
+  .badge-red { background: #fff1f0; color: #f5222d; }
+  .badge-orange { background: #fff7e6; color: #fa8c16; }
+  .badge-purple { background: #f9f0ff; color: #722ed1; }
+  .sep { text-align: center; font-size: 20px; color: #1890ff; margin: 8px 0; }
+  @media print { body { background: #fff; } .page { padding: 20px; max-width: 100%; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>生产报工·检验·撤销重报全流程逻辑流程图</h1>
+<div class="subtitle">睿信橡胶密封件MES系统 | 从生产单派发→备料出库→按工序报工→检验门控→检验执行→报错撤销重报的全链路业务逻辑，含完整门控规则与删除约束</div>
+
+<div class="intro">
+  <strong>文档说明：</strong>本文档聚焦生产执行核心链路：报工、检验、错误撤销与重报，涵盖6个阶段：<br>
+  <span class="badge badge-blue">阶段1</span> 生产单派发到备料 — 计划状态流转与物料齐套<br>
+  <span class="badge badge-blue">阶段2</span> 报工全链路门控 — 9道门控校验确保数据合法性<br>
+  <span class="badge badge-blue">阶段3</span> 检验单自动创建与检验执行 — 自检/专检触发、质量特性/缺陷记录<br>
+  <span class="badge badge-blue">阶段4</span> 检验门控与工序阻塞 — 必须先检验才能下一道报工<br>
+  <span class="badge badge-red">阶段5</span> 删除门控规则 — 只能从后道工序依次向前删除（新增核心规则）<br>
+  <span class="badge badge-red">阶段6</span> 撤销重报完整流程 — 入库撤回→拆箱→级联删除→重新报工
+</div>
+
+<!-- ==================== 一、全流程总览 ==================== -->
+<h2>一、生产执行：从派发到入库的全流程总览</h2>
+<div class="mermaid">
+graph TB
+    DISPATCH["生产单派发<br/>production_order<br/>plan_status=已派发"] --> PREP["备料领料<br/>material_issue<br/>准备首道工序物料"]
+    PREP --> PREP_DONE["首道物料齐套<br/>plan_status=已备料<br/>syncProductionStatus"]
+
+    PREP_DONE --> WR_START["工序报工开始<br/>从首道工序 step=1"]
+
+    subgraph WORK_REPORT["工序报工循环（逐道推进）"]
+        direction TB
+        GATE["报工门控<br/>8道检查全部通过"] --> CREATE_WR["createWorkReport<br/>INSERT work_report<br/>approval_status=草稿"]
+        CREATE_WR --> SYNC["syncTaskCompletion<br/>completed_quantity增加"]
+        SYNC --> LS["线边仓流转<br/>logWorkReportLinesideMovement"]
+        LS --> EVENT["发布事件<br/>WORK_REPORT_CREATED"]
+    end
+
+    subgraph INSPECTION["检验流程（条件触发）"]
+        direction TB
+        EVENT --> CHK_TYPE{"工艺路线<br/>inspect_type?"}
+        CHK_TYPE -->|"专检/自检"| CREATE_PI["autoCreateInspections<br/>创建 production_inspection<br/>status=待检<br/>inspect_status=待检验"]
+        CHK_TYPE -->|"无需检"| SKIP_INSP["inspect_status=无需检<br/>直接放行"]
+        CREATE_PI --> DO_INSP["质检员执行检验<br/>填写合格/不合格量"]
+        DO_INSP --> COMPLETE["完成检验<br/>completeInspection"]
+        COMPLETE --> RESULT{"检验结论"}
+        RESULT -->|"合格"| PASS["inspect_status=检验合格<br/>下道工序放行"]
+        RESULT -->|"不合格"| FAIL["inspect_status=检验不合格<br/>阻塞下道<br/>创建NC单"]
+    end
+
+    WORK_REPORT -->|"下道工序报工<br/>检查上道inspect_status"| INSP_GATE{"检验门控<br/>上道inspect_status?"}
+    INSP_GATE -->|"检验合格/无需检/已处理"| NEXT_STEP["允许报工下一道"]
+    INSP_GATE -->|"待检验/检验中/检验不合格"| BLOCK["阻塞：请先完成检验或处理"]
+
+    NEXT_STEP --> WR_START
+
+    INSP_GATE -->|"末道工序完成<br/>所有inspect通过"| LAST_DONE["plan_status=已完成<br/>syncProductionStatus<br/>即可入库"]
+    LAST_DONE --> INBOUND["创建入库单<br/>成品入库/倒冲扣减<br/>库存流水/装箱管理"]
+</div>
+
+<div class="info">
+  <strong>核心规则：</strong>报工过程严格按工序号从小到大逐道推进。每一道工序报工后，根据工艺路线配置的"检验类型"自动创建检验单（专检/自检）或直接放行（无需检）。下一道工序报工前，必须检查上道工序的检验状态，只有检验合格/无需检/已处理才允许继续。
+</div>
+
+<p class="sep">⬇</p>
+
+<!-- ==================== 二、报工全链路门控 ==================== -->
+<h2>二、报工全链路门控（9道检查）</h2>
+
+<div class="info">
+  <strong>入口函数：</strong><code>createWorkReport</code>（持续报工）/ <code>quickReport</code>（快速报工）— 二者均通过全部9道门控；<code>completeOrderReport</code>（完工报工）仅作用于最后一道工序，精简为审批状态+超额报工+检验门控3道。
+</div>
+
+<div class="mermaid">
+graph TD
+    START(["用户选择工序任务<br/>发起报工"]) --> G1{"① 工序任务<br/>是否存在?"}
+    G1 -->|"否"| E1["❌ 报工失败<br/>工序任务不存在"]
+    G1 -->|"是"| G2{"② approval_status<br/>= 已审批?"}
+    G2 -->|"否"| E2["❌ 未审批工序不可报工"]
+    G2 -->|"是"| G3{"③ task_status<br/>!= 已完成/已关闭?"}
+    G3 -->|"否(已关闭)"| E3["❌ 工序已关闭不可报工"]
+    G3 -->|"是"| G4{"④ 物料门控<br/>首道物料齐套?"}
+    G4 -->|"首道未领料<br/>且非倒冲"| E4["❌ 首道需先备料领料"]
+    G4 -->|"通过"| G5{"⑤ 委外阻断<br/>上道委外未完成?"}
+    G5 -->|"委外未回收"| E5["❌ 委外工序阻断<br/>需等回收入库"]
+    G5 -->|"通过"| G6{"⑥ 超额报工<br/>本次(合格+不合格)<br/>> maxReportable?"}
+    G6 -->|"超出"| E6["❌ 超出允许报工量<br/>maxReportable=baseQty×(1+excess%)-completed"]
+    G6 -->|"通过"| G7{"⑦ 跨工序数量<br/>只有中间工序(>2道)<br/>合格量 ≤ 前道完成-本道?"}
+    G7 -->|"超出"| E7["❌ 中间工序报工量<br/>不能超过前道完成量"]
+    G7 -->|"通过"| G8{"⑧ 实际班产上限<br/>actualDailyOutput>0时<br/>累计 ≤ actual×(1+excess%)?"}
+    G8 -->|"超出"| E8["❌ 超出实际班产报工上限"]
+    G8 -->|"通过"| G9{"⑨ 检验门控<br/>上道inspect_status?"}
+
+    G9 -->|"检验合格/无需检/已处理"| PASS["✅ 门控全部通过<br/>createWorkReport"]
+    G9 -->|"待检验"| E9["❌ 上道工序未检验<br/>请先完成检验"]
+    G9 -->|"检验中"| E10["❌ 上道工序检验中<br/>请等待检验完成"]
+    G9 -->|"检验不合格"| E11["❌ 上道检验不合格<br/>需先处理不合格品"]
+    G9 -->|"NULL(旧数据)"| E12["❌ 上道工序未检验<br/>请先完成检验"]
+</div>
+
+<div class="note">
+  <strong>检验门控放行条件（allowedStatuses）：</strong><br>
+  ① <code>无需检</code> — 工艺路线配置该工序无需检验，直接放行<br>
+  ② <code>检验合格</code> — 检验完成且结论为合格，放行<br>
+  ③ <code>已处理</code> — 检验不合格但已通过返修/让步接收/报废处理完成，放行<br>
+  ⚠️ <code>NULL</code>（旧数据无检验状态）视为"待检验"，阻止报工
+</div>
+
+<p class="sep">⬇</p>
+
+<!-- ==================== 三、报工创建与检验单自动创建 ==================== -->
+<h2>三、报工创建与状态联动</h2>
+
+<h3>3.1 报工创建核心流程</h3>
+<div class="mermaid">
+graph TB
+    START(["门控通过<br/>填写报工信息"]) --> FILL["参数:<br/>合格量 qualified_quantity<br/>不合格量 unqualified_quantity<br/>报工日期 report_date<br/>班次 schedules_name<br/>操作员 operator_name<br/>工时 actual_start/end_time"]
+
+    FILL --> INSERT["INSERT work_report<br/>work_report_number WR-YYYYMMDD-NNN<br/>approval_status=已审批(自动审批)<br/>approval_log:草稿→待审批→已审批"]
+
+    INSERT --> SYNC["syncTaskCompletion<br/>completed_quantity += qualified_qty<br/>不支持负值减量（删除走撤销流程）"]
+
+    SYNC --> TASK_STATUS{"completed vs planned?"}
+    TASK_STATUS -->|"completed > 0<br/>completed < planned"| TS_PROG["task_status=进行中"]
+    TASK_STATUS -->|"completed >= planned"| TS_DONE["task_status=已完成"]
+    TASK_STATUS -->|"completed <= 0<br/>（删除场景）"| TS_BACK["task_status回退"]
+
+    TS_PROG --> PLAN{"plan_status?"}
+    TS_DONE --> PLAN
+    PLAN -->|"首次报工"| PS_PROD["plan_status=生产中<br/>syncProductionStatus"]
+    PLAN -->|"所有工序已完成<br/>且检验通过"| PS_ALL["plan_status=已完成<br/>syncProductionStatus<br/>→ 可入库"]
+
+    INSERT --> LS_MOVE["线边仓流转<br/>logWorkReportLinesideMovement<br/>入线边/出线边"]
+
+    INSERT --> PUB_EVENT["发布事件<br/>WORK_REPORT_CREATED<br/>→ 自动创建检验单"]
+
+    INSERT --> RECALC["重算综合合格率<br/>recalcYieldRate"]
+</div>
+
+<h3>3.2 检验单自动创建流程</h3>
+<div class="mermaid">
+graph TD
+    START(["WORK_REPORT_CREATED事件触发"]) --> SUB["检验订阅者 subscriber.ts<br/>autoCreateInspections"]
+
+    SUB --> READ_TYPE{"读取工艺路线<br/>inspect_type"}
+
+    READ_TYPE -->|"无需检/空"| NO_INSP["UPDATE process_task<br/>inspect_status=无需检<br/>下道工序直接放行"]
+
+    READ_TYPE -->|"专检/自检"| HAS_PLAN{"检验方案<br/>inspect_plan_name?"}
+    HAS_PLAN -->|"有"| READ_PLAN["读取检验方案<br/>is_full_inspect 全检<br/>is_sampling 抽检<br/>sampling_type/ratio"]
+
+    HAS_PLAN -->|"无"| USE_DEFAULT["使用默认参数（全检）"]
+
+    READ_PLAN --> CALC_QTY{"计算检验数量"}
+    CALC_QTY -->|"全检"| FULL_QTY["检验量=报工总量"]
+    CALC_QTY -->|"抽检-按比例"| RATIO_QTY["检验量=总量×sampling_ratio<br/>decimal_handling取整"]
+    CALC_QTY -->|"抽检-按固定数量"| FIXED_QTY["检验量=min(总量,sampling_quantity)"]
+    CALC_QTY -->|"抽检-按批次"| BATCH_QTY["检验量=min(总量,sampling_quantity)"]
+
+    FULL_QTY --> CREATE["createInspectionFromWorkReport<br/>INSERT production_inspection<br/>status=待检<br/>inspect_status=待检验"]
+    RATIO_QTY --> CREATE
+    FIXED_QTY --> CREATE
+    BATCH_QTY --> CREATE
+    USE_DEFAULT --> CREATE
+
+    CREATE --> SPEC_CHK{"有检验规范<br/>inspect_spec_name?"}
+    SPEC_CHK -->|"有"| COPY["复制检验特性行<br/>inspection_spec_item<br/>→ production_inspection_item<br/>含spec_description/enable_quality_chars"]
+    SPEC_CHK -->|"无"| SKIP["跳过特性复制"]
+
+    COPY --> UPD_TASK["UPDATE process_task<br/>inspect_status=待检验<br/>阻塞下道工序报工"]
+    SKIP --> UPD_TASK
+</div>
+
+<div class="note">
+  <strong>检验单创建时机：</strong>每次报工完成后，通过事件总线异步触发。如果该工序已有检验单（如撤销重报后再报工），会先清理旧的检验单再重新创建。<br>
+  <strong>检验方案匹配优先级：</strong>工艺路线 inspect_plan_name → 检验方案表 inspection_plan → 方案参数（全检/抽检/比例/数量）→ 检验规范 inspect_spec_name → 复制检验特性明细到检验单。
+</div>
+
+<p class="sep">⬇</p>
+
+<!-- ==================== 四、检验执行与完成 ==================== -->
+<h2>四、检验执行与完成详细流程</h2>
+
+<h3>4.1 检验执行（双模式：质量特性 / 缺陷记录）</h3>
+<div class="mermaid">
+graph TB
+    START(["质检员打开检验单<br/>status=待检"]) --> CHECK_ENABLE{"enable_quality_chars<br/>= Y?"}
+
+    CHECK_ENABLE -->|"Y 启用质量特性"| QC_MODE["质量特性模式"]
+    QC_MODE --> QC_FILL["逐项填写特性实测值<br/>spec_measured_value<br/>自动判定 spec_is_qualified"]
+    QC_FILL --> QC_AUTO["自动汇总检验结论<br/>全部合格→合格<br/>有不合格→不合格"]
+    QC_AUTO --> DO_COMPLETE["completeInspection"]
+
+    CHECK_ENABLE -->|"N 不启用"| DEFECT_MODE["缺陷记录模式"]
+    DEFECT_MODE --> DEFECT_FILL["填写缺陷明细行<br/>production_inspection_defect<br/>defect_class_name 缺陷分类<br/>defect_name 缺陷名称<br/>defect_reason_name 缺陷原因<br/>unqualified_quantity 不合格数量<br/>inspect_result 检验结论"]
+    DEFECT_FILL --> DEFECT_SYNC["syncDefectToHeader<br/>汇总不合格数量<br/>合格量=总量-不合格量<br/>检验结论=全部合格/部分不合格"]
+    DEFECT_SYNC --> DO_COMPLETE
+
+    DO_COMPLETE --> VALIDATE{"数据校验"}
+    VALIDATE -->|"启用质量特性<br/>特性未填完"| ERR1["❌ 拒绝完成<br/>请填写所有特性实测值"]
+    VALIDATE -->|"通过"| COMPLETE_EXEC["执行完成<br/>status=已完成<br/>inspect_result=合格/不合格"]
+
+    COMPLETE_EXEC --> RESULT{"检验结论"}
+    RESULT -->|"合格"| TASK_PASS["UPDATE process_task<br/>inspect_status=检验合格<br/>✅ 下道工序报工放行"]
+    RESULT -->|"不合格"| TASK_FAIL["UPDATE process_task<br/>inspect_status=检验不合格<br/>⛔ 阻塞下道工序报工"]
+    TASK_FAIL --> NC_CREATE["自动/手动创建不合格品单<br/>defectHandling → NC单"]
+</div>
+
+<div class="info">
+  <strong>双模式说明：</strong><br>
+  <strong>质量特性模式（enable_quality_chars=Y）：</strong>质检员逐项填写每个质量特性的实测值，系统自动判定是否合格，汇总结论。<br>
+  <strong>缺陷记录模式（enable_quality_chars=N）：</strong>回退到传统模式，质检员按缺陷分类→缺陷名称→缺陷原因三级下拉选择，填写不合格数量，系统汇总后判定结论。<br>
+  <strong>enable_quality_chars 优先级：</strong>物料主数据 > 检验方案 > 检验规范（生产用 enable_prod_quality_chars，来料用 enable_quality_chars）。
+</div>
+
+<h3>4.2 不合格品处理（NC单 → 返修/报废/让步）</h3>
+<div class="mermaid">
+graph TB
+    START(["检验不合格<br/>创建NC单<br/>nonconforming_product"]) --> METHOD{"处理方式"}
+
+    METHOD -->|"返修"| RW["创建返修单 rework_order<br/>指定返修目标工序号"]
+    RW --> RW_EFFECT["返修工序 planned_quantity += unqualified_qty<br/>inspect_status=无需检<br/>completed_quantity归零<br/>级联删除返修工序后所有报工+检验单<br/>plan_status回退到生产中"]
+    RW_EFFECT --> RW_EXEC["执行返修作业"]
+    RW_EXEC --> RW_DONE["返修完成 + 再检验"]
+    RW_DONE --> RW_RESULT{"再检验结果"}
+    RW_RESULT -->|"合格"| RW_PASS["inspect_status=已处理<br/>放行"]
+    RW_RESULT -->|"不合格"| RW_RETRY["人工决定下一步"]
+
+    METHOD -->|"报废"| SCRAP["查找报废仓库<br/>创建报废入库单 stock_in<br/>type=报废入库"]
+    SCRAP --> SCRAP_UPD["inspect_status=已处理<br/>下道工序放行"]
+
+    METHOD -->|"让步接收"| CONC["concession_quantity<br/>合格量增加让步量<br/>不合格量减少让步量"]
+    CONC --> CONC_UPD["inspect_status=已处理<br/>下道工序放行"]
+</div>
+
+<p class="sep">⬇</p>
+
+<!-- ==================== 五、删除门控规则 ==================== -->
+<h2>五、删除门控规则（核心新增）</h2>
+
+<div class="warn">
+  <strong>核心业务规则：</strong>生产单在报工过程中产生的报工记录和生产检验单，删除时必须从后道工序依次向前删除，不能跳工序或跳记录删除。同工序多条记录时，只能删除最后创建的一条。
+</div>
+
+<h3>5.1 报工删除门控全链路</h3>
+<div class="mermaid">
+graph TD
+    START(["用户点击删除报工单<br/>DELETE /work-reports/:id"]) --> G1{"① approval_status<br/>= 草稿/已审批?"}
+    G1 -->|"待审批"| E1["❌ 待审批状态不可删除<br/>需先撤回审批"]
+    G1 -->|"草稿/已审批"| G2{"② 是否有更高工序<br/>报工记录?"}
+
+    G2 -->|"是"| E2["❌ 该生产单存在更高工序(X)<br/>的报工记录<br/>只能从后道依次向前删除<br/>「请先删除工序X的报工记录」"]
+    G2 -->|"否(已是最高工序)"| G3{"③ 同工序是否有<br/>更晚的报工记录?"}
+
+    G3 -->|"是"| E3["❌ 该工序存在更晚的<br/>报工记录<br/>「只能删除最后一条报工记录」"]
+    G3 -->|"否(已是最后一条)"| G4{"④ 是否关联<br/>检验单?"}
+
+    G4 -->|"是-已完成检验"| E4["❌ 关联已完成检验(X)<br/>「请先通过撤销重报回退检验记录」"]
+    G4 -->|"是-待检/检验中"| E5["❌ 关联检验记录(X)<br/>「请先删除检验记录再删除报工单」"]
+    G4 -->|"否"| DEL_WR["✅ 门控全部通过<br/>DELETE work_report"]
+
+    DEL_WR --> DEL_EFFECT["删除效果:<br/>① syncTaskCompletion -delta<br/>② 线边仓冲销<br/>③ recalcYieldRate 重算合格率"]
+</div>
+
+<h3>5.2 检验单删除门控全链路</h3>
+<div class="mermaid">
+graph TD
+    START(["用户点击删除检验单<br/>DELETE /production-inspections/:id"]) --> G1{"① status<br/>!= 已完成?"}
+    G1 -->|"已完成"| E1["❌ 已完成检验不允许直接删除<br/>「请使用撤销重报功能」"]
+    G1 -->|"待检/检验中"| G2{"② 是否有更高工序<br/>检验记录?"}
+
+    G2 -->|"是"| E2["❌ 该生产单存在更高工序(X)<br/>的检验记录<br/>「只能从后道依次向前删除<br/>请先删除工序X的检验记录」"]
+    G2 -->|"否(已是最高工序)"| G3{"③ 同工序是否有<br/>更晚的检验记录?"}
+
+    G3 -->|"是"| E3["❌ 该工序存在更晚的<br/>检验记录<br/>「只能删除最后一条检验记录」"]
+    G3 -->|"否(已是最后一条)"| DEL_PI["✅ 门控全部通过<br/>DELETE production_inspection"]
+
+    DEL_PI --> DEL_EFFECT["删除效果:<br/>① DELETE inspection_item<br/>② DELETE inspection_defect<br/>③ DELETE inspection 主记录<br/>④ 清除 process_task.inspect_status"]
+</div>
+
+<h3>5.3 删除顺序示例</h3>
+<div class="success">
+  <strong>场景：</strong>生产单有工序10（硫化）、20（修边）、30（检验），每道工序均有报工记录和检验单。<br><br>
+  <strong>正确删除顺序：</strong><br>
+  ① 先删除工序30的检验单 → ② 再删除工序30的报工单 →<br>
+  ③ 然后删除工序20的检验单 → ④ 再删除工序20的报工单 →<br>
+  ⑤ 最后删除工序10的检验单 → ⑥ 再删除工序10的报工单<br><br>
+  <strong>❌ 错误操作：</strong>直接删除工序10的报工单（报错：存在更高工序20/30的报工记录）
+</div>
+
+<h3>5.4 门控规则与代码对照</h3>
+<table>
+<tr><th>门控项</th><th>报工删除</th><th>检验单删除</th><th>错误提示</th></tr>
+<tr>
+  <td>更高工序检查</td>
+  <td>SELECT TOP 1 step_number FROM work_report WHERE step_number > currentStep</td>
+  <td>SELECT TOP 1 step_number FROM production_inspection WHERE step_number > currentStep</td>
+  <td>该生产单存在更高工序(X)的报工/检验记录，只能从后道工序依次向前删除。请先删除工序X的报工/检验记录。</td>
+</tr>
+<tr>
+  <td>同工序更晚记录检查</td>
+  <td>SELECT TOP 1 FROM work_report WHERE step_number = currentStep AND creation_date > 当前记录的creation_date</td>
+  <td>SELECT TOP 1 FROM production_inspection WHERE step_number = currentStep AND creation_date > 当前记录的creation_date</td>
+  <td>该工序存在更晚的报工/检验记录，只能删除最后一条记录。</td>
+</tr>
+<tr>
+  <td>关联检验单检查（仅报工删除）</td>
+  <td>SELECT TOP 1 status FROM production_inspection WHERE work_report_number = 当前报工单号</td>
+  <td>—</td>
+  <td>已完成检验: 请先通过撤销重报回退；待检/检验中: 请先删除检验记录</td>
+</tr>
+<tr>
+  <td>已完成状态检查（仅检验单删除）</td>
+  <td>—</td>
+  <td>status='已完成' → 403</td>
+  <td>已完成的检验记录不允许删除。如需撤销，请使用撤销重报功能。</td>
+</tr>
+</table>
+
+<p class="sep">⬇</p>
+
+<!-- ==================== 六、撤销重报完整流程 ==================== -->
+<h2>六、撤销重报完整流程</h2>
+
+<div class="info">
+  <strong>场景说明：</strong>生产过程中，发现工序N的报工数据有误，但后道工序N+1、N+2等已经报工。撤销重报从目标工序开始，逆向删除该工序及所有后道工序的报工单和检验单，然后重新报工。<br>
+  <strong>API入口：</strong><code>POST /api/v1/work-reports/undo-preview</code>（预览影响范围）→ <code>POST /api/v1/work-reports/undo-execute</code>（执行撤销）
+</div>
+
+<h3>6.1 撤销重报完整链路</h3>
+<div class="mermaid">
+graph TB
+    START(["发现工序N报工数据有误<br/>点击「撤销重报」"]) --> PREVIEW["undoPreview<br/>预览影响范围"]
+
+    PREVIEW --> PREVIEW_SHOW["展示:<br/>① 受影响的工序列表<br/>② 需删除的报工单列表<br/>③ 关联的检验单列表<br/>④ can_delete_all 是否可删除"]
+
+    PREVIEW_SHOW --> CONFIRM["用户确认<br/>选择目标工序号 step_number"]
+
+    CONFIRM --> PRE_CHECK{"前置检查"}
+    PRE_CHECK -->|"已入库"| REJECT1["❌ 请先撤回入库<br/>rollbackProductionInbound"]
+    PRE_CHECK -->|"已装箱"| REJECT2["❌ 请先拆箱<br/>unpack"]
+    PRE_CHECK -->|"待审批报工单"| REJECT3["❌ 有X条待审批<br/>请先撤回审批"]
+    PRE_CHECK -->|"全部通过"| EXECUTE["undoExecute 执行"]
+
+    EXECUTE --> REVERSE["逆向循环删除<br/>从末道工序→目标工序<br/>按step_number DESC排序"]
+
+    subgraph REVERSE_LOOP["逐条删除循环（按工序号降序）"]
+        direction TB
+        LOOP_START["取当前最高工序报工单"] --> CHK_APPR{"approval_status?"}
+        CHK_APPR -->|"已审批"| REVERSE_APPR["自动反审<br/>INSERT approval_log<br/>已审批→草稿"]
+        CHK_APPR -->|"草稿"| DEL_WR["deleteWorkReport<br/>DELETE work_report"]
+        REVERSE_APPR --> DEL_WR
+
+        DEL_WR --> DEL_EFFECT["删除效果:<br/>① syncTaskCompletion -delta<br/>② completed_quantity扣减<br/>③ task_status回退<br/>④ 线边仓冲销<br/>⑤ recalcYieldRate"]
+
+        DEL_EFFECT --> NEXT{"还有更高工序<br/>报工单?"}
+        NEXT -->|"是"| LOOP_START
+        NEXT -->|"否"| ALL_DEL["所有目标工序报工单<br/>已清理完毕"]
+    end
+
+    ALL_DEL --> CLEAN_INSP["批量清理关联检验单<br/>DELETE production_inspection<br/>DELETE inspection_item<br/>DELETE inspection_defect<br/>重置 process_task.inspect_status"]
+
+    CLEAN_INSP --> CLEAN_NC{"有NC单?"}
+    CLEAN_NC -->|"是"| DEL_NC["批量删除NC单<br/>DELETE nonconforming_product"]
+    CLEAN_NC -->|"否"| SKIP_NC["跳过"]
+
+    DEL_NC --> PLAN_REVERT["生产单状态回退<br/>plan_status可能回退<br/>已派发↔生产中↔已完成<br/>syncProductionStatus"]
+    SKIP_NC --> PLAN_REVERT
+
+    PLAN_REVERT --> RE_REPORT["从工序N开始重新报工<br/>createWorkReport<br/>autoCreateInspections<br/>重新逐道推进"]
+    RE_REPORT --> RE_FINISH["全部完成后<br/>plan_status=已完成<br/>可重新入库"]
+</div>
+
+<h3>6.2 撤销重报关键约束</h3>
+<div class="mermaid">
+graph TD
+    subgraph C1["约束1: 入库优先撤回"]
+        A1["已入库的生产单"] --> B1["必须先撤回入库"]
+        B1 --> C1a["再拆箱（如有）"]
+        C1a --> D1["然后才能撤销重报"]
+    end
+
+    subgraph C2["约束2: 严格逆向顺序"]
+        A2["多道工序报工"] --> B2["从末道→目标工序<br/>按step_number DESC"]
+        B2 --> C2a["不能跳工序删除"]
+        C2a --> D2["由deleteWorkReport门控保证"]
+    end
+
+    subgraph C3["约束3: 报工+检验级联"]
+        A3["撤销报工时"] --> B3["自动删除关联检验单"]
+        B3 --> C3a["检验单→NC单<br/>级联清理"]
+        C3a --> D3["确保inspect_status一致"]
+    end
+
+    subgraph C4["约束4: 状态回退"]
+        A4["删除所有报工后"] --> B4["plan_status回退"]
+        B4 --> C4a["已完成→生产中<br/>生产中→已备料/已派发"]
+        C4a --> D4["syncProductionStatus<br/>同步到销售订单"]
+    end
+
+    subgraph C5["约束5: 待审批不可删"]
+        A5["undoExecute检查"] --> B5["待审批报工单=拒绝"]
+        B5 --> C5a["已审批报工单<br/>自动反审后删除"]
+        C5a --> D5["草稿报工单<br/>直接删除"]
+    end
+</div>
+
+<h3>6.3 撤销重报前置条件速查</h3>
+<table>
+<tr><th>检查项</th><th>查询语句</th><th>不满足时提示</th></tr>
+<tr><td>入库状态</td><td>SELECT inbound_status FROM production_order</td><td>请先撤回入库后再撤销重报</td></tr>
+<tr><td>装箱状态</td><td>SELECT COUNT(*) FROM packing_box WHERE status='已入库'</td><td>有X个已入库的装箱记录，请先拆箱后再撤销重报</td></tr>
+<tr><td>待审批报工单</td><td>approval_status='待审批' 且 step_number >= targetStep</td><td>有X条报工单处于"待审批"状态，无法删除。请先撤回审批。</td></tr>
+<tr><td>无报工可删</td><td>reports.length === 0</td><td>没有需要删除的报工单</td></tr>
+</table>
+
+<p class="sep">⬇</p>
+
+<!-- ==================== 七、状态变化矩阵 ==================== -->
+<h2>七、状态变化矩阵</h2>
+
+<h3>7.1 production_order.plan_status 流转</h3>
+<table>
+<tr><th>触发操作</th><th>原状态</th><th>新状态</th><th>条件</th></tr>
+<tr><td>首道物料全部齐套</td><td>已派发</td><td>已备料</td><td>syncProductionStatus 检测首道备料完成</td></tr>
+<tr><td>首次报工</td><td>已派发 / 已备料</td><td>生产中</td><td>任意工序 task_status 变为进行中</td></tr>
+<tr><td>报工继续</td><td>生产中</td><td>生产中</td><td>非首次报工，保持状态</td></tr>
+<tr><td>所有工序完成</td><td>生产中</td><td>已完成</td><td>所有 task_status=已完成 且 inspect 全部通过</td></tr>
+<tr><td>入库确认</td><td>已完成</td><td>已完成</td><td>不改变 plan_status，改变 inbound_status</td></tr>
+<tr><td>撤销重报（所有报工删除）</td><td>已完成</td><td>生产中</td><td>删除末道报工后还有前道已报工</td></tr>
+<tr><td>撤销重报（全部删除）</td><td>生产中</td><td>已备料 / 已派发</td><td>所有报工被删除，completed 归零</td></tr>
+<tr><td>返修回退</td><td>已完成 / 生产中</td><td>生产中</td><td>返修目标工序后报工被级联删除</td></tr>
+</table>
+
+<h3>7.2 process_task 状态流转</h3>
+<table>
+<tr><th>字段</th><th>初始值</th><th>变化1</th><th>变化2</th><th>变化3</th></tr>
+<tr><td>task_status</td><td>未开始</td><td>进行中（completed>0）</td><td>已完成（completed>=planned）</td><td>未开始（撤销后completed=0）</td></tr>
+<tr><td>completed_quantity</td><td>0</td><td>报工后增加 qualified_qty</td><td>撤销后扣减 qualified_qty</td><td>—</td></tr>
+<tr><td>inspect_status</td><td>NULL</td><td>待检验（检验单创建）</td><td>检验合格/不合格/无需检/已处理</td><td>NULL（检验单删除后恢复）</td></tr>
+</table>
+
+<h3>7.3 production_inspection 状态流转</h3>
+<table>
+<tr><th>status</th><th>含义</th><th>可操作</th><th>下一状态</th></tr>
+<tr><td>待检</td><td>新建，等待质检员检验</td><td>执行检验 / 删除（门控）</td><td>检验中</td></tr>
+<tr><td>检验中</td><td>质检员正在填写数据</td><td>保存 / 完成 / 删除（门控）</td><td>已完成</td></tr>
+<tr><td>已完成</td><td>检验完成，结论已定</td><td>查看</td><td>—（不可逆，只能撤销重报）</td></tr>
+</table>
+
+<p class="sep">⬇</p>
+
+<!-- ==================== 八、API路由汇总 ==================== -->
+<h2>八、关键API路由汇总</h2>
+<table>
+<tr><th>业务域</th><th>操作</th><th>方法</th><th>路径</th><th>说明</th></tr>
+<tr><td rowspan="5">报工管理</td><td>创建报工</td><td>POST</td><td>/api/v1/work-reports</td><td>含8道门控检查</td></tr>
+<tr><td>快速报工</td><td>POST</td><td>/api/v1/work-reports/quick</td><td>快速报工（同门控）</td></tr>
+<tr><td>删除报工</td><td>DELETE</td><td>/api/v1/work-reports/:id</td><td>含3道删除门控</td></tr>
+<tr><td>撤销重报(预览)</td><td>POST</td><td>/api/v1/work-reports/undo-preview</td><td>预览影响范围</td></tr>
+<tr><td>撤销重报(执行)</td><td>POST</td><td>/api/v1/work-reports/undo-execute</td><td>批量删除+状态回退</td></tr>
+<tr><td rowspan="4">生产检验</td><td>检验列表</td><td>GET</td><td>/api/v1/quality/production-inspections</td><td>分页查询</td></tr>
+<tr><td>完成检验</td><td>PUT</td><td>/api/v1/quality/production-inspections/:id/complete</td><td>完成检验，判定结论</td></tr>
+<tr><td>不合格品处理</td><td>PUT</td><td>/api/v1/quality/production-inspections/:id/defect-handling</td><td>创建NC单</td></tr>
+<tr><td>删除检验单</td><td>DELETE</td><td>/api/v1/quality/production-inspections/:id</td><td>含3道删除门控</td></tr>
+<tr><td rowspan="2">不合格品</td><td>NC处理</td><td>PUT</td><td>/api/v1/quality/nonconforming-products/:id/handle</td><td>返修/报废/让步</td></tr>
+<tr><td>NC撤销处理</td><td>PUT</td><td>/api/v1/quality/nonconforming-products/:id/cancel-handle</td><td>撤销NC处理</td></tr>
+<tr><td rowspan="2">生产入库</td><td>入库确认</td><td>POST</td><td>/api/v1/warehouse/finished-goods/inbound</td><td>成品入库</td></tr>
+<tr><td>入库撤回</td><td>POST</td><td>/api/v1/warehouse/finished-goods/inbound-orders/:id/withdraw</td><td>入库撤回</td></tr>
+</table>
+
+<p class="sep">⬇</p>
+
+<!-- ==================== 九、报工·检验·删除数据实体关系 ==================== -->
+<h2>九、核心数据实体关系</h2>
+<div class="mermaid">
+erDiagram
+    PRODUCTION_ORDER ||--o{ PROCESS_TASK : "按工艺路线展开"
+    PRODUCTION_ORDER ||--o{ WORK_REPORT : "报工记录"
+    PROCESS_TASK ||--o{ WORK_REPORT : "工序任务与报工"
+
+    WORK_REPORT ||--o| PRODUCTION_INSPECTION : "work_report_number关联"
+    PRODUCTION_INSPECTION ||--o{ PRODUCTION_INSPECTION_ITEM : "检验特性明细"
+    PRODUCTION_INSPECTION ||--o{ PRODUCTION_INSPECTION_DEFECT : "缺陷明细"
+
+    PRODUCTION_INSPECTION ||--o| NONCONFORMING_PRODUCT : "不合格品NC单"
+    NONCONFORMING_PRODUCT ||--o| REWORK_ORDER : "返修单"
+
+    PRODUCTION_ORDER {
+        string production_order_number PK
+        string plan_status "已派发/已备料/生产中/已完成"
+        string inbound_status "未入库/部分入库/全部入库"
+        decimal inbound_quantity
+    }
+
+    PROCESS_TASK {
+        string process_task_number PK
+        string production_order_number FK
+        int step_number "工序号"
+        string task_status "未开始/进行中/已完成"
+        string inspect_status "待检验/检验中/检验合格/无需检/已处理"
+        decimal completed_quantity
+        string inspect_type "自检/专检/无需检"
+    }
+
+    WORK_REPORT {
+        string work_report_number PK
+        string step_number "工序号"
+        string approval_status "草稿/待审批/已审批"
+        decimal qualified_quantity
+        decimal unqualified_quantity
+        datetime creation_date
+    }
+
+    PRODUCTION_INSPECTION {
+        string inspection_number PK
+        string work_report_number FK
+        string production_order_number FK
+        int step_number "工序号"
+        string status "待检/检验中/已完成"
+        string inspect_result "合格/不合格"
+        string enable_quality_chars "Y/N"
+        datetime creation_date
+    }
+
+    PRODUCTION_INSPECTION_ITEM {
+        int id PK
+        string inspection_number FK
+        string spec_description
+        decimal spec_measured_value
+    }
+
+    PRODUCTION_INSPECTION_DEFECT {
+        int id PK
+        string inspection_number FK
+        string defect_class_name
+        string defect_name
+        string defect_reason_name
+        decimal unqualified_quantity
+    }
+
+    NONCONFORMING_PRODUCT {
+        string nonconforming_number PK
+        string inspection_number FK
+        string handling_method "返修/报废/让步接收"
+    }
+
+    REWORK_ORDER {
+        string rework_number PK
+        string nonconforming_number FK
+        int target_step_number
+    }
+</div>
+
+<div style="margin-top:40px;text-align:center;color:#888;font-size:12px;">
+  文档生成时间：2026年5月15日 | 基于系统代码版本自动生成 | 生产报工·检验·撤销重报全流程逻辑流程图
+</div>
+
+</div>
+</body>
+</html>

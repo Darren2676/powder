@@ -14,6 +14,7 @@ import { emitAsync } from '@/shared/eventBus';
 import { EVENT_NAMES } from '@/shared/events';
 import { syncTaskCompletion } from './taskSync';
 import { recalcYieldRate } from '../productionYield.service';
+import { autoProductionInbound } from './autoInbound';
 
 // ==================== 创建报工单 ====================
 
@@ -201,7 +202,7 @@ export const createWorkReport = async (params: {
 
     await sequelize.query(`
       INSERT INTO work_report (work_report_number, process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, basic_unit, work_center_number, work_center_name, planned_quantity, qualified_quantity, unqualified_quantity, total_quantity, cumulative_quantity, report_date, schedules_id, schedules_name, team_number, team_name, operator_number, operator_name, actual_start_time, actual_end_time, actual_hours, unqualified_reason, defect_class_number, defect_class_name, defect_number, defect_name, approval_status, remark, creation_date, creation_man)
-      VALUES (:work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_number, :item_name, :specifications, :basic_unit, :work_center_number, :work_center_name, :planned_quantity, :qualified_quantity, :unqualified_quantity, :total_quantity, :cumulative_quantity, :report_date, :schedules_id, :schedules_name, :team_number, :team_name, :operator_number, :operator_name, :actual_start_time, :actual_end_time, :actual_hours, :unqualified_reason, :defect_class_number, :defect_class_name, :defect_number, :defect_name, N'草稿', :remark, :creation_date, :creation_man)
+      VALUES (:work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_number, :item_name, :specifications, :basic_unit, :work_center_number, :work_center_name, :planned_quantity, :qualified_quantity, :unqualified_quantity, :total_quantity, :cumulative_quantity, :report_date, :schedules_id, :schedules_name, :team_number, :team_name, :operator_number, :operator_name, :actual_start_time, :actual_end_time, :actual_hours, :unqualified_reason, :defect_class_number, :defect_class_name, :defect_number, :defect_name, N'已审批', :remark, :creation_date, :creation_man)
     `, {
       replacements: {
         work_report_number: wrNumber,
@@ -241,6 +242,16 @@ export const createWorkReport = async (params: {
       },
       transaction
     });
+
+    // 自动审批日志
+    await sequelize.query(
+      `INSERT INTO approval_log (module, record_id, action, from_status, to_status, operator_id, operator_name, remark) VALUES (N'work_report', :record_id, N'submit', N'草稿', N'待审批', 0, :operator, N'报工自动提交')`,
+      { replacements: { record_id: wrNumber, operator: user?.username || '' }, transaction }
+    );
+    await sequelize.query(
+      `INSERT INTO approval_log (module, record_id, action, from_status, to_status, operator_id, operator_name, remark) VALUES (N'work_report', :record_id, 'approve', N'待审批', N'已审批', 0, :operator, N'报工自动审批')`,
+      { replacements: { record_id: wrNumber, operator: user?.username || '' }, transaction }
+    );
 
     // 发布报工创建事件，由订阅者处理工序同步、线边仓流转、检验创建
     await emitAsync(EVENT_NAMES.WORK_REPORT_CREATED, {
@@ -413,6 +424,21 @@ export const quickReport = async (params: {
       }
     }
 
+    // === 检验门控校验（下道工序报工前检查上道工序检验状态）===
+    if (task.production_order_number) {
+      const [prevStepRows]: any = await sequelize.query(
+        `SELECT TOP 1 process_task_number, step_number, inspect_status, standard_process_name FROM process_task WHERE production_order_number = :orderNo AND step_number < :step ORDER BY step_number DESC`,
+        { replacements: { orderNo: task.production_order_number, step: task.step_number }, transaction }
+      );
+      if (prevStepRows.length > 0) {
+        const prev = prevStepRows[0];
+        const allowedStatuses = ['无需检', '检验合格', '已处理'];
+        if (!allowedStatuses.includes(prev.inspect_status)) {
+          throw new BusinessError(400, `上道工序「${prev.standard_process_name || prev.step_number}」检验状态为「${prev.inspect_status || '待检验'}」，请先完成检验或处理`);
+        }
+      }
+    }
+
     const totalQty = qualifiedQty + unqualifiedQty;
     const cumulativeQty = completedQty + qualifiedQty;
 
@@ -442,7 +468,7 @@ export const quickReport = async (params: {
 
     await sequelize.query(`
       INSERT INTO work_report (work_report_number, process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, basic_unit, work_center_number, work_center_name, planned_quantity, qualified_quantity, unqualified_quantity, total_quantity, cumulative_quantity, report_date, schedules_id, schedules_name, team_number, team_name, operator_number, operator_name, actual_start_time, actual_end_time, actual_hours, unqualified_reason, defect_class_number, defect_class_name, defect_number, defect_name, approval_status, remark, creation_date, creation_man)
-      VALUES (:work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_number, :item_name, :specifications, :basic_unit, :work_center_number, :work_center_name, :planned_quantity, :qualified_quantity, :unqualified_quantity, :total_quantity, :cumulative_quantity, :report_date, :schedules_id, :schedules_name, :team_number, :team_name, :operator_number, :operator_name, :actual_start_time, :actual_end_time, :actual_hours, :unqualified_reason, :defect_class_number, :defect_class_name, :defect_number, :defect_name, N'草稿', :remark, :creation_date, :creation_man)
+      VALUES (:work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_number, :item_name, :specifications, :basic_unit, :work_center_number, :work_center_name, :planned_quantity, :qualified_quantity, :unqualified_quantity, :total_quantity, :cumulative_quantity, :report_date, :schedules_id, :schedules_name, :team_number, :team_name, :operator_number, :operator_name, :actual_start_time, :actual_end_time, :actual_hours, :unqualified_reason, :defect_class_number, :defect_class_name, :defect_number, :defect_name, N'已审批', :remark, :creation_date, :creation_man)
     `, {
       replacements: {
         work_report_number: wrNumber,
@@ -482,6 +508,16 @@ export const quickReport = async (params: {
       },
       transaction
     });
+
+    // 自动审批日志
+    await sequelize.query(
+      `INSERT INTO approval_log (module, record_id, action, from_status, to_status, operator_id, operator_name, remark) VALUES (N'work_report', :record_id, N'submit', N'草稿', N'待审批', 0, :operator, N'报工自动提交')`,
+      { replacements: { record_id: wrNumber, operator: user?.username || '' }, transaction }
+    );
+    await sequelize.query(
+      `INSERT INTO approval_log (module, record_id, action, from_status, to_status, operator_id, operator_name, remark) VALUES (N'work_report', :record_id, 'approve', N'待审批', N'已审批', 0, :operator, N'报工自动审批')`,
+      { replacements: { record_id: wrNumber, operator: user?.username || '' }, transaction }
+    );
 
     // 发布报工创建事件，由订阅者处理工序同步、线边仓流转、检验创建
     await emitAsync(EVENT_NAMES.WORK_REPORT_CREATED, {
@@ -613,13 +649,61 @@ export const updateWorkReport = async (workReportNumber: string, params: {
 
 export const deleteWorkReport = async (workReportNumber: string, user: { username: string }): Promise<void> => {
   return await withTransaction(async (transaction) => {
-    const [chk]: any = await sequelize.query(`SELECT approval_status, process_task_number, production_order_number, qualified_quantity FROM work_report WHERE work_report_number = :id`, { replacements: { id: workReportNumber }, transaction });
+    const [chk]: any = await sequelize.query(`SELECT approval_status, process_task_number, production_order_number, step_number, qualified_quantity FROM work_report WHERE work_report_number = :id`, { replacements: { id: workReportNumber }, transaction });
     if (!chk.length) throw new BusinessError(404, '报工单不存在');
-    if (chk[0].approval_status !== ORDER_STATUS.DRAFT) throw new BusinessError(403, '已提交或已审批的报工单不允许删除');
+    if (chk[0].approval_status !== ORDER_STATUS.DRAFT && chk[0].approval_status !== '已审批') throw new BusinessError(403, '已提交或已审批的报工单不允许删除');
+
+    // === 门控：只允许删除当前生产单最后工序的报工记录 ===
+    const pon = chk[0].production_order_number;
+    const currentStep = chk[0].step_number;
+    if (pon) {
+      // 查询同生产单中工序号更高的报工记录（排除自身）
+      const [laterReports]: any = await sequelize.query(
+        `SELECT TOP 1 wr.work_report_number, wr.step_number, wr.standard_process_name FROM work_report wr WHERE wr.production_order_number = :pon AND wr.step_number > :currentStep`,
+        { replacements: { pon, currentStep }, transaction }
+      );
+      if (laterReports.length > 0) {
+        const later = laterReports[0];
+        throw new BusinessError(403, `该生产单存在更高工序(${later.step_number} - ${later.standard_process_name || ''})的报工记录，只能从后道工序依次向前删除。请先删除工序 ${later.step_number} 的报工记录。`);
+      }
+
+      // 查询同工序中是否有创建时间更晚的报工记录（同工序多条报工时，只能删最后一条）
+      const [laterSameStep]: any = await sequelize.query(
+        `SELECT TOP 1 wr.work_report_number FROM work_report wr WHERE wr.production_order_number = :pon AND wr.step_number = :currentStep AND wr.creation_date > (SELECT creation_date FROM work_report WHERE work_report_number = :id)`,
+        { replacements: { pon, currentStep, id: workReportNumber }, transaction }
+      );
+      if (laterSameStep.length > 0) {
+        throw new BusinessError(403, `该工序存在更晚的报工记录，只能删除最后一条报工记录。`);
+      }
+    }
+
+    // 如果是已审批状态，先反审再删除（兼容报工自动审批场景）
+    if (chk[0].approval_status === '已审批') {
+      await sequelize.query(
+        `INSERT INTO approval_log (module, record_id, action, from_status, to_status, operator_id, operator_name, remark) VALUES (N'work_report', :record_id, N'reverse', N'已审批', N'草稿', 0, :operator, N'撤销重报自动反审')`,
+        { replacements: { record_id: workReportNumber, operator: user?.username || '' }, transaction }
+      );
+    }
 
     const taskNo = chk[0].process_task_number;
     const qty = parseFloat(chk[0].qualified_quantity) || 0;
-    const pon = chk[0].production_order_number;
+    // pon 已在上方门控逻辑中声明
+
+    // === 门控：检查是否关联了检验单 ===
+    if (taskNo) {
+      const [inspections]: any = await sequelize.query(
+        `SELECT TOP 1 inspection_number, status FROM production_inspection WHERE work_report_number = :wrNumber`,
+        { replacements: { wrNumber: workReportNumber }, transaction }
+      );
+      if (inspections.length > 0) {
+        const insp = inspections[0];
+        if (insp.status === '已完成') {
+          throw new BusinessError(403, `该报工单关联了已完成的检验记录(${insp.inspection_number})，请先通过撤销重报回退检验记录`);
+        } else {
+          throw new BusinessError(403, `该报工单关联了检验记录(${insp.inspection_number})，请先删除检验记录后再删除报工单`);
+        }
+      }
+    }
 
     await sequelize.query(`DELETE FROM work_report WHERE work_report_number = :id`, { replacements: { id: workReportNumber }, transaction });
 
@@ -660,9 +744,9 @@ export const completeOrderReport = async (params: {
   defect_name?: string;
   remark?: string;
 }, user: { username: string }): Promise<{ workReportNumber: string | null; completedTasks: number }> => {
+  const orderNo = params.production_order_number;
   return await withTransaction(async (transaction) => {
     const b = params;
-    const orderNo = b.production_order_number;
 
     if (!orderNo) throw new BusinessError(400, '生产单编号不能为空');
 
@@ -700,6 +784,22 @@ export const completeOrderReport = async (params: {
         throw new BusinessError(400, `合格数(${qualifiedQty})+不合格数(${unqualifiedQty})=${qualifiedQty + unqualifiedQty}，超过最大可报工量(${maxReportable.toFixed(4)})`);
       }
 
+      // === 检验门控校验（完工报工前检查上道工序检验状态）===
+      const prevSteps = allSteps.filter((s: any) => s.step_number < lastTask.step_number);
+      if (prevSteps.length > 0) {
+        const prev = prevSteps[prevSteps.length - 1];
+        // 查询上道工序的 inspect_status（allSteps 未包含此字段）
+        const [prevInspectRows]: any = await sequelize.query(
+          `SELECT TOP 1 inspect_status FROM process_task WHERE process_task_number = :taskNo`,
+          { replacements: { taskNo: prev.process_task_number }, transaction }
+        );
+        const prevInspectStatus = prevInspectRows[0]?.inspect_status;
+        const allowedStatuses = ['无需检', '检验合格', '已处理'];
+        if (!allowedStatuses.includes(prevInspectStatus)) {
+          throw new BusinessError(400, `上道工序「${prev.standard_process_name || prev.step_number}」检验状态为「${prevInspectStatus || '待检验'}」，请先完成检验或处理`);
+        }
+      }
+
       const totalQty = qualifiedQty + unqualifiedQty;
       const cumulativeQty = completedQty + qualifiedQty;
 
@@ -720,7 +820,7 @@ export const completeOrderReport = async (params: {
 
       await sequelize.query(`
         INSERT INTO work_report (work_report_number, process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, basic_unit, work_center_number, work_center_name, planned_quantity, qualified_quantity, unqualified_quantity, total_quantity, cumulative_quantity, report_date, schedules_id, schedules_name, team_number, team_name, operator_number, operator_name, actual_start_time, actual_end_time, actual_hours, unqualified_reason, defect_class_number, defect_class_name, defect_number, defect_name, approval_status, remark, creation_date, creation_man)
-        VALUES (:work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_number, :item_name, :specifications, :basic_unit, :work_center_number, :work_center_name, :planned_quantity, :qualified_quantity, :unqualified_quantity, :total_quantity, :cumulative_quantity, :report_date, :schedules_id, :schedules_name, :team_number, :team_name, :operator_number, :operator_name, :actual_start_time, :actual_end_time, :actual_hours, :unqualified_reason, :defect_class_number, :defect_class_name, :defect_number, :defect_name, N'草稿', :remark, :creation_date, :creation_man)
+        VALUES (:work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_number, :item_name, :specifications, :basic_unit, :work_center_number, :work_center_name, :planned_quantity, :qualified_quantity, :unqualified_quantity, :total_quantity, :cumulative_quantity, :report_date, :schedules_id, :schedules_name, :team_number, :team_name, :operator_number, :operator_name, :actual_start_time, :actual_end_time, :actual_hours, :unqualified_reason, :defect_class_number, :defect_class_name, :defect_number, :defect_name, N'已审批', :remark, :creation_date, :creation_man)
       `, {
         replacements: {
           work_report_number: wrNumber,
@@ -761,6 +861,16 @@ export const completeOrderReport = async (params: {
         transaction
       });
 
+      // 自动审批日志
+      await sequelize.query(
+        `INSERT INTO approval_log (module, record_id, action, from_status, to_status, operator_id, operator_name, remark) VALUES (N'work_report', :record_id, N'submit', N'草稿', N'待审批', 0, :operator, N'报工自动提交')`,
+        { replacements: { record_id: wrNumber, operator: user?.username || '' }, transaction }
+      );
+      await sequelize.query(
+        `INSERT INTO approval_log (module, record_id, action, from_status, to_status, operator_id, operator_name, remark) VALUES (N'work_report', :record_id, 'approve', N'待审批', N'已审批', 0, :operator, N'报工自动审批')`,
+        { replacements: { record_id: wrNumber, operator: user?.username || '' }, transaction }
+      );
+
       // 发布报工创建事件，由订阅者处理工序同步、线边仓流转、检验创建
       await emitAsync(EVENT_NAMES.WORK_REPORT_CREATED, {
         process_task_number: lastTask.process_task_number,
@@ -790,9 +900,20 @@ export const completeOrderReport = async (params: {
     // 重算生产单综合合格率
     await recalcYieldRate(orderNo, transaction);
 
+    // 自动生成生产入库单（成品→成品仓，半成品→原料仓）
+    // 注意：入库操作内部使用独立事务，必须在主事务提交后执行，避免死锁
+    // 使用 afterCommit 钩子确保主事务先提交
+    // （见 withTransaction 调用处的 afterCommit 配置）
+
     return {
       workReportNumber: wrNumber || null,
       completedTasks: allSteps.length
     };
+  }, {
+    afterCommit: async () => {
+      try {
+        await autoProductionInbound(orderNo);
+      } catch (e: any) { console.log('[completeOrderReport] 自动入库失败:', e?.message || e); }
+    }
   });
 };

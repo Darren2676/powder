@@ -5,9 +5,11 @@ import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import dayjs from 'dayjs';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 
+import { BusinessError } from '@/shared/errors/BusinessError';
+
 const headerSelectCols = 'preparation_number, production_order_number, production_number, item_number, item_name, specifications, basic_unit, bom_number, bom_version, planned_quantity, bom_base_quantity, total_material_types, preparation_status, approval_status, remark, creation_date, creation_man';
 
-const detailSelectCols = 'id, preparation_number, line_number, material_number, material_name, material_type, unit, bom_standard_quantity, bom_wastage_rate, bom_actual_quantity, required_quantity, adjusted_quantity, issued_quantity, step_number, work_center_number, work_center_name, is_key_material, substitute_group, substitute_priority, supply_type, default_warehouse, bom_path, standard_process_name, remark';
+const detailSelectCols = 'id, preparation_number, line_number, material_number, material_name, material_type, unit, bom_standard_quantity, bom_wastage_rate, bom_actual_quantity, required_quantity, adjusted_quantity, issued_quantity, step_number, work_center_number, work_center_name, is_key_material, substitute_group, substitute_priority, supply_type, default_warehouse, bom_path, standard_process_name, auto_weigh, remark';
 
 const exportFields = ['preparation_number', 'production_order_number', 'item_number', 'item_name', 'specifications', 'planned_quantity', 'bom_number', 'bom_version', 'total_material_types', 'preparation_status', 'approval_status', 'creation_date', 'creation_man', 'remark'];
 const exportHeaders = ['备料单编号', '生产单编号', '产品编号', '产品名称', '规格', '计划数量', 'BOM编号', 'BOM版本', '物料种类', '备料状态', '审批状态', '创建日期', '创建人', '备注'];
@@ -402,7 +404,7 @@ export const generateFromOrder = async (req: Request, res: Response, next: NextF
         const requiredQty = Math.round(multiplier * item.accumulated_quantity * 10000) / 10000;
 
         const i = index;
-        detailValues.push(`(:prep_number, :line_${i}, :mat_num_${i}, :mat_name_${i}, :mat_type_${i}, :unit_${i}, :bom_std_${i}, :bom_waste_${i}, :bom_act_${i}, :req_qty_${i}, :adj_qty_${i}, 0, :step_${i}, :wc_num_${i}, :wc_name_${i}, :is_key_${i}, :sub_grp_${i}, :sub_pri_${i}, :supply_${i}, :warehouse_${i}, :bom_path_${i}, '')`);
+        detailValues.push(`(:prep_number, :line_${i}, :mat_num_${i}, :mat_name_${i}, :mat_type_${i}, :unit_${i}, :bom_std_${i}, :bom_waste_${i}, :bom_act_${i}, :req_qty_${i}, :adj_qty_${i}, 0, :step_${i}, :wc_num_${i}, :wc_name_${i}, :is_key_${i}, :sub_grp_${i}, :sub_pri_${i}, :supply_${i}, :warehouse_${i}, :bom_path_${i}, N'N', '')`);
         detailReplacements[`line_${i}`] = (index + 1) * 10;
         detailReplacements[`mat_num_${i}`] = item.material_number || '';
         detailReplacements[`mat_name_${i}`] = item.material_name || '';
@@ -455,8 +457,8 @@ export const generateFromOrder = async (req: Request, res: Response, next: NextF
         singleReplacements[`line_${i}`] = detailReplacements[`line_${i}`];
 
         await sequelize.query(`
-          INSERT INTO material_preparation_detail (preparation_number, line_number, material_number, material_name, material_type, unit, bom_standard_quantity, bom_wastage_rate, bom_actual_quantity, required_quantity, adjusted_quantity, issued_quantity, step_number, work_center_number, work_center_name, is_key_material, substitute_group, substitute_priority, supply_type, default_warehouse, bom_path, remark)
-          VALUES (:prep_number, :line_${i}, :mat_num_${i}, :mat_name_${i}, :mat_type_${i}, :unit_${i}, :bom_std_${i}, :bom_waste_${i}, :bom_act_${i}, :req_qty_${i}, :adj_qty_${i}, 0, :step_${i}, :wc_num_${i}, :wc_name_${i}, :is_key_${i}, :sub_grp_${i}, :sub_pri_${i}, :supply_${i}, :warehouse_${i}, :bom_path_${i}, '')
+          INSERT INTO material_preparation_detail (preparation_number, line_number, material_number, material_name, material_type, unit, bom_standard_quantity, bom_wastage_rate, bom_actual_quantity, required_quantity, adjusted_quantity, issued_quantity, step_number, work_center_number, work_center_name, is_key_material, substitute_group, substitute_priority, supply_type, default_warehouse, bom_path, auto_weigh, remark)
+          VALUES (:prep_number, :line_${i}, :mat_num_${i}, :mat_name_${i}, :mat_type_${i}, :unit_${i}, :bom_std_${i}, :bom_waste_${i}, :bom_act_${i}, :req_qty_${i}, :adj_qty_${i}, 0, :step_${i}, :wc_num_${i}, :wc_name_${i}, :is_key_${i}, :sub_grp_${i}, :sub_pri_${i}, :supply_${i}, :warehouse_${i}, :bom_path_${i}, N'N', '')
         `, { replacements: singleReplacements });
       }
 
@@ -687,8 +689,8 @@ export const generateByProcess = async (req: Request, res: Response, next: NextF
         const requiredQty = Math.round(multiplier * item.accumulated_quantity * 10000) / 10000;
 
         await sequelize.query(`
-          INSERT INTO material_preparation_detail (preparation_number, line_number, material_number, material_name, material_type, unit, bom_standard_quantity, bom_wastage_rate, bom_actual_quantity, required_quantity, adjusted_quantity, issued_quantity, step_number, work_center_number, work_center_name, standard_process_name, is_key_material, substitute_group, substitute_priority, supply_type, default_warehouse, bom_path, remark)
-          VALUES (:prep_number, :line_num, :mat_num, :mat_name, :mat_type, :unit, :bom_std, :bom_waste, :bom_act, :req_qty, :adj_qty, 0, :step, :wc_num, :wc_name, :proc_name, :is_key, :sub_grp, :sub_pri, :supply, :warehouse, :bom_path, '')
+          INSERT INTO material_preparation_detail (preparation_number, line_number, material_number, material_name, material_type, unit, bom_standard_quantity, bom_wastage_rate, bom_actual_quantity, required_quantity, adjusted_quantity, issued_quantity, step_number, work_center_number, work_center_name, standard_process_name, is_key_material, substitute_group, substitute_priority, supply_type, default_warehouse, bom_path, auto_weigh, remark)
+          VALUES (:prep_number, :line_num, :mat_num, :mat_name, :mat_type, :unit, :bom_std, :bom_waste, :bom_act, :req_qty, :adj_qty, 0, :step, :wc_num, :wc_name, :proc_name, :is_key, :sub_grp, :sub_pri, :supply, :warehouse, :bom_path, N'N', '')
         `, {
           replacements: {
             prep_number: prepNumber,
@@ -1021,5 +1023,31 @@ export const getProcessPrepStatus = async (req: Request, res: Response, next: Ne
       order,
       steps
     }, '获取工序备料状态成功'));
+  } catch (err) { next(err); }
+};
+
+// ==================== 批量更新明细自动称量标记 ====================
+export const updateDetailAutoWeigh = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { ids, auto_weigh } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new BusinessError(400, '请选择至少一条明细记录');
+    }
+    if (!['Y', 'N'].includes(auto_weigh)) {
+      throw new BusinessError(400, 'auto_weigh 值必须为 Y 或 N');
+    }
+
+    const placeholders = ids.map((_: any, i: number) => `:id${i}`).join(',');
+    const replacements: any = { val: auto_weigh, prepNumber: id };
+    ids.forEach((idVal: number, i: number) => { replacements[`id${i}`] = idVal; });
+
+    await sequelize.query(
+      `UPDATE material_preparation_detail SET auto_weigh = :val WHERE id IN (${placeholders}) AND preparation_number = :prepNumber`,
+      { replacements }
+    );
+
+    res.json(success({ updatedCount: ids.length }, '更新成功'));
   } catch (err) { next(err); }
 };

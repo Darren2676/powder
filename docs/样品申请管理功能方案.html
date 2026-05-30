@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>样品申请管理功能方案</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 16mm 14mm; }
+  body { font-family: "Microsoft YaHei","SimHei","PingFang SC",sans-serif; font-size:12px; line-height:1.7; color:#1a1a1a; max-width:100%; padding:0; margin:0; }
+  h1 { font-size:20px; text-align:center; margin:0 0 6px 0; padding-bottom:10px; border-bottom:2px solid #1890ff; color:#0d1a26; }
+  h2 { font-size:15px; margin:22px 0 8px 0; padding:5px 0 5px 10px; border-left:4px solid #1890ff; background:#f0f5ff; color:#0d1a26; page-break-after:avoid; }
+  h3 { font-size:13px; margin:14px 0 6px 0; color:#1a3a5c; page-break-after:avoid; }
+  p { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; margin:6px 0; font-size:11px; page-break-inside:avoid; }
+  th { background:#1890ff; color:#fff; padding:5px 6px; text-align:left; font-weight:600; }
+  td { padding:4px 6px; border:1px solid #d9d9d9; vertical-align:top; }
+  tr:nth-child(even) td { background:#fafafa; }
+  pre { background:#f5f5f5; border:1px solid #e0e0e0; border-radius:3px; padding:8px 10px; font-size:10.5px; line-height:1.4; overflow-x:auto; white-space:pre-wrap; word-break:break-all; font-family:Consolas,"Courier New",monospace; page-break-inside:avoid; }
+  code { font-family:Consolas,"Courier New",monospace; font-size:10.5px; background:#f0f0f0; padding:1px 3px; border-radius:2px; }
+  pre code { background:none; padding:0; }
+  ul,ol { margin:4px 0; padding-left:20px; }
+  li { margin:2px 0; }
+  strong { color:#cf1322; }
+  hr { border:none; border-top:1px solid #e0e0e0; margin:16px 0; }
+  .footer { text-align:center; font-size:10px; color:#999; margin-top:20px; padding-top:6px; border-top:1px solid #e0e0e0; }
+  .note { background:#fff7e6; border:1px solid #ffd591; border-radius:3px; padding:8px 10px; margin:6px 0; font-size:11px; }
+  .note strong { color:#d46b08; }
+</style>
+</head>
+<body>
+
+<h1>样品申请管理功能方案</h1>
+<p style="text-align:center;color:#666;">Seals MES System &nbsp;|&nbsp; 2026年5月</p>
+
+<h2>一、业务流程</h2>
+<pre>销售部新建申请 → 草稿
+      │ 提交
+      ▼
+   待研发（技术部待接收）
+      │ 接收
+      ▼
+   研发中（技术部填写实验室数据）
+      │ 完成
+      ▼
+   已完成 → 自动通知销售部 + 管理人员</pre>
+
+<table>
+<tr><th>状态</th><th>可操作角色</th><th>可用操作</th></tr>
+<tr><td>草稿</td><td>销售部</td><td>编辑、提交、删除</td></tr>
+<tr><td>待研发</td><td>销售部 / 技术部</td><td>撤回（销售）/ 接收（技术）</td></tr>
+<tr><td>研发中</td><td>技术部</td><td>填写实验室数据、完成研发</td></tr>
+<tr><td>已完成</td><td>全部</td><td>查看</td></tr>
+</table>
+
+<h2>二、数据库设计</h2>
+<h3>2.1 主表 sample_request</h3>
+<pre>request_number NVARCHAR(30) PK -- 编号，格式 SR-YYYYMMDD-NNN
+request_date DATE -- 申请日期
+deadline_date DATE -- 需要完成日期
+applicant NVARCHAR(50) -- 申请人
+urgency NVARCHAR(20) DEFAULT '一般' -- 紧急程度
+customer_name NVARCHAR(200) -- 客户名称
+market NVARCHAR(100) -- 市场
+competitor NVARCHAR(200) -- 竞争对手
+estimated_price DECIMAL(18,4) -- 预估售价
+potential_usage DECIMAL(18,4) -- 潜在用量
+has_order NVARCHAR(10) -- 是否已有订单
+coating_workpiece NVARCHAR(200) -- 喷涂工件
+substrate NVARCHAR(100) -- 基材
+pretreatment NVARCHAR(100) -- 前处理
+spray_gun_type NVARCHAR(100) -- 喷枪类型
+recovery_system NVARCHAR(100) -- 回收系统
+oven_type NVARCHAR(100) -- 烤炉类型
+color_spec NVARCHAR(500) -- 颜色
+product_type NVARCHAR(200) -- 产品类型
+film_thickness NVARCHAR(100) -- 膜厚范围
+gloss_range NVARCHAR(100) -- 光泽范围
+curing_condition NVARCHAR(100) -- 固化条件
+other_requirements NVARCHAR(1000) -- 其它性能要求
+status NVARCHAR(20) DEFAULT '草稿' -- 流程状态
+approval_status NVARCHAR(20) DEFAULT '草稿' -- 审批状态
+created_by NVARCHAR(50) -- 创建人
+created_at DATETIME DEFAULT GETDATE()
+updated_at DATETIME DEFAULT GETDATE()</pre>
+
+<h3>2.2 明细表 sample_request_item</h3>
+<pre>id INT IDENTITY(1,1) PK
+request_number NVARCHAR(30) FK
+item_type NVARCHAR(50) -- 样板/样粉/相溶性测试/测试报告/其他
+quantity DECIMAL(18,4)
+unit NVARCHAR(20) -- 片/公斤/次/份
+is_requested BIT DEFAULT 0
+sort_order INT DEFAULT 0</pre>
+
+<h3>2.3 实验室结果表 sample_request_lab</h3>
+<pre>id INT IDENTITY(1,1) PK
+request_number NVARCHAR(30) FK
+lab_panel_qty DECIMAL(18,4) -- 寄出样板数量
+lab_powder_qty DECIMAL(18,4) -- 寄出样粉数量(kg)
+completion_date DATE -- 完成日期
+product_number NVARCHAR(50) -- 产品编号
+formula_cost DECIMAL(18,4) -- 配方成本
+lab_remark NVARCHAR(2000) -- 备注
+received_by NVARCHAR(50) -- 接收人
+received_at DATETIME -- 接收时间
+completed_by NVARCHAR(50) -- 完成人
+completed_at DATETIME -- 完成时间</pre>
+
+<h2>三、API 接口</h2>
+<table>
+<tr><th>方法</th><th>路径</th><th>说明</th><th>权限</th></tr>
+<tr><td>GET</td><td>/sample-requests</td><td>列表查询</td><td>全部</td></tr>
+<tr><td>GET</td><td>/sample-requests/:id</td><td>详情</td><td>全部</td></tr>
+<tr><td>POST</td><td>/sample-requests</td><td>新建</td><td>销售部</td></tr>
+<tr><td>PUT</td><td>/sample-requests/:id</td><td>编辑</td><td>销售部</td></tr>
+<tr><td>DELETE</td><td>/sample-requests/:id</td><td>删除</td><td>销售部</td></tr>
+<tr><td>PUT</td><td>/sample-requests/:id/submit</td><td>提交</td><td>销售部</td></tr>
+<tr><td>PUT</td><td>/sample-requests/:id/withdraw</td><td>撤回</td><td>销售部</td></tr>
+<tr><td>PUT</td><td>/sample-requests/:id/receive</td><td>接收</td><td>技术部</td></tr>
+<tr><td>PUT</td><td>/sample-requests/:id/complete</td><td>完成</td><td>技术部</td></tr>
+</table>
+
+<h2>四、文件改造清单</h2>
+<table>
+<tr><th>类型</th><th>文件</th></tr>
+<tr><td>新增</td><td>server/src/modules/sales/sampleRequest/ 3文件</td></tr>
+<tr><td>新增</td><td>client/src/views/sales/sampleRequest/ 3文件</td></tr>
+<tr><td>新增</td><td>client/src/api/sales/sampleRequest.ts</td></tr>
+<tr><td>修改</td><td>server/src/services/documentNumber.service.ts</td></tr>
+<tr><td>修改</td><td>server/src/services/approval.service.ts</td></tr>
+<tr><td>修改</td><td>server/src/routes/index.ts</td></tr>
+<tr><td>修改</td><td>client/src/router/</td></tr>
+<tr><td>修改</td><td>菜单配置 + 权限配置</td></tr>
+</table>
+
+<h2>五、工作量评估</h2>
+<table>
+<tr><th>模块</th><th>估时</th></tr>
+<tr><td>后端开发</td><td>7.5 天</td></tr>
+<tr><td>前端开发</td><td>6 天</td></tr>
+<tr><td>联调测试</td><td>1.5 天</td></tr>
+<tr><td><strong>总计</strong></td><td><strong>15 天（3 周/1人）</strong></td></tr>
+</table>
+
+<div class="footer">Seals MES System — 样品申请管理功能方案 &nbsp;|&nbsp; 宁国市睿信信息技术有限责任公司</div>
+</body>
+</html>

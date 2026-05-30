@@ -47,12 +47,12 @@ export const validateCreateApproval = validateBody([
 
 // 创建工作流定义
 export const validateCreateWorkflow = validateBody([
-  { field: 'definition_name', label: '流程名称', required: true, maxLength: 100 },
+  { field: 'name', label: '流程名称', required: true, maxLength: 100 },
 ]);
 
 // 更新工作流定义
 export const validateUpdateWorkflow = validateBody([
-  { field: 'definition_name', label: '流程名称', required: true, maxLength: 100 },
+  { field: 'name', label: '流程名称', required: true, maxLength: 100 },
 ]);
 
 // 创建工作流实例

@@ -1,6 +1,6 @@
 # Seals MES 系统按域功能详细清单
 
-> 统计时间：2026-05-21 | 覆盖：12个业务域、83个功能模块、前后端+数据库三层交叉验证
+> 更新时间：2026-05-15 | 覆盖：12个业务域、134个功能模块、前后端+数据库三层交叉验证 (v4)
 
 ---
 
@@ -18,19 +18,20 @@
 | 8 | 物料管理 | Material/ | /materials | material | 物料基础信息管理 |
 | 9 | 客户物料映射 | CustomerMaterialMapping/ | /customer-material-mappings | customer_material_mapping | 客户与物料编号对照关系 |
 | 10 | BOM管理 | Bom/ | /boms | bom / bom_detail | 标准BOM清单及明细行管理 |
-| 11 | 制造BOM | MfgBom/ | /mfg-boms | mfg_bom / mfg_bom_detail | 制造BOM（含替代料/损耗率） |
-| 12 | 工序管理 | Procedure/ | /procedures | procedure | 工序定义（编号/名称/类型/工时） |
-| 13 | 工作中心 | WorkCenter/ | /work-centers | work_center | 工作中心管理，关联车间/设备 |
-| 14 | 工艺路线 | RoutingMaster/ | /routing-masters | routing_master / routing_detail | 工艺路线主表+工序明细行管理 |
-| 15 | 单位管理 | Unit/ | /units | unit | 计量单位CRUD |
-| 16 | 仓库管理 | Warehouse/ | /warehouses | warehouse | 仓库档案（编号/名称/类型：成品仓/原料仓/报废仓等） |
-| 17 | 库位管理 | StorageLocation/ | /storage-locations | storage_location | 仓库内库位管理 |
-| 18 | 车间管理 | Workshop/ | /workshops | workshop | 车间档案管理 |
-| 19 | 生产线 | Productionline/ | /productionlines | production_line | 产线档案管理 |
-| 20 | 班组管理 | Team/ | /teams | team | 班组档案管理 |
-| 21 | 班次管理 | Schedule/ | /schedules | schedule | 班次定义（早班/中班/晚班） |
-| 22 | 员工管理 | Employee/ | /employees | employee | 员工档案（工号/姓名/部门/岗位） |
-| 23 | 物流公司 | LogisticsCompany/ | /logistics-companies | logistics_company | 承运商/物流公司管理 |
+| 11 | 制造BOM | MfgBom/ | /mfg-boms | mfg_bom / mfg_bom_detail | 制造BOM（含替代料/损耗率），含模具BOM映射 |
+| 12 | 成本BOM | CostBom/ | /boms/:id/cost-bom | — | 基于BOM的多层物料成本累计计算，含物料成本/标准成本汇总导出 |
+| 13 | 工序管理 | Procedure/ | /procedures | procedure | 工序定义（编号/名称/类型/工时） |
+| 14 | 工作中心 | WorkCenter/ | /work-centers | work_center | 工作中心管理，关联车间/设备 |
+| 15 | 工艺路线 | RoutingMaster/ | /routing-masters | routing_master / routing_detail | 工艺路线主表+工序明细行管理 |
+| 16 | 单位管理 | Unit/ | /units | unit | 计量单位CRUD |
+| 17 | 仓库管理 | Warehouse/ | /warehouses | warehouse | 仓库档案（编号/名称/类型：成品仓/原料仓/报废仓等） |
+| 18 | 库位管理 | StorageLocation/ | /storage-locations | storage_location | 仓库内库位管理 |
+| 19 | 车间管理 | Workshop/ | /workshops | workshop | 车间档案管理 |
+| 20 | 生产线 | Productionline/ | /productionlines | production_line | 产线档案管理 |
+| 21 | 班组管理 | Team/ | /teams | team | 班组档案管理 |
+| 22 | 班次管理 | Schedule/ | /schedules | schedule | 班次定义（早班/中班/晚班） |
+| 23 | 员工管理 | Employee/ | /employees | employee | 员工档案（工号/姓名/部门/岗位） |
+| 24 | 物流公司 | LogisticsCompany/ | /logistics-companies | logistics_company | 承运商/物流公司管理 |
 
 ---
 
@@ -48,6 +49,8 @@
 | 8 | 销售报表 | SalesReport/ | /sales-report | — | 销售统计报表 |
 | 9 | 发货预警 | ShippingWarning/ | — | — | 超期未发货/逾期提醒 |
 | 10 | 按订单发货汇总 | ShippingByOrderSummary/ | — | — | 按销售订单维度汇总发货情况 |
+| 11 | 订单生产汇总 | OrderProductionSummary/ | — | — | 按销售订单维度汇总关联生产单的执行进度 |
+| 12 | 销售订单仪表板 | Dashboard/ | — | — | 销售订单可视化仪表板，图表展示订单状态分布 |
 
 ---
 
@@ -67,22 +70,26 @@
 |---|---------|---------|---------|-----------|---------|
 | 1 | 生产订单 | Order/ | /orders | production_order | 生产单管理，支持拆分/派发+生成工序任务和备料单 |
 | 2 | 工序任务 | ProcessTask/ | /process-tasks | process_task | 工序任务管理，含倒冲标志(is_backflush)，支持快速报工 |
-| 3 | 报工管理 | WorkReport/ | /work-reports | work_report / work_report_detail | 生产报工（合格/不合格数量），支持快速报工和详情报工 |
-| 4 | 备料单 | MaterialPreparation/ | /material-preparations | material_preparation / material_preparation_detail | 派发时自动生成，记录各工序所需物料 |
+| 3 | 报工管理 | WorkReport/ | /work-reports | work_report / work_report_detail | 生产报工（合格/不合格数量），支持快速报工和连续报工 |
+| 4 | 备料单 | MaterialPreparation/ | /material-preparations | material_preparation / material_preparation_detail | 派发时自动生成，记录各工序所需物料，支持按工序备料 |
 | 5 | 领料单 | MaterialIssue/ | /material-issues | material_issue | 从备料单创建领料单，扣减原料库存 |
-| 6 | 倒冲任务 | — | /backflush-tasks | backflush_task | 自动倒冲领料（按BOM耗用） |
-| 7 | 委外申请 | OutsourcingReq/ | /outsourcing-reqs | outsourcing_req | 委外加工申请 |
-| 8 | 委外订单 | OutsourcingOrder/ | /outsourcing-orders | outsourcing_order | 委外订单CRUD+发出，关联工序任务 |
-| 9 | 委外发料 | OutsourcingIssue/ | /outsourcing/issue | outsourcing_issue | 委外原料发料，支持移动端操作+打印标签+拍照 |
-| 10 | 委外收货 | OutsourcingReceipt/ | /outsourcing/receipt | outsourcing_receipt | 委外收货确认，触发检验路由，支持移动端 |
-| 11 | 委外检验 | OutsourcingInspection/ | /outsourcing/inspection | — | 委外来料检验，支持移动端 |
-| 12 | 委外结算 | OutsourcingSettlement/ | /outsourcing/settlement | outsourcing_settlement | 委外费用结算 |
-| 13 | 委外退料入库 | — | /outsourcing/return-stockin | — | 委外余料退回入库 |
-| 14 | 委外价目表 | OutsourcingPrice/ | /outsourcing-prices | outsourcing_price | 委外供应商+物料维度定价 |
-| 15 | 在制品报表 | WIP/ | /wip | — | 在制品统计报表 |
-| 16 | 计件工资 | PieceRateWage/ | /piece-rate-wages | piece_rate_wage | 按报工数量×计件单价计算工资 |
-| 17 | 甘特图 | Gantt/ | /orders/gantt | — | 生产排程甘特图视图 |
-| 18 | 派发打印 | DispatchPrint/ | /orders/print-data | — | 派工单/流程卡打印 |
+| 6 | 退料管理 | — | /material-returns | material_return | 生产领料后退料回仓，退回原料库存 |
+| 7 | 倒冲任务 | — | /backflush-tasks | backflush_task | 自动倒冲领料（按BOM耗用） |
+| 8 | 委外申请 | OutsourcingReq/ | /outsourcing-reqs | outsourcing_req | 委外加工申请 |
+| 9 | 委外订单 | OutsourcingOrder/ | /outsourcing-orders | outsourcing_order | 委外订单CRUD+发出，关联工序任务 |
+| 10 | 委外发料 | OutsourcingIssue/ | /outsourcing/issue | outsourcing_issue | 委外原料发料，支持移动端操作+打印标签+拍照 |
+| 11 | 委外收货 | OutsourcingReceipt/ | /outsourcing/receipt | outsourcing_receipt | 委外收货确认，触发检验路由，支持移动端 |
+| 12 | 委外检验 | OutsourcingInspection/ | /outsourcing/inspection | — | 委外来料检验，支持移动端 |
+| 13 | 委外结算 | OutsourcingSettlement/ | /outsourcing/settlement | outsourcing_settlement | 委外费用结算 |
+| 14 | 委外退料入库 | — | /outsourcing/return-stockin | — | 委外余料退回入库 |
+| 15 | 委外价目表 | OutsourcingPrice/ | /outsourcing-prices | outsourcing_price | 委外供应商+物料维度定价 |
+| 16 | 在制品报表 | WIP/ | /wip | — | 在制品统计报表（按生产单/按工作中心/线边仓流水） |
+| 17 | 计件工资 | PieceRateWage/ | /piece-rate-wages | piece_rate_wage | 按报工数量×计件单价计算工资 |
+| 18 | 甘特图 | Gantt/ | /orders/gantt | — | 生产排程甘特图视图 |
+| 19 | 派发打印 | DispatchPrint/ | /orders/print-data | — | 派工单/流程卡打印 |
+| 20 | 生产单材料成本 | MaterialCost/ | /production-material-cost | — | 生产单物料消耗成本统计分析 |
+| 21 | 生产工单仪表板 | ProgressDashboard/ | /progress-dashboard | — | 生产工单进度可视化仪表板 |
+| 22 | 生产单进度看板 | ProcessKanban/ | /process-kanban | — | 生产单工序进度看板，实时跟踪各工序完成状态 |
 
 ---
 
@@ -93,10 +100,11 @@
 | 1 | 采购申请 | PurchaseReq/ | /purchase-reqs | purchase_req / purchase_req_detail | 采购申请CRUD+审批，支持合并转采购订单，转单后回写明细行状态 |
 | 2 | 采购订单 | PurchaseOrder/ | /purchase-orders | purchase_order / purchase_order_detail | 采购订单CRUD+审批，支持从采购申请转单，删除后回写申请明细 |
 | 3 | 收货通知 | ReceivingNotice/ | /receiving-notices | receiving_notice / receiving_notice_detail | 采购收货通知，确认后触发检验路由 |
-| 4 | 采购入库 | StockIn/ | /stock-ins | stock_in / stock_in_detail | 采购入库单CRUD+确认/撤回，含会计期间字段 |
-| 5 | 采购退货 | PurchaseReturn/ | /purchase-returns | purchase_return | 采购退货出库 |
-| 6 | 采购价目表 | PurchasePrice/ | /purchase-prices | purchase_price | 供应商+物料维度采购定价 |
-| 7 | 采购计算器 | PurchaseCalc/ | /purchase-calc | — | 采购量/金额计算工具 |
+| 4 | 采购退货 | PurchaseReturn/ | /purchase-returns | purchase_return | 采购退货出库 |
+| 5 | 采购价目表 | PurchasePrice/ | /purchase-prices | purchase_price | 供应商+物料维度采购定价 |
+| 6 | 采购计算器 | PurchaseCalc/ | /purchase-calc | — | 采购需求计算报表 |
+| 7 | 采购发票 | PurchaseInvoice/ | /purchase-invoices | purchase_invoice | 采购发票管理，关联采购订单/收货 |
+| 8 | 采购订单仪表板 | PurchasingDashboard/ | — | — | 采购订单可视化仪表板，图表展示订单执行状态 |
 
 ---
 
@@ -133,15 +141,16 @@
 | 3 | 成品入库 | — | /finished-goods/inbound | finished_goods_inventory | 生产成品入库（含入库单管理/确认/撤回） |
 | 4 | 成品出库 | — | /finished-goods/outbound | — | 销售发货出库（批次FIFO/箱码模式） |
 | 5 | 成品装箱 | — | /packing-orders | packing_order / packing_box_inventory | 装箱单管理（确认/拆箱/箱码出库） |
-| 6 | 原料库存查询 | MaterialWarehouse/ | /material-warehouse/inventory | material_batch_inventory | 原料仓库存查询（批次+库位） |
-| 7 | 原料入库 | — | /material-warehouse/inbound | material_batch_inventory | 原料采购入库/退料入库 |
-| 8 | 原料出库 | — | /material-warehouse/outbound | — | 原料领料出库 |
-| 9 | 盘点管理 | StockCount/ | /stock-counts | stock_count / stock_count_detail | 盘点单CRUD，录入实盘→复核→确认执行（库存调整） |
-| 10 | 其他出入库 | — | /abnormal-io | abnormal_io / abnormal_io_detail | 其他入库/出库/调拨，确认/驳回/撤消 |
-| 11 | 报废处置 | ScrapDisposal/ | /scrap-disposal | scrap_disposal | 报废品处置管理 |
-| 12 | 报废流水 | ScrapTransaction/ | /scrap-transactions | — | 报废仓库存流水记录 |
-| 13 | 报废库存 | ScrapInventory/ | — | — | 报废仓库存查询 |
-| 14 | 月度出入库报表 | — | /finished-goods/monthly-report | — | 成品仓月度出入库统计报表 |
+| 6 | 原料库存查询 | MaterialWarehouse/ | /material-warehouse/inventory | material_batch_inventory | 原料仓库存查询（批次+库位），含安全库存预警 |
+| 7 | 原料入库 | — | /material-warehouse/inbound | material_batch_inventory | 原料采购入库/半成品入库/退料入库 |
+| 8 | 原料出库 | — | /material-warehouse/outbound | — | 原料领料出库/采购退货出库 |
+| 9 | 来料入库 | StockIn/ | /stock-ins | stock_in / stock_in_detail | 采购来料入库单CRUD+确认/撤回，含会计期间字段 |
+| 10 | 盘点管理 | StockCount/ | /stock-counts | stock_count / stock_count_detail | 盘点单CRUD，录入实盘→复核→确认执行（库存调整） |
+| 11 | 其他出入库 | — | /abnormal-io | abnormal_io / abnormal_io_detail | 其他入库/出库/调拨，确认/驳回/撤消 |
+| 12 | 报废处置 | ScrapDisposal/ | /scrap-disposal | scrap_disposal | 报废品处置管理 |
+| 13 | 报废流水 | ScrapTransaction/ | /scrap-transactions | — | 报废仓库存流水记录 |
+| 14 | 报废库存 | ScrapInventory/ | — | — | 报废仓库存查询 |
+| 15 | 月度出入库报表 | — | /finished-goods/monthly-report | — | 成品仓/原料仓/报废仓月度出入库统计报表 |
 
 ---
 
@@ -173,7 +182,8 @@
 | # | 功能模块 | 前端页面 | 后端API | 核心数据表 | 功能说明 |
 |---|---------|---------|---------|-----------|---------|
 | 1 | 批次追溯 | BatchTrace/ | /batch-trace | — | 成品批次全链路追溯（原料→生产→发货） |
-| 2 | 与小药称量系统对接 | — | /integration/small-medicine | — | 提供BOM清单、称量生产工单，接收称量实际数据，完成小药生产工单的报工 |
+| 2 | 新核云检验对接 | XinheyunInspect/ | /integration/xhy-inspect | — | 同步新核云系统检验记录/检验报工数据，含包装质量报表 |
+| 3 | 新核云库存对接 | — | /integration/xhy-inventory | — | 同步新核云系统库存数据，含库存查询/出入库流水 |
 
 ---
 
@@ -181,20 +191,22 @@
 
 | # | 功能模块 | 前端页面 | 后端API | 核心数据表 | 功能说明 |
 |---|---------|---------|---------|-----------|---------|
-| 1 | 用户管理 | User/ | /users | users | 用户CRUD，含角色分配 |
-| 2 | 角色管理 | Role/ | /roles | roles / role_permissions | 角色CRUD+权限分配 |
-| 3 | 权限管理 | Permission/ | /permissions | permissions / permission_menu | 菜单权限+API权限管理 |
-| 4 | 部门管理 | Department/ | /departments | department | 部门树形管理 |
-| 5 | 审批管理 | — | /approval | — | 通用审批流（提交/审批/反审） |
-| 6 | 工作流引擎 | Workflow/ | /workflows / /workflow-runtime | workflow_definition / workflow_instance | 工作流设计器+运行时引擎 |
-| 7 | 通知管理 | — | /notifications | notifications | 站内通知（SSE实时推送） |
-| 8 | 安全审计 | — | /security | — | 操作日志/安全审计 |
-| 9 | API密钥 | ApiKey/ | /api-keys | api_key | 外部系统API密钥管理 |
-| 10 | 用户偏好 | — | /user-preferences | user_preference | 列个性化等用户偏好持久化 |
-| 11 | 单据完结配置 | DocumentCompletionConfig/ | /document-completion-config | document_completion_config | 单据自动完结规则配置 |
-| 12 | 手动完结 | ManualClose/ | /manual-close | — | 手动完结指定单据 |
-| 13 | 自动盘点 | AutoStockCount/ | /auto-stock-count | — | 定时自动盘点任务配置 |
-| 14 | SSE推送 | — | /sse | — | Server-Sent Events实时消息推送 |
+| 1 | 认证管理 | Auth/ | /auth | users | 用户登录/注册/Token刷新，JWT认证 |
+| 2 | 驾驶舱 | Cockpit/ | /cockpit | — | 管理驾驶舱首页，全局数据可视化看板 |
+| 3 | 用户管理 | User/ | /users | users | 用户CRUD，含角色分配 |
+| 4 | 角色管理 | Role/ | /roles | roles / role_permissions | 角色CRUD+权限分配 |
+| 5 | 权限管理 | Permission/ | /permissions | permissions / permission_menu | 菜单权限+API权限管理 |
+| 6 | 部门管理 | Department/ | /departments | department | 部门树形管理 |
+| 7 | 审批管理 | — | /approval | — | 通用审批流（提交/审批/反审） |
+| 8 | 工作流引擎 | Workflow/ | /workflows / /workflow-runtime | workflow_definition / workflow_instance | 工作流设计器+运行时引擎，含我的待办 |
+| 9 | 通知管理 | — | /notifications | notifications | 站内通知（SSE实时推送） |
+| 10 | 安全审计 | — | /security | — | 操作日志/安全审计 |
+| 11 | API密钥 | ApiKey/ | /api-keys | api_key | 外部系统API密钥管理 |
+| 12 | 用户偏好 | — | /user-preferences | user_preference | 列个性化等用户偏好持久化 |
+| 13 | 单据完结配置 | DocumentCompletionConfig/ | /document-completion-config | document_completion_config | 单据自动完结规则配置 |
+| 14 | 手动完结 | ManualClose/ | /manual-close | — | 手动完结指定单据 |
+| 15 | 自动盘点 | AutoStockCount/ | /auto-stock-count | — | 定时自动盘点任务配置 |
+| 16 | SSE推送 | — | /sse | — | Server-Sent Events实时消息推送 |
 
 ---
 
@@ -202,10 +214,11 @@
 
 | # | 功能模块 | 前端页面 | 后端API | 核心数据表 | 功能说明 |
 |---|---------|---------|---------|-----------|---------|
-| 1 | 移动端发货 | — | /open/shipping | — | 移动端扫码发货接口 |
-| 2 | 移动端报工 | — | /open/work-reports | — | 移动端快速报工接口 |
-| 3 | 移动端检验 | — | /open/inspection | — | 移动端质检接口 |
-| 4 | 外部API | — | /open/* | — | API Key认证的外部系统接口 |
+| 1 | 移动端报工 | — | /open/work-reports | — | 移动端快速报工接口 |
+| 2 | 开放订单接口 | — | /open/orders | — | 外部系统订单数据查询接口 |
+| 3 | 开放备料接口 | — | /open/material-preparations | — | 外部系统备料数据接口 |
+| 4 | 开放BOM接口 | — | /open/bom | — | 外部系统BOM数据查询接口 |
+| 5 | 外部API | — | /open/* | — | API Key认证的外部系统接口 |
 
 ---
 
@@ -230,16 +243,16 @@
 
 | 业务域 | 功能模块数 | 后端路由数 | 前端页面数 |
 |--------|-----------|-----------|-----------|
-| 基础数据 | 23 | 22 | 23 |
-| 销售管理 | 10 | 8 | 10 |
-| 计划管理 | 3 | 3 | 3 |
-| 生产管理 | 18 | 17 | 15 |
-| 采购管理 | 7 | 6 | 6 |
-| 质量管理 | 17 | 17 | 17 |
-| 仓储管理 | 14 | 8 | 7 |
+| 基础数据 | 24 | 23 | 24 |
+| 销售管理 | 12 | 8 | 12 |
+| 计划管理 | 3 | 3 | 4 |
+| 生产管理 | 22 | 19 | 24 |
+| 采购管理 | 8 | 7 | 10 |
+| 质量管理 | 17 | 17 | 19 |
+| 仓储管理 | 15 | 8 | 26 |
 | 设备管理 | 6 | 6 | 6 |
 | 财务管理 | 3 | 3 | 3 |
-| 系统集成 | 2 | 2 | 1 |
-| 系统管理 | 14 | 16 | 11 |
-| 开放接口 | 4 | 4 | 0 |
-| **合计** | **122** | **113** | **103** |
+| 系统集成 | 3 | 3 | 7 |
+| 系统管理 | 16 | 17 | 11 |
+| 开放接口 | 5 | 4 | 0 |
+| **合计** | **134** | **118** | **150** |

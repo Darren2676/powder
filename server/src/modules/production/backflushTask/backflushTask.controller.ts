@@ -103,6 +103,27 @@ export const readiness = async (req: Request, res: Response, next: NextFunction)
   } catch (err) { next(err); }
 };
 
+// ==================== 批量更新自动称量标记 ====================
+export const updateAutoWeigh = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { ids, auto_weigh } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new BusinessError(400, '请选择至少一条记录');
+    }
+    if (!['Y', 'N'].includes(auto_weigh)) {
+      throw new BusinessError(400, 'auto_weigh 值必须为 Y 或 N');
+    }
+    const placeholders = ids.map((_: any, i: number) => `:id${i}`).join(',');
+    const replacements: any = { val: auto_weigh };
+    ids.forEach((id: number, i: number) => { replacements[`id${i}`] = id; });
+    await sequelize.query(
+      `UPDATE backflush_task SET auto_weigh = :val WHERE id IN (${placeholders})`,
+      { replacements }
+    );
+    res.json(success({ updatedCount: ids.length }, '更新成功'));
+  } catch (err) { next(err); }
+};
+
 // ==================== 导出Excel ====================
 export const exportExcel = async (req: Request, res: Response, next: NextFunction) => {
   try {

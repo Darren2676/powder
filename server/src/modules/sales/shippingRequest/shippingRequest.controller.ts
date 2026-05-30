@@ -52,6 +52,13 @@ export const getPendingShipments = async (req: Request, res: Response, next: Nex
       }
     }
 
+    // 数据范围过滤：sales 角色只能看到自己负责客户的订单
+    const scope = (req as any).dataScope;
+    if (scope?.head_of_sales_id) {
+      whereClause += ` AND h.head_of_sales_id = :dataScopeUserId`;
+      replacements.dataScopeUserId = scope.head_of_sales_id;
+    }
+
     const [countResult]: any = await sequelize.query(
       `SELECT COUNT(*) as total FROM sales_order_detail d
        INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number
@@ -62,7 +69,7 @@ export const getPendingShipments = async (req: Request, res: Response, next: Nex
       SELECT * FROM (
         Select d.id, d.sales_order_number, d.line_number, d.item_number, d.item_name,
                d.specifications, d.basic_unit, d.product_drawing_number,
-               d.order_quantity, d.unit_price, d.total_amount,
+               d.order_quantity, d.unit_price, d.tax_rate, d.total_amount,
                d.shipped_quantity, d.delivery_date, d.promised_delivery_date,
                d.shipping_status, d.remark, d.refunded_quantity, d.status,
                h.customer_number, h.customer_name, h.delivery_date as header_delivery_date,
@@ -305,6 +312,13 @@ export const getShippingRequests = async (req: Request, res: Response, next: Nex
     if (status) {
       whereClause += ` AND status = :status`;
       replacements.status = status;
+    }
+
+    // 数据范围过滤：sales 角色只能看到自己负责客户的发货申请
+    const scope = (req as any).dataScope;
+    if (scope?.head_of_sales_id) {
+      whereClause += ` AND customer_number IN (SELECT customer_number FROM customer WHERE head_of_sales_id = :dataScopeUserId)`;
+      replacements.dataScopeUserId = scope.head_of_sales_id;
     }
 
     const [countResult]: any = await sequelize.query(

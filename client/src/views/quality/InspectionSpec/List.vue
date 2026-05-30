@@ -125,6 +125,12 @@
             style="width: 100%"
           />
         </a-form-item>
+        <a-form-item v-if="specType === '生产'" label="启用质量特性">
+          <a-select v-model:value="specForm.enable_quality_chars">
+            <a-select-option value="Y">启用</a-select-option>
+            <a-select-option value="N">不启用</a-select-option>
+          </a-select>
+        </a-form-item>
       </a-form>
     </a-modal>
 
@@ -291,6 +297,7 @@ const headerColumns = [
   { title: '行号', key: 'rowIndex', width: 55 },
   { title: '检验规范名', dataIndex: 'spec_name', key: 'spec_name', width: 180 },
   { title: '缺陷分类', dataIndex: 'defect_categories', key: 'defect_categories', width: 200 },
+  { title: '启用质量特性', dataIndex: 'enable_quality_chars', key: 'enable_quality_chars', width: 110 },
   { title: '创建日期', dataIndex: 'creation_date', key: 'creation_date', width: 160 },
   { title: '创建人', dataIndex: 'creation_man', key: 'creation_man', width: 100 },
   { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 100 },
@@ -374,12 +381,13 @@ const fetchDefectClassList = async () => {
 // ===== 主表 Modal =====
 const specModalVisible = ref(false)
 const specModalMode = ref<'create' | 'edit'>('create')
-const specForm = reactive({ spec_name: '', defect_categories: [] as string[] })
+const specForm = reactive({ spec_name: '', defect_categories: [] as string[], enable_quality_chars: 'N' })
 
 const openCreateModal = () => {
   specModalMode.value = 'create'
   specForm.spec_name = ''
   specForm.defect_categories = []
+  specForm.enable_quality_chars = 'N'
   specModalVisible.value = true
 }
 
@@ -391,6 +399,7 @@ const handleEditSpec = (record: any) => {
   specModalMode.value = 'edit'
   specForm.spec_name = record.spec_name
   specForm.defect_categories = (record.defect_categories || '').split(';').filter((s: string) => s.trim())
+  specForm.enable_quality_chars = record.enable_quality_chars || 'N'
   specModalVisible.value = true
 }
 
@@ -398,10 +407,10 @@ const handleSpecOk = async () => {
   if (!specForm.spec_name) { message.warning('请输入检验规范名'); return }
   try {
     if (specModalMode.value === 'create') {
-      await createInspectionSpec({ spec_name: specForm.spec_name, defect_categories: specForm.defect_categories.join(';'), spec_type: specType.value || '来料' })
+      await createInspectionSpec({ spec_name: specForm.spec_name, defect_categories: specForm.defect_categories.join(';'), spec_type: specType.value || '来料', enable_quality_chars: specForm.enable_quality_chars })
       message.success('创建成功')
     } else {
-      await updateInspectionSpec(specForm.spec_name, { defect_categories: specForm.defect_categories.join(';') })
+      await updateInspectionSpec(specForm.spec_name, { defect_categories: specForm.defect_categories.join(';'), enable_quality_chars: specForm.enable_quality_chars })
       message.success('更新成功')
     }
     specModalVisible.value = false

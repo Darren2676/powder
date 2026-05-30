@@ -489,15 +489,16 @@ export const getSalesPriceForOrder = async (req: Request, res: Response, next: N
     }
 
     const row = rows[0];
-    const unit_price = row.price_type === '未税'
-      ? parseFloat(row.tax_exclusive_price) || 0
-      : parseFloat(row.tax_inclusive_price) || 0;
+    // 始终返回含税单价作为销售订单的unit_price，并返回税率
+    const unit_price = parseFloat(row.tax_inclusive_price) || 0;
+    const tax_rate = parseFloat(row.tax_rate) || 0;
 
     res.json(success({
       price_type: row.price_type,
       currency: row.currency,
       unit_price,
-      tax_rate: parseFloat(row.tax_rate) || 0,
+      tax_rate,
+      tax_exclusive_price: parseFloat(row.tax_exclusive_price) || 0,
       price_list_number: row.price_list_number,
       price_list_name: row.price_list_name
     }, '获取价格成功'));

@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>销售预测到发货退货 - 功能操作手册</title>
+<style>
+  @page { size: A4; margin: 18mm 20mm; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 13px; color: #333; line-height: 1.7; max-width: 900px; margin: 0 auto; padding: 20px; }
+  h1 { font-size: 22px; text-align: center; margin-bottom: 6px; color: #1a1a2e; }
+  h1.sub { font-size: 13px; font-weight: normal; color: #888; margin-top: 0; margin-bottom: 24px; }
+  h2 { font-size: 18px; margin-top: 28px; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 2px solid #1677ff; color: #1a1a2e; }
+  h3 { font-size: 15px; margin-top: 18px; margin-bottom: 8px; color: #333; }
+  h4 { font-size: 13px; margin-top: 12px; margin-bottom: 6px; color: #555; }
+  p { margin: 6px 0; }
+  ul, ol { margin: 6px 0; padding-left: 22px; }
+  li { margin: 3px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 12px; }
+  th, td { border: 1px solid #d9d9d9; padding: 6px 8px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  code { background: #f5f5f5; border: 1px solid #e8e8e8; padding: 1px 5px; border-radius: 3px; font-family: Consolas, monospace; font-size: 12px; }
+  .flow { background: #f0f7ff; border-left: 4px solid #1677ff; padding: 10px 14px; margin: 10px 0; border-radius: 4px; }
+  .step { background: #fff7e6; border-left: 4px solid #fa8c16; padding: 8px 14px; margin: 10px 0; border-radius: 4px; }
+  .info { background: #f6ffed; border-left: 4px solid #52c41a; padding: 8px 14px; margin: 10px 0; border-radius: 4px; }
+  .warn { background: #fff2f0; border-left: 4px solid #ff4d4f; padding: 8px 14px; margin: 10px 0; border-radius: 4px; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: 11px; margin-right: 4px; }
+  .tag-blue { background: #e6f7ff; color: #1677ff; border: 1px solid #91d5ff; }
+  .tag-green { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+  .tag-orange { background: #fff7e6; color: #fa8c16; border: 1px solid #ffd591; }
+  .tag-red { background: #fff2f0; color: #ff4d4f; border: 1px solid #ffa39e; }
+  .toc { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 6px; padding: 14px 20px; margin: 20px 0; }
+  .toc a { color: #1677ff; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .toc ul { columns: 2; column-gap: 30px; }
+  .mermaid { text-align: center; margin: 14px 0; }
+  .img { text-align: center; margin: 10px 0; color: #999; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<h1>销售预测 → 发货退货 功能操作手册</h1>
+<h1 class="sub">Seals MES 销售与供应链管理</h1>
+
+<div class="toc">
+<strong>📑 目录</strong>
+<ol>
+  <li><a href="#overview">总体概览与业务流程</a></li>
+  <li><a href="#price">销售价目表管理</a></li>
+  <li><a href="#forecast">销售预测管理</a></li>
+  <li><a href="#safety">成品安全库存设置</a></li>
+  <li><a href="#order">销售订单录入</a></li>
+  <li><a href="#mps">MPS 主生产计划计算</a></li>
+  <li><a href="#plan">生产计划管理</a></li>
+  <li><a href="#shipping">待发货与发货管理</a></li>
+  <li><a href="#delivery">发货单管理</a></li>
+  <li><a href="#return">客户退货管理</a></li>
+  <li><a href="#walkthrough">完整操作流程演示</a></li>
+</ol>
+</div>
+
+<!-- ==================== 第一章 ==================== -->
+<h2 id="overview">一、总体概览与业务流程</h2>
+
+<h3>1.1 核心业务流程图</h3>
+<div class="flow">
+<strong>端到端流程：</strong><br>
+销售预测 ──┐<br>
+&emsp;&emsp;&emsp;&emsp;├──→ MPS 计算 → 生产计划 → 生产派发 → 报工 → 入库<br>
+销售订单 ──┘<br>
+&emsp;&emsp;&emsp;&emsp;└──→ 待发货列表 → 发货申请 → 仓库审核 → 发货单 → 签收<br>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;│<br>
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;└──→ 客户退货
+</div>
+
+<h3>1.2 涉及的功能模块</h3>
+<table>
+  <tr><th>模块</th><th>菜单路径</th><th>说明</th></tr>
+  <tr><td>销售价目表</td><td>销售 → 销售价目表</td><td>按客户维护价格，支持分段定价</td></tr>
+  <tr><td>销售预测</td><td>销售 → 销售预测</td><td>定义未来一定时期的成品预测需求</td></tr>
+  <tr><td>物料主数据</td><td>基础数据 → 物料管理</td><td>成品安全库存、生产提前期设置</td></tr>
+  <tr><td>销售订单</td><td>销售 → 销售订单</td><td>录入客户正式订单，自动关联价目表</td></tr>
+  <tr><td>MPS 计算</td><td>计划 → MPS主计划</td><td>综合预测+订单+库存计算净需求</td></tr>
+  <tr><td>计划管理</td><td>计划 → 计划管理</td><td>管理生产计划，可导入MRP运行</td></tr>
+  <tr><td>待发货列表</td><td>销售 → 待发货列表</td><td>查看待发货的订单明细，生成发货申请</td></tr>
+  <tr><td>发货申请</td><td>销售 → 发货申请管理</td><td>审核、确认、发货的发货申请</td></tr>
+  <tr><td>发货单</td><td>销售 → 发货单管理</td><td>物流信息、打印发货单、签收确认</td></tr>
+  <tr><td>退货管理</td><td>销售 → 退货管理</td><td>基于发货单创建退货，批次级退货</td></tr>
+</table>
+
+<!-- ==================== 第二章 ==================== -->
+<h2 id="price">二、销售价目表管理</h2>
+
+<h3>2.1 功能概述</h3>
+<p>销售价目表用于维护不同客户、不同成品的销售价格。在后续销售订单录入时，系统会根据客户和物料自动匹配有效的价目表价格。</p>
+
+<h3>2.2 列表页操作</h3>
+<ul>
+  <li><strong>搜索：</strong>输入编号/名称/客户进行模糊搜索</li>
+  <li><strong>审批状态筛选：</strong>草稿 / 待审批 / 已审批</li>
+  <li><strong>导出/导入：</strong>支持 Excel 导出全部记录，支持下载模板后批量导入</li>
+  <li><strong>列设置：</strong>个性化列显示、调整列顺序、列宽拖拽调整</li>
+</ul>
+
+<h3>2.3 新建/编辑销售价目表</h3>
+<div class="step">
+<strong>操作步骤：</strong>
+<ol>
+  <li>点击<strong>「新建」</strong>按钮，打开创建弹窗</li>
+  <li>填写<strong>价目表名称</strong>（必填）</li>
+  <li>选择<strong>客户</strong>（下拉搜索），选择后自动带出客户编号、名称、分类</li>
+  <li>设置<strong>单价类型</strong>：含税 / 未税</li>
+  <li>选择<strong>币种</strong>：CNY / USD / EUR</li>
+  <li>设置<strong>有效期</strong>开始和结束日期</li>
+  <li>在<strong>物料明细表</strong>中点击「添加行」，逐行添加物料：</li>
+  <ul>
+    <li>选择物料（下拉搜索），自动带入名称、规格、分类</li>
+    <li>填入<strong>含税单价</strong>或<strong>未税单价</strong>，系统自动按税率互相换算</li>
+    <li>税率默认为 13%，可修改</li>
+    <li>可选勾选<strong>分段价格</strong>，设置起始数量和结束数量（空=无上限）实现阶梯价</li>
+    <li>可选设置<strong>含税最低价</strong>和<strong>不含税最低价</strong>作为销售底价</li>
+  </ul>
+  <li>点击<strong>「保存」</strong></li>
+</ol>
+</div>
+
+<h3>2.4 审批操作</h3>
+<ul>
+  <li><strong>草稿</strong>状态：可编辑/删除 → 提交审批</li>
+  <li><strong>待审批</strong>状态：审批通过 / 撤回审批</li>
+  <li><strong>已审批</strong>状态：反审批（退回草稿）</li>
+</ul>
+
+<div class="info">
+<strong>💡 关键特性：</strong>
+<ul>
+  <li>含税单价与未税单价双向自动换算：\(未税 = 含税 ÷ (1 + 税率\%)\)</li>
+  <li>支持分段阶梯定价：不同数量区间适用不同价格</li>
+  <li>已审批的价目表才能被销售订单自动引用</li>
+</ul>
+</div>
+
+<!-- ==================== 第三章 ==================== -->
+<h2 id="forecast">三、销售预测管理</h2>
+
+<h3>3.1 功能概述</h3>
+<p>销售预测用于提前规划未来一段时间内各成品的预期需求量。预测数据将作为 MPS 主生产计划的重要需求来源之一。</p>
+
+<h3>3.2 列表页功能</h3>
+<ul>
+  <li><strong>搜索：</strong>预测编号 / 客户名 / 创建人</li>
+  <li><strong>审批状态筛选：</strong>草稿 / 审批中 / 已审批</li>
+  <li><strong>导出 / 导入：</strong>支持 Excel 格式导出和导入</li>
+  <li><strong>表格展开：</strong>每行可展开，查看预测明细行（物料、数量、开始/结束日期、消耗状态）</li>
+</ul>
+
+<h3>3.3 新建销售预测</h3>
+<div class="step">
+<strong>操作步骤：</strong>
+<ol>
+  <li>点击<strong>「新建预测」</strong></li>
+  <li>选择<strong>客户</strong>（下拉搜索）</li>
+  <li>设置<strong>预测日期</strong></li>
+  <li>在<strong>预测明细</strong>中点击「添加行」，逐行填写：</li>
+  <ul>
+    <li><strong>物料：</strong>下拉搜索成品，自动带入名称、规格、单位</li>
+    <li><strong>客户物料号：</strong>可输入客户方物料号，回车自动反向查询产品</li>
+    <li><strong>开始日期 / 结束日期：</strong>定义该预测的时间范围</li>
+    <li><strong>预测数量</strong></li>
+  </ul>
+  <li>验证：至少一条有效明细（物料已选 + 数量>0 + 日期已填）</li>
+  <li>点击<strong>「创建」</strong></li>
+</ol>
+</div>
+
+<h3>3.4 审批流程（工作流引擎）</h3>
+<ul>
+  <li><strong>草稿</strong> → 提交审核（启动工作流审批）</li>
+  <li><strong>审批中</strong> → 撤回提交</li>
+  <li><strong>已审批</strong> → 反审退回（退回草稿）</li>
+  <li>支持<strong>批量提交</strong>：勾选多条草稿记录后，批量启动审批流程</li>
+</ul>
+
+<h3>3.5 消耗追踪</h3>
+<ul>
+  <li>当销售订单创建时，系统会自动消耗对应的销售预测</li>
+  <li>点击<strong>「消耗记录」</strong>查看：哪个销售订单、消耗了多少数量、消耗时间</li>
+  <li>消耗状态有：<span class="tag tag-green">未消耗</span> <span class="tag tag-orange">部分消耗</span> <span class="tag tag-red">已消耗</span></li>
+</ul>
+
+<!-- ==================== 第四章 ==================== -->
+<h2 id="safety">四、成品安全库存设置</h2>
+
+<h3>4.1 功能概述</h3>
+<p>安全库存是 MPS 计算时的重要参数。MPS 在计算净需求时会将安全库存作为"最低保有量"考虑在内，确保生产计划不会导致库存低于安全线。</p>
+
+<h3>4.2 设置入口</h3>
+<p>路径：<strong>基础数据 → 物料管理</strong>，在「成品」Tab 下找到目标物料。</p>
+
+<h3>4.3 关键字段</h3>
+<table>
+  <tr><th>字段</th><th>说明</th><th>MPS影响</th></tr>
+  <tr><td><code>safety_stock_enabled</code></td><td>安全库存管理开关（是/否）</td><td>开启后才参与MPS安全库存计算</td></tr>
+  <tr><td><code>safety_stock_qty</code></td><td>安全库存数量</td><td>净需求=毛需求-库存现有+安全库存</td></tr>
+  <tr><td><code>lead_time_days</code></td><td>生产提前期（天）</td><td>用于计划完成时间倒推</td></tr>
+  <tr><td><code>batch_production_quota</code></td><td>批次产量定额</td><td>用于计算所需台班数</td></tr>
+</table>
+
+<div class="info">
+<strong>💡 MPS 中安全库存的作用：</strong><br>
+如果某成品库存现有 100 件，安全库存设为 50 件，则"可用库存"实际为 50 件（100-50）。MPS 计算时净需求 = max(毛需求 - 库存现有, 0) + 安全库存，确保生产后库存水平在安全线以上。
+</div>
+
+<!-- ==================== 第五章 ==================== -->
+<h2 id="order">五、销售订单录入</h2>
+
+<h3>5.1 功能概述</h3>
+<p>销售订单是正式的客户合同录入。录入时系统会自动从销售价目表匹配价格、自动从客户物料对照表查找客户方物料号、自动消耗销售预测。</p>
+
+<h3>5.2 列表页功能</h3>
+<ul>
+  <li><strong>搜索：</strong>销售订单编号 / 客户 / 产品</li>
+  <li><strong>表格列：</strong>订单编号、客户信息、订单/交货日期、订单状态、审批状态等</li>
+  <li><strong>多交期标识：</strong>如明细行存在不同交货日期，表头交货日期列显示红色</li>
+  <li><strong>批量操作：</strong>批量提交、批量审批、批量撤回、批量反审、批量关闭</li>
+</ul>
+
+<h3>5.3 新建销售订单</h3>
+<div class="step">
+<strong>操作步骤：</strong>
+<ol>
+  <li>点击<strong>「新建」</strong>按钮</li>
+  <li><strong>客户信息区：</strong></li>
+  <ul>
+    <li>选择客户（下拉远程搜索），自动带入：客户名称、销售负责人、联系人、联系方式</li>
+  </ul>
+  <li><strong>订单信息区：</strong></li>
+  <ul>
+    <li>订单日期、交货日期、订单状态（待执行/生产中/已完成/已取消）</li>
+    <li>客户采购订单号</li>
+  </ul>
+  <li><strong>产品明细行（每一行）：</strong></li>
+  <ul>
+    <li>搜索选择成品物料，自动带入：名称、规格、单位、产品图号</li>
+    <li><strong>自动关联客户物料对照</strong>（客户物料号、客户物料描述）</li>
+    <li><strong>自动获取价目表价格：</strong>调用 <code>getSalesPriceForOrder</code> 接口，根据客户+物料从已审批价目表中匹配有效价格</li>
+    <li>修改数量后，金额自动计算：\(金额 = 数量 × 单价\)</li>
+    <li>支持输入<strong>客户物料号</strong>回车反向查询产品</li>
+    <li>支持每行独立设置<strong>交货日期</strong>和<strong>承诺交货日期</strong></li>
+  </ul>
+  <li>验证：客户必选、明细行不得有空单价的物料行</li>
+  <li>点击<strong>「保存」</strong></li>
+</ol>
+</div>
+
+<h3>5.4 详情弹窗操作</h3>
+<ul>
+  <li>点击<strong>「详情」</strong>打开详情弹窗</li>
+  <li>详情弹窗中可直接<strong>新增明细行</strong>、<strong>编辑明细行</strong>（草稿和已审批状态均可）</li>
+  <li>修改明细行的产品、数量、单价、交货日期、承诺交货日期</li>
+</ul>
+
+<h3>5.5 审批流程</h3>
+<ul>
+  <li><strong>草稿</strong>：可编辑、可删除 → 提交审核</li>
+  <li><strong>待审批</strong>：审核通过 / 撤回提交</li>
+  <li><strong>已审批</strong>：反审退回（草稿），已审批后不可删除</li>
+  <li>支持<strong>批量审批</strong>操作（批量提交/审批/撤回/反审/关闭）</li>
+</ul>
+
+<div class="info">
+<strong>💡 价格自动获取机制：</strong><br>
+录入明细行的物料时，系统自动根据<strong>客户编号 + 物料编号</strong>搜索已审批的销售价目表。如果匹配到有效价格（在有效期内的），自动填入单价并计算金额。如果未匹配到价格，单价默认为 0，用户需手工填写。
+</div>
+
+<div class="info">
+<strong>📎 客户物料对照：</strong><br>
+如果该客户-物料在「客户物料对照表」中有映射记录，录入产品后会<strong>自动填入</strong>客户方物料号和描述。也可以手工输入客户物料号并回车，系统反向查询出对应的内部产品信息。
+</div>
+
+<div class="warn">
+<strong>⚠️ 创建校验：</strong><br>
+新建订单时，如果明细行中某产品单价为 0，系统会拒绝提交并提示具体行号。请确保所有产品均已录入有效的单价信息。
+</div>
+
+<!-- ==================== 第六章 ==================== -->
+<h2 id="mps">六、MPS 主生产计划计算</h2>
+
+<h3>6.1 功能概述</h3>
+<p>MPS（Master Production Schedule）是计划模块的核心。它综合<strong>销售预测 + 销售订单</strong>的需求，扣除<strong>库存现有 + 在途</strong>数量，考虑<strong>安全库存</strong>，计算出每个成品的<strong>净生产需求</strong>。</p>
+
+<h3>6.2 页面入口</h3>
+<p>路径：<strong>计划 → MPS主计划</strong></p>
+
+<h3>6.3 MPS 计算公式</h3>
+<div class="flow">
+<strong>MPS 计算逻辑：</strong><br>
+① 毛需求 = max(预测需求, 订单需求) + 退货数量<br>
+② 订单需求 = 原始订单数量 - 已发数量<br>
+③ 净需求 = 毛需求 - 库存现有 - 采购在途 - 生产在途 + 安全库存<br>
+<strong>净需求 > 0</strong> 表示需要安排生产；净需求 ≤ 0 表示库存充足，无需生产
+</div>
+
+<h3>6.4 操作步骤</h3>
+<div class="step">
+<ol>
+  <li>可选设置<strong>日期范围</strong>（筛选特定时间段的预测和订单）</li>
+  <li>可选设置<strong>客户</strong>筛选（仅看指定客户的需求）</li>
+  <li>点击<strong>「计算 MPS」</strong>按钮</li>
+  <li>系统显示计算结果：</li>
+  <ul>
+    <li>顶部统计：物料种数、需生产种数</li>
+    <li>表格列：物料编号/名称/规格、预测需求、订单需求、毛需求、库存现有、采购在途、生产在途、安全库存、<strong style="color:#f5222d">净需求</strong></li>
+    <li>净需求 > 0 以红色加粗显示，≤ 0 以绿色显示</li>
+  </ul>
+</ol>
+</div>
+
+<h3>6.5 从需求来源导入生产计划</h3>
+<div class="step">
+<ol>
+  <li>在 MPS 结果表格中<strong>选中一行</strong>（单选，仅净需求 > 0 的行可选）</li>
+  <li>点击<strong>「从销售订单导入」</strong>按钮</li>
+  <li>弹出对话框中，显示该物料所有未完成的<strong>销售订单明细行</strong>和<strong>销售预测明细行</strong>（混合列表）</li>
+  <li>勾选需要导入的需求来源行，点击<strong>「确认导入」</strong></li>
+  <li>系统自动创建<strong>生产计划</strong>，并回写对应源单的生产状态</li>
+</ol>
+</div>
+
+<div class="info">
+<strong>💡 导入说明：</strong><br>
+<ul>
+  <li>来源类型包含：销售订单（未完成发货的）、销售预测（未开始的）</li>
+  <li>导入后，销售订单明细行的「生产状态」将更新为"已加入计划"</li>
+  <li>导入后，预测明细行的「计划状态」将更新为"计划中"</li>
+  <li>可以在导入对话框中搜索订单号/客户/产品编号等</li>
+</ul>
+</div>
+
+<!-- ==================== 第七章 ==================== -->
+<h2 id="plan">七、生产计划管理</h2>
+
+<h3>7.1 功能概述</h3>
+<p>生产计划（计划管理）存储所有需要生产的成品清单。除了从 MPS 导入外，也可以手工创建、从销售订单导入、从预测导入。</p>
+
+<h3>7.2 列表页功能</h3>
+<ul>
+  <li><strong>搜索：</strong>生产计划编号 / 产品编号 / 产品名称</li>
+  <li><strong>审批状态筛选：</strong>草稿 / 待审批 / 已审批</li>
+  <li><strong>MRP状态筛选：</strong>未运行 / 已运行</li>
+  <li><strong>导出 / 导入：</strong>Excel 格式</li>
+  <li><strong>批量审批操作</strong></li>
+</ul>
+
+<h3>7.3 新建生产计划</h3>
+<div class="step">
+<ol>
+  <li>点击<strong>「新建」</strong></li>
+  <li>搜索选择<strong>成品物料</strong>（AutoComplete 远程搜索），自动带入：名称、单位、规格、产品图号、胶料编号、班产定额</li>
+  <li>填写<strong>计划数量</strong>，系统自动计算台班数（计划数量 ÷ 班产定额，向上取整）</li>
+  <li>设置<strong>计划完成时间</strong></li>
+  <li>保存</li>
+</ol>
+</div>
+
+<h3>7.4 从销售订单 / 预测导入</h3>
+<p>除了从 MPS 导入，生产计划还可以直接从销售订单或销售预测导入：</p>
+<ul>
+  <li><strong>从销售订单导入：</strong>选择未完成的销售订单明细行</li>
+  <li><strong>从预测导入：</strong>选择未开始的预测明细行</li>
+</ul>
+
+<h3>7.5 生产计划状态流转</h3>
+<div class="flow">
+草稿 → 提交审批 → 待审批 → 审批通过（已审批）→ 加入生产任务 → 生产单派发 → 备料出库 → 连续报工 → 生产检验 → 生产入库
+</div>
+
+<!-- ==================== 第八章 ==================== -->
+<h2 id="shipping">八、待发货与发货管理</h2>
+
+<h3>8.1 待发货列表</h3>
+<p>路径：<strong>销售 → 待发货列表</strong></p>
+<p>展示所有已审批、未完成发货的销售订单明细行。关键信息包括：订单号、产品信息、订单数量、已发数量、已申请数量、<strong>待发数量（红色）</strong>。</p>
+
+<h3>8.2 生成发货申请</h3>
+<div class="step">
+<ol>
+  <li>在待发货列表中<strong>勾选</strong>需要发货的明细行（可多选）</li>
+  <li>系统校验：选中的行必须<strong>属于同一客户</strong>（不同客户无法合并发货）</li>
+  <li>点击<strong>「生成发货申请」</strong>按钮</li>
+  <li>弹出确认窗口，显示选中的明细行，每行<strong>本次发货数量</strong>默认为待发数量上限</li>
+  <li>可修改本次发货数量（支持部分发货）</li>
+  <li>可选填写备注</li>
+  <li>点击<strong>「确认提交」</strong></li>
+  <li>系统生成<strong>发货申请单</strong>，回写销售订单明细行的"已申请数量"</li>
+</ol>
+</div>
+
+<div class="warn">
+<strong>⚠️ 注意：</strong>
+<ul>
+  <li>待发数量 = 订单数量 - 退货数量 - 已发货数量</li>
+  <li>一次只能为<strong>同一客户</strong>的订单生成发货申请</li>
+  <li>已申请但未发货的数量会占用额度，不可重复申请</li>
+</ul>
+</div>
+
+<h3>8.3 发货申请管理</h3>
+<p>路径：<strong>销售 → 发货申请管理</strong></p>
+
+<h4>8.3.1 列表页</h4>
+<ul>
+  <li><strong>搜索：</strong>申请编号 / 客户</li>
+  <li><strong>状态筛选：</strong>待审核 / 已审核 / 已发货 / 已取消</li>
+  <li><strong>批量操作：</strong>批量审核、批量取消、批量删除（仅待审核）</li>
+</ul>
+
+<h4>8.3.2 状态流转</h4>
+<div class="flow">
+<strong>发货申请状态机：</strong><br>
+待审核 ──→ 已审核 ──→ 已发货<br>
+　│　　　　　│　　　　　│<br>
+　└──→ 已取消　└──→ 已取消　└──→ 撤回出库（恢复为已审核）
+</div>
+
+<h4>8.3.3 操作详解</h4>
+<table>
+  <tr><th>操作</th><th>条件</th><th>说明</th></tr>
+  <tr><td>查看</td><td>任意状态</td><td>打开详情弹窗，查看申请头信息和发货明细</td></tr>
+  <tr><td>编辑</td><td>待审核</td><td>修改发货数量、备注</td></tr>
+  <tr><td>审核通过</td><td>待审核</td><td>仓库确认发货申请，状态变为已审核（可生成发货单）</td></tr>
+  <tr><td>撤消审核</td><td>已审核</td><td>撤销审核，退回待审核</td></tr>
+  <tr><td>确认发货</td><td>已审核</td><td>仓库确认实际出库，生成发货单，扣减库存</td></tr>
+  <tr><td>撤回出库</td><td>已发货</td><td>撤回最近一次出库记录，库存恢复，状态回到已审核</td></tr>
+  <tr><td>取消申请</td><td>待审核或已审核</td><td>取消发货申请，释放已申请额度</td></tr>
+  <tr><td>删除</td><td>待审核</td><td>物理删除发货申请</td></tr>
+</table>
+
+<div class="info">
+<strong>💡 批量审核：</strong><br>
+勾选多条"待审核"的发货申请，点击「批量审核」一键通过。
+</div>
+
+<!-- ==================== 第九章 ==================== -->
+<h2 id="delivery">九、发货单管理</h2>
+
+<p>路径：<strong>销售 → 发货单管理</strong></p>
+
+<h3>9.1 发货单生成</h3>
+<p>当发货申请的状态变更为<strong>「已发货」</strong>时，系统自动生成对应的<strong>发货单</strong>。发货单记录了实际的出库信息。</p>
+
+<h3>9.2 列表页功能</h3>
+<ul>
+  <li><strong>搜索：</strong>发货单号 / 客户 / 承运商 / 运单号</li>
+  <li><strong>状态筛选：</strong>已发货 / 已签收 / 已取消</li>
+  <li><strong>列信息：</strong>发货单号、客户名称、出库仓库、发货日期、状态、承运商、运单号、运费等</li>
+</ul>
+
+<h3>9.3 发货单操作</h3>
+
+<h4>① 查看详情</h4>
+<p>点击<strong>「详情」</strong>查看发货单完整信息：</p>
+<ul>
+  <li>头信息：发货单号、客户、仓库、日期、状态、物流信息</li>
+  <li>发货明细：关联的发货申请号、销售订单号、产品信息、发货数量</li>
+  <li><strong>批次明细：</strong>展开明细行查看每批次的具体出库批次号和数量</li>
+  <li><strong>开票状态：</strong>点击可查看关联的销售发票（未开票/部分开票/已开票）</li>
+</ul>
+
+<h4>② 编辑物流信息</h4>
+<p>点击<strong>「物流」</strong>填写或修改：承运商、运单号、运费、收货地址、联系人、联系电话。</p>
+
+<h4>③ 打印发货单</h4>
+<p>点击<strong>「打印」</strong>，系统自动生成格式化的发货单页面（A4），包含：</p>
+<ul>
+  <li>发货单抬头（单号）</li>
+  <li>客户信息、仓库、物流信息</li>
+  <li>发货明细表（序号、产品编号、名称、规格、单位、数量、销售订单号）</li>
+  <li>批次明细（如有多批次）</li>
+  <li>签名区（制单人、发货人、收货人）</li>
+  <li>一键浏览器打印</li>
+</ul>
+
+<h4>④ 签收确认</h4>
+<p>当客户收到货物后，点击<strong>「签收」</strong>确认，发货单状态变更为"已签收"。</p>
+
+<!-- ==================== 第十章 ==================== -->
+<h2 id="return">十、客户退货管理</h2>
+
+<p>路径：<strong>销售 → 退货管理</strong></p>
+
+<h3>10.1 功能概述</h3>
+<p>客户退货基于<strong>已发货的发货单</strong>创建，支持按批次精确退货。退货类型包括退款退货和退货换货。</p>
+
+<h3>10.2 列表页功能</h3>
+<ul>
+  <li><strong>搜索：</strong>退货单号 / 发货单号 / 客户名称</li>
+  <li><strong>筛选：</strong>退货类型（退款退货/退货换货）、状态（待确认/已确认/已驳回）、审批状态</li>
+  <li><strong>列信息：</strong>退货单号、退货类型、发货单号、客户、退货仓库、状态、审批状态、退货原因、入库状态</li>
+</ul>
+
+<h3>10.3 新建退货单</h3>
+<div class="step">
+<strong>操作步骤：</strong>
+<ol>
+  <li>点击<strong>「新建退货单」</strong></li>
+  <li>选择<strong>退货类型</strong>：退款退货 / 退货换货</li>
+  <li>选择<strong>退货入库仓库</strong></li>
+  <li>填写<strong>退货原因</strong>和备注</li>
+  <li>在<strong>「选择发货单」</strong>区域输入发货单号（如 <code>SM-20260328-001</code>），点击<strong>「加载发货单」</strong></li>
+  <li>系统自动加载发货单的客户信息和所有已发产品明细：</li>
+  <ul>
+    <li>每条产品明细下显示该产品的<strong>各批次信息</strong></li>
+    <li>每批次显示：批次号、发货数量、已退数量、<strong>可退数量</strong>（绿色）</li>
+    <li>在<strong>「本次退货数量」</strong>列输入该批次的退货数量</li>
+    <li>明细退货数量<strong>自动汇总</strong>所有批次输入的数量</li>
+  </ul>
+  <li>验证：至少一条明细的退货数量 > 0；每批次退货数量不超过可退数量</li>
+  <li>点击<strong>「创建退货单」</strong></li>
+</ol>
+</div>
+
+<h3>10.4 审批流程</h3>
+<ul>
+  <li><strong>草稿</strong> → 提交审核（启动工作流）</li>
+  <li><strong>审批中</strong> → 撤回提交</li>
+  <li><strong>已审批</strong> → 反审退回</li>
+</ul>
+
+<h3>10.5 详情查看</h3>
+<p>退货单详情展示：退货单号、类型、状态、发货单号、客户、仓库、退货原因、确认信息。明细区域可展开查看每行的退货批次详情。</p>
+
+<h3>10.6 退货数据指标</h3>
+<table>
+  <tr><th>字段</th><th>说明</th></tr>
+  <tr><td><code>shipped_quantity</code></td><td>该批次原始发货数量</td></tr>
+  <tr><td><code>returned_quantity</code></td><td>该批次已退货数量（所有退货单累计）</td></tr>
+  <tr><td><code>returnable_quantity</code></td><td>该批次可退货数量 = 发货数量 - 已退货数量（其他退货单）</td></tr>
+  <tr><td><code>inbound_status</code></td><td>入库状态：待入库 / 已入库</td></tr>
+</table>
+
+<div class="warn">
+<strong>⚠️ 注意事项：</strong>
+<ul>
+  <li>退货单必须关联一个已发货的发货单</li>
+  <li>退货数量按<strong>批次</strong>控制，不能超过该批次的可退数量</li>
+  <li>编辑退货单时，系统会将当前退货单的退货数量加回可退数量，避免重复扣减</li>
+  <li>退货单创建后需要在审批流程中审核通过才能确认入库</li>
+</ul>
+</div>
+
+<!-- ==================== 第十一章 ==================== -->
+<h2 id="walkthrough">十一、完整操作流程演示</h2>
+
+<h3>11.1 完整端到端流程</h3>
+
+<div class="flow">
+<strong>第1步：建立销售价目表</strong>（销售 → 销售价目表）<br>
+&emsp;→ 新建价目表，维护客户-物料-价格关系，提交审批<br><br>
+<strong>第2步：设置成品安全库存</strong>（基础数据 → 物料管理）<br>
+&emsp;→ 找到成品物料，开启安全库存管理，设置安全库存数量<br><br>
+<strong>第3步：录入销售预测</strong>（销售 → 销售预测）<br>
+&emsp;→ 新建预测，选择客户，添加预测明细（物料+日期范围+数量），提交审批<br><br>
+<strong>第4步：录入销售订单</strong>（销售 → 销售订单）<br>
+&emsp;→ 新建订单，选择客户，添加产品明细（系统自动匹配价目表价格和客户物料对照），提交审批<br><br>
+<strong>第5步：运行MPS计算</strong>（计划 → MPS主计划）<br>
+&emsp;→ 设置条件，点击"计算 MPS"，查看净需求结果<br>
+&emsp;→ 选中需生产的物料行，点击"从销售订单导入"<br>
+&emsp;→ 勾选需求来源，确认导入 → 自动生成生产计划<br><br>
+<strong>第6步：生产执行</strong>（生产域）- 参见《生产执行操作手册》<br>
+&emsp;→ 计划管理 → 生产单派发 → 备料出库 → 连续报工 → 生产检验 → 入库<br><br>
+<strong>第7步：生成发货申请</strong>（销售 → 待发货列表）<br>
+&emsp;→ 勾选同一客户的待发货明细行，点击"生成发货申请"<br>
+&emsp;→ 确认发货数量，提交<br><br>
+<strong>第8步：审核发货申请</strong>（销售 → 发货申请管理）<br>
+&emsp;→ 审核通过 → 确认发货（生成发货单，扣减库存）<br><br>
+<strong>第9步：管理发货单</strong>（销售 → 发货单管理）<br>
+&emsp;→ 编辑物流信息（承运商/运单号/运费）<br>
+&emsp;→ 打印发货单<br>
+&emsp;→ 客户签收确认<br><br>
+<strong>第10步：处理客户退货</strong>（销售 → 退货管理）<br>
+&emsp;→ 新建退货单，输入发货单号加载，按批次填写退货数量<br>
+&emsp;→ 提交审批 → 审批通过 → 入库
+</div>
+
+<h3>11.2 相关模块关系图</h3>
+<div class="flow">
+<strong>数据流：</strong><br>
+客户主数据 → 销售价目表 → 销售订单（自动取价）<br>
+物料主数据（安全库存）→ MPS 计算（安全库存作为缓冲）<br>
+销售预测 + 销售订单 → MPS 计算（需求汇总）→ 生产计划 → MRP → 生产单<br>
+销售订单 → 待发货列表 → 发货申请 → 发货单 → 客户退货
+</div>
+
+<h3>11.3 销售订单明细行状态一览</h3>
+<table>
+  <tr><th>状态字段</th><th>可能值</th><th>说明</th></tr>
+  <tr><td>status</td><td>未开始 / 进行中 / 已完成</td><td>明细行的执行状态</td></tr>
+  <tr><td>shipping_status</td><td>未申请 / 未发货 / 部分发货 / 全部发货</td><td>发货进度</td></tr>
+  <tr><td>production_status</td><td>未加入计划 / 已加入计划 / 生产中 / 生产完成</td><td>生产进度</td></tr>
+  <tr><td>return_status</td><td>未申请 / 已申请</td><td>退货状态</td></tr>
+</table>
+
+</body>
+</html>

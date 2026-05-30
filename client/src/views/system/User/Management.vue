@@ -692,6 +692,7 @@ onMounted(() => {
               <a-select-option value="admin">管理员</a-select-option>
               <a-select-option value="manager">经理</a-select-option>
               <a-select-option value="staff">员工</a-select-option>
+              <a-select-option value="sales">销售人员</a-select-option>
             </a-select>
             <a-select v-model:value="queryParams.status" placeholder="筛选状态" style="width: 120px;" allow-clear @change="handleStatusChange">
               <a-select-option value="active">激活</a-select-option>
@@ -933,6 +934,7 @@ onMounted(() => {
             <a-select-option value="admin">管理员</a-select-option>
             <a-select-option value="manager">经理</a-select-option>
             <a-select-option value="staff">员工</a-select-option>
+            <a-select-option value="sales">销售人员</a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item name="department" label="部门">
@@ -981,6 +983,7 @@ onMounted(() => {
             <a-select-option value="admin">管理员</a-select-option>
             <a-select-option value="manager">经理</a-select-option>
             <a-select-option value="staff">员工</a-select-option>
+            <a-select-option value="sales">销售人员</a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item name="department" label="部门">

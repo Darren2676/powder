@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { authenticate } from '../../../middleware/auth.middleware';
+import { dataScope } from '../../../middleware/data-scope.middleware';
 import { validateCreateCustomer, validateUpdateCustomer } from '../../../validators/customer.validator';
 import {
   getCustomers, createCustomer, updateCustomer, deleteCustomer, exportCustomers, importCustomers,
@@ -13,8 +14,8 @@ const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 // 基础 CRUD
-router.get('/', authenticate, getCustomers);
-router.get('/export', authenticate, exportCustomers);
+router.get('/', authenticate, dataScope, getCustomers);
+router.get('/export', authenticate, dataScope, exportCustomers);
 router.post('/import', authenticate, upload.single('file'), importCustomers);
 router.post('/', authenticate, validateCreateCustomer, createCustomer);
 

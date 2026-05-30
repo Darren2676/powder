@@ -19,13 +19,22 @@ export const getCustomers = async (req: Request, res: Response, next: NextFuncti
     const limit = parseInt(req.query.limit as string) || 20;
     const search = (req.query.search as string) || '';
 
-    let whereClause = '';
+    const conditions: string[] = [];
     const replacements: any = {};
 
     if (search) {
-      whereClause = `WHERE customer_number LIKE :search OR customer_name LIKE :search OR linkman LIKE :search`;
+      conditions.push(`(customer_number LIKE :search OR customer_name LIKE :search OR linkman LIKE :search)`);
       replacements.search = `%${search}%`;
     }
+
+    // 数据范围过滤：sales 角色只能看到自己负责的客户
+    const scope = (req as any).dataScope;
+    if (scope?.head_of_sales_id) {
+      conditions.push(`head_of_sales_id = :dataScopeUserId`);
+      replacements.dataScopeUserId = scope.head_of_sales_id;
+    }
+
+    const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
     const countSql = `SELECT COUNT(*) as total FROM customer ${whereClause}`;
     const [countResult]: any = await sequelize.query(countSql, { replacements });
@@ -113,13 +122,18 @@ export const createCustomer = async (req: Request, res: Response, next: NextFunc
     }
 
     const username = (req as any).user?.username || '';
+    const userId = (req as any).user?.id || null;
+    // 如果前端未传 head_of_sales_id 且当前用户是 sales 角色，自动填入当前用户 id
+    const head_of_sales_id = b.head_of_sales_id || (req.user?.role === 'sales' ? userId : null);
+    // 如果前端未传 head_of_sales 且有 head_of_sales_id，自动从用户信息取姓名
+    const head_of_sales = b.head_of_sales || (head_of_sales_id ? (req as any).user?.real_name || '' : '');
     const insertSql = `
-      INSERT INTO customer (customer_number, customer_name, classification, country_code, country, currency_code, industry, head_of_sales, sales_tax_rate,
+      INSERT INTO customer (customer_number, customer_name, classification, country_code, country, currency_code, industry, head_of_sales, sales_tax_rate, head_of_sales_id,
         region, region2, region3, region4, detail_address, zip_code, telephone, fax,
         linkman, area_code, contacts, email, contact_remark,
         bank_account_name, bank_name, bank_account_number, invoice_address, invoice_phone, invoice_title, tax_id, payment_terms,
         condition, created_by, created_at, updated_at)
-      VALUES (:customer_number, :customer_name, :classification, :country_code, :country, :currency_code, :industry, :head_of_sales, :sales_tax_rate,
+      VALUES (:customer_number, :customer_name, :classification, :country_code, :country, :currency_code, :industry, :head_of_sales, :sales_tax_rate, :head_of_sales_id,
         :region, :region2, :region3, :region4, :detail_address, :zip_code, :telephone, :fax,
         :linkman, :area_code, :contacts, :email, :contact_remark,
         :bank_account_name, :bank_name, :bank_account_number, :invoice_address, :invoice_phone, :invoice_title, :tax_id, :payment_terms,
@@ -131,7 +145,8 @@ export const createCustomer = async (req: Request, res: Response, next: NextFunc
         customer_number: b.customer_number,
         customer_name: b.customer_name || '', classification: b.classification || '', country_code: b.country_code || '',
         country: b.country || '', currency_code: b.currency_code || '', industry: b.industry || '',
-        head_of_sales: b.head_of_sales || '', sales_tax_rate: b.sales_tax_rate || 0,
+        head_of_sales, sales_tax_rate: b.sales_tax_rate || 0,
+        head_of_sales_id,
         region: b.region || '', region2: b.region2 || '', region3: b.region3 || '', region4: b.region4 || '',
         detail_address: b.detail_address || '', zip_code: b.zip_code || '', telephone: b.telephone || '', fax: b.fax || '',
         linkman: b.linkman || '', area_code: b.area_code || '', contacts: b.contacts || '',
@@ -182,7 +197,7 @@ export const updateCustomer = async (req: Request, res: Response, next: NextFunc
       UPDATE customer SET
         customer_name = :customer_name, classification = :classification, country_code = :country_code,
         country = :country, currency_code = :currency_code, industry = :industry,
-        head_of_sales = :head_of_sales, sales_tax_rate = :sales_tax_rate,
+        head_of_sales = :head_of_sales, sales_tax_rate = :sales_tax_rate, head_of_sales_id = :head_of_sales_id,
         region = :region, region2 = :region2, region3 = :region3, region4 = :region4,
         detail_address = :detail_address, zip_code = :zip_code, telephone = :telephone, fax = :fax,
         linkman = :linkman, area_code = :area_code, contacts = :contacts,
@@ -200,6 +215,7 @@ export const updateCustomer = async (req: Request, res: Response, next: NextFunc
         customer_name: b.customer_name, classification: b.classification, country_code: b.country_code,
         country: b.country, currency_code: b.currency_code, industry: b.industry,
         head_of_sales: b.head_of_sales, sales_tax_rate: b.sales_tax_rate || 0,
+        head_of_sales_id: b.head_of_sales_id || null,
         region: b.region, region2: b.region2, region3: b.region3, region4: b.region4,
         detail_address: b.detail_address, zip_code: b.zip_code, telephone: b.telephone, fax: b.fax,
         linkman: b.linkman, area_code: b.area_code, contacts: b.contacts,

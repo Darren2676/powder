@@ -41,3 +41,7 @@ export function confirmReturnOrder(return_order_number: string, data?: { confirm
 export function rejectReturnOrder(return_order_number: string, data?: { confirm_remark?: string }) {
   return request.post(`/return-orders/${return_order_number}/reject`, data)
 }
+
+export function cancelReturnOrder(return_order_number: string) {
+  return request.post(`/return-orders/${return_order_number}/cancel`)
+}

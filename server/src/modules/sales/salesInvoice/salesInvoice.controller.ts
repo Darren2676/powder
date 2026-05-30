@@ -199,12 +199,12 @@ export const createSalesInvoice = async (req: Request, res: Response, next: Next
             INSERT INTO sales_invoice_line (invoice_number, line_number,
               shipping_order_number, shipping_detail_id, sales_order_number, sales_detail_id,
               item_number, item_name, specifications, basic_unit,
-              ship_quantity, invoice_quantity, unit_price,
+              ship_quantity, invoice_quantity, unit_price, tax_inclusive_price,
               amount_without_tax, tax_rate, tax_amount, amount_with_tax, remark)
             VALUES (:invoice_number, :line_number,
               :shipping_order_number, :shipping_detail_id, :sales_order_number, :sales_detail_id,
               :item_number, :item_name, :specifications, :basic_unit,
-              :ship_quantity, :invoice_quantity, :unit_price,
+              :ship_quantity, :invoice_quantity, :unit_price, :tax_inclusive_price,
               :amount_without_tax, :tax_rate, :tax_amount, :amount_with_tax, :remark)
           `, {
             replacements: {
@@ -216,7 +216,8 @@ export const createSalesInvoice = async (req: Request, res: Response, next: Next
               item_number: line.item_number || '', item_name: line.item_name || '',
               specifications: line.specifications || '', basic_unit: line.basic_unit || '',
               ship_quantity: line.ship_quantity || 0, invoice_quantity: line.invoice_quantity || 0,
-              unit_price: line.unit_price || 0, amount_without_tax: line.amount_without_tax || 0,
+              unit_price: line.unit_price || 0, tax_inclusive_price: line.tax_inclusive_price || 0,
+              amount_without_tax: line.amount_without_tax || 0,
               tax_rate: line.tax_rate || 0, tax_amount: line.tax_amount || 0,
               amount_with_tax: line.amount_with_tax || 0, remark: line.remark || ''
             },
@@ -294,12 +295,12 @@ export const updateSalesInvoice = async (req: Request, res: Response, next: Next
             INSERT INTO sales_invoice_line (invoice_number, line_number,
               shipping_order_number, shipping_detail_id, sales_order_number, sales_detail_id,
               item_number, item_name, specifications, basic_unit,
-              ship_quantity, invoice_quantity, unit_price,
+              ship_quantity, invoice_quantity, unit_price, tax_inclusive_price,
               amount_without_tax, tax_rate, tax_amount, amount_with_tax, remark)
             VALUES (:invoice_number, :line_number,
               :shipping_order_number, :shipping_detail_id, :sales_order_number, :sales_detail_id,
               :item_number, :item_name, :specifications, :basic_unit,
-              :ship_quantity, :invoice_quantity, :unit_price,
+              :ship_quantity, :invoice_quantity, :unit_price, :tax_inclusive_price,
               :amount_without_tax, :tax_rate, :tax_amount, :amount_with_tax, :remark)
           `, {
             replacements: {
@@ -311,7 +312,8 @@ export const updateSalesInvoice = async (req: Request, res: Response, next: Next
               item_number: line.item_number || '', item_name: line.item_name || '',
               specifications: line.specifications || '', basic_unit: line.basic_unit || '',
               ship_quantity: line.ship_quantity || 0, invoice_quantity: line.invoice_quantity || 0,
-              unit_price: line.unit_price || 0, amount_without_tax: line.amount_without_tax || 0,
+              unit_price: line.unit_price || 0, tax_inclusive_price: line.tax_inclusive_price || 0,
+              amount_without_tax: line.amount_without_tax || 0,
               tax_rate: line.tax_rate || 0, tax_amount: line.tax_amount || 0,
               amount_with_tax: line.amount_with_tax || 0, remark: line.remark || ''
             },
@@ -405,9 +407,12 @@ export const getAvailableShippingDetails = async (req: Request, res: Response, n
       SELECT sod.id, sod.shipping_order_number, sod.sales_order_number,
         sod.sales_detail_id, sod.item_number, sod.item_name,
         sod.specifications, sod.basic_unit, sod.quantity as ship_quantity,
-        sod.quantity - ISNULL(inv.invoiced_qty, 0) as available_qty
+        sod.quantity - ISNULL(inv.invoiced_qty, 0) as available_qty,
+        ISNULL(sod2.unit_price, 0) as tax_inclusive_price,
+        ISNULL(sod2.tax_rate, 0) as tax_rate
       FROM shipping_order_detail sod
       INNER JOIN shipping_order so ON so.shipping_order_number = sod.shipping_order_number
+      LEFT JOIN sales_order_detail sod2 ON sod2.id = sod.sales_detail_id
       LEFT JOIN (
         SELECT sil.shipping_detail_id, SUM(sil.invoice_quantity) as invoiced_qty
         FROM sales_invoice_line sil

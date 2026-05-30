@@ -94,22 +94,65 @@ export const initDatabase = async () => {
           ALTER TABLE purchase_quality_inspection ADD enable_quality_chars NVARCHAR(10) DEFAULT N'N';
         END
       `);
-      // 兼容回填：已有检验规范的物料自动启用
-      await sequelize.query(`
-        UPDATE item_master SET enable_quality_chars = N'Y'
-        WHERE item_number IN (SELECT spec_name FROM incoming_inspect_spec)
-          AND ISNULL(enable_quality_chars, N'N') = N'N'
-      `);
-      // 兼容回填：已有检验单（有明细行的）自动启用
-      await sequelize.query(`
-        UPDATE pq SET enable_quality_chars = N'Y'
-        FROM purchase_quality_inspection pq
-        WHERE EXISTS (SELECT 1 FROM purchase_quality_inspection_detail d WHERE d.inspection_number = pq.inspection_number)
-          AND ISNULL(pq.enable_quality_chars, N'N') = N'N'
-      `);
       console.log('[手动迁移] enable_quality_chars 字段检查完成');
     } catch (e) {
       console.warn('[手动迁移] enable_quality_chars 跳过:', (e as any).message);
+    }
+
+    // 重置所有来料启用质量特性为不启用
+    try {
+      await sequelize.query(`UPDATE item_master SET enable_quality_chars = N'N' WHERE ISNULL(enable_quality_chars, N'N') != N'N'`);
+      await sequelize.query(`UPDATE incoming_inspect_plan SET enable_quality_chars = N'N' WHERE ISNULL(enable_quality_chars, N'N') != N'N'`);
+      await sequelize.query(`UPDATE purchase_quality_inspection SET enable_quality_chars = N'N' WHERE ISNULL(enable_quality_chars, N'N') != N'N'`);
+      console.log('[手动迁移] 来料启用质量特性已全部重置为不启用');
+    } catch (e) {
+      console.warn('[手动迁移] 来料启用质量特性重置跳过:', (e as any).message);
+    }
+
+    // [迁移094] 生产检验质量特性启用字段
+    try {
+      // item_master 添加 enable_prod_quality_chars（生产检验专用，区别于来料的 enable_quality_chars）
+      await sequelize.query(`
+        IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'item_master' AND COLUMN_NAME = 'enable_prod_quality_chars')
+        BEGIN
+          ALTER TABLE item_master ADD enable_prod_quality_chars NVARCHAR(10) DEFAULT N'N';
+        END
+      `);
+      // inspection_spec 添加 enable_quality_chars
+      await sequelize.query(`
+        IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'inspection_spec' AND COLUMN_NAME = 'enable_quality_chars')
+        BEGIN
+          ALTER TABLE inspection_spec ADD enable_quality_chars NVARCHAR(10) DEFAULT N'N';
+        END
+      `);
+      // inspection_plan 添加 enable_quality_chars
+      await sequelize.query(`
+        IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'inspection_plan' AND COLUMN_NAME = 'enable_quality_chars')
+        BEGIN
+          ALTER TABLE inspection_plan ADD enable_quality_chars NVARCHAR(10) DEFAULT N'N';
+        END
+      `);
+      // production_inspection 添加 enable_quality_chars
+      await sequelize.query(`
+        IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'production_inspection' AND COLUMN_NAME = 'enable_quality_chars')
+        BEGIN
+          ALTER TABLE production_inspection ADD enable_quality_chars NVARCHAR(10) DEFAULT N'N';
+        END
+      `);
+      console.log('[手动迁移] 生产检验 enable_quality_chars 字段检查完成');
+    } catch (e) {
+      console.warn('[手动迁移] 生产检验 enable_quality_chars 跳过:', (e as any).message);
+    }
+
+    // 重置所有生产启用质量特性为不启用
+    try {
+      await sequelize.query(`UPDATE item_master SET enable_prod_quality_chars = N'N' WHERE ISNULL(enable_prod_quality_chars, N'N') != N'N'`);
+      await sequelize.query(`UPDATE inspection_spec SET enable_quality_chars = N'N' WHERE ISNULL(enable_quality_chars, N'N') != N'N'`);
+      await sequelize.query(`UPDATE inspection_plan SET enable_quality_chars = N'N' WHERE ISNULL(enable_quality_chars, N'N') != N'N'`);
+      await sequelize.query(`UPDATE production_inspection SET enable_quality_chars = N'N' WHERE ISNULL(enable_quality_chars, N'N') != N'N'`);
+      console.log('[手动迁移] 生产启用质量特性已全部重置为不启用');
+    } catch (e) {
+      console.warn('[手动迁移] 生产启用质量特性重置跳过:', (e as any).message);
     }
 
     // ===== 销售发票表 =====
@@ -260,6 +303,67 @@ export const initDatabase = async () => {
       console.log('[手动迁移] 090 采购发票表检查完成');
     } catch (e) {
       console.warn('[手动迁移] 090 采购发票表跳过:', (e as any).message);
+    }
+
+    // ===== sales_order_detail.tax_rate =====
+    try {
+      await sequelize.query(`
+        IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'sales_order_detail' AND COLUMN_NAME = 'tax_rate')
+        ALTER TABLE sales_order_detail ADD tax_rate DECIMAL(10,4) DEFAULT 0;
+      `);
+      console.log('[手动迁移] sales_order_detail.tax_rate 字段检查完成');
+    } catch (e) {
+      console.warn('[手动迁移] sales_order_detail.tax_rate 跳过:', (e as any).message);
+    }
+
+    // ===== sales_invoice_line.tax_inclusive_price =====
+    try {
+      await sequelize.query(`
+        IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'sales_invoice_line' AND COLUMN_NAME = 'tax_inclusive_price')
+        ALTER TABLE sales_invoice_line ADD tax_inclusive_price DECIMAL(18,4) DEFAULT 0;
+      `);
+      console.log('[手动迁移] sales_invoice_line.tax_inclusive_price 字段检查完成');
+    } catch (e) {
+      console.warn('[手动迁移] sales_invoice_line.tax_inclusive_price 跳过:', (e as any).message);
+    }
+
+    // ===== 重算发货明细行开票状态（历史数据修复）=====
+    try {
+      // 重算 shipping_order_detail.invoice_status
+      await sequelize.query(`
+        UPDATE sod SET sod.invoice_status = CASE
+          WHEN ISNULL(inv.invoiced_qty, 0) >= sod.quantity THEN N'已开票'
+          WHEN ISNULL(inv.invoiced_qty, 0) > 0 THEN N'部分开票'
+          ELSE N'未开票'
+        END
+        FROM shipping_order_detail sod
+        LEFT JOIN (
+          SELECT sil.shipping_detail_id, SUM(sil.invoice_quantity) as invoiced_qty
+          FROM sales_invoice_line sil
+          INNER JOIN sales_invoice si ON si.invoice_number = sil.invoice_number
+          WHERE si.approval_status = N'已审批'
+          GROUP BY sil.shipping_detail_id
+        ) inv ON inv.shipping_detail_id = sod.id
+      `);
+      // 重算 sales_order_detail.invoice_status
+      await sequelize.query(`
+        UPDATE sod SET sod.invoice_status = CASE
+          WHEN ISNULL(inv.invoiced_qty, 0) >= sod.order_quantity THEN N'已开票'
+          WHEN ISNULL(inv.invoiced_qty, 0) > 0 THEN N'部分开票'
+          ELSE N'未开票'
+        END
+        FROM sales_order_detail sod
+        LEFT JOIN (
+          SELECT sil.sales_detail_id, SUM(sil.invoice_quantity) as invoiced_qty
+          FROM sales_invoice_line sil
+          INNER JOIN sales_invoice si ON si.invoice_number = sil.invoice_number
+          WHERE si.approval_status = N'已审批'
+          GROUP BY sil.sales_detail_id
+        ) inv ON inv.sales_detail_id = sod.id
+      `);
+      console.log('[手动迁移] 开票状态全量重算完成');
+    } catch (e) {
+      console.warn('[手动迁移] 开票状态重算跳过:', (e as any).message);
     }
 
     // 暂时禁用 umzug 迁移（迁移脚本中有 process.exit() 会导致服务器退出）

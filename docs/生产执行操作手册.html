@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>生产执行功能操作使用手册</title>
+<style>
+  @page { size: A4; margin: 18mm 20mm 18mm 20mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Microsoft YaHei", "SimSun", sans-serif;
+    font-size: 13px;
+    line-height: 1.7;
+    color: #333;
+    max-width: 100%;
+  }
+  h1 { font-size: 22px; text-align: center; margin: 0 0 4px; padding-bottom: 10px; border-bottom: 2px solid #1890ff; }
+  h2 { font-size: 17px; margin: 28px 0 12px; padding: 6px 0 6px 10px; border-left: 4px solid #1890ff; background: #f0f7ff; }
+  h3 { font-size: 15px; margin: 20px 0 8px; color: #1890ff; }
+  h4 { font-size: 14px; margin: 14px 0 6px; color: #555; }
+  p { margin: 6px 0; }
+  .subtitle { text-align: center; color: #888; font-size: 12px; margin-bottom: 20px; }
+  
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 12px; }
+  th, td { border: 1px solid #d9d9d9; padding: 6px 10px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; white-space: nowrap; }
+  td { vertical-align: top; }
+  
+  ul, ol { margin: 6px 0 6px 24px; }
+  li { margin: 3px 0; }
+  
+  .flow { background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .flow ol { margin-left: 20px; }
+  .flow ol li { margin: 4px 0; font-weight: 500; }
+  
+  .note { background: #fff7e6; border: 1px solid #ffd591; border-radius: 6px; padding: 10px 14px; margin: 10px 0; }
+  .note strong { color: #fa8c16; }
+  
+  .warn { background: #fff1f0; border: 1px solid #ffa39e; border-radius: 6px; padding: 10px 14px; margin: 10px 0; }
+  .warn strong { color: #ff4d4f; }
+  
+  .info { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; padding: 10px 14px; margin: 10px 0; }
+  .info strong { color: #1890ff; }
+  
+  .step { display: inline-block; background: #1890ff; color: #fff; border-radius: 50%; width: 22px; height: 22px; text-align: center; line-height: 22px; font-size: 12px; font-weight: 700; margin-right: 6px; }
+  
+  .toc { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 6px; padding: 14px 20px; margin: 16px 0; }
+  .toc h3 { margin-top: 0; margin-bottom: 8px; }
+  .toc ul { list-style: none; margin-left: 0; }
+  .toc li { margin: 4px 0; }
+  .toc a { color: #1890ff; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  
+  .page-break { page-break-before: always; }
+  
+  code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+  
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: 11px; color: #fff; margin: 0 2px; }
+  .tag-blue { background: #1890ff; }
+  .tag-green { background: #52c41a; }
+  .tag-orange { background: #fa8c16; }
+  .tag-red { background: #ff4d4f; }
+  .tag-purple { background: #722ed1; }
+</style>
+</head>
+<body>
+
+<h1>生产执行功能操作使用手册</h1>
+<p class="subtitle">涵盖：生产单派发 / 备料出库 / 连续报工 / 生产检验 / 不合格处理 / 操作出错处理</p>
+
+<div class="toc">
+<h3>📑 目录</h3>
+<ul>
+  <li><a href="#s1">一、生产单派发</a> — 选择生产单 → 预检 → 分派设备/模具/日期/班次 → 一键生成工序任务+备料单</li>
+  <li><a href="#s2">二、备料出库</a> — 按生产单备料清单备料 / 按工序备料 / FIFO批次选择 / 批量退料</li>
+  <li><a href="#s3">三、连续报工</a> — 扫码查询 → 逐工序输入报工 → 单道报工/全部报工/完成生产单</li>
+  <li><a href="#s4">四、生产检验</a> — 查看检验单 → 填写实测值 → 完成检验（自动判定合格/不合格）→ 不合格品处理</li>
+  <li><a href="#s5">五、不合格处理</a> — 不合格品处理单管理 / 处理方式选择（返修/报废/让步接收/挑选/特采/退货/拒收）</li>
+  <li><a href="#s6">六、操作出错处理</a> — 报工撤销重报 / 领料撤回 / 批量退料 / 不合格处理撤销 / 检验记录删除 / 审批撤回与反审</li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<!-- 一、生产单派发 -->
+<!-- ============================================================ -->
+<h2 id="s1">一、生产单派发</h2>
+
+<h3>1.1 功能概述</h3>
+<p>生产单派发是将已审批的生产单分配给具体的<strong>设备</strong>和<strong>模具</strong>，指定<strong>生产日期</strong>和<strong>班次</strong>，系统自动完成以下操作：</p>
+<ul>
+  <li>更新生产单状态为"已派发"</li>
+  <li>根据工艺路线自动生成<strong>工序任务</strong></li>
+  <li>根据制造BOM自动生成<strong>备料单</strong></li>
+  <li>如果模具关联了专属BOM，还会触发<strong>模具MRP重算</strong>，自动生成预成型件生产单</li>
+</ul>
+
+<h3>1.2 导航路径</h3>
+<p>生产管理 → <strong>生产单管理</strong> → 选中生产单 → 点击底部"派发"按钮</p>
+
+<h3>1.3 派发前置条件</h3>
+<table>
+  <tr><th style="width:140px;">检查项</th><th>要求</th></tr>
+  <tr><td>审批状态</td><td>必须为<span class="tag tag-green">已审批</span></td></tr>
+  <tr><td>计划状态</td><td>必须为<span class="tag tag-blue">未开始</span></td></tr>
+  <tr><td>工艺路线</td><td>产品必须维护了审批通过的工艺路线（否则无法生成工序任务）</td></tr>
+</table>
+
+<h3>1.4 操作步骤</h3>
+<div class="flow">
+<ol>
+  <li>在生产单列表页，勾选需要派发的生产单（可多选）</li>
+  <li>点击底部批量操作栏的 <strong>"派发 (N)"</strong> 按钮</li>
+  <li>系统自动执行<strong>派发预检</strong>：
+    <ul>
+      <li><span style="color:#ff4d4f;">红色提示</span>：审批状态非"已审批"或计划状态非"未开始"的记录将被跳过</li>
+      <li><span style="color:#fa8c16;">橙色提示</span>：工艺路线未维护/未审批的产品会给出警告，但不阻止派发</li>
+    </ul>
+  </li>
+  <li>确认预检结果后，进入<strong>派发编辑对话框</strong></li>
+  <li>在派发表格中逐行或批量填写以下信息：</li>
+</ol>
+</div>
+
+<h4>派发信息填写说明</h4>
+<table>
+  <tr><th style="width:120px;">字段</th><th>说明</th><th>填写方式</th></tr>
+  <tr><td>设备编号</td><td>选择该生产单使用的生产设备</td><td>自动完成搜索（输入编号或名称），选后自动带出设备名称</td></tr>
+  <tr><td>模具编号</td><td>选择该生产单使用的模具</td><td>自动完成搜索，选后自动带出：成型件规格、成型件单耗、实际模腔数、实际模穴数、实际班产</td></tr>
+  <tr><td>生产日期</td><td>计划生产的日期</td><td>日期选择器</td></tr>
+  <tr><td>班次</td><td>生产班次</td><td>下拉选择</td></tr>
+</table>
+
+<h4>批量修改功能</h4>
+<p>派发对话框中提供<strong>批量修改区域</strong>，可同时为勾选的多行设置相同的设备、模具、生产日期和班次：</p>
+<ol>
+  <li>勾选需要批量修改的行</li>
+  <li>在批量修改区域填写设备/模具/日期/班次</li>
+  <li>点击 <strong>"应用到勾选行"</strong> 按钮</li>
+</ol>
+
+<h4>排产冲突检查</h4>
+<p>提交派发前系统会检查本批次内是否存在冲突：</p>
+<ul>
+  <li><strong>模具冲突</strong>：同一模具在同一日期和班次被分配给多条生产单</li>
+  <li><strong>设备冲突</strong>：同一设备在同一日期和班次被分配给多条生产单</li>
+</ul>
+<p>如有冲突，系统会弹出冲突详情并阻止提交。</p>
+
+<h4>确认派发</h4>
+<p>点击 <strong>"确定派发"</strong> 后：</p>
+<ul>
+  <li>弹出确认对话框："将派发 N 条生产调度单，同时自动生成工序任务和备料单。"</li>
+  <li>确认后系统执行派发，完成后弹出<strong>派发结果面板</strong></li>
+</ul>
+
+<h4>派发结果面板</h4>
+<p>展示本次派发的汇总信息：</p>
+<table>
+  <tr><th>指标</th><th>含义</th></tr>
+  <tr><td>成功派发</td><td>成功派发的生产单数量</td></tr>
+  <tr><td>工序任务</td><td>根据工艺路线自动生成的工序任务总数</td></tr>
+  <tr><td>备料单</td><td>根据制造BOM自动生成的备料单份数</td></tr>
+  <tr><td>预成型件生产单</td><td>模具关联专属BOM时，MRP重算自动生成的预成型件生产单</td></tr>
+  <tr><td>跳过</td><td>派发失败的记录数及原因</td></tr>
+</ul>
+<p>可展开每条记录查看详细的工序任务生成和备料明细信息。</p>
+
+<div class="note">
+<strong>提示：</strong>如果在新建/编辑生产单时已经填写了设备和模具信息，派发对话框中会自动带入这些信息，无需重复填写。
+</div>
+
+<h3>1.5 生产单状态流转</h3>
+<p>生产单从创建到完成经历以下状态：</p>
+<table>
+  <tr><th>状态</th><th>说明</th><th>触发条件</th></tr>
+  <tr><td><span class="tag tag-blue">未开始</span></td><td>审批通过但尚未派发</td><td>审批通过后</td></tr>
+  <tr><td><span class="tag tag-green">已派发</span></td><td>已完成设备/模具/日期分配，生成工序任务和备料单</td><td>执行派发操作</td></tr>
+  <tr><td><span class="tag tag-orange">已备料</span></td><td>备料单物料已全部领料出库</td><td>备料完成</td></tr>
+  <tr><td><span class="tag tag-purple">生产中</span></td><td>已经开始报工，部分工序进行中</td><td>首次报工</td></tr>
+  <tr><td><span class="tag tag-green">已完成</span></td><td>所有工序报工完成</td><td>最后一道工序完成报工</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ============================================================ -->
+<!-- 二、备料出库 -->
+<!-- ============================================================ -->
+<h2 id="s2">二、备料出库</h2>
+
+<h3>2.1 功能概述</h3>
+<p>备料出库是将生产所需的物料从仓库领出到生产线的过程。系统支持两种备料模式：</p>
+<ul>
+  <li><strong>按生产单备料清单备料</strong>：根据整个生产单的BOM清单一次性领料</li>
+  <li><strong>按工序备料</strong>：按工序分组，逐工序领料（适合多工序生产场景）</li>
+</ul>
+
+<h3>2.2 导航路径</h3>
+<ul>
+  <li>按生产单备料：生产管理 → <strong>生产备料</strong>（material-issue）</li>
+  <li>按工序备料：生产管理 → <strong>按工序备料</strong>（material-issue-by-process）</li>
+</ul>
+
+<h3>2.3 按生产单备料清单备料</h3>
+
+<h4>操作步骤</h4>
+<div class="flow">
+<ol>
+  <li>在顶部搜索框<strong>扫码或输入生产单编号</strong>，按回车查询</li>
+  <li>系统显示生产单信息（编号、产品、规格、计划数量、状态）和备料单摘要（备料单号、BOM、物料种类、备料状态）</li>
+  <li>点击 <strong>"开始备料"</strong> 或 <strong>"补料"</strong> 按钮打开备料弹窗</li>
+  <li>在备料明细表格中填写每项物料的<strong>实际领用数量</strong>和<strong>批次号</strong></li>
+  <li>可点击 <strong>"填充未领量"</strong> 按钮，通过FIFO批次选择自动填充剩余待领物料数量</li>
+  <li>填写本次领料备注（可选）</li>
+  <li>点击 <strong>"保存领料"</strong> 完成出库</li>
+</ol>
+</div>
+
+<h4>备料类型说明</h4>
+<table>
+  <tr><th>类型</th><th>说明</th></tr>
+  <tr><td><span class="tag tag-blue">领料</span></td><td>首次领料，从备料单中按BOM需求领用物料</td></tr>
+  <tr><td><span class="tag tag-orange">补料</span></td><td>补充领料，当首次领料不足或物料损耗需要补充时使用</td></tr>
+</table>
+
+<h4>FIFO批次选择功能</h4>
+<p>点击"填充未领量"按钮后，系统弹出FIFO批次选择窗口：</p>
+<ul>
+  <li>左侧显示<strong>未领料物料列表</strong>，含物料编号、名称、剩余需求量和默认仓库</li>
+  <li>点击物料后右侧显示该物料在各仓库的<strong>可用批次</strong></li>
+  <li>支持切换<strong>仓库</strong>查看不同仓库的库存</li>
+  <li>勾选批次并输入<strong>分配数量</strong>，系统按FIFO原则自动排列批次</li>
+  <li>确认选择后自动填充到备料明细表格中</li>
+</ul>
+
+<div class="note">
+<strong>提示：</strong>如果生产单尚未生成备料单，系统会提示"该生产单尚未生成备料单，请先派发生产单"。备料单在派发时自动生成。
+</div>
+
+<h3>2.4 按工序备料</h3>
+
+<p>按工序备料将BOM物料按工序分组展示，每个工序的物料可独立领料：</p>
+<div class="flow">
+<ol>
+  <li>扫码或输入生产单编号查询</li>
+  <li>系统展示按工序分组的物料清单（折叠面板形式）</li>
+  <li>每个工序面板显示：工序号、工序名称、工作中心、物料种类数、领料状态</li>
+  <li>点击工序面板右侧的 <strong>"备料"</strong> 按钮</li>
+  <li>在弹窗中填写该工序物料的实际领用数量和批次号</li>
+  <li>点击保存完成该工序的备料</li>
+</ol>
+</div>
+
+<h3>2.5 历史领料记录与退料</h3>
+
+<h4>查看历史领料</h4>
+<p>备料页面下方展示该生产单的<strong>历史领料记录</strong>，每次领料显示：</p>
+<ul>
+  <li>领料类型标签（领料/补料）</li>
+  <li>领料单号、物料种类数、领料状态</li>
+  <li>领料人、领料时间、备注</li>
+  <li>明细行：物料编号、名称、仓库、需求数量、实际领用数量</li>
+</ul>
+
+<h4>批量退料</h4>
+<p>支持对历史领料记录进行退料操作：</p>
+<ol>
+  <li>在历史领料记录中勾选需要退料的明细行</li>
+  <li>输入退料数量（最大可退数量=已领数量）</li>
+  <li>点击 <strong>"批量退料"</strong> 按钮</li>
+  <li>系统自动生成退料单，恢复物料库存并回退备料单/生产单状态</li>
+</ol>
+
+<div class="page-break"></div>
+
+<!-- ============================================================ -->
+<!-- 三、连续报工 -->
+<!-- ============================================================ -->
+<h2 id="s3">三、连续报工</h2>
+
+<h3>3.1 功能概述</h3>
+<p>连续报工是针对一个生产单的所有工序，在一个页面内<strong>连续逐道完成报工</strong>的功能。支持：</p>
+<ul>
+  <li>扫码快速定位生产单</li>
+  <li>逐工序输入合格数量和不合格数量</li>
+  <li>单道报工、全部报工、完成生产单</li>
+  <li>快捷数量批量应用</li>
+  <li>查看历史报工记录</li>
+</ul>
+
+<h3>3.2 导航路径</h3>
+<p>生产管理 → <strong>连续报工</strong>（continuous-report）</p>
+
+<h3>3.3 操作步骤</h3>
+<div class="flow">
+<ol>
+  <li>在顶部搜索框<strong>扫码或输入生产单编号</strong>，按回车查询</li>
+  <li>系统加载该生产单的<strong>所有工序任务</strong>，并显示生产单基本信息</li>
+  <li>填写<strong>公共参数</strong>（应用于所有工序）：
+    <ul>
+      <li>报工日期（默认当天）</li>
+      <li>班次（自动继承生产单的班次）</li>
+      <li>班组、操作员</li>
+      <li>快捷数量：输入后可一键应用到所有可报工序</li>
+    </ul>
+  </li>
+  <li>在每道工序行中填写报工信息</li>
+  <li>点击报工按钮提交</li>
+</ol>
+</div>
+
+<h3>3.4 工序行说明</h3>
+<p>每道工序显示为一张卡片，包含上下两行：</p>
+
+<h4>上行（信息+进度）</h4>
+<table>
+  <tr><th>元素</th><th>说明</th></tr>
+  <tr><td>勾选框</td><td>用于标记该工序参与批量操作</td></tr>
+  <tr><td>工序号徽章</td><td>圆形数字标识，绿色=已完成，灰色=不可报</td></tr>
+  <tr><td>工序名称</td><td>标准工序名称</td></tr>
+  <tr><td>状态标签</td><td>未开始/进行中/已完成/已关闭</td></tr>
+  <tr><td>审批状态</td><td>工序任务审批状态</td></tr>
+  <tr><td>报工次数</td><td>已报工次数（支持同一工序多次报工）</td></tr>
+  <tr><td>进度数据</td><td>计划数量 / 完成数量 / 可报数量 + 进度条百分比</td></tr>
+</table>
+
+<h4>下行（输入区域）</h4>
+<table>
+  <tr><th>输入项</th><th>说明</th><th>必填</th></tr>
+  <tr><td>合格数</td><td>本次报工的合格品数量</td><td>是</td></tr>
+  <tr><td>不合格</td><td>本次报工的不合格品数量</td><td>否</td></tr>
+  <tr><td>缺陷分类</td><td>不合格数量>0时必须选择</td><td>条件必填</td></tr>
+  <tr><td>缺陷名称</td><td>不合格数量>0时必须选择（级联于缺陷分类）</td><td>条件必填</td></tr>
+  <tr><td>操作员</td><td>可每工序单独指定，默认使用公共参数的操作员</td><td>是</td></tr>
+</table>
+
+<h4>验证规则</h4>
+<ul>
+  <li>合格数量必须大于0</li>
+  <li>合格数+不合格数 ≤ 最大可报数量</li>
+  <li>有不合格数量时必须选择缺陷分类和缺陷名称</li>
+  <li>报工总量不得超过实际班产×(1+超额报工比例)</li>
+</ul>
+
+<h3>3.5 报工操作按钮</h3>
+<table>
+  <tr><th>按钮</th><th>说明</th></tr>
+  <tr><td><strong>报工</strong></td><td>提交当前工序的单次报工，成功后可继续对该工序再次报工</td></tr>
+  <tr><td><strong>完成</strong></td><td>仅在<strong>最后一道工序</strong>显示。提交报工的同时将生产单标记为"已完成"</td></tr>
+  <tr><td><strong>历史</strong></td><td>展开/收起该工序的历史报工记录表格</td></tr>
+  <tr><td><strong>撤销重报</strong></td><td>撤销该工序及之后所有工序的报工，详见第六章操作出错处理</td></tr>
+  <tr><td><strong>全部报工</strong></td><td>底部操作栏按钮，一次性提交所有已填写合格数量的工序</td></tr>
+</table>
+
+<div class="note">
+<strong>提示：</strong>报工提交后会自动审批（系统自动审批），无需人工审批流程。报工成功后工序的完成数量会即时更新，后续工序的可报数量会相应解锁。
+</div>
+
+<div class="warn">
+<strong>注意事项：</strong>
+<ul>
+  <li>如果工序设置了物料关卡（material gate），未完成备料的工序<strong>不可报工</strong>，会显示阻拦原因</li>
+  <li>工序审批状态必须为"已审批"才可报工</li>
+  <li>完成后报工按钮消失，仅显示"已完成"状态和"撤销重报"按钮</li>
+</ul>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ============================================================ -->
+<!-- 四、生产检验 -->
+<!-- ============================================================ -->
+<h2 id="s4">四、生产检验</h2>
+
+<h3>4.1 功能概述</h3>
+<p>生产检验是对报工完成后的工序进行质量检验的模块。检验单在报工后<strong>自动生成</strong>，检验类型分为：</p>
+<ul>
+  <li><strong>自检</strong>：由操作员自行检验</li>
+  <li><strong>专检</strong>：由专职检验员检验</li>
+</ul>
+
+<h3>4.2 导航路径</h3>
+<p>质量管理 → <strong>生产检验管理</strong></p>
+
+<h3>4.3 检验单列信息</h3>
+<table>
+  <tr><th>字段</th><th>说明</th></tr>
+  <tr><td>检验单号</td><td>系统自动生成的唯一编号</td></tr>
+  <tr><td>生产单号</td><td>关联的生产单</td></tr>
+  <tr><td>工序序号/名称</td><td>关联的工序</td></tr>
+  <tr><td>检验类型</td><td>自检（<span class="tag tag-blue">blue</span>）/ 专检（<span class="tag tag-green">green</span>）</td></tr>
+  <tr><td>报工数量</td><td>该工序的报工总数量</td></tr>
+  <tr><td>检验方案</td><td>应用的检验方案名称</td></tr>
+  <tr><td>检验规范</td><td>应用的检验规范名称</td></tr>
+  <tr><td>检验结果</td><td>合格/不合格</td></tr>
+  <tr><td>合格/不合格数量</td><td>合格品与不合格品数量</td></tr>
+  <tr><td>状态</td><td>待检/检验中/已完成/已处理</td></tr>
+  <tr><td>不合格处理</td><td>不合格品处理方式（返修/报废/让步接收）</td></tr>
+  <tr><td>检验人</td><td>执行检验的人员姓名</td></tr>
+</table>
+
+<h3>4.4 操作步骤</h3>
+
+<h4>检验流程</h4>
+<div class="flow">
+<ol>
+  <li>在检验列表找到待检/检验中的记录，点击 <strong>"检验"</strong> 按钮</li>
+  <li>弹出检验弹窗，显示该检验单关联的<strong>质量特性检验明细项</strong></li>
+  <li>每项质量特性显示：特性名称、检验方法、标准值、上限、下限</li>
+  <li>在<strong>实测值</strong>列输入实际测量值，系统实时预览判定结果：
+    <ul>
+      <li>实测值在上限和下限范围内 → <span class="tag tag-green">合格</span></li>
+      <li>实测值超出上限或下限 → <span class="tag tag-red">不合格</span></li>
+    </ul>
+  </li>
+  <li>填写完成后点击 <strong>"保存"</strong>，检验状态变为"检验中"</li>
+  <li>所有检验项填写完毕后，点击 <strong>"完成"</strong> 按钮</li>
+  <li>系统自动判定检验结果：全部合格 → 合格；任一项不合格 → 不合格</li>
+</ol>
+</div>
+
+<h4>不合格品处理（从检验单）</h4>
+<p>当检验结果为<strong>不合格</strong>时，操作栏出现 <strong>"处理"</strong> 按钮：</p>
+<ol>
+  <li>点击"处理"按钮，弹出不合格品处理弹窗</li>
+  <li>选择处理方式：<strong>返修</strong> / <strong>报废</strong> / <strong>让步接收</strong></li>
+  <li>
+    <table>
+      <tr><th>处理方式</th><th>需填写的信息</th></tr>
+      <tr><td>返修</td><td>返修目标工序序号（指定返修后回到哪道工序）</td></tr>
+      <tr><td>报废</td><td>报废类型（批量/单件）、报废数量</td></tr>
+      <tr><td>让步接收</td><td>让步接收数量</td></tr>
+    </table>
+  </li>
+  <li>填写备注（可选）</li>
+  <li>点击"确认处理"，系统创建不合格品处理单</li>
+</ol>
+
+<div class="note">
+<strong>提示：</strong>只有在检验状态为"已完成"且检验结果为"不合格"时，"处理"按钮才可见。删除检验记录仅允许删除"待检"或"检验中"状态的记录，删除后关联工序的检验状态将被清除。
+</div>
+
+<div class="page-break"></div>
+
+<!-- ============================================================ -->
+<!-- 五、不合格处理 -->
+<!-- ============================================================ -->
+<h2 id="s5">五、不合格处理</h2>
+
+<h3>5.1 功能概述</h3>
+<p>不合格品处理模块集中管理所有来源的不合格品，包括<strong>生产检验</strong>、<strong>来料检验</strong>和<strong>委外检验</strong>。提供待处理列表（快捷处理入口）和全部列表（管理与追溯）。</p>
+
+<h3>5.2 导航路径</h3>
+<ul>
+  <li>待处理列表：质量管理 → <strong>不合格品待处理</strong>（PendingList）</li>
+  <li>全部列表：质量管理 → <strong>不合格处理单</strong>（List）</li>
+</ul>
+
+<h3>5.3 不合格品待处理列表</h3>
+<p>聚焦<strong>待处理</strong>状态的不合格品，便于快速处理：</p>
+<ul>
+  <li>列表展示：不合格品单号、来源类型、检验单号、物料编号/名称、不合格数量、缺陷分类/名称、处理状态</li>
+  <li>操作：<strong>详情</strong>（查看完整信息）、<strong>处理</strong>（执行处理）</li>
+</ul>
+
+<h3>5.4 处理方式详解</h3>
+<p>根据<strong>来源类型</strong>不同，可用的处理方式不同：</p>
+
+<h4>生产检验 / 委外检验来源</h4>
+<table>
+  <tr><th>处理方式</th><th>说明</th><th>需填参数</th></tr>
+  <tr><td><span class="tag tag-blue">返修</span></td><td>将不合格品退回生产线返工</td><td>返修目标工序号、返修数量</td></tr>
+  <tr><td><span class="tag tag-red">报废</span></td><td>将不合格品做报废处理</td><td>报废类型（批量/单件）、报废数量</td></tr>
+  <tr><td><span class="tag tag-orange">让步接收</span></td><td>降级接收不合格品</td><td>让步接收数量</td></tr>
+</table>
+
+<h4>来料检验来源</h4>
+<table>
+  <tr><th>处理方式</th><th>说明</th><th>需填参数</th></tr>
+  <tr><td>挑选</td><td>对来料进行挑选，分出合格与不合格</td><td>挑选后合格数量、不合格数量</td></tr>
+  <tr><td>拒收</td><td>拒绝接收来料</td><td>拒收数量</td></tr>
+  <tr><td>报废</td><td>将来料做报废处理</td><td>报废类型、报废数量</td></tr>
+  <tr><td>特采</td><td>特殊采购接收，入库到指定仓库</td><td>特采入库仓库、特采数量</td></tr>
+  <tr><td>退货</td><td>退回供应商，系统自动创建采购退货单</td><td>退货类型（退货退款/退货换货）、退货数量</td></tr>
+</table>
+
+<div class="info">
+<strong>提示：</strong>选择"退货"处理时，系统将<strong>自动创建采购退货单</strong>，并在退货单审批后执行退货出库。
+</div>
+
+<h3>5.5 不合格处理单列表</h3>
+<p>全部列表提供完整的统计和管理功能：</p>
+<ul>
+  <li><strong>统计卡片</strong>：待处理数量、不合格总数、已处理数量、总记录数</li>
+  <li><strong>筛选条件</strong>：搜索单号/物料、来源类型（来料检验/生产检验/委外检验）、处理状态（待处理/处理中/已完成/返修不合格）</li>
+  <li><strong>关联单据</strong>：处理完成后可在列表查看关联的返修单号、入库单号、退货单号</li>
+  <li><strong>撤销处理</strong>：已完成或处理中的记录可撤销处理，回退相关单据</li>
+</ul>
+
+<div class="page-break"></div>
+
+<!-- ============================================================ -->
+<!-- 六、操作出错处理 -->
+<!-- ============================================================ -->
+<h2 id="s6">六、操作出错处理</h2>
+
+<h3>6.1 功能概述</h3>
+<p>生产执行过程中不可避免地会出现操作失误，系统提供了多种<strong>纠错和回退机制</strong>，确保数据准确性：</p>
+
+<h3>6.2 报工撤销重报</h3>
+<h4>适用场景</h4>
+<ul>
+  <li>报工数量填写错误（多报/少报）</li>
+  <li>报错了工序</li>
+  <li>缺陷信息选择错误</li>
+  <li>需要重新报工修正数据</li>
+</ul>
+
+<h4>操作步骤</h4>
+<div class="flow">
+<ol>
+  <li>在连续报工页面，找到需要撤销的工序</li>
+  <li>点击该工序的 <strong>"撤销重报"</strong> 按钮（有报工记录的工序才显示）</li>
+  <li>系统弹出<strong>撤销预览弹窗</strong>，展示：
+    <ul>
+      <li>受影响工序数（从目标工序到末道工序）</li>
+      <li>受影响工序当前状态和完成数量</li>
+      <li>将被删除的报工单列表（按工序号降序排列）</li>
+      <li>关联的检验记录（需手动处理）</li>
+    </ul>
+  </li>
+  <li>确认无误后点击确认，系统删除相关报工单并回退工序完成数量</li>
+  <li>重新填写正确的报工数据并提交</li>
+</ol>
+</div>
+
+<div class="warn">
+<strong>重要：</strong><br>
+<ul>
+  <li>撤销重报会删除<strong>从目标工序到末道工序</strong>的所有报工记录，不仅仅是当前工序</li>
+  <li>如果关联了检验记录，需手动处理检验单</li>
+  <li>无法单独撤销中间的某一条报工记录</li>
+</ul>
+</div>
+
+<h3>6.3 领料撤回</h3>
+<h4>适用场景</h4>
+<ul>
+  <li>领料数量填写错误</li>
+  <li>领错了物料</li>
+  <li>领料后发现生产单取消</li>
+</ul>
+
+<h4>操作步骤</h4>
+<div class="flow">
+<ol>
+  <li>在备料页面，查看<strong>历史领料记录</strong></li>
+  <li>找到需要撤回的领料单</li>
+  <li>点击领料单右侧的 <strong>"撤回"</strong> 按钮</li>
+  <li>确认撤回操作（系统提示："物料库存、备料单状态、生产单状态将同步回退"）</li>
+</ol>
+</div>
+
+<div class="note">
+<strong>提示：</strong>撤回领料单后，系统会自动恢复物料库存、回退备料单状态和生产单状态到领料前的状态。
+</div>
+
+<h3>6.4 批量退料</h3>
+<h4>适用场景</h4>
+<ul>
+  <li>部分物料领多了需要退回</li>
+  <li>需要退掉特定批次的物料</li>
+</ul>
+
+<h4>操作步骤</h4>
+<div class="flow">
+<ol>
+  <li>在历史领料记录中，勾选需要退料的明细行</li>
+  <li>输入退料数量（限制为最大可退数量）</li>
+  <li>点击 <strong>"批量退料"</strong> 按钮</li>
+  <li>系统生成退料单，恢复库存并更新备料单状态</li>
+</ol>
+</div>
+
+<h3>6.5 不合格处理撤销</h3>
+<h4>适用场景</h4>
+<ul>
+  <li>不合格品处理方式选择错误</li>
+  <li>处理数量填写错误</li>
+  <li>需要更改处理决策</li>
+</ul>
+
+<h4>操作步骤</h4>
+<div class="flow">
+<ol>
+  <li>在不合格处理单列表，找到需要撤销的记录</li>
+  <li>仅"已完成"或"处理中"状态的记录可撤销</li>
+  <li>点击 <strong>"撤销"</strong> 按钮</li>
+  <li>确认："将回退相关单据的数量和状态"</li>
+  <li>撤销后不合格品恢复为"待处理"状态，可重新选择处理方式</li>
+</ol>
+</div>
+
+<h3>6.6 检验记录删除</h3>
+<h4>适用场景</h4>
+<ul>
+  <li>检验数据填写错误且未完成检验</li>
+  <li>检验单生成有误需要重做</li>
+</ul>
+
+<h4>操作步骤</h4>
+<div class="flow">
+<ol>
+  <li>在生产检验列表，找到需要删除的记录</li>
+  <li>仅<strong>"待检"或"检验中"</strong>状态的记录可删除</li>
+  <li>点击 <strong>"删除"</strong> 按钮</li>
+  <li>确认删除（系统提示："删除后关联工序的检验状态将被清除"）</li>
+</ol>
+</div>
+
+<div class="warn">
+<strong>注意：</strong>"已完成"状态的检验记录<strong>不可删除</strong>。如需修正已完成检验的数据，请先通过不合格处理撤销流程回退。
+</div>
+
+<h3>6.7 生产单审批撤回与反审</h3>
+<table>
+  <tr><th>操作</th><th>适用状态</th><th>说明</th></tr>
+  <tr><td><strong>撤回提交</strong></td><td>待审批</td><td>将已提交审核的生产单退回到草稿状态，可重新编辑</td></tr>
+  <tr><td><strong>反审退回</strong></td><td>已审批</td><td>将已审批的生产单退回，取消审批状态</td></tr>
+  <tr><td><strong>批量关闭</strong></td><td>任意</td><td>手动关闭不再需要的生产单</td></tr>
+</table>
+
+<p>以上操作均可在生产单列表的"更多"下拉菜单或底部批量操作栏中找到。</p>
+
+<h3>6.8 各模块纠错能力汇总</h3>
+<table>
+  <tr><th>模块</th><th>纠错操作</th><th>影响范围</th><th>前提条件</th></tr>
+  <tr><td>连续报工</td><td>撤销重报</td><td>目标工序及之后所有工序的报工记录</td><td>有报工记录</td></tr>
+  <tr><td>备料出库</td><td>撤回领料单</td><td>物料库存、备料单状态、生产单状态</td><td>领料单存在</td></tr>
+  <tr><td>备料出库</td><td>批量退料</td><td>物料库存（部分退回）</td><td>有已领物料</td></tr>
+  <tr><td>生产检验</td><td>删除检验记录</td><td>工序检验状态清除</td><td>状态为待检或检验中</td></tr>
+  <tr><td>不合格处理</td><td>撤销处理</td><td>回退相关单据的数量和状态</td><td>状态为已完成或处理中</td></tr>
+  <tr><td>生产单管理</td><td>撤回提交</td><td>审批状态回退到草稿</td><td>状态为待审批</td></tr>
+  <tr><td>生产单管理</td><td>反审退回</td><td>审批状态回退</td><td>状态为已审批</td></tr>
+  <tr><td>生产单管理</td><td>批量关闭</td><td>生产单状态标记为关闭</td><td>任意状态</td></tr>
+</table>
+
+<div class="note">
+<strong>最佳实践：</strong>发现操作错误后应立即纠正，避免错误数据向后续环节传播。例如：报工数量错误 → 先撤销重报 → 重新报工 → 检验数据会自动同步更新。
+</div>
+
+</body>
+</html>

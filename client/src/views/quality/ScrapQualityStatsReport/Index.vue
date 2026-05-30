@@ -133,20 +133,24 @@ onMounted(() => { fetchKPI(); fetchChartData(); fetchTableData() })
 <template>
   <div style="padding: 0;">
     <a-card size="small" :bordered="false" style="margin-bottom: 16px;">
-      <a-form layout="inline" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
-        <a-form-item label="搜索" style="margin-bottom: 0;">
-          <a-input-search v-model:value="searchText" placeholder="不合格单号/物料编号/名称" style="width: 260px;" allow-clear @search="handleSearch" />
-        </a-form-item>
-        <a-form-item label="日期范围" style="margin-bottom: 0;">
-          <a-range-picker v-model:value="dateRange" :placeholder="['开始日期', '结束日期']" style="width: 240px;" @change="handleSearch" />
-        </a-form-item>
-        <a-form-item style="margin-bottom: 0;">
-          <a-space>
-            <a-button type="primary" @click="handleSearch"><template #icon><SearchOutlined /></template>查询</a-button>
-            <a-button @click="handleReset"><template #icon><ReloadOutlined /></template>重置</a-button>
-          </a-space>
-        </a-form-item>
-      </a-form>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <h3 class="page-title" style="margin: 0; white-space: nowrap;">废品统计分析报表</h3>
+        <a-divider type="vertical" style="height: 24px; margin: 0;" />
+        <a-form layout="inline" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: 1;">
+          <a-form-item label="搜索" style="margin-bottom: 0;">
+            <a-input-search v-model:value="searchText" placeholder="不合格单号/物料编号/名称" style="width: 260px;" allow-clear @search="handleSearch" />
+          </a-form-item>
+          <a-form-item label="日期范围" style="margin-bottom: 0;">
+            <a-range-picker v-model:value="dateRange" :placeholder="['开始日期', '结束日期']" style="width: 240px;" @change="handleSearch" />
+          </a-form-item>
+          <a-form-item style="margin-bottom: 0;">
+            <a-space>
+              <a-button type="primary" @click="handleSearch"><template #icon><SearchOutlined /></template>查询</a-button>
+              <a-button @click="handleReset"><template #icon><ReloadOutlined /></template>重置</a-button>
+            </a-space>
+          </a-form-item>
+        </a-form>
+      </div>
     </a-card>
 
     <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px;">
@@ -232,3 +236,11 @@ onMounted(() => { fetchKPI(); fetchChartData(); fetchTableData() })
     </a-modal>
   </div>
 </template>
+
+<style scoped>
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #262626;
+}
+</style>

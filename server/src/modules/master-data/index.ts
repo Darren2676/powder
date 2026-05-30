@@ -23,6 +23,7 @@ import routingMasterRoutes from './routingMaster/routingMaster.routes';
 import customerMaterialMappingRoutes from './customerMaterialMapping/customerMaterialMapping.routes';
 import materialRoutes from './material/material.routes';
 import productRoutes from './product/product.routes';
+import engineeringChangeRoutes from './engineeringChange/engineeringChange.routes';
 
 const router = Router();
 
@@ -49,5 +50,6 @@ router.use('/routing-masters', routingMasterRoutes);
 router.use('/customer-material-mappings', customerMaterialMappingRoutes);
 router.use('/materials', materialRoutes);
 router.use('/products', productRoutes);
+router.use('/engineering-change-lifecycles', engineeringChangeRoutes);
 
 export default router;

@@ -56,6 +56,13 @@ export const getSalesOrders = async (req: Request, res: Response, next: NextFunc
       replacements.order_status = order_status;
     }
 
+    // 数据范围过滤：sales 角色只能看到自己负责的订单
+    const scope = (req as any).dataScope;
+    if (scope?.head_of_sales_id) {
+      conditions.push(`head_of_sales_id = :dataScopeUserId`);
+      replacements.dataScopeUserId = scope.head_of_sales_id;
+    }
+
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
     const [countResult]: any = await sequelize.query(
@@ -123,12 +130,24 @@ export const createSalesOrder = async (req: Request, res: Response, next: NextFu
     const creation_date = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const creation_man = (req as any).user?.username || '';
 
+    // 从客户表继承 head_of_sales_id
+    let head_of_sales_id: number | null = null;
+    if (b.customer_number) {
+      const [custRows]: any = await sequelize.query(
+        `SELECT head_of_sales_id, head_of_sales FROM customer WHERE customer_number = :cn`,
+        { replacements: { cn: b.customer_number } }
+      );
+      if (custRows.length) {
+        head_of_sales_id = custRows[0].head_of_sales_id || null;
+      }
+    }
+
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`
-        INSERT INTO sales_order (sales_order_number, customer_number, customer_name, head_of_sales, linkman, contacts,
+        INSERT INTO sales_order (sales_order_number, customer_number, customer_name, head_of_sales, head_of_sales_id, linkman, contacts,
           order_date, delivery_date, order_status, [condition], approval_status, remark, creation_date, creation_man, customer_po_number)
-        VALUES (:sales_order_number, :customer_number, :customer_name, :head_of_sales, :linkman, :contacts,
+        VALUES (:sales_order_number, :customer_number, :customer_name, :head_of_sales, :head_of_sales_id, :linkman, :contacts,
           :order_date, :delivery_date, :order_status, :condition, N'草稿', :remark, :creation_date, :creation_man, :customer_po_number)
       `, {
         replacements: {
@@ -136,6 +155,7 @@ export const createSalesOrder = async (req: Request, res: Response, next: NextFu
           customer_number: b.customer_number,
           customer_name: b.customer_name || '',
           head_of_sales: b.head_of_sales || '',
+          head_of_sales_id,
           linkman: b.linkman || '',
           contacts: b.contacts || '',
           order_date: b.order_date || null,
@@ -156,10 +176,10 @@ export const createSalesOrder = async (req: Request, res: Response, next: NextFu
           const d = b.details[i];
           await sequelize.query(`
             INSERT INTO sales_order_detail (sales_order_number, line_number, item_number, item_name, specifications, basic_unit,
-              product_drawing_number, order_quantity, unit_price, total_amount, delivery_date, remark, status,
+              product_drawing_number, order_quantity, unit_price, tax_rate, total_amount, delivery_date, remark, status,
               shipping_status, production_status, return_status, customer_item_number, customer_item_description)
             VALUES (:sales_order_number, :line_number, :item_number, :item_name, :specifications, :basic_unit,
-              :product_drawing_number, :order_quantity, :unit_price, :total_amount, :delivery_date, :remark, :status,
+              :product_drawing_number, :order_quantity, :unit_price, :tax_rate, :total_amount, :delivery_date, :remark, :status,
               :shipping_status, :production_status, :return_status, :customer_item_number, :customer_item_description)
           `, {
             replacements: {
@@ -172,6 +192,7 @@ export const createSalesOrder = async (req: Request, res: Response, next: NextFu
               product_drawing_number: d.product_drawing_number || '',
               order_quantity: d.order_quantity || 0,
               unit_price: d.unit_price || 0,
+              tax_rate: d.tax_rate || 0,
               total_amount: d.total_amount || 0,
               delivery_date: d.delivery_date || null,
               remark: d.remark || '',
@@ -234,10 +255,19 @@ export const updateSalesOrder = async (req: Request, res: Response, next: NextFu
         // 已审批状态不处理明细行的先删后插
       } else {
         // 草稿状态：全字段更新
+        // 同步更新 head_of_sales_id（根据 head_of_sales 文本匹配用户）
+        let head_of_sales_id: number | null = b.head_of_sales_id || null;
+        if (!head_of_sales_id && b.head_of_sales) {
+          const [userMatch]: any = await sequelize.query(
+            `SELECT TOP 1 id FROM users WHERE real_name = :name AND status = 'active'`,
+            { replacements: { name: b.head_of_sales }, transaction }
+          );
+          if (userMatch.length) head_of_sales_id = userMatch[0].id;
+        }
         await sequelize.query(`
           UPDATE sales_order SET
             customer_number = :customer_number, customer_name = :customer_name,
-            head_of_sales = :head_of_sales, linkman = :linkman, contacts = :contacts,
+            head_of_sales = :head_of_sales, head_of_sales_id = :head_of_sales_id, linkman = :linkman, contacts = :contacts,
             order_date = :order_date, delivery_date = :delivery_date,
             order_status = :order_status, [condition] = :condition, remark = :remark,
             customer_po_number = :customer_po_number
@@ -248,6 +278,7 @@ export const updateSalesOrder = async (req: Request, res: Response, next: NextFu
             customer_number: b.customer_number || '',
             customer_name: b.customer_name || '',
             head_of_sales: b.head_of_sales || '',
+            head_of_sales_id,
             linkman: b.linkman || '',
             contacts: b.contacts || '',
             order_date: b.order_date || null,
@@ -270,10 +301,10 @@ export const updateSalesOrder = async (req: Request, res: Response, next: NextFu
             const d = b.details[i];
             await sequelize.query(`
               INSERT INTO sales_order_detail (sales_order_number, line_number, item_number, item_name, specifications, basic_unit,
-                product_drawing_number, order_quantity, unit_price, total_amount, delivery_date, remark, status,
+                product_drawing_number, order_quantity, unit_price, tax_rate, total_amount, delivery_date, remark, status,
                 shipping_status, production_status, return_status, promised_delivery_date, customer_item_number, customer_item_description)
               VALUES (:sales_order_number, :line_number, :item_number, :item_name, :specifications, :basic_unit,
-                :product_drawing_number, :order_quantity, :unit_price, :total_amount, :delivery_date, :remark, :status,
+                :product_drawing_number, :order_quantity, :unit_price, :tax_rate, :total_amount, :delivery_date, :remark, :status,
                 :shipping_status, :production_status, :return_status, :promised_delivery_date, :customer_item_number, :customer_item_description)
             `, {
               replacements: {
@@ -286,6 +317,7 @@ export const updateSalesOrder = async (req: Request, res: Response, next: NextFu
                 product_drawing_number: d.product_drawing_number || '',
                 order_quantity: d.order_quantity || 0,
                 unit_price: d.unit_price || 0,
+                tax_rate: d.tax_rate || 0,
                 total_amount: d.total_amount || 0,
                 delivery_date: d.delivery_date || null,
                 remark: d.remark || '',
@@ -349,9 +381,9 @@ export const getSalesOrderDetails = async (req: Request, res: Response, next: Ne
     const [items]: any = await sequelize.query(
       `SELECT d.id, d.sales_order_number, d.line_number, d.item_number, d.item_name,
               d.specifications, d.basic_unit, d.product_drawing_number,
-              d.order_quantity, d.unit_price, d.total_amount,
+              d.order_quantity, d.unit_price, d.tax_rate, d.total_amount,
               d.delivery_date, d.promised_delivery_date, d.remark, d.status,
-              d.shipping_status, d.production_status, d.return_status,
+              d.shipping_status, d.production_status, d.return_status, d.invoice_status,
               d.shipped_quantity, d.refunded_quantity,
               COALESCE(NULLIF(d.customer_item_number, ''), cm.customer_item_number) as customer_item_number,
               COALESCE(NULLIF(d.customer_item_description, ''), cm.customer_item_description) as customer_item_description
@@ -387,11 +419,11 @@ export const addSalesOrderDetail = async (req: Request, res: Response, next: Nex
 
     const [result]: any = await sequelize.query(`
       INSERT INTO sales_order_detail (sales_order_number, line_number, item_number, item_name, specifications, basic_unit,
-        product_drawing_number, order_quantity, unit_price, total_amount, delivery_date, remark, status,
+        product_drawing_number, order_quantity, unit_price, tax_rate, total_amount, delivery_date, remark, status,
         shipping_status, production_status, return_status, customer_item_number, customer_item_description)
       OUTPUT INSERTED.id
       VALUES (:sales_order_number, :line_number, :item_number, :item_name, :specifications, :basic_unit,
-        :product_drawing_number, :order_quantity, :unit_price, :total_amount, :delivery_date, :remark, :status,
+        :product_drawing_number, :order_quantity, :unit_price, :tax_rate, :total_amount, :delivery_date, :remark, :status,
         :shipping_status, :production_status, :return_status, :customer_item_number, :customer_item_description)
     `, {
       replacements: {
@@ -404,6 +436,7 @@ export const addSalesOrderDetail = async (req: Request, res: Response, next: Nex
         product_drawing_number: b.product_drawing_number || '',
         order_quantity: b.order_quantity || 0,
         unit_price: b.unit_price || 0,
+        tax_rate: b.tax_rate || 0,
         total_amount: b.total_amount || 0,
         delivery_date: b.delivery_date || null,
         remark: b.remark || '',
@@ -460,7 +493,7 @@ export const updateSalesOrderDetail = async (req: Request, res: Response, next: 
       UPDATE sales_order_detail SET
         line_number = :line_number, item_number = :item_number, item_name = :item_name,
         specifications = :specifications, basic_unit = :basic_unit, product_drawing_number = :product_drawing_number,
-        order_quantity = :order_quantity, unit_price = :unit_price, total_amount = :total_amount,
+        order_quantity = :order_quantity, unit_price = :unit_price, tax_rate = :tax_rate, total_amount = :total_amount,
         delivery_date = :delivery_date, remark = :remark, status = :status,
         shipping_status = :shipping_status, production_status = :production_status, return_status = :return_status,
         customer_item_number = :customer_item_number, customer_item_description = :customer_item_description
@@ -476,6 +509,7 @@ export const updateSalesOrderDetail = async (req: Request, res: Response, next: 
         product_drawing_number: b.product_drawing_number || '',
         order_quantity: b.order_quantity || 0,
         unit_price: b.unit_price || 0,
+        tax_rate: b.tax_rate || 0,
         total_amount: b.total_amount || 0,
         delivery_date: b.delivery_date || null,
         remark: b.remark || '',
@@ -636,12 +670,14 @@ export const importSalesOrders = async (req: Request, res: Response, next: NextF
 
 export const getSalesOrderStats = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [totalRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order`);
-    const [draftRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE approval_status = N'草稿'`);
-    const [pendingRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE approval_status = N'待审批'`);
-    const [approvedRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE approval_status = N'已审批'`);
-    const [amountRow]: any = await sequelize.query(`SELECT ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as total FROM sales_order_detail d INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number`);
-    const [approvedAmountRow]: any = await sequelize.query(`SELECT ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as total FROM sales_order_detail d INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number WHERE h.approval_status = N'已审批'`);
+    const scope = (req as any).dataScope;
+    const scopeCondition = scope?.head_of_sales_id ? ` AND head_of_sales_id = ${scope.head_of_sales_id}` : '';
+    const [totalRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE 1=1${scopeCondition}`);
+    const [draftRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE approval_status = N'草稿'${scopeCondition}`);
+    const [pendingRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE approval_status = N'待审批'${scopeCondition}`);
+    const [approvedRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE approval_status = N'已审批'${scopeCondition}`);
+    const [amountRow]: any = await sequelize.query(`SELECT ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as total FROM sales_order_detail d INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number WHERE 1=1${scopeCondition.replace('head_of_sales_id', 'h.head_of_sales_id')}`);
+    const [approvedAmountRow]: any = await sequelize.query(`SELECT ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as total FROM sales_order_detail d INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number WHERE h.approval_status = N'已审批'${scopeCondition.replace('head_of_sales_id', 'h.head_of_sales_id')}`);
 
     res.json(success({
       total: totalRow[0].cnt,
@@ -801,7 +837,7 @@ export const getSalesOrderDetailsPage = async (req: Request, res: Response, next
                d.specifications, d.basic_unit, d.product_drawing_number,
                d.order_quantity, d.unit_price, d.total_amount,
                d.delivery_date, d.promised_delivery_date, d.remark, d.status,
-               d.shipping_status, d.production_status, d.return_status,
+               d.shipping_status, d.production_status, d.return_status, d.invoice_status,
                d.shipped_quantity, d.refunded_quantity,
                h.customer_number, h.customer_name, h.head_of_sales, h.linkman, h.contacts,
                h.order_date, h.delivery_date AS order_delivery_date,

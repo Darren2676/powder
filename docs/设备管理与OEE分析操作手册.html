@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>设备管理与OEE分析 功能操作使用手册</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  body {
+    font-family: "Microsoft YaHei", "SimHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    font-size: 13px;
+    line-height: 1.8;
+    color: #333;
+    max-width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+  h1 {
+    font-size: 22px;
+    text-align: center;
+    margin: 0 0 24px;
+    padding-bottom: 12px;
+    border-bottom: 3px solid #1890ff;
+    color: #1a1a1a;
+  }
+  h2 {
+    font-size: 17px;
+    margin: 28px 0 12px;
+    padding: 6px 0 6px 12px;
+    border-left: 4px solid #1890ff;
+    background: #f0f7ff;
+    color: #1a1a1a;
+  }
+  h3 {
+    font-size: 15px;
+    margin: 20px 0 8px;
+    color: #333;
+    border-bottom: 1px solid #e8e8e8;
+    padding-bottom: 4px;
+  }
+  h4 {
+    font-size: 13px;
+    margin: 14px 0 6px;
+    color: #555;
+  }
+  p { margin: 6px 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0 16px;
+    font-size: 12px;
+  }
+  th, td {
+    border: 1px solid #d9d9d9;
+    padding: 7px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #fafafa;
+    font-weight: 600;
+    color: #333;
+  }
+  tr:nth-child(even) td { background: #fcfcfc; }
+  code {
+    background: #f5f5f5;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12px;
+    color: #c7254e;
+  }
+  pre {
+    background: #f8f8f8;
+    border: 1px solid #e8e8e8;
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin: 10px 0 16px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre-wrap;
+  }
+  blockquote {
+    border-left: 4px solid #1890ff;
+    background: #f0f7ff;
+    margin: 12px 0;
+    padding: 8px 16px;
+    color: #555;
+    font-size: 12px;
+  }
+  blockquote p { margin: 4px 0; }
+  ul, ol { margin: 8px 0; padding-left: 24px; }
+  li { margin: 2px 0; }
+  strong { color: #1a1a1a; }
+  hr {
+    border: none;
+    border-top: 1px solid #e8e8e8;
+    margin: 24px 0;
+  }
+  .page-break { page-break-after: always; }
+</style>
+</head>
+<body>
+
+<h1>设备管理与OEE分析 功能操作使用手册</h1>
+
+<h2>1. 模块概述</h2>
+
+<p>设备管理模块是 Seals MES 系统中负责设备全生命周期管理的核心模块，涵盖设备台帐、模具管理、设备停机记录、设备保养计划、模具维修记录和 OEE 分析六大子功能，实现从设备建档、状态监控、保养计划、故障记录到设备综合效率分析的全流程闭环管理。</p>
+
+<h3>1.1 功能架构</h3>
+
+<pre>
+设备管理
+├── 设备台帐管理      — 设备主数据建档与审核
+├── 模具管理          — 模具主数据与寿命管理
+├── 模具维修记录      — 模具保养/维修/翻新记录
+├── 设备停机记录      — 停机事件记录与审核
+├── 设备保养计划      — 保养计划生成与执行跟踪
+└── OEE分析           — 设备综合效率计算与可视化
+</pre>
+
+<h3>1.2 菜单路径</h3>
+
+<p>在系统左侧导航栏中，点击 <strong>「设备管理」</strong> 菜单展开子菜单：</p>
+
+<table>
+<tr><th>子菜单</th><th>路由路径</th></tr>
+<tr><td>设备台帐管理</td><td>/equipments</td></tr>
+<tr><td>模具管理</td><td>/moulds</td></tr>
+<tr><td>模具维修记录管理</td><td>/mould-maintenance</td></tr>
+<tr><td>设备停机记录</td><td>/equipment-downtime</td></tr>
+<tr><td>设备保养计划</td><td>/equipment-maintenance-plan</td></tr>
+<tr><td>OEE分析</td><td>/equipment-oee</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<h2>2. 设备台帐管理</h2>
+
+<h3>2.1 功能说明</h3>
+<p>设备台帐管理是设备管理的基础模块，用于维护企业所有设备的主数据信息，包括设备基本信息、状态管理、保养设置和审核流程。</p>
+
+<h3>2.2 列表字段</h3>
+
+<table>
+<tr><th>字段</th><th>说明</th></tr>
+<tr><td>行号</td><td>自动序号</td></tr>
+<tr><td>设备编号</td><td>设备唯一编号，可排序</td></tr>
+<tr><td>设备名称</td><td>设备名称</td></tr>
+<tr><td>设备状态</td><td>运行/闲置/故障/保养/停用，彩色标签显示</td></tr>
+<tr><td>位置</td><td>设备放置位置</td></tr>
+<tr><td>部门</td><td>所属部门</td></tr>
+<tr><td>登记日期</td><td>设备登记日期</td></tr>
+<tr><td>设备类型</td><td>设备分类</td></tr>
+<tr><td>设备型号</td><td>设备型号</td></tr>
+<tr><td>出厂日期</td><td>设备出厂日期</td></tr>
+<tr><td>日运行时长</td><td>每日运行小时数</td></tr>
+<tr><td>保养周期(天)</td><td>保养间隔天数</td></tr>
+<tr><td>上次保养</td><td>最近一次保养日期</td></tr>
+<tr><td>下次保养</td><td>下次保养日期，逾期显示红色</td></tr>
+<tr><td>累计运行(h)</td><td>设备累计运行小时数</td></tr>
+<tr><td>备注</td><td>备注信息</td></tr>
+<tr><td>审核状态</td><td>未审核/已审核，标签显示</td></tr>
+</table>
+
+<h3>2.3 搜索与筛选</h3>
+<ul>
+<li><strong>搜索框</strong>：输入设备编号、名称、类型或型号进行模糊搜索，按回车或点击搜索图标执行</li>
+<li><strong>重置</strong>：清空搜索条件，刷新列表</li>
+</ul>
+
+<h3>2.4 列表操作按钮</h3>
+
+<table>
+<tr><th>按钮</th><th>功能</th></tr>
+<tr><td>导出</td><td>将设备列表导出为 Excel 文件</td></tr>
+<tr><td>导入</td><td>从 Excel 文件批量导入设备数据</td></tr>
+<tr><td>新建</td><td>打开新建设备弹窗</td></tr>
+<tr><td>列设置</td><td>打开列个性化设置抽屉</td></tr>
+</table>
+
+<h3>2.5 行操作</h3>
+
+<table>
+<tr><th>操作</th><th>说明</th></tr>
+<tr><td>编辑</td><td>打开编辑弹窗，修改设备信息。<strong>已审核记录不允许编辑</strong></td></tr>
+<tr><td>审核</td><td>将未审核的设备标记为"已审核"状态</td></tr>
+<tr><td>撤消</td><td>将已审核的设备撤消审核，需二次确认</td></tr>
+<tr><td>状态</td><td>变更设备运行状态（运行/闲置/故障/保养/停用）</td></tr>
+<tr><td>保养</td><td>设置保养周期和日运行时长</td></tr>
+<tr><td>删除</td><td>删除设备记录。<strong>已审核记录不允许删除</strong></td></tr>
+</table>
+
+<h3>2.6 新建设备</h3>
+<ol>
+<li>点击工具栏 <strong>「新建」</strong> 按钮</li>
+<li>在弹窗中填写信息：<strong>设备编号</strong>（必填）、设备名称、登记日期、设备类型、设备型号、出厂日期、备注</li>
+<li>点击 <strong>「确定」</strong> 保存</li>
+</ol>
+
+<h3>2.7 状态变更</h3>
+<ol>
+<li>在操作列点击 <strong>「更多 → 状态」</strong></li>
+<li>选择目标状态：<strong>运行</strong>（正常运转）、<strong>闲置</strong>（空闲）、<strong>故障</strong>（停机，需填写故障原因）、<strong>保养</strong>（保养中）、<strong>停用</strong>（停用）</li>
+<li>点击 <strong>「确定」</strong> 保存</li>
+</ol>
+
+<h3>2.8 保养设置</h3>
+<ol>
+<li>在操作列点击 <strong>「更多 → 保养」</strong></li>
+<li>设置保养周期(天)（默认 30 天）和日运行时长(h)（默认 24h）</li>
+<li>点击 <strong>「确定」</strong> 保存</li>
+</ol>
+<blockquote><p>设置保养参数后，系统将自动计算下次保养日期，并在列表中以红色高亮显示已逾期保养的设备。</p></blockquote>
+
+<h3>2.9 审核/撤消流程</h3>
+<ul>
+<li><strong>审核</strong>：将设备标记为已审核状态，锁定数据防止误改</li>
+<li><strong>撤消</strong>：已审核的设备需先撤消审核才能编辑或删除，撤消时需二次确认</li>
+</ul>
+
+<h3>2.10 列个性化</h3>
+<ol>
+<li>点击工具栏 <strong>「列设置」</strong> 按钮，打开列设置抽屉</li>
+<li>可进行：显示/隐藏列、调整列顺序（上下箭头）、重置默认设置</li>
+<li>点击 <strong>「保存」</strong> 持久化设置</li>
+<li>拖动表头列边框可调整列宽，系统自动记忆</li>
+</ol>
+
+<div class="page-break"></div>
+
+<h2>3. 模具管理</h2>
+
+<h3>3.1 功能说明</h3>
+<p>模具管理用于维护模具主数据，包括模具基本信息、产品关联、模穴参数、寿命管理和审核流程。</p>
+
+<h3>3.2 列表字段</h3>
+
+<table>
+<tr><th>字段</th><th>说明</th></tr>
+<tr><td>模具编号</td><td>模具唯一编号</td></tr>
+<tr><td>模具名称</td><td>模具名称</td></tr>
+<tr><td>产品编号</td><td>关联产品编号</td></tr>
+<tr><td>制造BOM编号</td><td>关联制造BOM</td></tr>
+<tr><td>产品净重 / 单耗</td><td>产品重量与消耗</td></tr>
+<tr><td>成型件编号 / 规格 / 单耗</td><td>成型件信息</td></tr>
+<tr><td>成型件数量</td><td>每模成型件数量</td></tr>
+<tr><td>设计模穴数 / 模次 / 班产</td><td>设计参数</td></tr>
+<tr><td>实际模穴数 / 模次 / 班产</td><td>实际参数</td></tr>
+<tr><td>设备类型</td><td>适用设备类型</td></tr>
+<tr><td>产品名称 / 分类</td><td>关联产品与分类</td></tr>
+<tr><td>规格 / 产品图号 / 胶料编号</td><td>产品技术参数</td></tr>
+<tr><td>基本单位 / 班产定额</td><td>计量单位与定额</td></tr>
+<tr><td>标准合格率</td><td>标准合格率</td></tr>
+<tr><td>寿命进度</td><td>进度条：当前模次/最大模次</td></tr>
+<tr><td>寿命状态</td><td>正常 / 预警 / 到期</td></tr>
+<tr><td>下次保养</td><td>下次保养日期</td></tr>
+<tr><td>审核状态</td><td>未审核/已审核</td></tr>
+</table>
+
+<h3>3.3 主要操作</h3>
+<ul>
+<li><strong>新建</strong>：创建模具，支持产品搜索下拉、成型件搜索下拉、制造BOM搜索下拉</li>
+<li><strong>修改/审核/撤消</strong>：标准 CRUD 与审核流程</li>
+<li><strong>复制</strong>：快速复制模具创建新记录</li>
+<li><strong>模次更新</strong>：手动更新模具当前模次</li>
+<li><strong>寿命设置</strong>：设置模具最大模次和保养周期</li>
+<li><strong>报废</strong>：将模具标记为报废状态</li>
+<li><strong>导出/导入</strong>：Excel 批量操作</li>
+<li><strong>列设置</strong>：列个性化配置</li>
+</ul>
+
+<h3>3.4 模具寿命管理</h3>
+<p>模具寿命通过 <strong>模次（strokes）</strong> 进行管理：</p>
+<ol>
+<li>在 <strong>「寿命设置」</strong> 中设定最大模次</li>
+<li>系统根据当前模次/最大模次计算进度，以进度条展示</li>
+<li>寿命状态：<strong>正常</strong>（合理范围）、<strong>预警</strong>（接近最大值）、<strong>到期</strong>（已超限）</li>
+</ol>
+
+<div class="page-break"></div>
+
+<h2>4. 模具维修记录</h2>
+
+<h3>4.1 功能说明</h3>
+<p>记录模具的保养、维修、翻新等维护活动，支持维修费用登记和模次重置。</p>
+
+<h3>4.2 筛选功能</h3>
+<table>
+<tr><th>筛选项</th><th>说明</th></tr>
+<tr><td>搜索框</td><td>搜索维修内容或故障原因</td></tr>
+<tr><td>筛选模具</td><td>模糊搜索模具编号下拉选择</td></tr>
+<tr><td>维修类型</td><td>保养 / 维修 / 翻新</td></tr>
+<tr><td>日期范围</td><td>按维修日期区间筛选</td></tr>
+</table>
+
+<h3>4.3 列表字段</h3>
+<table>
+<tr><th>字段</th><th>说明</th></tr>
+<tr><td>维修日期</td><td>维修执行日期</td></tr>
+<tr><td>模具编号 / 名称</td><td>关联模具信息</td></tr>
+<tr><td>维修类型</td><td>保养（蓝）/ 维修（橙）/ 翻新（紫）</td></tr>
+<tr><td>维修内容</td><td>维修具体内容</td></tr>
+<tr><td>故障原因 / 更换部件</td><td>故障描述与更换清单</td></tr>
+<tr><td>费用</td><td>¥xxx.xx 格式</td></tr>
+<tr><td>执行人 / 创建人</td><td>人员信息</td></tr>
+<tr><td>维修时模次</td><td>维修时模具当前模次</td></tr>
+</table>
+
+<h3>4.4 新建维修记录</h3>
+<ol>
+<li>点击「新建」，搜索选择模具（自动显示当前模次）</li>
+<li>选择维修类型（保养/维修/翻新）和维修日期</li>
+<li>填写故障原因、维修内容、更换部件、费用、执行人等信息</li>
+<li>若选择「翻新」，可选择是否重置模次并设置重置值</li>
+<li>点击「确定」保存</li>
+</ol>
+
+<div class="page-break"></div>
+
+<h2>5. 设备停机记录</h2>
+
+<h3>5.1 功能说明</h3>
+<p>记录设备停机事件，包括故障、保养、计划停机、换模等类型，支持审核流程和停机时长统计。</p>
+
+<h3>5.2 筛选功能</h3>
+<table>
+<tr><th>筛选项</th><th>说明</th></tr>
+<tr><td>设备编号</td><td>下拉选择设备</td></tr>
+<tr><td>停机类型</td><td>故障 / 保养 / 计划停机 / 换模 / 其他</td></tr>
+<tr><td>开始日期 / 结束日期</td><td>日期范围</td></tr>
+<tr><td>搜索框</td><td>搜索故障原因 / 处理方式</td></tr>
+</table>
+
+<h3>5.3 列表字段</h3>
+<table>
+<tr><th>字段</th><th>说明</th></tr>
+<tr><td>设备编号 / 名称</td><td>设备信息</td></tr>
+<tr><td>停机类型</td><td>故障（红）/ 保养（橙）/ 其他（蓝）</td></tr>
+<tr><td>开始时间 / 结束时间</td><td>时间范围，未结束显示红色"进行中"</td></tr>
+<tr><td>持续(分钟)</td><td>停机时长</td></tr>
+<tr><td>故障原因 / 处理方式</td><td>描述信息</td></tr>
+<tr><td>更换部件 / 费用</td><td>维修成本</td></tr>
+<tr><td>执行人</td><td>处理人</td></tr>
+<tr><td>审核状态</td><td>未审核 / 已审核</td></tr>
+</table>
+
+<h3>5.4 新建停机记录</h3>
+<ol>
+<li>点击「新建」，选择设备编号和停机类型</li>
+<li>选择开始时间（必填）和结束时间（可选，未填表示仍在进行中）</li>
+<li>填写故障原因、处理方式等信息</li>
+<li>点击「确定」保存</li>
+</ol>
+
+<h3>5.5 行操作</h3>
+<table>
+<tr><th>操作</th><th>说明</th></tr>
+<tr><td>修改</td><td>编辑停机记录（设备编号不可改）</td></tr>
+<tr><td>审核</td><td>审核停机记录</td></tr>
+<tr><td>撤消</td><td>撤消已审核的记录</td></tr>
+<tr><td>删除</td><td>删除停机记录</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<h2>6. 设备保养计划</h2>
+
+<h3>6.1 功能说明</h3>
+<p>管理设备保养计划的全生命周期，从计划创建、执行、完成到取消，支持自动生成和审核流程。</p>
+
+<h3>6.2 筛选功能</h3>
+<table>
+<tr><th>筛选项</th><th>说明</th></tr>
+<tr><td>设备编号</td><td>下拉选择设备</td></tr>
+<tr><td>计划状态</td><td>待执行 / 执行中 / 已完成 / 已取消</td></tr>
+<tr><td>保养类型</td><td>定期保养 / 专项保养 / 临时保养</td></tr>
+<tr><td>开始日期 / 结束日期</td><td>日期范围</td></tr>
+</table>
+
+<h3>6.3 列表字段</h3>
+<table>
+<tr><th>字段</th><th>说明</th></tr>
+<tr><td>计划编号</td><td>保养计划编号</td></tr>
+<tr><td>设备编号 / 名称</td><td>设备信息</td></tr>
+<tr><td>保养类型</td><td>定期保养（蓝）/ 专项保养（紫）/ 临时保养（橙）</td></tr>
+<tr><td>计划日期 / 实际日期</td><td>计划与实际的保养日期</td></tr>
+<tr><td>保养项目</td><td>保养内容详情</td></tr>
+<tr><td>负责人</td><td>保养负责人</td></tr>
+<tr><td>计划状态</td><td>待执行（橙）/ 执行中（蓝）/ 已完成（绿）/ 已取消（灰）</td></tr>
+<tr><td>审核状态</td><td>未审核 / 已审核</td></tr>
+</table>
+
+<h3>6.4 工具栏按钮</h3>
+<table>
+<tr><th>按钮</th><th>功能</th></tr>
+<tr><td>自动生成</td><td>根据设备保养设置自动生成保养计划</td></tr>
+<tr><td>导出</td><td>导出保养计划 Excel</td></tr>
+<tr><td>新建</td><td>手动创建保养计划</td></tr>
+<tr><td>列设置</td><td>列个性化配置</td></tr>
+</table>
+
+<h3>6.5 自动生成保养计划</h3>
+<p>系统根据设备台帐中设置的保养周期和上次保养日期，自动计算并生成到期设备的保养计划。</p>
+
+<h3>6.6 计划执行流程</h3>
+<p>保养计划遵循以下状态流转：</p>
+<pre>
+待执行 → 执行中 → 已完成
+  ↓        ↓
+已取消   已取消
+</pre>
+
+<table>
+<tr><th>操作</th><th>说明</th><th>可用状态</th></tr>
+<tr><td>执行</td><td>开始执行保养</td><td>待执行</td></tr>
+<tr><td>完成</td><td>完成保养，需填写实际日期和完成备注</td><td>执行中</td></tr>
+<tr><td>取消</td><td>取消计划，需二次确认</td><td>待执行 / 执行中</td></tr>
+<tr><td>修改</td><td>编辑计划信息（更多菜单中）</td><td>任意</td></tr>
+<tr><td>审核 / 撤消</td><td>审核流程</td><td>按状态</td></tr>
+<tr><td>删除</td><td>删除计划（更多菜单中）</td><td>任意</td></tr>
+</table>
+
+<h3>6.7 完成保养</h3>
+<ol>
+<li>在执行中状态的记录上点击「完成」按钮</li>
+<li>填写实际日期（默认当天）和完成备注</li>
+<li>点击「确定」，状态变更为"已完成"</li>
+</ol>
+
+<div class="page-break"></div>
+
+<h2>7. OEE 分析</h2>
+
+<h3>7.1 功能说明</h3>
+<p>OEE（Overall Equipment Effectiveness，设备综合效率）是衡量设备生产效率的核心指标，由可用率、性能率和质量率三个维度综合计算：</p>
+<pre>
+OEE = 可用率 × 性能率 × 质量率
+
+可用率 = 实际运行时间 / 计划运行时间
+性能率 = (实际产量 × 理想节拍) / 实际运行时间
+质量率 = 合格产量 / 实际产量
+</pre>
+
+<h3>7.2 页面布局</h3>
+<p>OEE 分析页面由上至下分为四个区域：</p>
+<ol>
+<li><strong>筛选条件区</strong>：选择设备、日期范围</li>
+<li><strong>KPI 卡片区</strong>：综合OEE、可用率、性能率、质量率</li>
+<li><strong>设备OEE 排行区</strong>：各设备 OEE 汇总对比</li>
+<li><strong>OEE 记录明细区</strong>：每日/每班 OEE 详细记录</li>
+</ol>
+
+<h3>7.3 筛选条件</h3>
+<table>
+<tr><th>筛选项</th><th>说明</th></tr>
+<tr><td>设备编号</td><td>下拉选择设备，可模糊搜索</td></tr>
+<tr><td>开始日期</td><td>默认最近 30 天</td></tr>
+<tr><td>结束日期</td><td>默认今天</td></tr>
+</table>
+<p>点击 <strong>「查询」</strong> 刷新仪表盘和明细表，点击 <strong>「重置」</strong> 恢复默认条件。</p>
+
+<h3>7.4 KPI 卡片</h3>
+<table>
+<tr><th>指标</th><th>含义</th><th>颜色规则</th></tr>
+<tr><td>综合OEE</td><td>设备综合效率</td><td rowspan="4">≥85% 绿色<br>≥60% 橙色<br>&lt;60% 红色</td></tr>
+<tr><td>可用率(A)</td><td>设备可用时间比例</td></tr>
+<tr><td>性能率(P)</td><td>设备性能发挥程度</td></tr>
+<tr><td>质量率(Q)</td><td>产品质量合格比例</td></tr>
+</table>
+<p>每个指标卡片下方附带彩色进度条，直观展示指标水平。</p>
+
+<h3>7.5 设备OEE排行</h3>
+<p>以表格展示各设备的 OEE 汇总，包括记录数、平均可用率、性能率、质量率和综合 OEE。</p>
+
+<h3>7.6 OEE记录明细</h3>
+<table>
+<tr><th>字段</th><th>说明</th></tr>
+<tr><td>设备编号 / 名称 / 日期 / 班次</td><td>基本信息</td></tr>
+<tr><td>计划时间 / 停机时间</td><td>时间数据（分钟）</td></tr>
+<tr><td>可用率% / 性能率% / 质量率%</td><td>三项指标，按颜色规则着色</td></tr>
+<tr><td>OEE%</td><td>综合OEE，高亮显示</td></tr>
+<tr><td>数据来源</td><td>手动（绿标签）/ 自动（蓝标签）</td></tr>
+</table>
+
+<h3>7.7 自动计算 OEE</h3>
+<ol>
+<li>点击 <strong>「自动计算」</strong> 按钮</li>
+<li>系统根据生产报工数据和设备停机记录自动计算 OEE</li>
+<li>计算完成后仪表盘和明细表自动刷新</li>
+</ol>
+
+<h3>7.8 手动录入 OEE</h3>
+<ol>
+<li>点击 <strong>「手动录入」</strong> 按钮</li>
+<li>填写设备编号、日期、计划时间(分)、停机时间(分)、理想产量、实际产量、合格产量等</li>
+<li>系统自动计算可用率、性能率、质量率和 OEE</li>
+<li>点击 <strong>「确定」</strong> 保存</li>
+</ol>
+
+<h3>7.9 OEE 指标评价标准</h3>
+<table>
+<tr><th>指标等级</th><th>可用率</th><th>性能率</th><th>质量率</th><th>OEE</th></tr>
+<tr><td>世界级</td><td>≥90%</td><td>≥95%</td><td>≥99.9%</td><td>≥85%</td></tr>
+<tr><td>优秀</td><td>≥80%</td><td>≥85%</td><td>≥99%</td><td>≥65%</td></tr>
+<tr><td>可接受</td><td>≥70%</td><td>≥75%</td><td>≥98%</td><td>≥50%</td></tr>
+<tr><td>需改进</td><td>&lt;70%</td><td>&lt;75%</td><td>&lt;98%</td><td>&lt;50%</td></tr>
+</table>
+
+<div class="page-break"></div>
+
+<h2>8. 通用操作说明</h2>
+
+<h3>8.1 列个性化功能</h3>
+<p>设备管理下所有列表页面均支持列个性化功能：</p>
+<ol>
+<li><strong>打开列设置</strong>：点击工具栏「列设置」按钮</li>
+<li><strong>调整列顺序</strong>：使用 ↑ ↓ 箭头调整列显示顺序</li>
+<li><strong>显示/隐藏列</strong>：勾选或取消控制列可见性</li>
+<li><strong>调整列宽</strong>：拖动表头列边框调整宽度，系统自动保存</li>
+<li><strong>保存设置</strong>：点击「保存」持久化当前设置</li>
+<li><strong>重置</strong>：恢复默认列配置</li>
+</ol>
+<blockquote><p>列个性化设置按用户和页面独立保存，不同用户互不影响。</p></blockquote>
+
+<h3>8.2 审核保护机制</h3>
+<p>设备台帐管理和模具管理页面支持审核保护：</p>
+<ul>
+<li><strong>已审核记录</strong>：不可编辑、不可删除</li>
+<li><strong>如需修改</strong>：先撤消审核，再进行编辑或删除操作</li>
+<li><strong>撤消确认</strong>：撤消审核时需二次确认</li>
+</ul>
+
+<h3>8.3 Excel 导入/导出</h3>
+<table>
+<tr><th>页面</th><th>导出</th><th>导入</th></tr>
+<tr><td>设备台帐管理</td><td>✓</td><td>✓</td></tr>
+<tr><td>模具管理</td><td>✓</td><td>✓</td></tr>
+<tr><td>模具维修记录</td><td>✓</td><td>✓</td></tr>
+<tr><td>设备停机记录</td><td>✓</td><td>—</td></tr>
+<tr><td>设备保养计划</td><td>✓</td><td>—</td></tr>
+</table>
+
+<p><strong>导入操作：</strong>点击「导入」→ 选择 .xlsx/.xls 文件 → 系统自动解析并导入。</p>
+<p><strong>导出操作：</strong>设置筛选条件 → 点击「导出」→ 系统生成 Excel 文件并下载。</p>
+
+<div class="page-break"></div>
+
+<h2>9. 业务流程</h2>
+
+<h3>9.1 设备全生命周期管理流程</h3>
+<pre>
+设备建档 → 审核 → 状态监控（运行/闲置/故障/保养/停用）
+                ↓
+        保养设置（周期/日运行时长）
+                ↓
+    自动/手动生成保养计划 → 执行 → 完成
+                ↓
+        停机记录（故障/保养/计划停机）
+                ↓
+          OEE 自动计算/手动录入
+                ↓
+        OEE 分析（可用率/性能率/质量率）
+</pre>
+
+<h3>9.2 模具全生命周期管理流程</h3>
+<pre>
+模具建档 → 审核 → 生产使用（模次累计）
+                ↓
+        寿命设置（最大模次/保养周期）
+                ↓
+    寿命监控（正常 → 预警 → 到期）
+                ↓
+    维修记录（保养/维修/翻新）
+                ↓
+        翻新可重置模次
+                ↓
+          报废（寿命终止）
+</pre>
+
+<h2>10. 常见问题</h2>
+
+<table>
+<tr><th width="5%">序号</th><th width="35%">问题</th><th width="60%">解答</th></tr>
+<tr><td>Q1</td><td>已审核的设备如何修改？</td><td>需先在操作列点击「更多 → 撤消」撤消审核，然后再点击「编辑」进行修改。</td></tr>
+<tr><td>Q2</td><td>设备下次保养日期显示红色是什么意思？</td><td>表示该设备的下次保养日期已过，需要尽快安排保养。可通过「设备保养计划」页面自动生成保养计划。</td></tr>
+<tr><td>Q3</td><td>停机记录的结束时间为空显示"进行中"是什么意思？</td><td>表示该设备仍在停机状态，尚未恢复运行。当设备恢复后，编辑该记录填写结束时间即可。</td></tr>
+<tr><td>Q4</td><td>OEE 自动计算和手动录入有什么区别？</td><td>自动计算基于生产报工数据和停机记录自动生成 OEE 数据，数据来源标记为"自动"；手动录入适用于设备无法自动采集数据的场景，标记为"手动"。</td></tr>
+<tr><td>Q5</td><td>模具翻新时重置模次有什么作用？</td><td>模具翻新后性能恢复，重置模次将当前模次归零或设为指定值，重新开始寿命计算。不勾选重置则模次继续累计。</td></tr>
+<tr><td>Q6</td><td>设备保养计划的自动生成依据是什么？</td><td>系统根据设备台帐中设置的「保养周期(天)」和「上次保养日期」，自动计算到期需要保养的设备并生成计划。</td></tr>
+</table>
+
+</body>
+</html>

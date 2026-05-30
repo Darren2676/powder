@@ -157,7 +157,7 @@ const relatedInvoiceColumns = [
   { title: '发票号码', dataIndex: 'invoice_no', width: 120 },
   { title: '开票日期', dataIndex: 'invoice_date', width: 110 },
   { title: '开票数量', dataIndex: 'invoice_quantity', width: 90 },
-  { title: '单价', dataIndex: 'unit_price', width: 90 },
+  { title: '含税单价', dataIndex: 'unit_price', width: 90 },
   { title: '不含税金额', dataIndex: 'amount_without_tax', width: 110 },
   { title: '审批状态', dataIndex: 'approval_status', width: 90 }
 ]

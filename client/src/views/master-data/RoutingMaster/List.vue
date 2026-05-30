@@ -174,6 +174,10 @@ const headerDetailLoading = ref(false)
 // ==================== Modal Drag ====================
 const { modalStyle: detailModalStyle, onDragStart: detailOnDragStart, resetDrag: detailResetDrag } = useModalDrag()
 const { modalStyle: editModalStyle, onDragStart: editOnDragStart, resetDrag: editResetDrag } = useModalDrag()
+const { modalStyle: createModalStyle, onDragStart: createOnDragStart, resetDrag: createResetDrag } = useModalDrag()
+const { modalStyle: detailCreateModalStyle, onDragStart: detailCreateOnDragStart, resetDrag: detailCreateResetDrag } = useModalDrag()
+const { modalStyle: detailEditModalStyle, onDragStart: detailEditOnDragStart, resetDrag: detailEditResetDrag } = useModalDrag()
+const { modalStyle: attachmentModalStyle, onDragStart: attachmentOnDragStart, resetDrag: attachmentResetDrag } = useModalDrag()
 
 // ==================== 明细只读状态（跟随主表审批状态） ====================
 const selectedHeaderRecord = computed(() => {
@@ -224,6 +228,7 @@ const emptyMaterial = (): MaterialItem => ({ material_number: '', material_name:
 const openAttachmentPreview = (json: string) => {
   try { attachmentPreviewList.value = JSON.parse(json || '[]') }
   catch { attachmentPreviewList.value = [] }
+  attachmentResetDrag()
   attachmentPreviewVisible.value = true
 }
 
@@ -618,6 +623,10 @@ const handleHeaderCreateOk = async () => {
     headerCreateSubmitting.value = false
   }
 }
+const openHeaderCreate = () => {
+  createResetDrag()
+  headerCreateVisible.value = true
+}
 
 // ==================== Header Row Click ====================
 const handleHeaderRowClick = (record: RoutingHeader) => {
@@ -648,6 +657,8 @@ const handleDetailEdit = (record: RoutingDetail) => {
     ? record.materials.map(m => ({ ...m }))
     : [emptyMaterial()]
   editFileList.value = parseAttachmentInfo(record.attachment_info)
+  detailEditForm.attachment_info = stringifyAttachmentInfo(editFileList.value)
+  detailEditResetDrag()
   detailEditVisible.value = true
 }
 const handleDetailDelete = (record: RoutingDetail) => {
@@ -684,6 +695,7 @@ const openDetailCreate = () => {
   detailCreateForm.operator = authStore.user?.username || ''
   createMaterials.value = [emptyMaterial()]
   createFileList.value = []
+  detailCreateResetDrag()
   detailCreateVisible.value = true
 }
 
@@ -750,7 +762,7 @@ onMounted(() => {
                 </template>
               </a-dropdown>
               <a-button @click="handleImportClick"><template #icon><UploadOutlined /></template>导入</a-button>
-              <a-button type="primary" @click="headerCreateVisible = true"><template #icon><PlusOutlined /></template>新建</a-button>
+              <a-button type="primary" @click="openHeaderCreate"><template #icon><PlusOutlined /></template>新建</a-button>
               <a-button @click="openColumnSetting"><template #icon><SettingOutlined /></template>列设置</a-button>
               <input ref="fileInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleFileChange" />
             </a-space>
@@ -905,7 +917,10 @@ onMounted(() => {
     </a-card>
 
     <!-- ========== Header Create Modal ========== -->
-    <a-modal v-model:open="headerCreateVisible" title="新建工艺路线" @ok="handleHeaderCreateOk" okText="确认" cancelText="取消" width="700px">
+    <a-modal v-model:open="headerCreateVisible" @ok="handleHeaderCreateOk" okText="确认" cancelText="取消" width="700px" :style="createModalStyle">
+      <template #title>
+        <div class="drag-handle" @mousedown="createOnDragStart">新建工艺路线</div>
+      </template>
       <a-form :label-col="{ span: 8 }" :wrapper-col="{ span: 14 }">
         <a-row :gutter="16">
           <a-col :span="12"><a-form-item label="工艺路线编号" required><a-input v-model:value="headerCreateForm.process_route_number" /></a-form-item></a-col>
@@ -1004,7 +1019,10 @@ onMounted(() => {
     </a-modal>
 
     <!-- ========== Detail Create Modal ========== -->
-    <a-modal v-model:open="detailCreateVisible" title="新增工序" @ok="handleDetailCreateOk" okText="确认" cancelText="取消" width="1000px" :ok-button-props="{ disabled: isCreateUploading }">
+    <a-modal v-model:open="detailCreateVisible" @ok="handleDetailCreateOk" okText="确认" cancelText="取消" width="1000px" :ok-button-props="{ disabled: isCreateUploading }" :style="detailCreateModalStyle">
+      <template #title>
+        <div class="drag-handle" @mousedown="detailCreateOnDragStart">新增工序</div>
+      </template>
       <a-form :label-col="{ span: 8 }" :wrapper-col="{ span: 14 }">
         <a-row :gutter="16">
           <a-col :span="12"><a-form-item label="工序序号"><a-input-number v-model:value="detailCreateForm.step_number" :min="0" :step="10" style="width: 100%" placeholder="留空自动生成" /></a-form-item></a-col>
@@ -1185,7 +1203,10 @@ onMounted(() => {
     </a-modal>
 
     <!-- ========== Detail Edit Modal ========== -->
-    <a-modal v-model:open="detailEditVisible" title="编辑工序" @ok="handleDetailEditOk" okText="确认" cancelText="取消" width="1000px" :ok-button-props="{ disabled: isEditUploading }">
+    <a-modal v-model:open="detailEditVisible" @ok="handleDetailEditOk" okText="确认" cancelText="取消" width="1000px" :ok-button-props="{ disabled: isEditUploading }" :style="detailEditModalStyle">
+      <template #title>
+        <div class="drag-handle" @mousedown="detailEditOnDragStart">编辑工序</div>
+      </template>
       <a-form :label-col="{ span: 8 }" :wrapper-col="{ span: 14 }">
         <a-row :gutter="16">
           <a-col :span="12"><a-form-item label="工序序号"><a-input-number v-model:value="detailEditForm.step_number" :min="0" :step="10" style="width: 100%" /></a-form-item></a-col>
@@ -1457,7 +1478,10 @@ onMounted(() => {
     <ApprovalLogModal v-model:open="approvalLogVisible" module="routing_header" :record-id="approvalLogRecordId" />
 
     <!-- ========== Attachment Preview Modal ========== -->
-    <a-modal v-model:open="attachmentPreviewVisible" title="附件预览" :footer="null" width="600px">
+    <a-modal v-model:open="attachmentPreviewVisible" :footer="null" width="600px" :style="attachmentModalStyle">
+      <template #title>
+        <div class="drag-handle" @mousedown="attachmentOnDragStart">附件预览</div>
+      </template>
       <a-empty v-if="attachmentPreviewList.length === 0" description="暂无附件" />
       <a-list v-else :data-source="attachmentPreviewList" bordered>
         <template #renderItem="{ item }">

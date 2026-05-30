@@ -553,6 +553,42 @@ export async function quickReportAPI(data: {
   return body?.data;
 }
 
+/** 完成生产单报工（最后一道工序+标记所有工序完成+自动入库） */
+export async function completeOrderReportAPI(data: {
+  production_order_number: string;
+  qualified_quantity: number;
+  unqualified_quantity?: number;
+  [key: string]: any;
+}) {
+  const ctx = await getApiContext();
+  const res = await ctx.post(`${API_BASE}/work-reports/complete-order`, { data, timeout: 60000 });
+  if (!res.ok()) {
+    throw new Error(`完成生产单报工失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
+/** 半成品生产入库 */
+export async function semiProductionInboundAPI(data: {
+  warehouse_number: string;
+  warehouse_name: string;
+  items: Array<{
+    production_order_number?: string;
+    item_number: string;
+    inbound_qty: number;
+  }>;
+  remark?: string;
+}) {
+  const ctx = await getApiContext();
+  const res = await ctx.post(`${API_BASE}/material-warehouse/production-inbound`, { data });
+  if (!res.ok()) {
+    throw new Error(`半成品生产入库失败 ${res.status()}: ${await res.text()}`);
+  }
+  const body = await res.json();
+  return body?.data;
+}
+
 /** 查询待入库列表 */
 export async function getPendingInboundAPI(search?: string) {
   const ctx = await getApiContext();

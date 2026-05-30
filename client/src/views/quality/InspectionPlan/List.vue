@@ -11,6 +11,7 @@
           <a-button @click="handleReset"><ReloadOutlined />重置</a-button>
           <a-button @click="handleExport"><DownloadOutlined />导出</a-button>
           <a-button @click="handleImportClick"><UploadOutlined />导入</a-button>
+          <a-button @click="openColumnSetting"><SettingOutlined />列设置</a-button>
           <a-button type="primary" @click="openCreateModal"><PlusOutlined />新建</a-button>
           <input ref="fileInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleFileChange" />
         </a-space>
@@ -22,9 +23,8 @@
         :loading="loading"
         row-key="plan_name"
         :pagination="pagination"
-        :scroll="{ x: 1800, y: 'calc(100vh - 280px)' }"
-        @change="handleTableChange"
-        size="small"
+        :scroll="{ x: 'max-content', y: 'calc(100vh - 280px)' }"
+        @change="handleTableChange" @resizeColumn="handleResizeColumn" size="small"
       >
         <template #bodyCell="{ column, record, index }">
           <template v-if="column.key === 'rowIndex'">
@@ -192,15 +192,37 @@
             </a-form-item>
           </a-col>
         </a-row>
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="启用质量特性">
+              <a-select v-model:value="form.enable_quality_chars">
+                <a-select-option value="Y">启用</a-select-option>
+                <a-select-option value="N">不启用</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+        </a-row>
       </a-form>
     </a-modal>
+
+    <!-- Column Setting Drawer -->
+    <ColumnSettingDrawer
+      :open="columnSettingVisible"
+      :settingList="columnSettingList"
+      :saving="columnSettingSaving"
+      @update:open="columnSettingVisible = $event"
+      @moveUp="moveColumnUp"
+      @moveDown="moveColumnDown"
+      @save="saveColumnSetting"
+      @reset="resetColumnSetting"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, watch, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { ReloadOutlined, DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, DownOutlined } from '@ant-design/icons-vue'
+import { ReloadOutlined, DownloadOutlined, UploadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, DownOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { APPROVAL_STATUS } from '@/constants/statuses'
 import {
   getInspectionPlans, createInspectionPlan, updateInspectionPlan,
@@ -209,6 +231,8 @@ import {
 } from '@/api/quality/inspectionPlan'
 import { useTableList } from '@/composables/useTableList'
 import { generateExportFilename } from '@/utils/exportFilename'
+import { useColumnPreference } from '@/composables/useColumnPreference'
+import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 
 
 const filterType = ref<string | undefined>(undefined)
@@ -240,7 +264,8 @@ const form = reactive({
   first_inspect_time: '',
   first_inspect_quantity: 0,
   is_last_inspect: '否',
-  last_inspect_quantity: 0
+  last_inspect_quantity: 0,
+  enable_quality_chars: 'N'
 })
 
 const emptyForm = () => ({
@@ -260,7 +285,8 @@ const emptyForm = () => ({
   first_inspect_time: '',
   first_inspect_quantity: 0,
   is_last_inspect: '否',
-  last_inspect_quantity: 0
+  last_inspect_quantity: 0,
+  enable_quality_chars: 'N'
 })
 
 const openCreateModal = () => {
@@ -269,27 +295,35 @@ const openCreateModal = () => {
   modalVisible.value = true
 }
 
-const columns = [
-  { title: '行号', key: 'rowIndex', width: 50 },
-  { title: '方案名称', dataIndex: 'plan_name', key: 'plan_name', width: 140 },
-  { title: '检验类型', dataIndex: 'inspect_type', key: 'inspect_type', width: 80 },
-  { title: '是否全检', dataIndex: 'is_full_inspect', key: 'is_full_inspect', width: 80 },
-  { title: '是否抽检', dataIndex: 'is_sampling', key: 'is_sampling', width: 80 },
-  { title: '抽检触发', dataIndex: 'sampling_trigger', key: 'sampling_trigger', width: 85 },
-  { title: '抽检类型', dataIndex: 'sampling_type', key: 'sampling_type', width: 85 },
-  { title: '抽检比例', dataIndex: 'sampling_ratio', key: 'sampling_ratio', width: 80, align: 'right' as const },
-  { title: '小数处理', dataIndex: 'decimal_handling', key: 'decimal_handling', width: 90 },
-  { title: '抽检数量', dataIndex: 'sampling_quantity', key: 'sampling_quantity', width: 80, align: 'right' as const },
-  { title: '范围类型', dataIndex: 'sampling_range_type', key: 'sampling_range_type', width: 85 },
-  { title: '数量范围', dataIndex: 'sampling_quantity_range', key: 'sampling_quantity_range', width: 80, align: 'right' as const },
-  { title: '批量范围', dataIndex: 'sampling_batch_range', key: 'sampling_batch_range', width: 80, align: 'right' as const },
-  { title: '是否首检', dataIndex: 'is_first_inspect', key: 'is_first_inspect', width: 80 },
-  { title: '首检数量', dataIndex: 'first_inspect_quantity', key: 'first_inspect_quantity', width: 80, align: 'right' as const },
-  { title: '是否末检', dataIndex: 'is_last_inspect', key: 'is_last_inspect', width: 80 },
-  { title: '末检数量', dataIndex: 'last_inspect_quantity', key: 'last_inspect_quantity', width: 80, align: 'right' as const },
-  { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 100 },
-  { title: '操作', key: 'action', width: 140, fixed: 'right' as const }
+const defaultDataColumns: any[] = [
+  { title: '方案名称', dataIndex: 'plan_name', key: 'plan_name', width: 140, resizable: true },
+  { title: '检验类型', dataIndex: 'inspect_type', key: 'inspect_type', width: 80, resizable: true },
+  { title: '是否全检', dataIndex: 'is_full_inspect', key: 'is_full_inspect', width: 80, resizable: true },
+  { title: '是否抽检', dataIndex: 'is_sampling', key: 'is_sampling', width: 80, resizable: true },
+  { title: '抽检触发', dataIndex: 'sampling_trigger', key: 'sampling_trigger', width: 85, resizable: true },
+  { title: '抽检类型', dataIndex: 'sampling_type', key: 'sampling_type', width: 85, resizable: true },
+  { title: '抽检比例', dataIndex: 'sampling_ratio', key: 'sampling_ratio', width: 80, align: 'right' as const, resizable: true },
+  { title: '小数处理', dataIndex: 'decimal_handling', key: 'decimal_handling', width: 90, resizable: true },
+  { title: '抽检数量', dataIndex: 'sampling_quantity', key: 'sampling_quantity', width: 80, align: 'right' as const, resizable: true },
+  { title: '范围类型', dataIndex: 'sampling_range_type', key: 'sampling_range_type', width: 85, resizable: true },
+  { title: '数量范围', dataIndex: 'sampling_quantity_range', key: 'sampling_quantity_range', width: 80, align: 'right' as const, resizable: true },
+  { title: '批量范围', dataIndex: 'sampling_batch_range', key: 'sampling_batch_range', width: 80, align: 'right' as const, resizable: true },
+  { title: '是否首检', dataIndex: 'is_first_inspect', key: 'is_first_inspect', width: 80, resizable: true },
+  { title: '首检数量', dataIndex: 'first_inspect_quantity', key: 'first_inspect_quantity', width: 80, align: 'right' as const, resizable: true },
+  { title: '是否末检', dataIndex: 'is_last_inspect', key: 'is_last_inspect', width: 80, resizable: true },
+  { title: '末检数量', dataIndex: 'last_inspect_quantity', key: 'last_inspect_quantity', width: 80, align: 'right' as const, resizable: true },
+  { title: '启用质量特性', dataIndex: 'enable_quality_chars', key: 'enable_quality_chars', width: 110, resizable: true },
+  { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 100, resizable: true }
 ]
+
+const {
+  columns, columnSettingVisible, columnSettingList, columnSettingSaving,
+  openColumnSetting, moveColumnUp, moveColumnDown, saveColumnSetting, resetColumnSetting,
+  loadColumnPreference, handleResizeColumn
+} = useColumnPreference('inspection_plan_list', defaultDataColumns, {
+  fixedLeft: [{ title: '行号', key: 'rowIndex', width: 50, fixed: 'left' as const }],
+  fixedRight: [{ title: '操作', key: 'action', width: 140, fixed: 'right' as const }]
+})
 
 const handleEdit = (record: any) => {
   if ((record.approval_status || '').trim() === APPROVAL_STATUS.APPROVED) {
@@ -314,7 +348,8 @@ const handleEdit = (record: any) => {
     first_inspect_time: record.first_inspect_time || '',
     first_inspect_quantity: record.first_inspect_quantity != null ? Number(record.first_inspect_quantity) : 0,
     is_last_inspect: record.is_last_inspect || '否',
-    last_inspect_quantity: record.last_inspect_quantity != null ? Number(record.last_inspect_quantity) : 0
+    last_inspect_quantity: record.last_inspect_quantity != null ? Number(record.last_inspect_quantity) : 0,
+    enable_quality_chars: record.enable_quality_chars || 'N'
   })
   modalVisible.value = true
 }
@@ -421,7 +456,7 @@ watch(() => form.is_sampling, (val) => {
   }
 })
 
-onMounted(() => { fetchData() })
+onMounted(() => { loadColumnPreference(); fetchData() })
 </script>
 
 <style scoped>

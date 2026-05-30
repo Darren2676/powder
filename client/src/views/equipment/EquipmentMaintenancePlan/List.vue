@@ -4,7 +4,7 @@ import { message, Modal } from 'ant-design-vue'
 import {
   ReloadOutlined, PlusOutlined, DeleteOutlined, ExclamationCircleOutlined,
   DownOutlined, DownloadOutlined, CheckOutlined, UndoOutlined,
-  ThunderboltOutlined, PlayCircleOutlined, CloseCircleOutlined
+  ThunderboltOutlined, PlayCircleOutlined, CloseCircleOutlined, SettingOutlined
 } from '@ant-design/icons-vue'
 import {
   getEquipmentMaintenancePlans, createEquipmentMaintenancePlan, updateEquipmentMaintenancePlan,
@@ -15,6 +15,8 @@ import {
 import { getEquipments } from '@/api/equipment/equipment'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
+import { useColumnPreference } from '@/composables/useColumnPreference'
+import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { APPROVAL_STATUS } from '@/constants/statuses'
 import { generateExportFilename } from '@/utils/exportFilename'
 
@@ -100,19 +102,27 @@ const completeId = ref(0)
 const completeForm = reactive({ actual_date: '', completion_remark: '' })
 const completeActualDate = ref<any>(null)
 
-const columns = [
-  { title: '计划编号', dataIndex: 'plan_number', key: 'plan_number', width: 140 },
-  { title: '设备编号', dataIndex: 'equipment_number', key: 'equipment_number', width: 120 },
-  { title: '设备名称', dataIndex: 'equipment_name', key: 'equipment_name', width: 140 },
-  { title: '保养类型', dataIndex: 'maintenance_type', key: 'maintenance_type', width: 100 },
-  { title: '计划日期', dataIndex: 'planned_date', key: 'planned_date', width: 110 },
-  { title: '实际日期', dataIndex: 'actual_date', key: 'actual_date', width: 110 },
-  { title: '保养项目', dataIndex: 'maintenance_items', key: 'maintenance_items', width: 180, ellipsis: true },
-  { title: '负责人', dataIndex: 'responsible_person', key: 'responsible_person', width: 80 },
-  { title: '计划状态', dataIndex: 'plan_status', key: 'plan_status', width: 90 },
-  { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 90 },
-  { title: '操作', key: 'action', width: 200, fixed: 'right' as const }
+const defaultDataColumns: any[] = [
+  { title: '计划编号', dataIndex: 'plan_number', key: 'plan_number', width: 140, sorter: (a: any, b: any) => (a.plan_number || '').localeCompare(b.plan_number || ''), resizable: true },
+  { title: '设备编号', dataIndex: 'equipment_number', key: 'equipment_number', width: 120, resizable: true },
+  { title: '设备名称', dataIndex: 'equipment_name', key: 'equipment_name', width: 140, resizable: true },
+  { title: '保养类型', dataIndex: 'maintenance_type', key: 'maintenance_type', width: 100, resizable: true },
+  { title: '计划日期', dataIndex: 'planned_date', key: 'planned_date', width: 110, resizable: true },
+  { title: '实际日期', dataIndex: 'actual_date', key: 'actual_date', width: 110, resizable: true },
+  { title: '保养项目', dataIndex: 'maintenance_items', key: 'maintenance_items', width: 180, ellipsis: true, resizable: true },
+  { title: '负责人', dataIndex: 'responsible_person', key: 'responsible_person', width: 80, resizable: true },
+  { title: '计划状态', dataIndex: 'plan_status', key: 'plan_status', width: 90, resizable: true },
+  { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 90, resizable: true }
 ]
+
+const {
+  columns, columnSettingVisible, columnSettingList, columnSettingSaving,
+  openColumnSetting, moveColumnUp, moveColumnDown, saveColumnSetting, resetColumnSetting,
+  loadColumnPreference, handleResizeColumn
+} = useColumnPreference('equipment_maintenance_plan_list', defaultDataColumns, {
+  fixedLeft: [{ title: '行号', key: 'rowIndex', width: 60, fixed: 'left' as const }],
+  fixedRight: [{ title: '操作', key: 'action', width: 200, fixed: 'right' as const }]
+})
 
 const formatDate = (date: string | null) => {
   if (!date) return '-'
@@ -297,6 +307,7 @@ const handleReset = () => {
 }
 
 onMounted(() => {
+  loadColumnPreference()
   fetchEquipments()
   fetchData()
 })
@@ -318,6 +329,10 @@ onMounted(() => {
           <a-button type="primary" @click="handleCreate">
             <template #icon><PlusOutlined /></template>
             新建
+          </a-button>
+          <a-button @click="openColumnSetting">
+            <template #icon><SettingOutlined /></template>
+            列设置
           </a-button>
         </a-space>
       </template>
@@ -351,13 +366,17 @@ onMounted(() => {
         :data-source="dataSource"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 1600 }"
+        :scroll="{ x: 'max-content' }"
         row-key="id"
         size="middle"
         bordered
         @change="handleTableChange"
+        @resizeColumn="handleResizeColumn"
       >
-        <template #bodyCell="{ column, record }">
+        <template #bodyCell="{ column, record, index }">
+          <template v-if="column.key === 'rowIndex'">
+            {{ (pagination.current - 1) * pagination.pageSize + index + 1 }}
+          </template>
           <template v-if="column.key === 'planned_date'">
             {{ formatDate(record.planned_date) }}
           </template>
@@ -414,6 +433,18 @@ onMounted(() => {
         </template>
       </a-table>
     </a-card>
+
+    <!-- 列设置抽屉 -->
+    <ColumnSettingDrawer
+      :open="columnSettingVisible"
+      :settingList="columnSettingList"
+      :saving="columnSettingSaving"
+      @update:open="columnSettingVisible = $event"
+      @moveUp="moveColumnUp"
+      @moveDown="moveColumnDown"
+      @save="saveColumnSetting"
+      @reset="resetColumnSetting"
+    />
 
     <!-- 新建/编辑弹窗 -->
     <a-modal

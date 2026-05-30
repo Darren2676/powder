@@ -500,6 +500,138 @@ export const executeReturn = async (req: Request, res: Response, next: NextFunct
   } catch (err) { next(err); }
 };
 
+// ==================== 打印 ====================
+
+export const printPurchaseReturn = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+
+    const [headerRows]: any = await sequelize.query(
+      `SELECT * FROM purchase_return WHERE return_number = :id`, { replacements: { id } }
+    );
+    if (!headerRows.length) { res.status(404).json({ success: false, message: '退货单不存在' }); return; }
+    const header = headerRows[0];
+
+    const [details]: any = await sequelize.query(
+      `SELECT * FROM purchase_return_detail WHERE return_number = :id ORDER BY line_number`,
+      { replacements: { id } }
+    );
+
+    const totalAmount = parseFloat(header.total_return_amount || 0).toFixed(2);
+    const totalQuantity = parseFloat(header.total_return_quantity || 0).toFixed(2);
+    const creationDate = header.creation_date || '';
+
+    const detailRows = details.map((d: any, i: number) => `
+      <tr>
+        <td style="text-align:center">${i + 1}</td>
+        <td>${d.item_number || ''}</td>
+        <td>${d.item_name || ''}</td>
+        <td>${d.specifications || ''}</td>
+        <td style="text-align:center">${d.basic_unit || ''}</td>
+        <td style="text-align:right">${parseFloat(d.received_quantity || 0).toFixed(2)}</td>
+        <td style="text-align:right">${parseFloat(d.return_quantity || 0).toFixed(2)}</td>
+        <td style="text-align:right">${parseFloat(d.unit_price || 0).toFixed(2)}</td>
+        <td style="text-align:right">${parseFloat(d.return_amount || 0).toFixed(2)}</td>
+      </tr>
+    `).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>采购退货单 ${header.return_number}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "SimSun", "宋体", serif; font-size: 14px; color: #000; padding: 40px 30px; }
+  .header { text-align: center; margin-bottom: 20px; }
+  .header h1 { font-size: 22px; margin-bottom: 4px; }
+  .header .sub { font-size: 16px; }
+  .info-section { display: flex; justify-content: space-between; margin-bottom: 16px; }
+  .info-block { width: 48%; }
+  .info-row { display: flex; margin-bottom: 4px; }
+  .info-label { width: 80px; flex-shrink: 0; }
+  .info-value { border-bottom: 1px solid #000; flex: 1; min-width: 100px; padding: 0 4px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+  th, td { border: 1px solid #000; padding: 6px 8px; font-size: 13px; }
+  th { background: #f0f0f0; text-align: center; }
+  .total-row td { font-weight: bold; font-size: 14px; }
+  .footer { display: flex; justify-content: space-between; margin-top: 30px; }
+  .footer div { width: 30%; text-align: center; }
+  .footer .label { margin-bottom: 30px; }
+  .remark { margin-top: 16px; }
+  .remark .info-label { width: 60px; }
+  @media print {
+    body { padding: 10px 15px; }
+    @page { size: A4 landscape; margin: 12mm; }
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <h1>采 购 退 货 单</h1>
+    <div class="sub">编号: ${header.return_number}</div>
+  </div>
+
+  <div class="info-section">
+    <div class="info-block">
+      <div class="info-row"><span class="info-label">供应商:</span><span class="info-value">${header.supplier_name || ''}</span></div>
+      <div class="info-row"><span class="info-label">采购订单号:</span><span class="info-value">${header.purchase_order_number || ''}</span></div>
+      <div class="info-row"><span class="info-label">退货仓库:</span><span class="info-value">${header.warehouse_name || ''}</span></div>
+    </div>
+    <div class="info-block">
+      <div class="info-row"><span class="info-label">退货类型:</span><span class="info-value">${header.return_type || ''}</span></div>
+      <div class="info-row"><span class="info-label">退货状态:</span><span class="info-value">${header.return_status || ''}</span></div>
+      <div class="info-row"><span class="info-label">创建日期:</span><span class="info-value">${creationDate}</span></div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:40px">序号</th>
+        <th style="width:110px">物料编码</th>
+        <th>物料名称</th>
+        <th>规格</th>
+        <th style="width:50px">单位</th>
+        <th style="width:85px">已入库数量</th>
+        <th style="width:85px">退货数量</th>
+        <th style="width:75px">单价</th>
+        <th style="width:85px">退货金额</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${detailRows}
+    </tbody>
+    <tfoot>
+      <tr class="total-row">
+        <td colspan="6" style="text-align:right">合计:</td>
+        <td style="text-align:right">${totalQuantity}</td>
+        <td></td>
+        <td style="text-align:right">${totalAmount}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="remark">
+    <div class="info-row"><span class="info-label">退货原因:</span><span class="info-value">${header.return_reason || ''}</span></div>
+    <div class="info-row" style="margin-top:4px"><span class="info-label">备注:</span><span class="info-value">${header.remark || ''}</span></div>
+  </div>
+
+  <div class="footer">
+    <div><div class="label">制单人:</div>${header.creation_man || ''}</div>
+    <div><div class="label">审批人:</div></div>
+    <div><div class="label">日期:</div>${new Date().toLocaleDateString('zh-CN')}</div>
+  </div>
+
+  <script>window.onload = function() { window.print(); }</script>
+</body>
+</html>`;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (err) { next(err); }
+};
+
 // ==================== 换货入库 ====================
 export const exchangeStockIn = async (req: Request, res: Response, next: NextFunction) => {
   try {

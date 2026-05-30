@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { getKanbanOrders, getKanbanOrderFlow } from '@/api/production/processKanban'
+import { getMateriaProperties } from '@/api/master-data/materiaProperty'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import dayjs from 'dayjs'
@@ -17,6 +18,23 @@ const orders = ref<any[]>([])
 const pagination = ref({ total: 0, page: 1, limit: 20, totalPages: 0 })
 const search = ref('')
 const planStatus = ref('')
+const itemProperties = ref('产品')
+const materiaPropertyOptions = ref<{value: string; label: string}[]>([])
+
+const fetchMateriaProperties = async () => {
+  try {
+    const res: any = await getMateriaProperties({ page: 1, limit: 200 })
+    if (res.success && res.data?.items) {
+      materiaPropertyOptions.value = [
+        { value: '', label: '全部' },
+        ...res.data.items.map((item: any) => ({
+          value: item.materia_properties_name,
+          label: item.materia_properties_name
+        }))
+      ]
+    }
+  } catch (e) { /* ignore */ }
+}
 
 const fetchOrders = async (page = 1) => {
   loading.value = true
@@ -24,7 +42,8 @@ const fetchOrders = async (page = 1) => {
     const res: any = await getKanbanOrders({
       page, limit: pagination.value.limit,
       search: search.value || undefined,
-      plan_status: planStatus.value || undefined
+      plan_status: planStatus.value || undefined,
+      item_properties: itemProperties.value || undefined
     })
     if (res.success) {
       orders.value = res.data.items
@@ -34,11 +53,12 @@ const fetchOrders = async (page = 1) => {
 }
 
 const handleSearch = () => fetchOrders(1)
-const handleReset = () => { search.value = ''; planStatus.value = ''; fetchOrders(1) }
+const handleReset = () => { search.value = ''; planStatus.value = ''; itemProperties.value = '产品'; fetchOrders(1) }
 const handlePageChange = (page: number) => fetchOrders(page)
 
 const defaultDataColumns: any[] = [
   { title: '产品编码', dataIndex: 'item_number', key: 'item_number', width: 120, resizable: true },
+  { title: '物料属性', dataIndex: 'item_properties', key: 'item_properties', width: 100, resizable: true },
   { title: '产品名称', dataIndex: 'item_name', key: 'item_name', width: 150, resizable: true },
   { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 100, resizable: true },
   { title: '计划数量', dataIndex: 'planned_quantity', key: 'planned_quantity', width: 90, align: 'right' as const, resizable: true },
@@ -124,6 +144,7 @@ const formatDate = (v: string) => v ? dayjs(v).format('YYYY-MM-DD') : '-'
 
 onMounted(() => {
   loadColumnPreference()
+  fetchMateriaProperties()
   fetchOrders()
 })
 </script>
@@ -141,6 +162,9 @@ onMounted(() => {
           <a-input v-model:value="search" placeholder="搜索生产单号/产品" style="width: 220px;" allow-clear @pressEnter="handleSearch">
             <template #prefix><SearchOutlined style="color: #bfbfbf;" /></template>
           </a-input>
+          <a-select v-model:value="itemProperties" placeholder="物料属性" allow-clear style="width: 150px;" @change="handleSearch">
+            <a-select-option v-for="opt in materiaPropertyOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</a-select-option>
+          </a-select>
           <a-select v-model:value="planStatus" placeholder="生产状态" allow-clear style="width: 130px;" @change="handleSearch">
             <a-select-option value="未开始">未开始</a-select-option>
             <a-select-option value="已派发">已派发</a-select-option>

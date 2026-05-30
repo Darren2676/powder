@@ -79,11 +79,11 @@ export const createInspectionPlan = async (req: Request, res: Response, next: Ne
       INSERT INTO inspection_plan (plan_name, inspect_type, is_full_inspect, is_sampling, sampling_trigger,
         sampling_type, sampling_ratio, decimal_handling, sampling_quantity, sampling_range_type,
         sampling_quantity_range, sampling_batch_range, is_first_inspect, first_inspect_time,
-        first_inspect_quantity, is_last_inspect, last_inspect_quantity)
+        first_inspect_quantity, is_last_inspect, last_inspect_quantity, enable_quality_chars)
       VALUES (:plan_name, :inspect_type, :is_full_inspect, :is_sampling, :sampling_trigger,
         :sampling_type, :sampling_ratio, :decimal_handling, :sampling_quantity, :sampling_range_type,
         :sampling_quantity_range, :sampling_batch_range, :is_first_inspect, :first_inspect_time,
-        :first_inspect_quantity, :is_last_inspect, :last_inspect_quantity)
+        :first_inspect_quantity, :is_last_inspect, :last_inspect_quantity, :enable_quality_chars)
     `, {
       replacements: {
         plan_name: b.plan_name,
@@ -102,7 +102,8 @@ export const createInspectionPlan = async (req: Request, res: Response, next: Ne
         first_inspect_time: b.first_inspect_time || '',
         first_inspect_quantity: b.first_inspect_quantity != null ? Number(b.first_inspect_quantity) : 0,
         is_last_inspect: b.is_last_inspect || '否',
-        last_inspect_quantity: b.last_inspect_quantity != null ? Number(b.last_inspect_quantity) : 0
+        last_inspect_quantity: b.last_inspect_quantity != null ? Number(b.last_inspect_quantity) : 0,
+        enable_quality_chars: b.enable_quality_chars || 'N'
       }
     });
     res.json(success(null, '创建检验方案成功'));
@@ -124,7 +125,8 @@ export const updateInspectionPlan = async (req: Request, res: Response, next: Ne
         sampling_range_type = :sampling_range_type, sampling_quantity_range = :sampling_quantity_range,
         sampling_batch_range = :sampling_batch_range, is_first_inspect = :is_first_inspect,
         first_inspect_time = :first_inspect_time, first_inspect_quantity = :first_inspect_quantity,
-        is_last_inspect = :is_last_inspect, last_inspect_quantity = :last_inspect_quantity
+        is_last_inspect = :is_last_inspect, last_inspect_quantity = :last_inspect_quantity,
+        enable_quality_chars = :enable_quality_chars
       WHERE plan_name = :id
     `, {
       replacements: {
@@ -144,7 +146,8 @@ export const updateInspectionPlan = async (req: Request, res: Response, next: Ne
         first_inspect_time: b.first_inspect_time || '',
         first_inspect_quantity: b.first_inspect_quantity != null ? Number(b.first_inspect_quantity) : 0,
         is_last_inspect: b.is_last_inspect || '否',
-        last_inspect_quantity: b.last_inspect_quantity != null ? Number(b.last_inspect_quantity) : 0
+        last_inspect_quantity: b.last_inspect_quantity != null ? Number(b.last_inspect_quantity) : 0,
+        enable_quality_chars: b.enable_quality_chars || 'N'
       }
     });
     res.json(success(null, '更新检验方案成功'));

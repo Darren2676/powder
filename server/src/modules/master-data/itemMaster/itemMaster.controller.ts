@@ -61,8 +61,8 @@ const supplyFields = ['configurable_item', 'market_price_tax', 'sales_unit', 'sa
 const supplyHeaders = ['可配置物料', '市场价含税', '销售单位', '销项税率', '销售价目表', '超额发货比例', '采购单位'];
 
 // 质量检验分区字段
-const qualityFields = ['incoming_inspection', 'enable_quality_chars'];
-const qualityHeaders = ['收料检验', '启用质量特性'];
+const qualityFields = ['incoming_inspection', 'enable_quality_chars', 'enable_prod_quality_chars'];
+const qualityHeaders = ['收料检验', '来料启用质量特性', '生产启用质量特性'];
 
 // 合并所有字段（用于导出）
 const commonFields = [...baseFields, ...inventoryFields, ...productionFields, ...supplyFields, ...qualityFields];
@@ -227,6 +227,7 @@ export const createItem = async (req: Request, res: Response, next: NextFunction
         // 质量检验字段
         incoming_inspection: b.incoming_inspection || 'N',
         enable_quality_chars: b.enable_quality_chars || 'N',
+        enable_prod_quality_chars: b.enable_prod_quality_chars || 'N',
         creation_date: new Date()
       };
 

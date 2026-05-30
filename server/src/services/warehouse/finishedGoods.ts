@@ -102,11 +102,16 @@ export const productionInboundFinished = async (
         quality_status: '合格品', accounting_period: accountingPeriod
       }, transaction);
 
-      // 5. 更新生产单入库状态
+      // 5. 更新生产单入库状态（以末道报工正品数为基准，而非计划数量）
       const currentInbound = Number(item.inbound_quantity) || 0;
       const totalInbound = currentInbound + inboundQty;
-      const plannedQty = Number(item.planned_quantity) || 0;
-      const newInboundStatus = totalInbound >= plannedQty ? '全部入库' : '部分入库';
+      // 查询末道报工正品数
+      const [lastStepResult]: any = await sequelize.query(
+        `SELECT ISNULL(SUM(ISNULL(qualified_quantity, 0)), 0) as last_qualified FROM work_report WHERE production_order_number = :pon AND step_number = (SELECT MAX(step_number) FROM work_report WHERE production_order_number = :pon)`,
+        { replacements: { pon: item.production_order_number }, transaction }
+      );
+      const lastStepQualified = Number(lastStepResult[0]?.last_qualified) || Number(item.planned_quantity) || 0;
+      const newInboundStatus = totalInbound >= lastStepQualified ? '全部入库' : '部分入库';
 
       await sequelize.query(
         'UPDATE production_order SET inbound_quantity = :totalInbound, inbound_status = :status WHERE production_order_number = :pon',

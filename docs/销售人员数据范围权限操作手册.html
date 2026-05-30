@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>销售人员数据范围权限操作手册</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; line-height: 1.8; color: #333; background: #f5f5f5; }
+    .container { max-width: 960px; margin: 0 auto; padding: 40px 30px; background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+    h1 { font-size: 28px; color: #1a1a2e; border-bottom: 3px solid #1890ff; padding-bottom: 12px; margin-bottom: 30px; }
+    h2 { font-size: 22px; color: #1a1a2e; margin: 32px 0 16px; padding-left: 12px; border-left: 4px solid #1890ff; }
+    h3 { font-size: 17px; color: #333; margin: 20px 0 10px; }
+    p { margin-bottom: 12px; text-align: justify; }
+    ul, ol { margin: 8px 0 16px 24px; }
+    li { margin-bottom: 6px; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0 20px; font-size: 14px; }
+    th, td { border: 1px solid #d9d9d9; padding: 10px 14px; text-align: left; }
+    th { background: #e6f7ff; color: #1a1a2e; font-weight: 600; white-space: nowrap; }
+    tr:nth-child(even) { background: #fafafa; }
+    .note { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 4px; padding: 12px 16px; margin: 16px 0; }
+    .note::before { content: "⚠ 注意："; font-weight: bold; color: #d48806; }
+    .tip { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 4px; padding: 12px 16px; margin: 16px 0; }
+    .tip::before { content: "💡 提示："; font-weight: bold; color: #096dd9; }
+    .tag { display: inline-block; padding: 2px 10px; border-radius: 3px; font-size: 13px; font-weight: 500; }
+    .tag-admin { background: #ff4d4f; color: #fff; }
+    .tag-manager { background: #fa8c16; color: #fff; }
+    .tag-staff { background: #1890ff; color: #fff; }
+    .tag-sales { background: #52c41a; color: #fff; }
+    .flow-box { background: #f0f5ff; border: 1px solid #adc6ff; border-radius: 6px; padding: 20px; margin: 16px 0; }
+    .flow-box .step { display: flex; align-items: center; margin: 8px 0; }
+    .flow-box .step-num { width: 32px; height: 32px; border-radius: 50%; background: #1890ff; color: #fff; text-align: center; line-height: 32px; font-weight: bold; margin-right: 12px; flex-shrink: 0; }
+    .flow-box .step-text { flex: 1; }
+    .flow-box .arrow { text-align: center; color: #1890ff; font-size: 20px; margin: 4px 0 4px 10px; }
+    .scope-diagram { background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 6px; padding: 20px; margin: 16px 0; }
+    .scope-diagram table { margin-bottom: 0; }
+    .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e8e8e8; color: #999; font-size: 13px; text-align: center; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+<h1>销售人员数据范围权限操作手册</h1>
+
+<h2>一、功能概述</h2>
+<p>销售人员数据范围权限（Data Scope）是一种基于角色的行级数据隔离机制。当用户的角色为 <span class="tag tag-sales">销售人员</span> 时，系统自动过滤数据，使其仅能查看自己负责的客户及其关联的销售订单、发货申请和发货单信息。管理员、经理和普通员工不受此限制。</p>
+
+<h3>1.1 角色与数据范围对照</h3>
+<table>
+  <tr><th>角色</th><th>标签色</th><th>数据范围</th></tr>
+  <tr><td><span class="tag tag-admin">管理员</span></td><td>红色</td><td>全部数据，无限制</td></tr>
+  <tr><td><span class="tag tag-manager">经理</span></td><td>橙色</td><td>全部数据，无限制</td></tr>
+  <tr><td><span class="tag tag-staff">员工</span></td><td>蓝色</td><td>全部数据，无限制</td></tr>
+  <tr><td><span class="tag tag-sales">销售人员</span></td><td>绿色</td><td>仅自己负责的客户及关联数据</td></tr>
+</table>
+
+<h3>1.2 数据过滤范围</h3>
+<table>
+  <tr><th>模块</th><th>过滤方式</th><th>说明</th></tr>
+  <tr><td>客户管理</td><td>head_of_sales_id = 当前用户ID</td><td>仅显示当前用户为"销售负责人"的客户</td></tr>
+  <tr><td>销售订单</td><td>head_of_sales_id = 当前用户ID</td><td>仅显示当前用户负责客户的订单（含仪表板统计）</td></tr>
+  <tr><td>发货申请</td><td>通过 customer 子查询</td><td>仅显示当前用户负责客户的发货申请</td></tr>
+  <tr><td>发货单</td><td>通过 customer 子查询</td><td>仅显示当前用户负责客户的发货单</td></tr>
+  <tr><td>待发货列表</td><td>通过订单 head_of_sales_id</td><td>仅显示当前用户负责客户的待发货明细</td></tr>
+</table>
+
+<div class="note">数据范围过滤仅作用于"查看/列表/导出"操作，不影响创建和编辑。销售人员仍可为任何客户创建订单，但列表中只能看到自己负责的客户数据。</div>
+
+<h2>二、配置步骤</h2>
+
+<div class="flow-box">
+  <div class="step"><div class="step-num">1</div><div class="step-text">在用户管理中，将销售人员的角色改为 <b>"销售人员"</b></div></div>
+  <div class="arrow">↓</div>
+  <div class="step"><div class="step-num">2</div><div class="step-text">在客户管理中，为每个客户选择对应的 <b>"销售负责人"</b></div></div>
+  <div class="arrow">↓</div>
+  <div class="step"><div class="step-num">3</div><div class="step-text">销售人员登录后，系统自动过滤数据，仅显示其负责的客户及关联订单/发货信息</div></div>
+</div>
+
+<h3>2.1 步骤一：设置用户角色</h3>
+<ol>
+  <li>以管理员身份登录系统</li>
+  <li>进入 <b>系统管理 → 用户管理</b></li>
+  <li>找到目标销售人员，点击 <b>"编辑"</b></li>
+  <li>将角色从"员工"改为 <b>"销售人员"</b></li>
+  <li>点击 <b>"保存"</b></li>
+</ol>
+
+<div class="tip">角色筛选下拉中已新增"销售人员"选项，可快速筛选所有 sales 角色用户。</div>
+
+<h3>2.2 步骤二：为客户指定销售负责人</h3>
+<ol>
+  <li>进入 <b>主数据 → 客户管理</b></li>
+  <li>点击客户的 <b>"编辑"</b> 按钮</li>
+  <li>在"销售负责人"字段，从下拉列表中选择对应的销售人员（支持模糊搜索姓名）</li>
+  <li>点击 <b>"保存"</b></li>
+</ol>
+
+<div class="note">
+  <ul>
+    <li>销售负责人字段已从手动输入改为<b>下拉选择用户</b>，选择后系统自动关联用户ID，确保数据范围过滤准确。</li>
+    <li>一个客户只能指定一个销售负责人。</li>
+    <li>已有客户的历史数据已通过迁移脚本自动回填（根据原"销售负责人"文本匹配用户姓名）。</li>
+  </ul>
+</div>
+
+<h3>2.3 步骤三：验证数据范围</h3>
+<ol>
+  <li>使用销售人员账号登录系统</li>
+  <li>进入 <b>客户管理</b>，确认仅显示自己负责的客户</li>
+  <li>进入 <b>销售管理 → 销售订单</b>，确认仅显示自己负责客户的订单</li>
+  <li>进入 <b>发货申请</b> 和 <b>发货单</b>，确认仅显示自己负责客户的发货信息</li>
+</ol>
+
+<h2>三、数据关联机制</h2>
+
+<div class="scope-diagram">
+  <h3 style="margin-top:0">关联链路图</h3>
+  <table>
+    <tr><th>层级</th><th>表</th><th>关键字段</th><th>说明</th></tr>
+    <tr><td>1</td><td>users</td><td>id, real_name, role</td><td>用户表，role='sales' 触发数据范围过滤</td></tr>
+    <tr><td>2</td><td>customer</td><td>head_of_sales_id → users.id</td><td>客户的销售负责人ID，指向用户表</td></tr>
+    <tr><td>3</td><td>sales_order</td><td>head_of_sales_id → users.id</td><td>订单继承客户的 head_of_sales_id</td></tr>
+    <tr><td>3</td><td>shipping_request</td><td>customer_number → customer</td><td>发货申请通过客户编号关联过滤</td></tr>
+    <tr><td>3</td><td>shipping_order</td><td>customer_number → customer</td><td>发货单通过客户编号关联过滤</td></tr>
+  </table>
+</div>
+
+<h3>3.1 创建订单时自动继承</h3>
+<p>创建销售订单时，系统自动从所选客户继承 <code>head_of_sales_id</code>，无需手动设置。这意味着：</p>
+<ul>
+  <li>选择客户后，订单的"销售负责人"和负责人ID自动填入</li>
+  <li>编辑订单时，如果修改了"销售负责人"，系统自动匹配对应用户ID</li>
+</ul>
+
+<h3>3.2 移动端APP同步</h3>
+<p>销售订单移动端APP（client-sales）同样支持数据范围权限：</p>
+<ul>
+  <li>选择客户后自动继承 <code>head_of_sales_id</code></li>
+  <li>提交订单时携带 <code>head_of_sales_id</code> 到后端</li>
+  <li>订单列表查询受数据范围过滤限制</li>
+</ul>
+
+<h2>四、常见场景</h2>
+
+<h3>4.1 新入职销售人员</h3>
+<ol>
+  <li>管理员在用户管理中创建新用户，角色选择 <b>"销售人员"</b></li>
+  <li>管理员在客户管理中，将需要该销售人员负责的客户编辑，选择其为"销售负责人"</li>
+  <li>销售人员登录后即可看到自己负责的客户和订单</li>
+</ol>
+
+<h3>4.2 销售人员调换客户</h3>
+<ol>
+  <li>管理员在客户管理中，将原客户的"销售负责人"改为新的销售人员</li>
+  <li>该客户下的历史销售订单的 <code>head_of_sales_id</code> 不会自动变更，需根据需要手动更新</li>
+  <li>新销售人员登录后可看到该客户及后续新创建的订单</li>
+</ol>
+
+<div class="note">修改客户的销售负责人后，已有的销售订单不会自动更新 head_of_sales_id。如需同步历史订单，请联系系统管理员通过数据库脚本批量更新。</div>
+
+<h3>4.3 销售人员转岗</h3>
+<ol>
+  <li>管理员在用户管理中，将该用户的角色从"销售人员"改为"员工"或其他角色</li>
+  <li>角色变更后，该用户不再受数据范围限制，可以看到所有数据</li>
+  <li>如有需要，将原负责的客户重新分配给其他销售人员</li>
+</ol>
+
+<h3>4.4 客户尚未指定销售负责人</h3>
+<p>如果客户的"销售负责人"字段为空（head_of_sales_id 为 NULL），则该客户数据对所有角色可见，包括销售人员。建议为所有客户都指定销售负责人以确保数据隔离完整性。</p>
+
+<h2>五、权限矩阵</h2>
+<table>
+  <tr>
+    <th>操作</th><th>管理员</th><th>经理</th><th>员工</th><th>销售人员</th>
+  </tr>
+  <tr>
+    <td>查看全部客户</td><td>✓</td><td>✓</td><td>✓</td><td>✗（仅自己负责的）</td>
+  </tr>
+  <tr>
+    <td>查看全部销售订单</td><td>✓</td><td>✓</td><td>✓</td><td>✗（仅自己负责的）</td>
+  </tr>
+  <tr>
+    <td>查看全部发货申请</td><td>✓</td><td>✓</td><td>✓</td><td>✗（仅自己负责的）</td>
+  </tr>
+  <tr>
+    <td>查看全部发货单</td><td>✓</td><td>✓</td><td>✓</td><td>✗（仅自己负责的）</td>
+  </tr>
+  <tr>
+    <td>查看仪表板统计</td><td>✓（全部）</td><td>✓（全部）</td><td>✓（全部）</td><td>✓（仅自己负责的）</td>
+  </tr>
+  <tr>
+    <td>创建客户/订单</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td>
+  </tr>
+  <tr>
+    <td>导出数据</td><td>✓（全部）</td><td>✓（全部）</td><td>✓（全部）</td><td>✓（仅自己负责的）</td>
+  </tr>
+</table>
+
+<h2>六、FAQ</h2>
+
+<h3>Q1: 销售人员能否为客户创建订单？</h3>
+<p>可以。数据范围过滤仅作用于查看和列表，不影响创建操作。但创建后，订单会自动继承客户的 head_of_sales_id，因此只有负责该客户的销售人员能在列表中看到此订单。</p>
+
+<h3>Q2: 如果一个客户没有指定销售负责人会怎样？</h3>
+<p>head_of_sales_id 为 NULL 的客户对所有角色可见，包括销售人员。建议为所有客户都指定销售负责人。</p>
+
+<h3>Q3: 修改客户的销售负责人后，历史订单会自动更新吗？</h3>
+<p>不会。历史订单的 head_of_sales_id 在创建时从客户继承，后续修改客户的销售负责人不会自动同步到已有订单。如需同步，请联系管理员通过数据库脚本更新。</p>
+
+<h3>Q4: 销售人员能否查看其他客户的数据？</h3>
+<p>不能。列表、搜索、导出均受数据范围过滤限制，销售人员只能看到 head_of_sales_id 匹配自己用户ID的数据。</p>
+
+<h3>Q5: 销售订单仪表板统计数据是否也受限制？</h3>
+<p>是的。仪表板的订单总数、金额统计、状态分布等均按 head_of_sales_id 过滤，仅统计销售人员自己负责的订单数据。</p>
+
+<div class="footer">
+  Seals MES 系统 · 销售人员数据范围权限操作手册 · 版本 1.0
+</div>
+
+</div>
+</body>
+</html>

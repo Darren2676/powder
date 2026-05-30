@@ -40,5 +40,5 @@ export const qualityRoutes: RouteRecordRaw[] = [
   { path: 'scrap-order-report', name: 'ScrapOrderReport', component: ScrapOrderReport, meta: {"title":"报废单管理报表"} },
   { path: 'scrap-inventory-report', name: 'ScrapInventoryReport', component: ScrapInventoryReport, meta: {"title":"报废仓库存报表"} },
   { path: 'scrap-disposal-report', name: 'ScrapDisposalReport', component: ScrapDisposalReport, meta: {"title":"报废处置报表"} },
-  { path: 'scrap-quality-stats-report', name: 'ScrapQualityStatsReport', component: ScrapQualityStatsReport, meta: {"title":"质量统计分析报表"} },
+  { path: 'scrap-quality-stats-report', name: 'ScrapQualityStatsReport', component: ScrapQualityStatsReport, meta: {"title":"废品统计分析报表"} },
 ];

@@ -159,8 +159,9 @@ const handleConfirmSelectDetails = () => {
       ship_quantity: d.ship_quantity,
       invoice_quantity: d.available_qty,
       unit_price: 0,
+      tax_inclusive_price: d.tax_inclusive_price || 0,
       amount_without_tax: 0,
-      tax_rate: formData.tax_rate,
+      tax_rate: d.tax_rate || formData.tax_rate,
       tax_amount: 0,
       amount_with_tax: 0,
       remark: ''
@@ -179,8 +180,12 @@ const handleRemoveLine = (index: number) => {
 // 重新计算所有行金额
 const recalcAllLines = () => {
   for (const line of formData.lines) {
+    // 含税单价和税率 → 自动算出不含税单价
+    if ((line.tax_inclusive_price || 0) > 0 && (line.tax_rate || 0) > 0) {
+      line.unit_price = Number((line.tax_inclusive_price / (1 + line.tax_rate / 100)).toFixed(4))
+    }
     line.amount_without_tax = Number(((line.invoice_quantity || 0) * (line.unit_price || 0)).toFixed(2))
-    line.tax_rate = formData.tax_rate
+    line.tax_rate = formData.tax_rate || line.tax_rate
     line.tax_amount = Number((line.amount_without_tax * (line.tax_rate || 0) / 100).toFixed(2))
     line.amount_with_tax = Number((line.amount_without_tax + line.tax_amount).toFixed(2))
   }
@@ -193,7 +198,7 @@ const recalcAllLines = () => {
 // 税率变化时重算
 const handleTaxRateChange = () => { recalcAllLines() }
 
-// 行开票数量/单价变化时重算该行
+// 行开票数量/单价(未税)变化时重算该行
 const handleLineQtyChange = (line: any) => {
   if (line.invoice_quantity > line.ship_quantity) {
     message.warning('开票数量不能超过发货数量')
@@ -376,9 +381,10 @@ const lineColumns = [
   { title: '单位', dataIndex: 'basic_unit', width: 60 },
   { title: '发货数量', dataIndex: 'ship_quantity', width: 90 },
   { title: '开票数量', dataIndex: 'invoice_quantity', width: 90 },
-  { title: '单价', dataIndex: 'unit_price', width: 90 },
-  { title: '不含税金额', dataIndex: 'amount_without_tax', width: 110 },
+  { title: '含税单价', dataIndex: 'tax_inclusive_price', width: 100 },
   { title: '税率(%)', dataIndex: 'tax_rate', width: 80 },
+  { title: '单价(未税)', dataIndex: 'unit_price', width: 100 },
+  { title: '不含税金额', dataIndex: 'amount_without_tax', width: 110 },
   { title: '税额', dataIndex: 'tax_amount', width: 90 },
   { title: '价税合计', dataIndex: 'amount_with_tax', width: 110 },
   { title: '备注', dataIndex: 'remark', width: 120 }
@@ -607,6 +613,16 @@ onMounted(async () => {
               <a-input-number v-model:value="record.invoice_quantity" :min="0" :max="record.ship_quantity" :precision="2" size="small" style="width: 85px" @change="handleLineQtyChange(record)" />
             </template>
           </a-table-column>
+          <a-table-column title="含税单价" :width="100">
+            <template #default="{ record }">
+              <a-input-number v-model:value="record.tax_inclusive_price" :min="0" :precision="4" size="small" style="width: 90px" @change="handleLinePriceChange(record)" />
+            </template>
+          </a-table-column>
+          <a-table-column title="税率(%)" :width="80">
+            <template #default="{ record }">
+              <a-input-number v-model:value="record.tax_rate" :min="0" :max="100" :precision="2" size="small" style="width: 70px" @change="handleLinePriceChange(record)" />
+            </template>
+          </a-table-column>
           <a-table-column title="单价(未税)" :width="100">
             <template #default="{ record }">
               <a-input-number v-model:value="record.unit_price" :min="0" :precision="4" size="small" style="width: 90px" @change="handleLinePriceChange(record)" />
@@ -685,6 +701,12 @@ onMounted(async () => {
             <span style="color: #52c41a; font-weight: 600">{{ record.available_qty }}</span>
           </template>
         </a-table-column>
+        <a-table-column title="含税单价" dataIndex="tax_inclusive_price" :width="90">
+          <template #default="{ record }">
+            {{ record.tax_inclusive_price ? Number(record.tax_inclusive_price).toFixed(2) : '-' }}
+          </template>
+        </a-table-column>
+        <a-table-column title="税率(%)" dataIndex="tax_rate" :width="70" />
       </a-table>
     </a-modal>
 

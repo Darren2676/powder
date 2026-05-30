@@ -270,9 +270,9 @@ export const undoPreview = async (req: Request, res: Response, next: NextFunctio
       { replacements: { orderNo: production_order_number, targetStep: target_step_number } }
     );
 
-    // 4. 检查是否有不可删除的报工单（非草稿状态）
-    const nonDraftReports = reports.filter((r: any) => r.approval_status !== '草稿');
-    const canDelete = reports.length > 0 && nonDraftReports.length === 0;
+    // 4. 检查是否有不可删除的报工单（待审批状态不可删除，已审批会自动反审后删除）
+    const pendingApprovalReports = reports.filter((r: any) => r.approval_status === '待审批');
+    const canDelete = reports.length > 0 && pendingApprovalReports.length === 0;
 
     // 5. 统计哪些工序会受影响
     const affectedSteps = allSteps.filter((s: any) => Number(s.step_number) >= Number(target_step_number));
@@ -305,10 +305,10 @@ export const undoPreview = async (req: Request, res: Response, next: NextFunctio
         process_task_number: i.process_task_number,
         status: i.status
       })),
-      non_draft_count: nonDraftReports.length,
+      pending_approval_count: pendingApprovalReports.length,
       can_delete_all: canDelete,
-      delete_warning: canDelete ? '' : (nonDraftReports.length > 0
-        ? `有 ${nonDraftReports.length} 条报工单处于"${nonDraftReports[0].approval_status}"状态，需要先撤回审批后才能删除`
+      delete_warning: canDelete ? '' : (pendingApprovalReports.length > 0
+        ? `有 ${pendingApprovalReports.length} 条报工单处于"待审批"状态，需要先撤回审批后才能删除`
         : '没有可删除的报工单')
     }, '预览成功'));
   } catch (err) { next(err); }
@@ -374,15 +374,24 @@ export const undoExecute = async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    // 检查是否有非草稿状态的报工单
-    const nonDraft = reports.filter((r: any) => r.approval_status !== '草稿');
-    if (nonDraft.length > 0) {
+    // 检查是否有"待审批"状态的报工单（待审批不允许直接删除，需先撤回提交）
+    const pendingApproval = reports.filter((r: any) => r.approval_status === '待审批');
+    if (pendingApproval.length > 0) {
       res.status(400).json({
         success: false,
-        message: `有 ${nonDraft.length} 条报工单处于"${nonDraft[0].approval_status}"状态，无法删除。请先撤回审批。`,
-        data: { non_draft_reports: nonDraft.map((r: any) => r.work_report_number) }
+        message: `有 ${pendingApproval.length} 条报工单处于"待审批"状态，无法删除。请先撤回审批。`,
+        data: { pending_approval_reports: pendingApproval.map((r: any) => r.work_report_number) }
       });
       return;
+    }
+
+    // 对"已审批"状态的报工单先执行反审（兼容报工自动审批场景）
+    const approvedReports = reports.filter((r: any) => r.approval_status === '已审批');
+    for (const report of approvedReports) {
+      await sequelize.query(
+        `INSERT INTO approval_log (module, record_id, action, from_status, to_status, operator_id, operator_name, remark) VALUES (N'work_report', :record_id, N'reverse', N'已审批', N'草稿', 0, :operator, N'撤销重报自动反审')`,
+        { replacements: { record_id: report.work_report_number, operator: user?.username || '' } }
+      );
     }
 
     // 逐条删除（从高工序号往低工序号方向删除）

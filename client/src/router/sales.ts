@@ -19,6 +19,9 @@ const ShippingWarning = () => import('@/views/sales/ShippingWarning/List.vue');
 const ShippingByOrderSummary = () => import('@/views/sales/ShippingByOrderSummary/List.vue');
 const OrderProductionSummary = () => import('@/views/sales/OrderProductionSummary/Index.vue');
 const SalesDashboard = () => import('@/views/Dashboard/Index.vue');
+const SampleRequestList = () => import('@/views/sales/sampleRequest/Index.vue');
+const SampleRequestCreate = () => import('@/views/sales/sampleRequest/Create.vue');
+const SampleRequestDetail = () => import('@/views/sales/sampleRequest/Detail.vue');
 
 export const salesRoutes: RouteRecordRaw[] = [
   { path: 'sales-orders', name: 'SalesOrderList', component: SalesOrderList, meta: {"title":"销售订单"} },
@@ -40,4 +43,7 @@ export const salesRoutes: RouteRecordRaw[] = [
   { path: 'shipping-by-order-summary', name: 'ShippingByOrderSummary', component: ShippingByOrderSummary, meta: {"title":"发货按订单汇总表"} },
   { path: 'order-production-summary', name: 'OrderProductionSummary', component: OrderProductionSummary, meta: {"title":"订单维度生产单报表"} },
   { path: 'sales-order-dashboard', name: 'SalesDashboard', component: SalesDashboard, meta: {"title":"销售订单仪表板" } },
+  { path: 'sample-requests', name: 'SampleRequestList', component: SampleRequestList, meta: {"title":"样品申请"} },
+  { path: 'sample-request-create', name: 'SampleRequestCreate', component: SampleRequestCreate, meta: {"title":"样品申请编辑"} },
+  { path: 'sample-request/:id', name: 'SampleRequestDetail', component: SampleRequestDetail, meta: {"title":"样品申请详情"} },
 ];

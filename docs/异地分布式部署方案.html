@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Seals MES System 异地分布式部署方案</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 18mm 16mm; }
+  body {
+    font-family: "Microsoft YaHei", "SimHei", "PingFang SC", sans-serif;
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: #1a1a1a;
+    max-width: 100%; padding: 0; margin: 0;
+  }
+  h1 { font-size: 21px; text-align: center; margin: 0 0 20px 0; padding-bottom: 10px; border-bottom: 2px solid #1890ff; color: #0d1a26; }
+  h2 { font-size: 16px; margin: 24px 0 10px 0; padding: 5px 0 5px 10px; border-left: 4px solid #1890ff; background: #f0f5ff; color: #0d1a26; page-break-after: avoid; }
+  h3 { font-size: 13.5px; margin: 18px 0 7px 0; color: #1a3a5c; page-break-after: avoid; }
+  h4 { font-size: 12.5px; margin: 12px 0 5px 0; color: #2a4a6c; }
+  p { margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 11.5px; page-break-inside: avoid; }
+  th { background: #1890ff; color: #fff; padding: 6px 7px; text-align: left; font-weight: 600; }
+  td { padding: 5px 7px; border: 1px solid #d9d9d9; }
+  tr:nth-child(even) td { background: #fafafa; }
+  pre { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 3px; padding: 10px 12px; font-size: 11px; line-height: 1.45; overflow-x: auto; white-space: pre-wrap; word-break: break-all; font-family: Consolas, "Courier New", monospace; page-break-inside: avoid; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 11px; background: #f0f0f0; padding: 1px 3px; border-radius: 2px; }
+  pre code { background: none; padding: 0; }
+  ul, ol { margin: 5px 0; padding-left: 20px; }
+  li { margin: 2px 0; }
+  strong { color: #cf1322; }
+  hr { border: none; border-top: 1px solid #e0e0e0; margin: 18px 0; }
+  .footer { text-align: center; font-size: 10px; color: #999; margin-top: 24px; padding-top: 8px; border-top: 1px solid #e0e0e0; }
+</style>
+</head>
+<body>
+<h1>Seals MES System 异地分布式部署方案</h1>
+<h2>一、现状分析与分布式化瓶颈</h2>
+<h3>1.1 当前架构局限</h3>
+<table>
+<tr><th>组件</th><th>现状</th><th>分布式瓶颈</th></tr>
+<tr><td>后端</td><td>单进程 Express (server/src/server.ts)，端口3000</td><td>无状态（JWT），天然可横向扩展</td></tr>
+<tr><td>数据库</td><td>单 SQL Server 实例 (server/src/config/database.ts)</td><td>单点故障，跨地域高延迟</td></tr>
+<tr><td>文件存储</td><td>本地 uploads/ 目录 (Multer)</td><td>多节点间文件不共享</td></tr>
+<tr><td>前端</td><td>Vite 构建产物，后端托管静态文件</td><td>可独立部署到 CDN/各地 Nginx</td></tr>
+<tr><td>编号生成</td><td>MAX() 查询自增 (如 M20260525001)</td><td>多节点并发可能冲突</td></tr>
+<tr><td>Session</td><td>JWT (无状态)</td><td>天然支持分布式</td></tr>
+<tr><td>定时任务</td><td>node-cron (server/src/services/)</td><td>多节点重复执行</td></tr>
+</table>
+<h3>1.2 已有有利条件</h3>
+<ul>
+<li>JWT 认证无状态，无需 Session 共享 (server/src/middleware/auth.middleware.ts)</li>
+<li>CORS 已支持多 Origin (server/src/app.ts L22-28)</li>
+<li>已有 PM2 ecosystem.config.js 进程管理经验</li>
+<li>API 路由前缀统一 <code>/api/v1</code></li>
+<li>前端通过 Axios baseURL + Vite proxy 解耦</li>
+</ul>
+<hr>
+<h2>二、总体架构设计</h2>
+<h3>2.1 目标拓扑</h3>
+<pre>                         ┌─────────────────────────────┐
+                         │      总部 / 中心节点          │
+                         │  ┌───────────────────────┐  │
+                         │  │  汇总报表 &amp; 管理后台    │  │
+                         │  │  (可选：中心数据库)     │  │
+                         │  └───────────────────────┘  │
+                         └─────────────┬───────────────┘
+                                       │ VPN / 专线
+               ┌───────────────────────┼───────────────────────┐
+               │                       │                       │
+    ┌──────────▼──────────┐ ┌─────────▼─────────┐ ┌──────────▼──────────┐
+    │     工厂 A (合肥)     │ │    工厂 B (宁国)    │ │    工厂 C (其他)     │
+    │ ┌──────────────────┐ │ │ ┌─────────────────┐│ │ ┌──────────────────┐ │
+    │ │ Nginx :80/:443   │ │ │ │ Nginx :80/:443  ││ │ │ Nginx :80/:443   │ │
+    │ │ (反向代理+静态)   │ │ │ │ (反向代理+静态)  ││ │ │ (反向代理+静态)   │ │
+    │ └────────┬─────────┘ │ │ └────────┬────────┘│ │ └────────┬─────────┘ │
+    │          │            │ │          │          │ │          │           │
+    │ ┌────────▼─────────┐ │ │ ┌────────▼────────┐│ │ ┌────────▼─────────┐ │
+    │ │ Node.js :3000    │ │ │ │ Node.js :3000   ││ │ │ Node.js :3000    │ │
+    │ │ (可多实例负载)    │ │ │ │ (可多实例负载)   ││ │ │ (可多实例负载)    │ │
+    │ └────────┬─────────┘ │ │ └────────┬────────┘│ │ └────────┬─────────┘ │
+    │          │            │ │          │          │ │          │           │
+    │ ┌────────▼─────────┐ │ │ ┌────────▼────────┐│ │ ┌────────▼─────────┐ │
+    │ │ 本地 SQL Server  │ │ │ │ 本地 SQL Server ││ │ │ 本地 SQL Server  │ │
+    │ │ (XYMES_A)        │ │ │ │ (XYMES_B)       ││ │ │ (XYMES_C)        │ │
+    │ └──────────────────┘ │ │ └─────────────────┘│ │ └──────────────────┘ │
+    │ ┌──────────────────┐ │ │ ┌─────────────────┐│ │ ┌──────────────────┐ │
+    │ │ 本地文件存储      │ │ │ │ 本地文件存储     ││ │ │ 本地文件存储      │ │
+    │ │ (uploads/)       │ │ │ │ (uploads/)      ││ │ │ (uploads/)       │ │
+    │ └──────────────────┘ │ │ └─────────────────┘│ │ └──────────────────┘ │
+    └──────────────────────┘ └───────────────────┘ └──────────────────────┘</pre>
+<hr>
+<h2>三、方案 A：中心数据库 + 多应用节点（统一数据源）</h2>
+<h3>3.1 适用场景</h3>
+<ul>
+<li>工厂在同一省/市内，有可靠专线或 VPN（延迟 <10ms）</li>
+<li>所有工厂需实时共享全部数据（如库存、订单状态）</li>
+<li>管理层要求单一数据视图，不允许数据不一致</li>
+</ul>
+<h3>3.2 数据库层</h3>
+<p><strong>架构</strong>：单一 SQL Server 实例部署在中心机房，所有工厂的应用节点直连该实例。</p>
+<p><strong>需改造内容</strong>：</p>
+<table>
+<tr><th>文件</th><th>改造项</th><th>说明</th></tr>
+<tr><td>server/.env</td><td>DB_HOST 指向中心数据库IP</td><td>`DB_HOST=192.168.10.1`（中心库地址）</td></tr>
+<tr><td>server/src/config/database.ts</td><td>pool.max 上调至 30-50</td><td>多节点共享连接池，需放大上限</td></tr>
+<tr><td>server/src/config/database.ts</td><td>增加 dialectOptions.requestTimeout</td><td>跨网络建议 60s+</td></tr>
+</table>
+<p><strong>风险缓解</strong>：</p>
+<ul>
+<li>数据库主从复制（Always On 可用性组）：中心主库 + 异地只读副本，读操作走本地副本</li>
+<li>应用层读写分离：报表查询走只读副本，写操作走主库</li>
+</ul>
+<h3>3.3 应用层</h3>
+<p>每工厂独立部署 Node.js 后端（server/），配置指向中心数据库。</p>
+<p><strong>需改造内容</strong>：</p>
+<table>
+<tr><th>文件</th><th>改造项</th><th>说明</th></tr>
+<tr><td>server/src/server.ts</td><td>增加实例标识环境变量</td><td>`INSTANCE_ID=factory_a`</td></tr>
+<tr><td>server/src/config/database.ts</td><td>增加只读副本配置</td><td>`DB_READ_HOST` 环境变量</td></tr>
+<tr><td>server/src/models/index.ts</td><td>编号生成前缀隔离</td><td>各厂使用不同前缀避免并发冲突</td></tr>
+<tr><td>ecosystem.config.js</td><td>instances 改为多实例</td><td>`instances: 'max'`, `exec_mode: 'cluster'`</td></tr>
+</table>
+<h3>3.4 编号生成策略</h3>
+<p>多节点同时 INSERT 时，MAX() 查询方式会在高并发下产生重复编号。需改造：</p>
+<p><strong>改造文件</strong>：所有 controller 中的编号生成逻辑（约25+个 controller）</p>
+<p><strong>方案</strong>：使用 SQL Server SEQUENCE 对象或站点前缀：</p>
+<pre>-- 方案1：数据库 SEQUENCE（推荐）
+CREATE SEQUENCE seq_production_plan START WITH 1 INCREMENT BY 1;
+
+-- 方案2：站点前缀隔离（简单但编号不连续）
+-- M20260525A001, M20260525B001...</pre>
+<h3>3.5 文件存储</h3>
+<p>多节点需共享文件访问。</p>
+<p><strong>方案</strong>：</p>
+<ul>
+<li>轻量级：NFS/SMB 共享目录，所有节点挂载同一 <code>uploads/</code></li>
+<li>专业级：MinIO 对象存储集群（S3 兼容）</li>
+<li>云方案：阿里云 OSS / 腾讯云 COS</li>
+</ul>
+<h3>3.6 前端部署</h3>
+<p>每工厂部署独立 Nginx + 前端静态文件，或统一 CDN：</p>
+<pre># 各工厂 Nginx 配置 (server/nginx/site.conf)
+server {
+    listen 80;
+    server_name mes-factory-a.local;
+    
+    location / {
+        root /opt/seals-mes/client/dist;
+        try_files $uri $uri/ /index.html;
+    }
+    
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header X-Instance-ID "factory_a";
+    }
+}</pre>
+<h3>3.7 定时任务防重</h3>
+<p><code>node-cron</code> 多节点会重复执行（如库存盘点调度 server/src/services/stockCountScheduler.service.ts）。</p>
+<p><strong>方案</strong>：增加分布式锁（Redis SETNX 或数据库锁）：</p>
+<pre>// 伪代码：仅持有锁的节点执行定时任务
+const lock = await redis.set('cron:stock_count', instanceId, 'NX', 'EX', 60);
+if (lock) { /* 执行 */ } else { /* 跳过 */ }</pre>
+<hr>
+<h2>四、方案 A+：工厂数据库兼作中心库（混合模式）</h2>
+<h3>4.1 核心思路</h3>
+<p><strong>不用新建独立的中心数据库服务器，直接将工厂 B（或任一工厂）的数据库作为中心库</strong>，其他工厂的应用节点远程连接该库。这本质上是方案 A 的变体，只是"中心机房"恰好就是工厂 B 的机房。</p>
+<pre>┌───────────────────────────────┐    ┌──────────────────────────────┐
+│        工厂 A (合肥)            │    │      工厂 B (宁国) ★兼中心     │
+│ ┌───────────────────────────┐ │    │ ┌──────────────────────────┐ │
+│ │ Nginx :80                 │ │    │ │ Nginx :80                │ │
+│ └──────────┬────────────────┘ │    │ └──────────┬───────────────┘ │
+│            │                  │    │            │                  │
+│ ┌──────────▼────────────────┐ │    │ ┌──────────▼───────────────┐ │
+│ │ Node.js :3000             │ │    │ │ Node.js :3000            │ │
+│ │ DB_HOST=工厂B的IP          │─│─VPN─│→│ DB_HOST=127.0.0.1 (本地) │ │
+│ └───────────────────────────┘ │    │ └──────────┬───────────────┘ │
+│                               │    │            │                  │
+│ (无本地数据库)                 │    │ ┌──────────▼───────────────┐ │
+│                               │    │ │ SQL Server (XYMES)       │ │
+│                               │    │ │ ★ 既是工厂B生产库          │ │
+│                               │    │ │ ★ 也是全系统中心库         │ │
+│                               │    │ └──────────────────────────┘ │
+└───────────────────────────────┘    └──────────────────────────────┘
+              │                                  │
+              └──────── VPN/专线 ────────────────┘
+
+┌───────────────────────────────┐
+│        工厂 C (其他)            │
+│ ┌───────────────────────────┐ │
+│ │ Node.js :3000             │ │
+│ │ DB_HOST=工厂B的IP          │─│──VPN──→ 工厂B数据库
+│ └───────────────────────────┘ │
+└───────────────────────────────┘</pre>
+<h3>4.2 适用场景</h3>
+<ul>
+<li>只有 2~3 个工厂，不想额外购置中心数据库服务器</li>
+<li>工厂 B 的网络和服务器条件最好（已有高性能服务器 + 稳定公网/专线）</li>
+<li>工厂 B 本身就是管理中枢（如总部所在地）</li>
+</ul>
+<h3>4.3 优势</h3>
+<table>
+<tr><th>优势</th><th>说明</th></tr>
+<tr><td>零额外硬件成本</td><td>复用工厂 B 现有 SQL Server，无需新购服务器和数据库授权</td></tr>
+<tr><td>部署最简单</td><td>工厂 B 完全不用改，其他厂只需改 DB_HOST 指向 B 的 IP</td></tr>
+<tr><td>工厂 B 本地零延迟</td><td>B 厂应用直连 localhost，性能最佳</td></tr>
+<tr><td>数据天然统一</td><td>所有厂写入同一库，查询报表无需汇总</td></tr>
+</table>
+<h3>4.4 风险与缓解</h3>
+<table>
+<tr><th>风险</th><th>影响</th><th>缓解措施</th></tr>
+<tr><td>**工厂 B 数据库宕机**</td><td>全系统瘫痪（B厂本地也停）</td><td>Always On 可用性组 → 工厂 A 部署异步只读副本自动接管</td></tr>
+<tr><td>**工厂 B 服务器过载**</td><td>B 厂本地操作变慢</td><td>连接池隔离：B 厂应用独占 10 连接，远程厂共享 20 连接</td></tr>
+<tr><td>**跨厂网络中断**</td><td>工厂 A/C 无法使用系统</td><td>工厂 A/C 部署本地 SQL Server Express（免费版）作缓存应急 → 网络恢复后同步</td></tr>
+<tr><td>**远程写入延迟**</td><td>A/C 厂用户体验下降</td><td>前端乐观更新 + 后端异步写入队列</td></tr>
+<tr><td>**单点磁盘故障**</td><td>数据丢失</td><td>工厂 B 数据库定时备份 → 异地 (A厂NAS) 存储</td></tr>
+</table>
+<h3>4.5 关键配置要点</h3>
+<p><strong>工厂 B (兼中心) — 无需大改</strong>：</p>
+<pre># server/.env (工厂B)
+DB_HOST=127.0.0.1          # 本地连接，零延迟
+DB_PORT=1433
+SITE_PREFIX=B              # 编号前缀
+DEPLOY_MODE=hub            # 标识为中心节点</pre>
+<p><strong>工厂 A (远程) — 仅改 DB_HOST</strong>：</p>
+<pre># server/.env (工厂A)
+DB_HOST=192.168.10.2       # 工厂B的IP
+DB_PORT=1433
+SITE_PREFIX=A              # 编号前缀，避免与B厂冲突
+DEPLOY_MODE=remote         # 标识为远程节点</pre>
+<p><strong>工厂 B 数据库连接池隔离</strong>：</p>
+<pre>// server/src/config/database.ts 改造
+const isHub = process.env.DEPLOY_MODE === 'hub';
+
+const sequelize = new Sequelize({
+  // ...
+  pool: {
+    max: isHub ? 30 : 10,        // 中心节点承载更多连接
+    min: isHub ? 5 : 2,
+    acquire: 60000,               // 远程节点放宽获取超时
+    idle: 60000
+  }
+});</pre>
+<h3>4.6 灾备与高可用</h3>
+<pre>正常状态：
+  工厂A/B/C ──→ 工厂B SQL Server (主库)
+
+故障切换（B库宕机）：
+  工厂B Always On 自动故障转移
+  → 工厂A 的异步副本提升为主库
+  → 所有节点自动重连新主库
+  (需 SQL Server Enterprise + Always On 可用性组)
+
+网络中断应急（仅A厂断网）：
+  工厂A 自动切换 → 本地 SQL Server Express (应急缓存)
+  → 仅支持生产报工、入库等核心操作
+  → 网络恢复后自动同步回中心库</pre>
+<h3>4.7 与纯方案 A 的差异</h3>
+<table>
+<tr><th>对比点</th><th>纯方案 A (独立中心库)</th><th>方案 A+ (B厂兼中心)</th></tr>
+<tr><td>中心库服务器</td><td>独立购置</td><td>复用工厂B已有</td></tr>
+<tr><td>B厂数据库负载</td><td>无（B厂也连独立中心库）</td><td>双重负载（本地+远程）</td></tr>
+<tr><td>单点风险</td><td>中心库独立故障影响全部</td><td>B厂故障同时影响本地+远程</td></tr>
+<tr><td>灾备策略</td><td>中心库独立灾备</td><td>需同时考虑B厂本地+中心两个角色</td></tr>
+<tr><td>适用规模</td><td>3~5厂</td><td>2~3厂</td></tr>
+</table>
+<hr>
+<h2>五、方案 B：独立数据库 + 数据同步汇总（分布式自治）</h2>
+<h3>5.1 适用场景</h3>
+<ul>
+<li>工厂跨省/市，网络不稳定或延迟高</li>
+<li>各厂需独立运行（断网不影响生产）</li>
+<li>总部仅需汇总报表和关键指标，不需实时操作数据</li>
+</ul>
+<h3>5.2 数据库策略</h3>
+<p>每工厂独立 SQL Server 实例，数据库名加后缀区分（XYMES_A, XYMES_B...）。</p>
+<p><strong>数据分类与同步策略</strong>：</p>
+<table>
+<tr><th>数据类型</th><th>同步方式</th><th>同步频率</th><th>方向</th></tr>
+<tr><td>基础数据（物料、客户、供应商等）</td><td>总部统一维护 → 下发</td><td>变更时实时/准实时</td><td>总部→工厂</td></tr>
+<tr><td>生产数据（计划、报工、入库）</td><td>各厂独立，按需上报汇总</td><td>每小时/每天</td><td>工厂→总部</td></tr>
+<tr><td>库存数据</td><td>各厂独立管理</td><td>实时汇总到总部视图</td><td>工厂→总部</td></tr>
+<tr><td>销售订单</td><td>总部录入 → 下发工厂</td><td>实时</td><td>总部→工厂</td></tr>
+<tr><td>用户/权限</td><td>总部统一维护 → 下发</td><td>变更时实时</td><td>总部→工厂</td></tr>
+<tr><td>质量数据</td><td>各厂独立，定期上报</td><td>每天</td><td>工厂→总部</td></tr>
+</table>
+<h3>5.3 数据同步方案</h3>
+<h4>方案 B-1：API 层同步（轻量级，推荐初期使用）</h4>
+<p>在现有 Express 基础上增加同步 API：</p>
+<pre>server/src/
+├── modules/
+│   └── sync/                         # 新增同步模块
+│       ├── sync.controller.ts        # 数据收发控制器
+│       ├── sync.routes.ts            # /api/sync/push, /api/sync/pull
+│       └── sync.service.ts           # 同步逻辑（变更检测+冲突处理）</pre>
+<p><strong>同步流程</strong>：</p>
+<pre>工厂 A (数据变更)                        总部
+  │                                       │
+  ├─ INSERT/UPDATE 本地 DB                │
+  ├─ 写入 sync_log 表 (变更记录)           │
+  ├─ POST /api/sync/push ────────────────→│
+  │                                       ├─ 接收并 UUPSERT 中心库
+  │                                       ├─ 返回 ACK
+  │←──────────────────────────────────────┤
+  └─ 更新 sync_log.status = 'synced'     │</pre>
+<p><strong>sync_log 表结构</strong>：</p>
+<pre>CREATE TABLE sync_log (
+  id BIGINT IDENTITY PRIMARY KEY,
+  table_name NVARCHAR(100),       -- 表名
+  record_id NVARCHAR(100),        -- 记录主键
+  operation CHAR(1),              -- C/U/D
+  payload NVARCHAR(MAX),          -- 变更数据 JSON
+  source_site NVARCHAR(20),       -- 来源站点
+  status NVARCHAR(20) DEFAULT 'pending',  -- pending/synced/failed
+  created_at DATETIME DEFAULT GETDATE()
+);</pre>
+<h4>方案 B-2：消息队列同步（适合大数据量）</h4>
+<p>引入轻量级消息中间件（Redis Streams 或 RabbitMQ）：</p>
+<pre>工厂 A ──→ Redis Streams ──→ 总部消费者 ──→ 中心库
+工厂 B ──→ 队列           ──→</pre>
+<h4>方案 B-3：CDC + ETL 同步（适合成熟期）</h4>
+<p>使用 SQL Server Change Tracking + 定时 ETL 任务：</p>
+<ul>
+<li>各厂启用 <code>CHANGE_TRACKING = ON</code></li>
+<li>总部定时拉取增量变更</li>
+<li>适用于对实时性要求不高的汇总场景</li>
+</ul>
+<h3>5.4 基础数据下发</h3>
+<p>总部维护主数据 → 推送到各工厂：</p>
+<pre>server/src/
+├── modules/
+│   └── master-data-sync/               # 新增主数据同步模块
+│       ├── masterSync.controller.ts     # 基础数据下发 API
+│       ├── masterSync.service.ts        # 版本对比 + 增量更新
+│       └── masterSync.validator.ts      # 数据校验</pre>
+<p><strong>版本控制</strong>：每个基础数据表增加 <code>version</code> 和 <code>last_synced_at</code> 字段，仅同步增量变更。</p>
+<h3>5.5 编号生成</h3>
+<p>各工厂独立编号，通过站点前缀区分：</p>
+<table>
+<tr><th>站点</th><th>前缀示例</th><th>说明</th></tr>
+<tr><td>合肥工厂 (HF)</td><td>M-HF-20260515001</td><td>生产计划</td></tr>
+<tr><td>宁国工厂 (NG)</td><td>M-NG-20260515001</td><td>生产计划</td></tr>
+</table>
+<p><strong>改造点</strong>：<code>server/.env</code> 增加 <code>SITE_PREFIX=HF</code>，所有编号生成函数读取该变量。</p>
+<h3>5.6 文件存储</h3>
+<p>各工厂独立存储，总部汇总报表时通过 API 拉取关键文件（如检验报告、入库单据扫描件）。</p>
+<h3>5.7 汇总报表</h3>
+<p>总部部署独立的报表服务，从中心汇总库读取数据：</p>
+<pre>server/src/
+├── modules/
+│   └── report-aggregation/             # 新增汇总报表模块
+│       ├── aggregate.controller.ts     # 跨厂汇总查询
+│       └── aggregate.service.ts        # UNION ALL 多库视图</pre>
+<p>可使用 SQL Server Linked Server 或联邦查询实现跨库聚合：</p>
+<pre>-- 通过 Linked Server 查询
+SELECT 'HF' AS site, * FROM [FACTORY_A].XYMES.dbo.production_order
+UNION ALL
+SELECT 'NG' AS site, * FROM [FACTORY_B].XYMES.dbo.production_order;</pre>
+<hr>
+<h2>六、方案 B 变体：对等同步（总部无中心库）</h2>
+<h3>6.1 核心理念</h3>
+<p><strong>总部不设独立中心数据库，总部和所有工厂地位完全对等</strong>。每个节点（含总部）都拥有完整的本地 SQL Server 实例，节点之间<strong>相互同步</strong>全部业务数据。总部只是网络中的一个"普通节点"，通过自身本地库即可查看全系统汇总报表。</p>
+<pre>        ┌───────────────────────────────────────────┐
+        │              全 Mesh 对等网络               │
+        │                                           │
+        │   ┌─────────┐          ┌─────────┐       │
+        │   │ 总部(HQ) │◄────────►│ 工厂 A  │       │
+        │   │ XYMES_HQ │          │ XYMES_A │       │
+        │   └────┬─────┘          └────┬─────┘       │
+        │        │    ▲                │    ▲         │
+        │        │    │                │    │         │
+        │        ▼    │                ▼    │         │
+        │   ┌─────────┐          ┌─────────┐       │
+        │   │ 工厂 B  │◄────────►│ 工厂 C  │       │
+        │   │ XYMES_B │          │ XYMES_C │       │
+        │   └─────────┘          └─────────┘       │
+        │                                           │
+        │   每个箭头 = 双向数据同步                   │
+        │   每个节点 = 完整数据集副本                  │
+        └───────────────────────────────────────────┘
+
+单个节点内部结构（所有节点完全一致）：
+┌────────────────────────────────────────┐
+│         节点 (总部 / 工厂 A / B / C)     │
+│ ┌────────────────────────────────────┐ │
+│ │ Nginx :80                          │ │
+│ └──────────────┬─────────────────────┘ │
+│                │                        │
+│ ┌──────────────▼─────────────────────┐ │
+│ │ Node.js :3000                      │ │
+│ │ • 本地业务操作 (读/写本地DB)         │ │
+│ │ • 同步服务 (接收/发送变更)           │ │
+│ │ • 汇总报表 (查本地DB，无需跨库)      │ │
+│ └──────────────┬─────────────────────┘ │
+│                │                        │
+│ ┌──────────────▼─────────────────────┐ │
+│ │ SQL Server (XYMES_XX)              │ │
+│ │ ★ 本站生产数据 (site_prefix=XX)    │ │
+│ │ ★ 其他站同步数据 (只读副本)         │ │
+│ │ ★ sync_log 变更日志                │ │
+│ └────────────────────────────────────┘ │
+└────────────────────────────────────────┘</pre>
+<h3>6.2 与原方案 B 的关键区别</h3>
+<table>
+<tr><th>维度</th><th>原方案 B (星型)</th><th>方案 B 变体 (对等 Mesh)</th></tr>
+<tr><td>中心节点</td><td>总部有独立中心库</td><td>**无中心节点，全员对等**</td></tr>
+<tr><td>数据流向</td><td>工厂→总部单向上报</td><td>**所有节点互相同步**</td></tr>
+<tr><td>总部角色</td><td>数据汇总者+主数据下发者</td><td>**普通节点，与其他厂相同**</td></tr>
+<tr><td>总部断网</td><td>无法汇总，但各厂正常</td><td>总部离线后恢复时补同步</td></tr>
+<tr><td>主数据维护</td><td>总部独占修改</td><td>**任一节点可改，变更广播**</td></tr>
+<tr><td>每个节点数据量</td><td>总部全量，工厂仅自己</td><td>**每个节点全量**</td></tr>
+<tr><td>网络连接数</td><td>N 条 (工厂→总部)</td><td>N×(N-1)/2 条 (全网状)</td></tr>
+</table>
+<h3>6.3 数据归属与冲突避免</h3>
+<p><strong>核心原则：每条记录有且仅有一个"归属站点"，只有归属站点可以写入。其他站点以只读副本存储。</strong></p>
+<pre>-- 所有业务主表增加 site_prefix 字段
+ALTER TABLE production_order ADD site_prefix NVARCHAR(10) NOT NULL DEFAULT 'HQ';
+ALTER TABLE work_report ADD site_prefix NVARCHAR(10) NOT NULL DEFAULT 'HQ';
+ALTER TABLE stock_in ADD site_prefix NVARCHAR(10) NOT NULL DEFAULT 'HQ';
+-- ... 所有业务表
+
+-- 每个站点的应用层强制：写入时必须 site_prefix = 本机 SITE_PREFIX
+-- 其他站点的数据只接受同步写入，不允许本地业务直接修改</pre>
+<p><strong>同步时的数据隔离</strong>：</p>
+<pre>总部用户查看报表：
+  SELECT * FROM production_order WHERE site_prefix = 'HQ'  -- 总部的数据
+  UNION ALL
+  SELECT * FROM production_order WHERE site_prefix = 'A'   -- 工厂A同步来的数据
+  UNION ALL
+  SELECT * FROM production_order WHERE site_prefix = 'B'   -- 工厂B同步来的数据
+  → 全系统完整视图，但查询走本地库，零跨库延迟
+
+工厂A用户查看报表：
+  同一条 SQL，同样能看到全系统数据（因为工厂A也同步了 HQ/B/C 的数据）
+  → 每个节点都有完整副本</pre>
+<h3>6.4 同步拓扑</h3>
+<p><strong>轻量级方案（3~4节点）</strong>：全 Mesh 直连同步</p>
+<pre>每个节点维护一个 sync_peers 配置：
+
+# 总部 .env
+SYNC_PEERS=http://factory-a:3000,http://factory-b:3000,http://factory-c:3000
+
+# 工厂 A .env  
+SYNC_PEERS=http://hq:3000,http://factory-b:3000,http://factory-c:3000
+
+同步流程（任一节点产生变更）：
+1. 写入本地 DB + sync_log
+2. 遍历 SYNC_PEERS，POST /api/sync/push 到每个 peer
+3. 失败的 peer 标记 retry，后续补偿
+4. 每个 peer 接收后写入本地 DB（site_prefix 过滤，非本属数据只读）</pre>
+<p><strong>扩展方案（5+节点）</strong>：引入轻量消息中间件解耦</p>
+<pre>工厂A ──→ Redis Streams ──→ 工厂B
+工厂C ──→ (topic: sync) ──→ 总部
+  ...                       工厂A (自己发的跳过)
+                            工厂C (自己发的跳过)
+
+优势：发送者不关心谁在线，消费者自行订阅</pre>
+<h3>6.5 冲突处理策略</h3>
+<p>由于每条记录只有一个归属站点，<strong>写入冲突从根本上被消除</strong>。唯一需要处理的冲突场景：</p>
+<table>
+<tr><th>冲突场景</th><th>处理策略</th></tr>
+<tr><td>两站同时修改同一基础数据（如客户信息）</td><td>**乐观锁 + 版本号**：后到达的变更发现版本号过期则拒绝，提示用户刷新后重试</td></tr>
+<tr><td>网络分区恢复后，同一记录被两地修改</td><td>**Last-Write-Wins (LWW)** + 人工仲裁：以时间戳为准自动合并，记录到 conflict_log 供人工复核</td></tr>
+<tr><td>编号重复（概率极低，因有站点前缀）</td><td>站点前缀天然隔离，不冲突</td></tr>
+</table>
+<pre>-- 冲突日志表
+CREATE TABLE sync_conflict_log (
+  id BIGINT IDENTITY PRIMARY KEY,
+  table_name NVARCHAR(100),
+  record_id NVARCHAR(100),
+  local_version INT,
+  remote_version INT,
+  local_data NVARCHAR(MAX),
+  remote_data NVARCHAR(MAX),
+  resolution NVARCHAR(20) DEFAULT 'pending',  -- pending/auto_resolved/manual
+  created_at DATETIME DEFAULT GETDATE()
+);</pre>
+<h3>6.6 与方案 A/A+ 的角色类比</h3>
+<p>这个对等同步模型的精妙之处在于：<strong>总部用户和工厂用户看到的界面、功能、报表完全一致</strong>。</p>
+<pre>方案 A/A+：       所有节点看同一库      → 天然一致
+方案 B 对等变体：  所有节点各有完整副本    → 同步后一致
+
+对总部用户而言：
+  - 登录 http://hq:80 → 看到全系统数据（从本地HQ库查询）
+  - 查看"生产计划"列表 → 显示 HQ/A/B/C 所有工厂的计划
+  - 查看"汇总报表"   → 本地 SQL 计算，无需跨库
+  
+对工厂A用户而言：
+  - 登录 http://factory-a:80 → 同样看到全系统数据
+  - 但只能编辑 site_prefix='A' 的记录
+  - 其他站点的记录以只读形式展示</pre>
+<h3>6.7 实施要点</h3>
+<table>
+<tr><th>要点</th><th>说明</th></tr>
+<tr><td>**每个节点全量存储**</td><td>磁盘空间 = 单厂数据 × 节点数。橡胶密封件行业数据量小，4节点×50GB=200GB，普通服务器完全可承载</td></tr>
+<tr><td>**网络带宽需求低**</td><td>仅同步增量变更，非全量。日增量通常在 MB 级别</td></tr>
+<tr><td>**节点数上限**</td><td>全Mesh模式建议≤5节点。超过5个建议引入消息队列解耦</td></tr>
+<tr><td>**新增节点**</td><td>新节点启动时从任一已有节点拉取全量快照 → 后续增量同步</td></tr>
+<tr><td>**节点离线恢复**</td><td>重新上线后从 sync_log 中拉取离线期间的增量（基于 LSN/时间戳）</td></tr>
+<tr><td>**定时任务**</td><td>库存盘点等全局任务，只需一个节点执行（分布式锁），其他节点通过同步获得结果</td></tr>
+</table>
+<h2>七、公共基础改造（三方案均需）</h2>
+<h3>7.1 配置中心化</h3>
+<p>将环境变量升级为结构化配置：</p>
+<pre>server/src/config/
+├── database.ts        → 不变
+├── app.config.ts      → 新增：站点标识、同步配置、日志级别
+├── sync.config.ts     → 新增：中心节点地址、同步间隔、重试策略
+└── site.config.ts     → 新增：SITE_NAME, SITE_PREFIX, DEPLOY_MODE</pre>
+<h3>7.2 前端 API 地址动态化</h3>
+<p><strong>改造文件</strong>：client/src/api/request.ts, client-mobile/src/api/request.ts</p>
+<pre>// 从环境变量或配置文件读取 API 地址
+const API_BASE = import.meta.env.VITE_API_BASE || '/api/v1';</pre>
+<p>各厂构建时指定不同 API 地址：</p>
+<pre># 工厂 A 构建
+VITE_API_BASE=https://mes-a.company.com/api/v1 npm run build</pre>
+<h3>7.3 健康检查端点</h3>
+<p><strong>新增文件</strong>：server/src/controllers/health.controller.ts</p>
+<pre>// GET /api/health
+{
+  "status": "ok",
+  "site": "factory_a",
+  "db": "connected",
+  "uptime": 123456,
+  "sync_status": "normal"  // 方案B
+}</pre>
+<h3>7.4 日志集中化</h3>
+<p>使用 Winston 替代 Morgan + console.log，输出 JSON 格式日志：</p>
+<pre>// server/src/utils/logger.util.ts (新增)
+import winston from 'winston';
+
+export const logger = winston.createLogger({
+  format: winston.format.json(),
+  defaultMeta: { site: process.env.SITE_PREFIX },
+  transports: [
+    new winston.transports.File({ filename: 'logs/app.log' }),
+    // 可扩展：发送到集中式日志服务 (Loki/ES)
+  ]
+});</pre>
+<h3>7.5 部署自动化</h3>
+<p>新增 Ansible/Docker Compose 编排：</p>
+<pre>deploy/                                   # 新增目录
+├── ansible/
+│   ├── inventory/
+│   │   ├── production.yml               # 生产环境主机清单
+│   │   └── staging.yml                  # 测试环境
+│   ├── playbooks/
+│   │   ├── deploy-backend.yml           # 后端部署剧本
+│   │   ├── deploy-frontend.yml          # 前端部署剧本
+│   │   └── setup-database.yml           # 数据库初始化
+│   └── roles/
+├── docker/
+│   ├── Dockerfile.backend               # 后端容器化
+│   ├── Dockerfile.frontend              # 前端容器化
+│   └── docker-compose.per-site.yml      # 单站点编排
+└── scripts/
+    ├── init-site.sh                     # 新站点初始化脚本
+    └── check-sync-status.sh             # 同步状态检查（方案B）</pre>
+<hr>
+<h2>八、四种方案对比</h2>
+<table>
+<tr><th>维度</th><th>方案 A：独立中心库</th><th>方案 A+：B厂兼中心</th><th>方案 B：星型同步</th><th>方案 B 变体：对等同步</th></tr>
+<tr><td>数据一致性</td><td>强一致（实时）</td><td>强一致（实时）</td><td>最终一致（有延迟）</td><td>最终一致（有延迟）</td></tr>
+<tr><td>断网可用性</td><td>低（工厂无法独立运行）</td><td>低（但B厂本地不受影响）</td><td>高（各厂独立运行）</td><td>**最高（全节点独立+互备）**</td></tr>
+<tr><td>跨厂查询</td><td>天然支持</td><td>天然支持</td><td>需汇总库/Linked Server</td><td>**查本地库，零延迟**</td></tr>
+<tr><td>实施复杂度</td><td>中（需新购服务器）</td><td>低（仅改DB_HOST）</td><td>高（需开发同步层）</td><td>高（需开发同步层+冲突处理）</td></tr>
+<tr><td>运维复杂度</td><td>中（单库独立管理）</td><td>中低（B厂运维压力大）</td><td>中（多库+同步监控）</td><td>中（多库+全Mesh监控）</td></tr>
+<tr><td>数据库压力</td><td>单点集中，独立承担</td><td>B厂双重负载</td><td>HQ承担汇总+下发</td><td>**每个节点均匀分担**</td></tr>
+<tr><td>单点故障影响</td><td>仅中心库故障影响全部</td><td>B库故障 → 全系统+B厂本地</td><td>HQ故障不影响工厂</td><td>**无单点，任一点故障不影响其他**</td></tr>
+<tr><td>总部是否需独立库</td><td>是</td><td>否（复用B厂）</td><td>是（有中心汇总库）</td><td>**否（HQ就是普通节点）**</td></tr>
+<tr><td>硬件成本</td><td>高（独立服务器+授权）</td><td>低（复用B厂）</td><td>中（多套SQL Server）</td><td>中（每节点一套SQL Server）</td></tr>
+<tr><td>编号冲突</td><td>需改造（SEQUENCE/前缀）</td><td>需改造（站点前缀）</td><td>站点前缀天然隔离</td><td>站点前缀天然隔离</td></tr>
+<tr><td>主数据维护</td><td>天然统一</td><td>天然统一</td><td>HQ独占→下发</td><td>**任一节点可改→广播**</td></tr>
+<tr><td>适用工厂数</td><td>≤5 个</td><td>2~3 个</td><td>不限</td><td>≤5 个（全Mesh）</td></tr>
+<tr><td>每节点存储量</td><td>仅自身数据</td><td>仅自身数据</td><td>工厂少量/HQ全量</td><td>**每节点全量（但总数据量小）**</td></tr>
+</table>
+<hr>
+<h2>九、推荐实施路线</h2>
+<pre>Phase 1 (1-2周)：基础准备
+├── 站点配置化改造（.env → 结构化配置）
+├── 编号生成站点前缀
+├── 健康检查端点
+└── 日志标准化
+
+Phase 2 (2-4周)：方案 A/A+ 落地
+├── 方案A：部署独立中心数据库（Always On 可用性组）
+├── 方案A+：工厂B数据库直接作为中心库（仅改其他厂DB_HOST）
+├── 各厂应用节点部署
+├── 文件存储 NAS/MinIO 部署
+├── Nginx 反向代理配置
+└── 定时任务分布式锁
+
+Phase 3 (4-8周)：方案B 升级（如需）
+├── 方案B星型：各厂独立数据库 + 总部汇总库
+├── 方案B对等：所有节点独立库 + 全Mesh互相同步
+├── sync_log 表 + 变更捕获
+├── 数据同步服务开发（push/pull 或 peer broadcast）
+├── 冲突处理机制（乐观锁/版本号）
+├── 主数据下发机制（星型）/ 变更广播（对等）
+├── 汇总报表服务
+└── 同步监控告警
+
+Phase 4 (持续)：运维体系
+├── 集中式日志 (ELK/Loki)
+├── 指标监控 (Prometheus + Grafana)
+├── 自动化部署 (Ansible/Docker)
+└── 灾备演练</pre>
+<hr>
+<h2>十、文件改造清单总览</h2>
+<table>
+<tr><th>文件路径</th><th>改造内容</th><th>优先级</th></tr>
+<tr><td>server/.env</td><td>新增 SITE_PREFIX, DEPLOY_MODE, SYNC_CENTER_URL</td><td>P0</td></tr>
+<tr><td>server/src/config/database.ts</td><td>增加只读副本、连接池放大</td><td>P0</td></tr>
+<tr><td>server/src/config/app.config.ts</td><td>**新增**：站点配置管理</td><td>P0</td></tr>
+<tr><td>server/src/config/sync.config.ts</td><td>**新增**：同步配置，含 SYNC_PEERS 对等节点列表</td><td>P1</td></tr>
+<tr><td>server/src/server.ts</td><td>实例标识、启动时注册到中心</td><td>P0</td></tr>
+<tr><td>server/src/controllers/health.controller.ts</td><td>**新增**：健康检查接口</td><td>P0</td></tr>
+<tr><td>server/src/modules/sync/*</td><td>**新增**：数据同步模块（push/pull + peer broadcast）</td><td>P1</td></tr>
+<tr><td>server/src/modules/master-data-sync/*</td><td>**新增**：主数据下发（方案B）</td><td>P1</td></tr>
+<tr><td>server/src/modules/report-aggregation/*</td><td>**新增**：汇总报表（方案B）</td><td>P1</td></tr>
+<tr><td>server/src/utils/logger.util.ts</td><td>**新增**：结构化日志</td><td>P0</td></tr>
+<tr><td>~25个 controller 文件</td><td>编号生成逻辑前缀化</td><td>P0</td></tr>
+<tr><td>server/src/services/stockCountScheduler.service.ts</td><td>分布式锁防重</td><td>P1</td></tr>
+<tr><td>server/src/services/eventWorker.service.ts</td><td>分布式锁防重</td><td>P1</td></tr>
+<tr><td>client/src/api/request.ts</td><td>API 地址动态化</td><td>P0</td></tr>
+<tr><td>client-mobile/src/api/request.ts</td><td>API 地址动态化</td><td>P0</td></tr>
+<tr><td>ecosystem.config.js</td><td>多实例 cluster 模式</td><td>P0</td></tr>
+<tr><td>deploy/ 目录</td><td>**新增**：自动化部署脚本</td><td>P2</td></tr>
+</table>
+<div class="footer">Seals MES System — 异地分布式部署方案 &nbsp;|&nbsp; 宁国市睿信信息技术有限责任公司</div>
+</body>
+</html>

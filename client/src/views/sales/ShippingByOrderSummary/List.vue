@@ -11,7 +11,8 @@ import {
   SearchOutlined,
   ReloadOutlined,
   SettingOutlined,
-  CalendarOutlined
+  CalendarOutlined,
+  DownloadOutlined
 } from '@ant-design/icons-vue'
 
 const dateRange = ref<[Dayjs, Dayjs]>([dayjs().subtract(3, 'month'), dayjs()])
@@ -78,6 +79,40 @@ const handleDateChange = () => {
   fetchData()
 }
 
+// 导出 Excel
+const exporting = ref(false)
+const handleExport = async () => {
+  exporting.value = true
+  try {
+    const params = new URLSearchParams({
+      start_date: dateRange.value[0].format('YYYY-MM-DD'),
+      end_date: dateRange.value[1].format('YYYY-MM-DD')
+    })
+    if (searchText.value) params.set('search', searchText.value)
+    const token = localStorage.getItem('token')
+    const url = `/api/v1/sales-report/shipping-by-order-summary/export?${params.toString()}`
+    const a = document.createElement('a')
+    a.href = url
+    a.download = ''
+    // 用 fetch + blob 方式下载，携带 token
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (!resp.ok) throw new Error('导出失败')
+    const blob = await resp.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    a.href = blobUrl
+    const disposition = resp.headers.get('content-disposition')
+    const match = disposition?.match(/filename\*?=(?:UTF-8'')?([^;]+)/i)
+    if (match && match[1]) a.download = decodeURIComponent(match[1])
+    else a.download = '发货按订单汇总表.xlsx'
+    a.click()
+    URL.revokeObjectURL(blobUrl)
+  } catch (e: any) {
+    console.error('导出失败', e)
+  } finally {
+    exporting.value = false
+  }
+}
+
 onMounted(async () => {
   await loadColumnPreference()
   fetchData()
@@ -120,6 +155,7 @@ onMounted(async () => {
             </a-input>
             <a-button type="primary" size="small" @click="handleSearch"><SearchOutlined /> 搜索</a-button>
             <a-button size="small" @click="handleReset"><ReloadOutlined /> 重置</a-button>
+            <a-button size="small" :loading="exporting" @click="handleExport"><DownloadOutlined /> 导出</a-button>
             <a-tooltip title="列设置"><a-button size="small" @click="openColumnSetting"><SettingOutlined /></a-button></a-tooltip>
           </div>
         </div>

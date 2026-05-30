@@ -94,14 +94,15 @@ export const createInspectionSpec = async (req: Request, res: Response, next: Ne
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`
-        INSERT INTO inspection_spec (spec_name, defect_categories, creation_man, spec_type)
-        VALUES (:spec_name, :defect_categories, :creation_man, :spec_type)
+        INSERT INTO inspection_spec (spec_name, defect_categories, creation_man, spec_type, enable_quality_chars)
+        VALUES (:spec_name, :defect_categories, :creation_man, :spec_type, :enable_quality_chars)
       `, {
         replacements: {
           spec_name: b.spec_name,
           defect_categories: b.defect_categories || '',
           creation_man,
-          spec_type: b.spec_type || '来料'
+          spec_type: b.spec_type || '来料',
+          enable_quality_chars: b.enable_quality_chars || 'N'
         },
         transaction
       });
@@ -162,9 +163,9 @@ export const updateInspectionSpec = async (req: Request, res: Response, next: Ne
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`
-        UPDATE inspection_spec SET defect_categories = :defect_categories WHERE spec_name = :id
+        UPDATE inspection_spec SET defect_categories = :defect_categories, enable_quality_chars = :enable_quality_chars WHERE spec_name = :id
       `, {
-        replacements: { id, defect_categories: b.defect_categories || '' },
+        replacements: { id, defect_categories: b.defect_categories || '', enable_quality_chars: b.enable_quality_chars || 'N' },
         transaction
       });
 

@@ -273,8 +273,13 @@ const showCreateModal = () => {
 }
 
 const handleCreate = async () => {
+  // 先单独做表单验证，不与 API 调用混在同一个 try-catch
   try {
     await createFormRef.value?.validate()
+  } catch {
+    return // 验证不通过，直接返回
+  }
+  try {
     creating.value = true
     const res = await createDefinition({
       name: createForm.name,
@@ -284,14 +289,12 @@ const handleCreate = async () => {
     if (res.success) {
       message.success('创建成功')
       createModalVisible.value = false
-      // Go to designer
       router.push(`/workflow/designer/${res.data.id}`)
     } else {
       message.error(res.message || '创建失败')
     }
   } catch (err: any) {
-    if (err?.errorFields) return // Validation error
-    message.error('创建失败')
+    message.error('创建失败: ' + (err?.response?.data?.message || err?.message || '未知错误'))
   } finally {
     creating.value = false
   }

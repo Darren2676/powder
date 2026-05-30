@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
+import { exportToExcel } from '../../../utils/excel.util';
 
 // 解析日期范围参数，默认近12个月
 const parseDateRange = (query: any) => {
@@ -459,6 +460,79 @@ export const getShippingByOrderSummary = async (req: Request, res: Response, nex
     `, { replacements });
 
     res.json(success({ items, total, page: pageNum, limit: pageSize }));
+  } catch (err) { next(err); }
+};
+
+// ==================== 导出发货按订单汇总表 ====================
+export const exportShippingByOrderSummary = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { search = '', start_date, end_date } = req.query;
+
+    let searchClause = '';
+    let dateClause = '';
+    const replacements: any = {};
+
+    if (search) {
+      searchClause = ` AND (so.sales_order_number LIKE :search OR so.customer_name LIKE :search OR sod.item_number LIKE :search OR sod.item_name LIKE :search)`;
+      replacements.search = `%${search}%`;
+    }
+
+    if (start_date && end_date) {
+      dateClause = ` AND so.order_date >= :start_date AND so.order_date < DATEADD(day, 1, CAST(:end_date AS DATE))`;
+      replacements.start_date = start_date;
+      replacements.end_date = end_date;
+    }
+
+    const [items]: any = await sequelize.query(`
+      SELECT
+        so.sales_order_number,
+        so.customer_name,
+        so.order_date,
+        sod.line_number,
+        sod.item_number,
+        sod.item_name,
+        sod.specifications,
+        sod.basic_unit,
+        sod.order_quantity,
+        ISNULL(shipped_sub.shipped_qty, 0) as shipped_qty,
+        ISNULL(returned_sub.returned_qty, 0) as returned_qty,
+        ISNULL(shipped_sub.shipped_qty, 0) - ISNULL(returned_sub.returned_qty, 0) as net_shipped_qty,
+        CASE WHEN sod.order_quantity = 0 THEN 0 ELSE CAST(ISNULL(shipped_sub.shipped_qty, 0) * 100.0 / sod.order_quantity AS DECIMAL(10,2)) END as ship_rate,
+        CASE WHEN ISNULL(shipped_sub.shipped_qty, 0) = 0 THEN 0 ELSE CAST(ISNULL(returned_sub.returned_qty, 0) * 100.0 / shipped_sub.shipped_qty AS DECIMAL(10,2)) END as return_rate
+      FROM sales_order so
+      INNER JOIN sales_order_detail sod ON sod.sales_order_number = so.sales_order_number
+      OUTER APPLY (
+        SELECT SUM(sd.quantity) as shipped_qty
+        FROM shipping_order_detail sd
+        INNER JOIN shipping_order sh ON sh.shipping_order_number = sd.shipping_order_number
+        WHERE sd.sales_detail_id = sod.id
+      ) shipped_sub
+      OUTER APPLY (
+        SELECT SUM(rd.return_quantity) as returned_qty
+        FROM return_order_detail rd
+        INNER JOIN return_order ro ON ro.return_order_number = rd.return_order_number
+        WHERE rd.sales_detail_id = sod.id AND ro.status != N'已驳回'
+      ) returned_sub
+      WHERE so.approval_status = N'已审批'
+        AND sod.status NOT IN (N'已取消')
+        ${dateClause}
+        ${searchClause}
+      ORDER BY so.order_date DESC, so.sales_order_number, sod.line_number
+    `, { replacements });
+
+    const fields = [
+      'sales_order_number', 'customer_name', 'order_date', 'line_number',
+      'item_number', 'item_name', 'specifications', 'basic_unit',
+      'order_quantity', 'shipped_qty', 'returned_qty', 'net_shipped_qty',
+      'ship_rate', 'return_rate'
+    ];
+    const headers = [
+      '销售订单号', '客户名称', '订单日期', '行号',
+      '物料编号', '物料名称', '规格', '单位',
+      '订单数量', '已发数量', '已退数量', '实发数量',
+      '发货率(%)', '退货率(%)'
+    ];
+    exportToExcel(items, fields, headers, 'shipping_by_order_summary', res);
   } catch (err) { next(err); }
 };
 

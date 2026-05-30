@@ -20,6 +20,7 @@ const log = createLogger('approval');
 // ==================== Module Registry ====================
 const moduleConfig: Record<string, { tableName: string; primaryKey: string; displayName: string }> = {
   'routing_header':  { tableName: 'routing_header',  primaryKey: 'process_route_number',   displayName: '工艺路线' },
+  'expense_claim':   { tableName: 'expense_claim',   primaryKey: 'claim_number',              displayName: '报销单' },
   'Production_plan': { tableName: 'Production_plan',  primaryKey: 'production_number',      displayName: '生产计划' },
   'bom_header':      { tableName: 'bom_header',       primaryKey: 'bom_number',             displayName: 'BOM物料清单' },
   'production_order': { tableName: 'production_order', primaryKey: 'production_order_number', displayName: '生产单' },
@@ -39,7 +40,8 @@ const moduleConfig: Record<string, { tableName: string; primaryKey: string; disp
   'outsourcing_req': { tableName: 'outsourcing_req', primaryKey: 'outsourcing_req_number', displayName: '工序委外申请' },
   'piece_rate_price_header': { tableName: 'piece_rate_price_header', primaryKey: 'price_list_number', displayName: '计件单价表' },
   'standard_cost_header': { tableName: 'standard_cost_header', primaryKey: 'cost_list_number', displayName: '标准成本单价表' },
-  'piece_rate_wage_header': { tableName: 'piece_rate_wage_header', primaryKey: 'wage_number', displayName: '计件工资表' }
+  'piece_rate_wage_header': { tableName: 'piece_rate_wage_header', primaryKey: 'wage_number', displayName: '计件工资表' },
+  'sample_request': { tableName: 'sample_request', primaryKey: 'request_number', displayName: '样品申请' }
 };
 
 export const getModuleConfig = (module: string) => {
@@ -168,6 +170,7 @@ registerApprovalHandler('sales_order', {
 // When a module needs approval side-effects, replace the no-op with a real
 // implementation in the module's service file and update the registration here.
 registerApprovalHandler('routing_header', { onApprove: noopCallback('routing_header', 'onApprove'), onReverse: noopCallback('routing_header', 'onReverse') });
+registerApprovalHandler('expense_claim', { onApprove: noopCallback('expense_claim', 'onApprove'), onReverse: noopCallback('expense_claim', 'onReverse') });
 registerApprovalHandler('Production_plan', { onApprove: noopCallback('Production_plan', 'onApprove'), onReverse: noopCallback('Production_plan', 'onReverse') });
 registerApprovalHandler('bom_header', { onApprove: noopCallback('bom_header', 'onApprove'), onReverse: noopCallback('bom_header', 'onReverse') });
 registerApprovalHandler('production_order', { onApprove: noopCallback('production_order', 'onApprove'), onReverse: noopCallback('production_order', 'onReverse') });
@@ -186,6 +189,7 @@ registerApprovalHandler('outsourcing_req', { onApprove: noopCallback('outsourcin
 registerApprovalHandler('piece_rate_price_header', { onApprove: noopCallback('piece_rate_price_header', 'onApprove'), onReverse: noopCallback('piece_rate_price_header', 'onReverse') });
 registerApprovalHandler('standard_cost_header', { onApprove: noopCallback('standard_cost_header', 'onApprove'), onReverse: noopCallback('standard_cost_header', 'onReverse') });
 registerApprovalHandler('piece_rate_wage_header', { onApprove: noopCallback('piece_rate_wage_header', 'onApprove'), onReverse: noopCallback('piece_rate_wage_header', 'onReverse') });
+registerApprovalHandler('sample_request', { onApprove: noopCallback('sample_request', 'onApprove'), onReverse: noopCallback('sample_request', 'onReverse') });
 
 // ==================== Submit for Approval ====================
 export const submitForApprovalCore = async (params: {

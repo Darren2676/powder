@@ -9,6 +9,7 @@ import {
   getOrderSummary,
   getShippingWarning,
   getShippingByOrderSummary,
+  exportShippingByOrderSummary,
   getOrderProductionSummary
 } from './salesReport.controller';
 
@@ -22,6 +23,7 @@ router.get('/return-reason', authenticate, getReturnReasonDistribution);
 router.get('/order-summary', authenticate, getOrderSummary);
 router.get('/shipping-warning', authenticate, getShippingWarning);
 router.get('/shipping-by-order-summary', authenticate, getShippingByOrderSummary);
+router.get('/shipping-by-order-summary/export', authenticate, exportShippingByOrderSummary);
 router.get('/order-production-summary', authenticate, getOrderProductionSummary);
 
 export default router;

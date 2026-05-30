@@ -3,7 +3,7 @@ import { ref, reactive, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import {
   ReloadOutlined, PlusOutlined, DeleteOutlined, ExclamationCircleOutlined,
-  DownOutlined, DownloadOutlined, CheckOutlined, UndoOutlined
+  DownOutlined, DownloadOutlined, CheckOutlined, UndoOutlined, SettingOutlined
 } from '@ant-design/icons-vue'
 import {
   getEquipmentDowntimes, createEquipmentDowntime, updateEquipmentDowntime,
@@ -13,6 +13,8 @@ import {
 import { getEquipments } from '@/api/equipment/equipment'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
+import { useColumnPreference } from '@/composables/useColumnPreference'
+import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { APPROVAL_STATUS } from '@/constants/statuses'
 import { generateExportFilename } from '@/utils/exportFilename'
 
@@ -84,21 +86,29 @@ const form = reactive({
 const formStartTime = ref<any>(null)
 const formEndTime = ref<any>(null)
 
-const columns = [
-  { title: '设备编号', dataIndex: 'equipment_number', key: 'equipment_number', width: 120 },
-  { title: '设备名称', dataIndex: 'equipment_name', key: 'equipment_name', width: 140 },
-  { title: '停机类型', dataIndex: 'downtime_type', key: 'downtime_type', width: 90 },
-  { title: '开始时间', dataIndex: 'start_time', key: 'start_time', width: 160 },
-  { title: '结束时间', dataIndex: 'end_time', key: 'end_time', width: 160 },
-  { title: '持续(分钟)', dataIndex: 'duration_minutes', key: 'duration_minutes', width: 100 },
-  { title: '故障原因', dataIndex: 'fault_reason', key: 'fault_reason', width: 160, ellipsis: true },
-  { title: '处理方式', dataIndex: 'treatment', key: 'treatment', width: 160, ellipsis: true },
-  { title: '更换部件', dataIndex: 'replaced_parts', key: 'replaced_parts', width: 120, ellipsis: true },
-  { title: '费用', dataIndex: 'cost', key: 'cost', width: 90 },
-  { title: '执行人', dataIndex: 'performed_by', key: 'performed_by', width: 80 },
-  { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 90 },
-  { title: '操作', key: 'action', width: 150, fixed: 'right' as const }
+const defaultDataColumns: any[] = [
+  { title: '设备编号', dataIndex: 'equipment_number', key: 'equipment_number', width: 120, sorter: (a: any, b: any) => (a.equipment_number || '').localeCompare(b.equipment_number || ''), resizable: true },
+  { title: '设备名称', dataIndex: 'equipment_name', key: 'equipment_name', width: 140, resizable: true },
+  { title: '停机类型', dataIndex: 'downtime_type', key: 'downtime_type', width: 90, resizable: true },
+  { title: '开始时间', dataIndex: 'start_time', key: 'start_time', width: 160, resizable: true },
+  { title: '结束时间', dataIndex: 'end_time', key: 'end_time', width: 160, resizable: true },
+  { title: '持续(分钟)', dataIndex: 'duration_minutes', key: 'duration_minutes', width: 100, resizable: true },
+  { title: '故障原因', dataIndex: 'fault_reason', key: 'fault_reason', width: 160, ellipsis: true, resizable: true },
+  { title: '处理方式', dataIndex: 'treatment', key: 'treatment', width: 160, ellipsis: true, resizable: true },
+  { title: '更换部件', dataIndex: 'replaced_parts', key: 'replaced_parts', width: 120, ellipsis: true, resizable: true },
+  { title: '费用', dataIndex: 'cost', key: 'cost', width: 90, resizable: true },
+  { title: '执行人', dataIndex: 'performed_by', key: 'performed_by', width: 80, resizable: true },
+  { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 90, resizable: true }
 ]
+
+const {
+  columns, columnSettingVisible, columnSettingList, columnSettingSaving,
+  openColumnSetting, moveColumnUp, moveColumnDown, saveColumnSetting, resetColumnSetting,
+  loadColumnPreference, handleResizeColumn
+} = useColumnPreference('equipment_downtime_list', defaultDataColumns, {
+  fixedLeft: [{ title: '行号', key: 'rowIndex', width: 60, fixed: 'left' as const }],
+  fixedRight: [{ title: '操作', key: 'action', width: 150, fixed: 'right' as const }]
+})
 
 const formatDateTime = (dt: string | null) => {
   if (!dt) return '-'
@@ -221,6 +231,7 @@ const handleReset = () => {
 }
 
 onMounted(() => {
+  loadColumnPreference()
   fetchEquipments()
   fetchData()
 })
@@ -238,6 +249,10 @@ onMounted(() => {
           <a-button type="primary" @click="handleCreate">
             <template #icon><PlusOutlined /></template>
             新建
+          </a-button>
+          <a-button @click="openColumnSetting">
+            <template #icon><SettingOutlined /></template>
+            列设置
           </a-button>
         </a-space>
       </template>
@@ -269,13 +284,17 @@ onMounted(() => {
         :data-source="dataSource"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 1900 }"
+        :scroll="{ x: 'max-content' }"
         row-key="id"
         size="middle"
         bordered
         @change="handleTableChange"
+        @resizeColumn="handleResizeColumn"
       >
-        <template #bodyCell="{ column, record }">
+        <template #bodyCell="{ column, record, index }">
+          <template v-if="column.key === 'rowIndex'">
+            {{ (pagination.current - 1) * pagination.pageSize + index + 1 }}
+          </template>
           <template v-if="column.key === 'start_time'">
             {{ formatDateTime(record.start_time) }}
           </template>
@@ -319,6 +338,18 @@ onMounted(() => {
         </template>
       </a-table>
     </a-card>
+
+    <!-- 列设置抽屉 -->
+    <ColumnSettingDrawer
+      :open="columnSettingVisible"
+      :settingList="columnSettingList"
+      :saving="columnSettingSaving"
+      @update:open="columnSettingVisible = $event"
+      @moveUp="moveColumnUp"
+      @moveDown="moveColumnDown"
+      @save="saveColumnSetting"
+      @reset="resetColumnSetting"
+    />
 
     <!-- 新建/编辑弹窗 -->
     <a-modal

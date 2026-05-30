@@ -10,6 +10,8 @@ import { getEquipments, createEquipment, updateEquipment, deleteEquipment, expor
 import { updateEquipmentStatus, updateEquipmentMaintenanceSettings } from '@/api/equipment/equipmentLife'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
+import { useColumnPreference } from '@/composables/useColumnPreference'
+import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { APPROVAL_STATUS } from '@/constants/statuses'
 import { generateExportFilename } from '@/utils/exportFilename'
 
@@ -83,25 +85,33 @@ const statusColorMap: Record<string, string> = {
   '停用': 'default',
 }
 
-const columns = [
-  { title: '设备编号', dataIndex: 'equipment_number', key: 'equipment_number', width: 120 },
-  { title: '设备名称', dataIndex: 'equipment_name', key: 'equipment_name', width: 140 },
-  { title: '设备状态', dataIndex: 'equipment_status', key: 'equipment_status', width: 90 },
-  { title: '位置', dataIndex: 'location', key: 'location', width: 100 },
-  { title: '部门', dataIndex: 'department', key: 'department', width: 100 },
-  { title: '登记日期', dataIndex: 'record_date', key: 'record_date', width: 110 },
-  { title: '设备类型', dataIndex: 'equipment_type', key: 'equipment_type', width: 100 },
-  { title: '设备型号', dataIndex: 'equipment_model', key: 'equipment_model', width: 120 },
-  { title: '出厂日期', dataIndex: 'manufacture_date', key: 'manufacture_date', width: 110 },
-  { title: '日运行时长', dataIndex: 'daily_running_hours', key: 'daily_running_hours', width: 100 },
-  { title: '保养周期(天)', dataIndex: 'maintenance_cycle_days', key: 'maintenance_cycle_days', width: 110 },
-  { title: '上次保养', dataIndex: 'last_maintenance_date', key: 'last_maintenance_date', width: 110 },
-  { title: '下次保养', dataIndex: 'next_maintenance_date', key: 'next_maintenance_date', width: 110 },
-  { title: '累计运行(h)', dataIndex: 'total_running_hours', key: 'total_running_hours', width: 110 },
-  { title: '备注', dataIndex: 'remark', key: 'remark', ellipsis: true },
-  { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 90 },
-  { title: '操作', key: 'action', width: 180, fixed: 'right' as const }
+const defaultDataColumns: any[] = [
+  { title: '设备编号', dataIndex: 'equipment_number', key: 'equipment_number', width: 120, sorter: (a: any, b: any) => (a.equipment_number || '').localeCompare(b.equipment_number || ''), resizable: true },
+  { title: '设备名称', dataIndex: 'equipment_name', key: 'equipment_name', width: 140, resizable: true },
+  { title: '设备状态', dataIndex: 'equipment_status', key: 'equipment_status', width: 90, resizable: true },
+  { title: '位置', dataIndex: 'location', key: 'location', width: 100, resizable: true },
+  { title: '部门', dataIndex: 'department', key: 'department', width: 100, resizable: true },
+  { title: '登记日期', dataIndex: 'record_date', key: 'record_date', width: 110, resizable: true },
+  { title: '设备类型', dataIndex: 'equipment_type', key: 'equipment_type', width: 100, resizable: true },
+  { title: '设备型号', dataIndex: 'equipment_model', key: 'equipment_model', width: 120, resizable: true },
+  { title: '出厂日期', dataIndex: 'manufacture_date', key: 'manufacture_date', width: 110, resizable: true },
+  { title: '日运行时长', dataIndex: 'daily_running_hours', key: 'daily_running_hours', width: 100, resizable: true },
+  { title: '保养周期(天)', dataIndex: 'maintenance_cycle_days', key: 'maintenance_cycle_days', width: 110, resizable: true },
+  { title: '上次保养', dataIndex: 'last_maintenance_date', key: 'last_maintenance_date', width: 110, resizable: true },
+  { title: '下次保养', dataIndex: 'next_maintenance_date', key: 'next_maintenance_date', width: 110, resizable: true },
+  { title: '累计运行(h)', dataIndex: 'total_running_hours', key: 'total_running_hours', width: 110, resizable: true },
+  { title: '备注', dataIndex: 'remark', key: 'remark', ellipsis: true, resizable: true },
+  { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 90, resizable: true }
 ]
+
+const {
+  columns, columnSettingVisible, columnSettingList, columnSettingSaving,
+  openColumnSetting, moveColumnUp, moveColumnDown, saveColumnSetting, resetColumnSetting,
+  loadColumnPreference, handleResizeColumn
+} = useColumnPreference('equipment_list', defaultDataColumns, {
+  fixedLeft: [{ title: '行号', key: 'rowIndex', width: 60, fixed: 'left' as const }],
+  fixedRight: [{ title: '操作', key: 'action', width: 120, fixed: 'right' as const }]
+})
 
 const formatDate = (date: string | null) => {
   if (!date) return '-'
@@ -249,11 +259,20 @@ const handleApprove = async (record: Equipment) => {
 }
 
 const handleWithdraw = async (record: Equipment) => {
-  try {
-    const res = await withdrawEquipment(record.equipment_number)
-    if (res.success) { message.success('已撤消审核'); fetchData() }
-    else { message.error(res.message || '撤消失败') }
-  } catch { message.error('撤消失败') }
+  Modal.confirm({
+    title: '确认撤消',
+    icon: createVNode(ExclamationCircleOutlined),
+    content: `确定要撤消设备「${(record.equipment_name || '').trim()}」的审核吗？`,
+    okText: '确定',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        const res = await withdrawEquipment(record.equipment_number)
+        if (res.success) { message.success('已撤消审核'); fetchData() }
+        else { message.error(res.message || '撤消失败') }
+      } catch { message.error('撤消失败') }
+    }
+  })
 }
 
 // 状态变更
@@ -318,6 +337,7 @@ const handleMaintenanceSettingsSubmit = async () => {
 }
 
 onMounted(() => {
+  loadColumnPreference()
   fetchData()
 })
 </script>
@@ -358,6 +378,10 @@ onMounted(() => {
             <template #icon><PlusOutlined /></template>
             新建
           </a-button>
+          <a-button @click="openColumnSetting">
+            <template #icon><SettingOutlined /></template>
+            列设置
+          </a-button>
         </a-space>
       </template>
 
@@ -366,14 +390,18 @@ onMounted(() => {
         :data-source="dataSource"
         :loading="loading"
         :pagination="pagination"
-        :scroll="{ x: 2200 }"
+        :scroll="{ x: 'max-content' }"
         :row-selection="rowSelection"
         row-key="equipment_number"
         size="middle"
         bordered
         @change="handleTableChange"
+        @resizeColumn="handleResizeColumn"
       >
-        <template #bodyCell="{ column, record }">
+        <template #bodyCell="{ column, record, index }">
+          <template v-if="column.key === 'rowIndex'">
+            {{ (pagination.current - 1) * pagination.pageSize + index + 1 }}
+          </template>
           <template v-if="column.key === 'record_date'">
             {{ formatDate(record.record_date) }}
           </template>
@@ -399,32 +427,28 @@ onMounted(() => {
             </a-tag>
           </template>
           <template v-else-if="column.key === 'action'">
-            <a-space>
-              <a-button type="link" size="small" @click="handleStatusChange(record)">
-                <template #icon><SwapOutlined /></template>
-                状态
+            <a-space :size="4">
+              <a-button type="link" size="small" @click="handleEdit(record)">
+                编辑
               </a-button>
-              <a-button type="link" size="small" @click="handleMaintenanceSettings(record)">
-                <template #icon><SettingOutlined /></template>
-                保养
-              </a-button>
-              <a-dropdown>
-                <a-button type="link" size="small">
-                  更多<DownOutlined />
+              <a-divider type="vertical" />
+              <a-dropdown :trigger="['click']">
+                <a-button type="link" size="small" @click.stop>
+                  更多<DownOutlined style="font-size: 10px; margin-left: 2px;" />
                 </a-button>
                 <template #overlay>
                   <a-menu>
-                    <a-menu-item @click="handleEdit(record)">
-                      <EditOutlined /> 修改
+                    <a-menu-item v-if="(record.approval_status || '').trim() !== APPROVAL_STATUS.APPROVED" @click="handleApprove(record)">审核</a-menu-item>
+                    <a-menu-item v-else @click="handleWithdraw(record)">撤消</a-menu-item>
+                    <a-menu-item @click="handleStatusChange(record)">
+                      <SwapOutlined /> 状态
                     </a-menu-item>
-                    <a-menu-item v-if="record.approval_status !== APPROVAL_STATUS.APPROVED" @click="handleApprove(record)">
-                      审核
+                    <a-menu-item @click="handleMaintenanceSettings(record)">
+                      <SettingOutlined /> 保养
                     </a-menu-item>
-                    <a-menu-item v-if="record.approval_status === APPROVAL_STATUS.APPROVED" @click="handleWithdraw(record)">
-                      撤消
-                    </a-menu-item>
+                    <a-menu-divider />
                     <a-menu-item @click="handleDelete(record)">
-                      <DeleteOutlined /> 删除
+                      <span style="color: #ff4d4f">删除</span>
                     </a-menu-item>
                   </a-menu>
                 </template>
@@ -434,6 +458,18 @@ onMounted(() => {
         </template>
       </a-table>
     </a-card>
+
+    <!-- 列设置抽屉 -->
+    <ColumnSettingDrawer
+      :open="columnSettingVisible"
+      :settingList="columnSettingList"
+      :saving="columnSettingSaving"
+      @update:open="columnSettingVisible = $event"
+      @moveUp="moveColumnUp"
+      @moveDown="moveColumnDown"
+      @save="saveColumnSetting"
+      @reset="resetColumnSetting"
+    />
 
     <!-- 状态变更弹窗 -->
     <a-modal

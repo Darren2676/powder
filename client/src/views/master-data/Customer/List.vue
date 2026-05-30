@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, ExclamationCircleOutlined, DownloadOutlined, UploadOutlined, PlusOutlined, DownOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer, exportCustomers, importCustomers, updateCustomerCondition, approveCustomer, withdrawCustomer } from '@/api/master-data/customer'
+import { getUsers } from '@/api/system/user'
 import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -21,6 +22,7 @@ interface Customer {
   currency_code: string
   industry: string
   head_of_sales: string
+  head_of_sales_id?: number | null
   sales_tax_rate: number
   region: string
   region2: string
@@ -49,7 +51,7 @@ const { loading, dataSource, searchText, selectedRowKeys, pagination, rowSelecti
 
 const emptyForm = (): Customer => ({
   customer_number: '', customer_name: '', classification: '', country_code: '', country: '',
-  currency_code: '', industry: '', head_of_sales: '', sales_tax_rate: 0,
+  currency_code: '', industry: '', head_of_sales: '', head_of_sales_id: null, sales_tax_rate: 0,
   region: '', region2: '', region3: '', region4: '', detail_address: '', zip_code: '',
   telephone: '', fax: '', linkman: '', area_code: '', contacts: '', email: '', contact_remark: '',
   bank_account_name: '', bank_name: '', bank_account_number: '',
@@ -58,6 +60,24 @@ const emptyForm = (): Customer => ({
 
 const editModalVisible = ref(false)
 const editLoading = ref(false)
+
+// 用户列表（用于销售负责人选择）
+const salesUserList = ref<Array<{id: number; real_name: string; username: string}>>([])
+const loadSalesUsers = async () => {
+  try {
+    const res: any = await getUsers({ limit: 9999, status: 'active' })
+    if (res.success) {
+      salesUserList.value = (res.data.items || []).map((u: any) => ({ id: u.id, real_name: u.real_name, username: u.username }))
+    }
+  } catch (e) { /* ignore */ }
+}
+const handleHeadOfSalesSelect = (form: Customer, userId: number) => {
+  const user = salesUserList.value.find(u => u.id === userId)
+  if (user) {
+    form.head_of_sales = user.real_name
+    form.head_of_sales_id = user.id
+  }
+}
 const editForm = reactive<Customer>(emptyForm())
 
 const createModalVisible = ref(false)
@@ -232,6 +252,7 @@ const handleFileChange = async (e: Event) => {
 onMounted(() => {
   loadColumnPreference()
   fetchData()
+  loadSalesUsers()
 })
 </script>
 
@@ -305,7 +326,7 @@ onMounted(() => {
           <a-col :span="6"><a-form-item label="国家代码"><a-input v-model:value="createForm.country_code" placeholder="请输入" /></a-form-item></a-col>
           <a-col :span="6"><a-form-item label="国家名称"><a-input v-model:value="createForm.country" placeholder="请输入" /></a-form-item></a-col>
           <a-col :span="6"><a-form-item label="行业"><a-input v-model:value="createForm.industry" placeholder="请输入" /></a-form-item></a-col>
-          <a-col :span="6"><a-form-item label="销售负责人"><a-input v-model:value="createForm.head_of_sales" placeholder="请输入" /></a-form-item></a-col>
+          <a-col :span="6"><a-form-item label="销售负责人"><a-select v-model:value="createForm.head_of_sales_id" placeholder="请选择" allow-clear show-search :filter-option="(input: string, option: any) => option.label?.toLowerCase().includes(input.toLowerCase())" @change="(val: number) => handleHeadOfSalesSelect(createForm, val)"><a-select-option v-for="u in salesUserList" :key="u.id" :value="u.id" :label="u.real_name">{{ u.real_name }}</a-select-option></a-select></a-form-item></a-col>
         </a-row>
         <a-row :gutter="12">
           <a-col :span="6"><a-form-item label="销售税率"><a-input-number v-model:value="createForm.sales_tax_rate" :precision="4" style="width: 100%" /></a-form-item></a-col>
@@ -363,7 +384,7 @@ onMounted(() => {
           <a-col :span="6"><a-form-item label="国家代码"><a-input v-model:value="editForm.country_code" /></a-form-item></a-col>
           <a-col :span="6"><a-form-item label="国家名称"><a-input v-model:value="editForm.country" /></a-form-item></a-col>
           <a-col :span="6"><a-form-item label="行业"><a-input v-model:value="editForm.industry" /></a-form-item></a-col>
-          <a-col :span="6"><a-form-item label="销售负责人"><a-input v-model:value="editForm.head_of_sales" /></a-form-item></a-col>
+          <a-col :span="6"><a-form-item label="销售负责人"><a-select v-model:value="editForm.head_of_sales_id" placeholder="请选择" allow-clear show-search :filter-option="(input: string, option: any) => option.label?.toLowerCase().includes(input.toLowerCase())" @change="(val: number) => handleHeadOfSalesSelect(editForm, val)"><a-select-option v-for="u in salesUserList" :key="u.id" :value="u.id" :label="u.real_name">{{ u.real_name }}</a-select-option></a-select></a-form-item></a-col>
         </a-row>
         <a-row :gutter="12">
           <a-col :span="6"><a-form-item label="销售税率"><a-input-number v-model:value="editForm.sales_tax_rate" :precision="4" style="width: 100%" /></a-form-item></a-col>

@@ -12,10 +12,12 @@ async function migrate() {
       { name: 'BOM管理', code: 'bom-management', parent_code: 'master-data', menu_key: 'bom-management', icon: 'BranchesOutlined', sort: 3 },
       { name: '质量数据', code: 'quality-data', parent_code: 'master-data', menu_key: 'quality-data', icon: 'SafetyCertificateOutlined', sort: 4 },
       { name: '企业数据', code: 'enterprise-data', parent_code: 'master-data', menu_key: 'enterprise-management', icon: 'ShopOutlined', sort: 5 },
+      { name: '生命周期', code: 'lifecycle-management', parent_code: 'master-data', menu_key: 'lifecycle-management', icon: 'HistoryOutlined', sort: 6 },
       // 销售子菜单
       { name: '订单管理', code: 'order-management', parent_code: 'sales', menu_key: 'order-management', icon: 'FileTextOutlined', sort: 1 },
       { name: '明细管理', code: 'detail-management', parent_code: 'sales', menu_key: 'detail-management', icon: 'UnorderedListOutlined', sort: 2 },
       { name: '报表统计', code: 'report-statistics', parent_code: 'sales', menu_key: 'report-statistics', icon: 'BarChartOutlined', sort: 3 },
+      { name: '样品申请', code: 'sample-request-menu', parent_code: 'sales', menu_key: 'sample-request-menu', icon: 'ExperimentOutlined', sort: 4 },
       // 计划子菜单
       { name: 'MRP管理', code: 'mrp-management', parent_code: 'planning', menu_key: 'mrp-management', icon: 'ThunderboltOutlined', sort: 2 },
       // 生产子菜单
@@ -79,6 +81,10 @@ async function migrate() {
       // 企业数据 (enterprise-data)
       { name: '物流公司', code: 'logistics-companies', parent_code: 'enterprise-data', menu_key: 'logistics-companies', route: '/logistics-companies', sort: 1 },
       { name: '客户物料对照', code: 'customer-material-mapping', parent_code: 'enterprise-data', menu_key: 'customer-material-mapping', route: '/customer-material-mapping', sort: 2 },
+      // 生命周期 (lifecycle-management)
+      { name: '工程更改', code: 'engineering-changes', parent_code: 'lifecycle-management', menu_key: 'engineering-changes', route: '/engineering-changes', sort: 1 },
+      // 财务结算 (finance)
+      { name: '报销单管理', code: 'expense-claims', parent_code: 'finance', menu_key: 'expense-claims', route: '/expense-claims', sort: 5 },
       // 质量数据 (quality-data) - 标准工序/工作中心/工艺路线
       // (这些从master-data移动过来，不需要新增)
       // 销售订单管理 (order-management) - 新增明细页面
@@ -89,6 +95,7 @@ async function migrate() {
       { name: '发货单明细', code: 'shipping-order-details', parent_code: 'detail-management', menu_key: 'shipping-order-details', route: '/shipping-order-details', sort: 2 },
       { name: '退货单明细', code: 'return-order-details', parent_code: 'detail-management', menu_key: 'return-order-details', route: '/return-order-details', sort: 3 },
       { name: '销售预测明细', code: 'forecast-details', parent_code: 'detail-management', menu_key: 'forecast-details', route: '/forecast-details', sort: 4 },
+      { name: '样品申请管理', code: 'sample-requests', parent_code: 'sample-request-menu', menu_key: 'sample-requests', route: '/sample-requests', sort: 1 },
       // 报表统计 (report-statistics)
       { name: '发货预警', code: 'shipping-warning', parent_code: 'report-statistics', menu_key: 'shipping-warning', route: '/shipping-warning', sort: 2 },
       { name: '订单维度生产单报表', code: 'order-production-summary', parent_code: 'report-statistics', menu_key: 'order-production-summary', route: '/order-production-summary', sort: 3 },
@@ -98,6 +105,7 @@ async function migrate() {
       { name: '按工序备料请单', code: 'material-preparation-by-process', parent_code: 'normal-preparation', menu_key: 'material-preparation-by-process', route: '/material-preparation-by-process', sort: 2 },
             // 注：原有 'material-issue-page' 重复菜单已移除，使用已存在的 permission_code='material-issue' 作为"按生产单备料"唯一菜单项（见下方 moves）
             { name: '按工序备料', code: 'material-issue-by-process', parent_code: 'normal-preparation', menu_key: 'material-issue-by-process', route: '/material-issue-by-process', sort: 4 },
+      { name: '拆分备料任务', code: 'split-backflush-task', parent_code: 'normal-preparation', menu_key: 'split-backflush-task', route: '/split-backflush-task', sort: 5 },
       // 在制管理 (wip-management)
       { name: 'WIP按生产单', code: 'wip-by-order', parent_code: 'wip-management', menu_key: 'wip-by-order', route: '/wip-by-order', sort: 1 },
       { name: 'WIP按工作中心', code: 'wip-by-work-center', parent_code: 'wip-management', menu_key: 'wip-by-work-center', route: '/wip-by-work-center', sort: 2 },
@@ -252,6 +260,8 @@ async function migrate() {
       { code: 'batch-trace', new_parent_code: 'quality', new_sort: 5 },
       // finance: 只保留会计期间 (sales-prices和purchase-prices移走)
       { code: 'sales-prices', new_parent_code: 'order-management', new_sort: 9 },
+      // sample-requests 移动到样品申请子菜单下
+      { code: 'sample-requests', new_parent_code: 'sample-request-menu', new_sort: 1 },
     ];
 
     for (const m of moves) {
@@ -300,8 +310,8 @@ async function migrate() {
     if (staffRole.length > 0) {
       await sequelize.query(`DELETE FROM role_permission WHERE role_id = :rid`, { replacements: { rid: staffRole[0].id } });
       const staffPerms = [
-        'sales', 'order-management', 'sales-orders',
-        'production', 'process-tasks', 'work-reports', 'normal-preparation', 'material-preparations', 'material-issue',
+        'sales', 'order-management', 'sales-orders', 'sample-request-menu', 'sample-requests',
+        'production', 'process-tasks', 'work-reports', 'normal-preparation', 'material-preparations', 'material-issue', 'split-backflush-task',
         'equipment', 'equipments', 'moulds', 'mould-maintenance',
         'warehouse', 'finished-goods-management', 'fg-inbound', 'fg-outbound',
         'material-warehouse-management', 'mw-inventory', 'mw-inbound', 'mw-outbound',

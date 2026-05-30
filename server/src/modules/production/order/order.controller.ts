@@ -144,6 +144,16 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
       }
     });
 
+    // 如果关联了生产计划，回写计划状态为"已加入任务"
+    if (b.production_number) {
+      try {
+        await sequelize.query(
+          `UPDATE Production_plan SET plan_status = N'已加入任务' WHERE production_number = :pn AND plan_status = N'待加入任务'`,
+          { replacements: { pn: b.production_number } }
+        );
+      } catch (e) { /* 非关键操作，静默忽略 */ }
+    }
+
     res.json(success({ production_order_number }, '创建生产单成功'));
   } catch (err) {
     next(err);
@@ -279,6 +289,7 @@ export const importOrders = async (req: Request, res: Response, next: NextFuncti
     const rows = parseExcelFile(req.file.buffer, fields, headers);
     if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件内容为空' }); return; }
     let imported = 0;
+    const updatedPlans = new Set<string>();
     for (const item of rows) {
       try {
         if (!item.production_order_number) {
@@ -290,8 +301,22 @@ export const importOrders = async (req: Request, res: Response, next: NextFuncti
         } else {
           await sequelize.query(`INSERT INTO production_order (${fields.join(', ')}) VALUES (${fields.map(f => ':' + f).join(', ')})`, { replacements: item });
         }
+        if (item.production_number) updatedPlans.add(item.production_number);
         imported++;
       } catch (e) {}
+    }
+    // 回写已关联计划的状态
+    if (updatedPlans.size > 0) {
+      try {
+        const planList = Array.from(updatedPlans);
+        const ph = planList.map((_, i) => `:p${i}`).join(', ');
+        const r2: any = {};
+        planList.forEach((p, i) => { r2[`p${i}`] = p; });
+        await sequelize.query(
+          `UPDATE Production_plan SET plan_status = N'已加入任务' WHERE production_number IN (${ph}) AND plan_status = N'待加入任务'`,
+          { replacements: r2 }
+        );
+      } catch (e) { /* 非关键操作 */ }
     }
     res.json(success({ imported, totalCount: rows.length }, `成功导入 ${imported} 条记录`));
   } catch (err) { next(err); }

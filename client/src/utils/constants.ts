@@ -18,7 +18,8 @@ export const PRIORITY_MAP: Record<string, string> = {
 export const ROLE_MAP: Record<string, string> = {
   admin: '管理员',
   manager: '经理',
-  staff: '员工'
+  staff: '员工',
+  sales: '销售人员'
 };
 
 // Status colors for Ant Design tags
@@ -41,7 +42,8 @@ export const PRIORITY_COLORS: Record<string, string> = {
 export const ROLE_COLORS: Record<string, string> = {
   admin: 'red',
   manager: 'orange',
-  staff: 'blue'
+  staff: 'blue',
+  sales: 'green'
 };
 
 // Notification type mapping

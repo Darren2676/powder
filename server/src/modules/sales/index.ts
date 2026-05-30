@@ -8,6 +8,7 @@ import shippingRequestRoutes from './shippingRequest/shippingRequest.routes';
 import shippingOrderRoutes from './shippingOrder/shippingOrder.routes';
 import returnOrderRoutes from './returnOrder/returnOrder.routes';
 import salesInvoiceRoutes from './salesInvoice/salesInvoice.routes';
+import sampleRequestRoutes from './sampleRequest/sampleRequest.routes';
 
 const router = Router();
 
@@ -19,5 +20,6 @@ router.use('/shipping-requests', shippingRequestRoutes);
 router.use('/shipping-orders', shippingOrderRoutes);
 router.use('/return-orders', returnOrderRoutes);
 router.use('/sales-invoices', salesInvoiceRoutes);
+router.use('/sample-requests', sampleRequestRoutes);
 
 export default router;

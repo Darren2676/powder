@@ -7,7 +7,7 @@ interface UserAttributes {
   email: string;
   password: string;
   real_name: string;
-  role: 'admin' | 'manager' | 'staff';
+  role: 'admin' | 'manager' | 'staff' | 'sales';
   department?: string;
   employee_number?: string;
   employee_name?: string;
@@ -29,7 +29,7 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
   public email!: string;
   public password!: string;
   public real_name!: string;
-  public role!: 'admin' | 'manager' | 'staff';
+  public role!: 'admin' | 'manager' | 'staff' | 'sales';
   public department?: string;
   public employee_number?: string;
   public employee_name?: string;
@@ -73,7 +73,7 @@ User.init(
       allowNull: false,
       defaultValue: 'staff',
       validate: {
-        isIn: [['admin', 'manager', 'staff']]
+        isIn: [['admin', 'manager', 'staff', 'sales']]
       }
     },
     department: {

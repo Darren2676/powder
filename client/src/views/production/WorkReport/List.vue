@@ -58,7 +58,7 @@ const {
 
 const handleDelete = (record: any) => {
   Modal.confirm({ title: '确认删除', icon: createVNode(ExclamationCircleOutlined), content: `确定要删除报工单 "${record.work_report_number}" 吗？`, okText: '确定', okType: 'danger', cancelText: '取消',
-    async onOk() { try { const res = await deleteWorkReport(record.work_report_number); if (res.success) { message.success('删除成功'); fetchData() } else { message.error(res.message || '删除失败') } } catch { message.error('删除失败') } }
+    async onOk() { try { const res = await deleteWorkReport(record.work_report_number); if (res.success) { message.success('删除成功'); fetchData() } else { message.error(res.message || '删除失败') } } catch (e: any) { message.error(e.response?.data?.message || '删除失败') } }
   })
 }
 

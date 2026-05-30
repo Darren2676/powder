@@ -20,3 +20,6 @@ export const exportBackflushTasks = (params?: any) =>
 
 export const checkBackflushReadiness = (orderNo: string, inboundQty?: number) =>
   request({ url: `/backflush-tasks/readiness/${orderNo}`, method: 'GET', params: { inboundQty } });
+
+export const updateAutoWeigh = (ids: number[], autoWeigh: string) =>
+  request({ url: '/backflush-tasks/auto-weigh', method: 'PATCH', data: { ids, auto_weigh: autoWeigh } });

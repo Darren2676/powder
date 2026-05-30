@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../../../middleware/auth.middleware';
+import { dataScope } from '../../../middleware/data-scope.middleware';
 import {
   createShippingOrder,
   getShippingOrderDetailsPage,
@@ -16,9 +17,9 @@ import { validateCreateShippingOrder, validateUpdateShippingOrder } from '../../
 const router = Router();
 
 router.post('/', authenticate, validateCreateShippingOrder, createShippingOrder);
-router.get('/details-page', authenticate, getShippingOrderDetailsPage);
-router.post('/details-page/export-selected', authenticate, exportShippingOrderDetailsSelected);
-router.get('/', authenticate, getShippingOrders);
+router.get('/details-page', authenticate, dataScope, getShippingOrderDetailsPage);
+router.post('/details-page/export-selected', authenticate, dataScope, exportShippingOrderDetailsSelected);
+router.get('/', authenticate, dataScope, getShippingOrders);
 router.get('/:shipping_order_number/print', authenticate, getPrintData);
 router.get('/:shipping_order_number', authenticate, getShippingOrderDetail);
 router.put('/:shipping_order_number/logistics', authenticate, updateLogistics);

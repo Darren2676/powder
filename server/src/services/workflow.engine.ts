@@ -26,7 +26,8 @@ export const moduleConfig: Record<string, { tableName: string; primaryKey: strin
   'purchase_req': { tableName: 'purchase_req', primaryKey: 'purchase_req_number', displayName: '采购申请单' },
   'purchase_order': { tableName: 'purchase_order', primaryKey: 'purchase_order_number', displayName: '采购订单' },
   'stock_in': { tableName: 'stock_in', primaryKey: 'stock_in_number', displayName: '入库单' },
-  'return_order': { tableName: 'return_order', primaryKey: 'return_order_number', displayName: '退货单' }
+  'return_order': { tableName: 'return_order', primaryKey: 'return_order_number', displayName: '退货单' },
+  'expense_claim': { tableName: 'expense_claim', primaryKey: 'claim_number', displayName: '报销单' }
 }
 
 export interface WorkflowUser {

@@ -560,7 +560,7 @@ export const getBackflushTasks = async (queryParams: any) => {
   const {
     page = 1, pageSize = 20,
     production_order_number, deduction_status, material_number, item_number,
-    keyword
+    keyword, auto_weigh
   } = queryParams || {};
 
   let where = 'WHERE 1=1';
@@ -586,6 +586,10 @@ export const getBackflushTasks = async (queryParams: any) => {
     where += ` AND (bt.production_order_number LIKE :kw OR bt.material_number LIKE :kw
               OR bt.material_name LIKE :kw OR bt.item_number LIKE :kw OR bt.item_name LIKE :kw)`;
     replacements.kw = `%${keyword}%`;
+  }
+  if (auto_weigh) {
+    where += ' AND bt.auto_weigh = :aw';
+    replacements.aw = auto_weigh;
   }
 
   const countQuery = `SELECT COUNT(*) as total FROM backflush_task bt ${where}`;

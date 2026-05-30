@@ -569,7 +569,13 @@ const headerFieldLabels: Record<string, string> = {
   return_order_number: '退货单号', type: '退货类型',
   shipping_order_number: '发货单号', status: '业务状态',
   reason: '退货原因', confirm_remark: '确认备注',
-  confirmed_by: '确认人', confirmed_date: '确认日期'
+  confirmed_by: '确认人', confirmed_date: '确认日期',
+  // 报销单
+  claim_number: '报销单号', claim_date: '报销日期', claim_type: '报销类型',
+  applicant_id: '申请人ID', applicant_name: '申请人', department: '部门',
+  purpose: '事由', advance_amount: '预支金额', return_amount: '退回金额',
+  supplement_amount: '补领金额', current_step: '当前步骤',
+  created_by: '创建人', updated_by: '更新人'
 }
 
 const hiddenHeaderFields = new Set([
@@ -633,7 +639,12 @@ const businessDetailColumns = computed(() => {
     // 关联单号
     forecast_number: '预测编号', purchase_req_number: '采购申请号',
     purchase_order_number: '采购订单号', bom_number: 'BOM编号',
-    return_order_number: '退货单号'
+    return_order_number: '退货单号',
+    // 报销单明细
+    expense_category: '费用类别', trip_from: '起点', trip_to: '终点',
+    trip_start_date: '出发日期', trip_end_date: '返回日期', vehicle_type: '交通工具',
+    receipt_count: '单据张数', person_count: '人数', days: '天数',
+    subsidy_rate: '补贴标准', amount: '金额', item_remark: '明细备注', sort_order: '排序'
   }
   return Object.keys(first)
     .filter(k => !skipKeys.has(k) && first[k] !== null && first[k] !== undefined)

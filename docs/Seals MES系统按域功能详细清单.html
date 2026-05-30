@@ -103,11 +103,11 @@
   <div class="subtitle">制造执行系统 · 按域功能详细清单</div>
   <div class="stats">
     <div class="stat-item"><div class="stat-num">12</div><div class="stat-label">业务域</div></div>
-    <div class="stat-item"><div class="stat-num">122</div><div class="stat-label">功能模块</div></div>
-    <div class="stat-item"><div class="stat-num">113</div><div class="stat-label">后端路由</div></div>
-    <div class="stat-item"><div class="stat-num">103</div><div class="stat-label">前端页面</div></div>
+    <div class="stat-item"><div class="stat-num">134</div><div class="stat-label">功能模块</div></div>
+    <div class="stat-item"><div class="stat-num">118</div><div class="stat-label">后端路由</div></div>
+    <div class="stat-item"><div class="stat-num">150</div><div class="stat-label">前端页面</div></div>
   </div>
-  <div class="date">统计时间：2026-05-21 | 前后端+数据库三层交叉验证</div>
+  <div class="date">更新时间：2026-05-15 | 基于现有系统功能全面更新 (v4)</div>
 </div>
 
 <!-- ============ 一、基础数据域 ============ -->
@@ -115,7 +115,7 @@
   <div class="domain-header bg-master-data">
     <span class="domain-icon">📦</span>
     <div><div class="domain-title">一、基础数据域</div><div class="domain-subtitle">master-data</div></div>
-    <span class="domain-count">23</span>
+    <span class="domain-count">24</span>
   </div>
   <table>
     <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
@@ -130,19 +130,20 @@
       <tr><td>8</td><td class="module-name">物料管理</td><td>Material/</td><td class="api-path">/materials</td><td><span class="db-table">material</span></td><td class="desc">物料基础信息管理</td></tr>
       <tr><td>9</td><td class="module-name">客户物料映射</td><td>CustomerMaterialMapping/</td><td class="api-path">/customer-material-mappings</td><td><span class="db-table">customer_material_mapping</span></td><td class="desc">客户与物料编号对照关系</td></tr>
       <tr><td>10</td><td class="module-name">BOM管理</td><td>Bom/</td><td class="api-path">/boms</td><td><span class="db-table">bom / bom_detail</span></td><td class="desc">标准BOM清单及明细行管理</td></tr>
-      <tr><td>11</td><td class="module-name">制造BOM</td><td>MfgBom/</td><td class="api-path">/mfg-boms</td><td><span class="db-table">mfg_bom / mfg_bom_detail</span></td><td class="desc">制造BOM（含替代料/损耗率）</td></tr>
-      <tr><td>12</td><td class="module-name">工序管理</td><td>Procedure/</td><td class="api-path">/procedures</td><td><span class="db-table">procedure</span></td><td class="desc">工序定义（编号/名称/类型/工时）</td></tr>
-      <tr><td>13</td><td class="module-name">工作中心</td><td>WorkCenter/</td><td class="api-path">/work-centers</td><td><span class="db-table">work_center</span></td><td class="desc">工作中心管理，关联车间/设备</td></tr>
-      <tr><td>14</td><td class="module-name">工艺路线</td><td>RoutingMaster/</td><td class="api-path">/routing-masters</td><td><span class="db-table">routing_master / routing_detail</span></td><td class="desc">工艺路线主表+工序明细行管理</td></tr>
-      <tr><td>15</td><td class="module-name">单位管理</td><td>Unit/</td><td class="api-path">/units</td><td><span class="db-table">unit</span></td><td class="desc">计量单位CRUD</td></tr>
-      <tr><td>16</td><td class="module-name">仓库管理</td><td>Warehouse/</td><td class="api-path">/warehouses</td><td><span class="db-table">warehouse</span></td><td class="desc">仓库档案（编号/名称/类型：成品仓/原料仓/报废仓等）</td></tr>
-      <tr><td>17</td><td class="module-name">库位管理</td><td>StorageLocation/</td><td class="api-path">/storage-locations</td><td><span class="db-table">storage_location</span></td><td class="desc">仓库内库位管理</td></tr>
-      <tr><td>18</td><td class="module-name">车间管理</td><td>Workshop/</td><td class="api-path">/workshops</td><td><span class="db-table">workshop</span></td><td class="desc">车间档案管理</td></tr>
-      <tr><td>19</td><td class="module-name">生产线</td><td>Productionline/</td><td class="api-path">/productionlines</td><td><span class="db-table">production_line</span></td><td class="desc">产线档案管理</td></tr>
-      <tr><td>20</td><td class="module-name">班组管理</td><td>Team/</td><td class="api-path">/teams</td><td><span class="db-table">team</span></td><td class="desc">班组档案管理</td></tr>
-      <tr><td>21</td><td class="module-name">班次管理</td><td>Schedule/</td><td class="api-path">/schedules</td><td><span class="db-table">schedule</span></td><td class="desc">班次定义（早班/中班/晚班）</td></tr>
-      <tr><td>22</td><td class="module-name">员工管理</td><td>Employee/</td><td class="api-path">/employees</td><td><span class="db-table">employee</span></td><td class="desc">员工档案（工号/姓名/部门/岗位）</td></tr>
-      <tr><td>23</td><td class="module-name">物流公司</td><td>LogisticsCompany/</td><td class="api-path">/logistics-companies</td><td><span class="db-table">logistics_company</span></td><td class="desc">承运商/物流公司管理</td></tr>
+      <tr><td>11</td><td class="module-name">制造BOM</td><td>MfgBom/</td><td class="api-path">/mfg-boms</td><td><span class="db-table">mfg_bom / mfg_bom_detail</span></td><td class="desc">制造BOM（含替代料/损耗率），含模具BOM映射</td></tr>
+      <tr><td>12</td><td class="module-name">成本BOM</td><td>CostBom/</td><td class="api-path">/boms/:id/cost-bom</td><td>—</td><td class="desc">基于BOM的多层物料成本累计计算，含物料成本/标准成本汇总导出</td></tr>
+      <tr><td>13</td><td class="module-name">工序管理</td><td>Procedure/</td><td class="api-path">/procedures</td><td><span class="db-table">procedure</span></td><td class="desc">工序定义（编号/名称/类型/工时）</td></tr>
+      <tr><td>14</td><td class="module-name">工作中心</td><td>WorkCenter/</td><td class="api-path">/work-centers</td><td><span class="db-table">work_center</span></td><td class="desc">工作中心管理，关联车间/设备</td></tr>
+      <tr><td>15</td><td class="module-name">工艺路线</td><td>RoutingMaster/</td><td class="api-path">/routing-masters</td><td><span class="db-table">routing_master / routing_detail</span></td><td class="desc">工艺路线主表+工序明细行管理</td></tr>
+      <tr><td>16</td><td class="module-name">单位管理</td><td>Unit/</td><td class="api-path">/units</td><td><span class="db-table">unit</span></td><td class="desc">计量单位CRUD</td></tr>
+      <tr><td>17</td><td class="module-name">仓库管理</td><td>Warehouse/</td><td class="api-path">/warehouses</td><td><span class="db-table">warehouse</span></td><td class="desc">仓库档案（编号/名称/类型：成品仓/原料仓/报废仓等）</td></tr>
+      <tr><td>18</td><td class="module-name">库位管理</td><td>StorageLocation/</td><td class="api-path">/storage-locations</td><td><span class="db-table">storage_location</span></td><td class="desc">仓库内库位管理</td></tr>
+      <tr><td>19</td><td class="module-name">车间管理</td><td>Workshop/</td><td class="api-path">/workshops</td><td><span class="db-table">workshop</span></td><td class="desc">车间档案管理</td></tr>
+      <tr><td>20</td><td class="module-name">生产线</td><td>Productionline/</td><td class="api-path">/productionlines</td><td><span class="db-table">production_line</span></td><td class="desc">产线档案管理</td></tr>
+      <tr><td>21</td><td class="module-name">班组管理</td><td>Team/</td><td class="api-path">/teams</td><td><span class="db-table">team</span></td><td class="desc">班组档案管理</td></tr>
+      <tr><td>22</td><td class="module-name">班次管理</td><td>Schedule/</td><td class="api-path">/schedules</td><td><span class="db-table">schedule</span></td><td class="desc">班次定义（早班/中班/晚班）</td></tr>
+      <tr><td>23</td><td class="module-name">员工管理</td><td>Employee/</td><td class="api-path">/employees</td><td><span class="db-table">employee</span></td><td class="desc">员工档案（工号/姓名/部门/岗位）</td></tr>
+      <tr><td>24</td><td class="module-name">物流公司</td><td>LogisticsCompany/</td><td class="api-path">/logistics-companies</td><td><span class="db-table">logistics_company</span></td><td class="desc">承运商/物流公司管理</td></tr>
     </tbody>
   </table>
 </div>
@@ -152,7 +153,7 @@
   <div class="domain-header bg-sales">
     <span class="domain-icon">💰</span>
     <div><div class="domain-title">二、销售管理域</div><div class="domain-subtitle">sales</div></div>
-    <span class="domain-count">10</span>
+    <span class="domain-count">12</span>
   </div>
   <table>
     <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
@@ -167,6 +168,8 @@
       <tr><td>8</td><td class="module-name">销售报表</td><td>SalesReport/</td><td class="api-path">/sales-report</td><td>—</td><td class="desc">销售统计报表</td></tr>
       <tr><td>9</td><td class="module-name">发货预警</td><td>ShippingWarning/</td><td>—</td><td>—</td><td class="desc">超期未发货/逾期提醒</td></tr>
       <tr><td>10</td><td class="module-name">按订单发货汇总</td><td>ShippingByOrderSummary/</td><td>—</td><td>—</td><td class="desc">按销售订单维度汇总发货情况</td></tr>
+      <tr><td>11</td><td class="module-name">订单生产汇总</td><td>OrderProductionSummary/</td><td>—</td><td>—</td><td class="desc">按销售订单维度汇总关联生产单的执行进度</td></tr>
+      <tr><td>12</td><td class="module-name">销售订单仪表板</td><td>Dashboard/</td><td>—</td><td>—</td><td class="desc">销售订单可视化仪表板，图表展示订单状态分布</td></tr>
     </tbody>
   </table>
 </div>
@@ -193,29 +196,33 @@
   <div class="domain-header bg-production">
     <span class="domain-icon">🏭</span>
     <div><div class="domain-title">四、生产管理域</div><div class="domain-subtitle">production</div></div>
-    <span class="domain-count">18</span>
+    <span class="domain-count">22</span>
   </div>
   <table>
     <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
     <tbody>
       <tr><td>1</td><td class="module-name">生产订单</td><td>Order/</td><td class="api-path">/orders</td><td><span class="db-table">production_order</span></td><td class="desc">生产单管理，支持拆分/派发+生成工序任务和备料单</td></tr>
       <tr><td>2</td><td class="module-name">工序任务</td><td>ProcessTask/</td><td class="api-path">/process-tasks</td><td><span class="db-table">process_task</span></td><td class="desc">工序任务管理，含倒冲标志(is_backflush)，支持快速报工</td></tr>
-      <tr><td>3</td><td class="module-name">报工管理</td><td>WorkReport/</td><td class="api-path">/work-reports</td><td><span class="db-table">work_report / work_report_detail</span></td><td class="desc">生产报工（合格/不合格数量），支持快速报工和详情报工</td></tr>
-      <tr><td>4</td><td class="module-name">备料单</td><td>MaterialPreparation/</td><td class="api-path">/material-preparations</td><td><span class="db-table">material_preparation / material_preparation_detail</span></td><td class="desc">派发时自动生成，记录各工序所需物料</td></tr>
+      <tr><td>3</td><td class="module-name">报工管理</td><td>WorkReport/</td><td class="api-path">/work-reports</td><td><span class="db-table">work_report / work_report_detail</span></td><td class="desc">生产报工（合格/不合格数量），支持快速报工和连续报工</td></tr>
+      <tr><td>4</td><td class="module-name">备料单</td><td>MaterialPreparation/</td><td class="api-path">/material-preparations</td><td><span class="db-table">material_preparation / material_preparation_detail</span></td><td class="desc">派发时自动生成，记录各工序所需物料，支持按工序备料</td></tr>
       <tr><td>5</td><td class="module-name">领料单</td><td>MaterialIssue/</td><td class="api-path">/material-issues</td><td><span class="db-table">material_issue</span></td><td class="desc">从备料单创建领料单，扣减原料库存</td></tr>
-      <tr><td>6</td><td class="module-name">倒冲任务</td><td>—</td><td class="api-path">/backflush-tasks</td><td><span class="db-table">backflush_task</span></td><td class="desc">自动倒冲领料（按BOM耗用）</td></tr>
-      <tr><td>7</td><td class="module-name">委外申请</td><td>OutsourcingReq/</td><td class="api-path">/outsourcing-reqs</td><td><span class="db-table">outsourcing_req</span></td><td class="desc">委外加工申请</td></tr>
-      <tr><td>8</td><td class="module-name">委外订单</td><td>OutsourcingOrder/</td><td class="api-path">/outsourcing-orders</td><td><span class="db-table">outsourcing_order</span></td><td class="desc">委外订单CRUD+发出，关联工序任务</td></tr>
-      <tr><td>9</td><td class="module-name">委外发料</td><td>OutsourcingIssue/</td><td class="api-path">/outsourcing/issue</td><td><span class="db-table">outsourcing_issue</span></td><td class="desc">委外原料发料，支持移动端操作+打印标签+拍照</td></tr>
-      <tr><td>10</td><td class="module-name">委外收货</td><td>OutsourcingReceipt/</td><td class="api-path">/outsourcing/receipt</td><td><span class="db-table">outsourcing_receipt</span></td><td class="desc">委外收货确认，触发检验路由，支持移动端</td></tr>
-      <tr><td>11</td><td class="module-name">委外检验</td><td>OutsourcingInspection/</td><td class="api-path">/outsourcing/inspection</td><td>—</td><td class="desc">委外来料检验，支持移动端</td></tr>
-      <tr><td>12</td><td class="module-name">委外结算</td><td>OutsourcingSettlement/</td><td class="api-path">/outsourcing/settlement</td><td><span class="db-table">outsourcing_settlement</span></td><td class="desc">委外费用结算</td></tr>
-      <tr><td>13</td><td class="module-name">委外退料入库</td><td>—</td><td class="api-path">/outsourcing/return-stockin</td><td>—</td><td class="desc">委外余料退回入库</td></tr>
-      <tr><td>14</td><td class="module-name">委外价目表</td><td>OutsourcingPrice/</td><td class="api-path">/outsourcing-prices</td><td><span class="db-table">outsourcing_price</span></td><td class="desc">委外供应商+物料维度定价</td></tr>
-      <tr><td>15</td><td class="module-name">在制品报表</td><td>WIP/</td><td class="api-path">/wip</td><td>—</td><td class="desc">在制品统计报表</td></tr>
-      <tr><td>16</td><td class="module-name">计件工资</td><td>PieceRateWage/</td><td class="api-path">/piece-rate-wages</td><td><span class="db-table">piece_rate_wage</span></td><td class="desc">按报工数量×计件单价计算工资</td></tr>
-      <tr><td>17</td><td class="module-name">甘特图</td><td>Gantt/</td><td class="api-path">/orders/gantt</td><td>—</td><td class="desc">生产排程甘特图视图</td></tr>
-      <tr><td>18</td><td class="module-name">派发打印</td><td>DispatchPrint/</td><td class="api-path">/orders/print-data</td><td>—</td><td class="desc">派工单/流程卡打印</td></tr>
+      <tr><td>6</td><td class="module-name">退料管理</td><td>—</td><td class="api-path">/material-returns</td><td><span class="db-table">material_return</span></td><td class="desc">生产领料后退料回仓，退回原料库存</td></tr>
+      <tr><td>7</td><td class="module-name">倒冲任务</td><td>—</td><td class="api-path">/backflush-tasks</td><td><span class="db-table">backflush_task</span></td><td class="desc">自动倒冲领料（按BOM耗用）</td></tr>
+      <tr><td>8</td><td class="module-name">委外申请</td><td>OutsourcingReq/</td><td class="api-path">/outsourcing-reqs</td><td><span class="db-table">outsourcing_req</span></td><td class="desc">委外加工申请</td></tr>
+      <tr><td>9</td><td class="module-name">委外订单</td><td>OutsourcingOrder/</td><td class="api-path">/outsourcing-orders</td><td><span class="db-table">outsourcing_order</span></td><td class="desc">委外订单CRUD+发出，关联工序任务</td></tr>
+      <tr><td>10</td><td class="module-name">委外发料</td><td>OutsourcingIssue/</td><td class="api-path">/outsourcing/issue</td><td><span class="db-table">outsourcing_issue</span></td><td class="desc">委外原料发料，支持移动端操作+打印标签+拍照</td></tr>
+      <tr><td>11</td><td class="module-name">委外收货</td><td>OutsourcingReceipt/</td><td class="api-path">/outsourcing/receipt</td><td><span class="db-table">outsourcing_receipt</span></td><td class="desc">委外收货确认，触发检验路由，支持移动端</td></tr>
+      <tr><td>12</td><td class="module-name">委外检验</td><td>OutsourcingInspection/</td><td class="api-path">/outsourcing/inspection</td><td>—</td><td class="desc">委外来料检验，支持移动端</td></tr>
+      <tr><td>13</td><td class="module-name">委外结算</td><td>OutsourcingSettlement/</td><td class="api-path">/outsourcing/settlement</td><td><span class="db-table">outsourcing_settlement</span></td><td class="desc">委外费用结算</td></tr>
+      <tr><td>14</td><td class="module-name">委外退料入库</td><td>—</td><td class="api-path">/outsourcing/return-stockin</td><td>—</td><td class="desc">委外余料退回入库</td></tr>
+      <tr><td>15</td><td class="module-name">委外价目表</td><td>OutsourcingPrice/</td><td class="api-path">/outsourcing-prices</td><td><span class="db-table">outsourcing_price</span></td><td class="desc">委外供应商+物料维度定价</td></tr>
+      <tr><td>16</td><td class="module-name">在制品报表</td><td>WIP/</td><td class="api-path">/wip</td><td>—</td><td class="desc">在制品统计报表（按生产单/按工作中心/线边仓流水）</td></tr>
+      <tr><td>17</td><td class="module-name">计件工资</td><td>PieceRateWage/</td><td class="api-path">/piece-rate-wages</td><td><span class="db-table">piece_rate_wage</span></td><td class="desc">按报工数量×计件单价计算工资</td></tr>
+      <tr><td>18</td><td class="module-name">甘特图</td><td>Gantt/</td><td class="api-path">/orders/gantt</td><td>—</td><td class="desc">生产排程甘特图视图</td></tr>
+      <tr><td>19</td><td class="module-name">派发打印</td><td>DispatchPrint/</td><td class="api-path">/orders/print-data</td><td>—</td><td class="desc">派工单/流程卡打印</td></tr>
+      <tr><td>20</td><td class="module-name">生产单材料成本</td><td>MaterialCost/</td><td class="api-path">/production-material-cost</td><td>—</td><td class="desc">生产单物料消耗成本统计分析</td></tr>
+      <tr><td>21</td><td class="module-name">生产工单仪表板</td><td>ProgressDashboard/</td><td class="api-path">/progress-dashboard</td><td>—</td><td class="desc">生产工单进度可视化仪表板</td></tr>
+      <tr><td>22</td><td class="module-name">生产单进度看板</td><td>ProcessKanban/</td><td class="api-path">/process-kanban</td><td>—</td><td class="desc">生产单工序进度看板，实时跟踪各工序完成状态</td></tr>
     </tbody>
   </table>
 </div>
@@ -225,7 +232,7 @@
   <div class="domain-header bg-purchasing">
     <span class="domain-icon">🛒</span>
     <div><div class="domain-title">五、采购管理域</div><div class="domain-subtitle">purchasing</div></div>
-    <span class="domain-count">7</span>
+    <span class="domain-count">8</span>
   </div>
   <table>
     <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
@@ -233,10 +240,11 @@
       <tr><td>1</td><td class="module-name">采购申请</td><td>PurchaseReq/</td><td class="api-path">/purchase-reqs</td><td><span class="db-table">purchase_req / purchase_req_detail</span></td><td class="desc">采购申请CRUD+审批，支持合并转采购订单，转单后回写明细行状态</td></tr>
       <tr><td>2</td><td class="module-name">采购订单</td><td>PurchaseOrder/</td><td class="api-path">/purchase-orders</td><td><span class="db-table">purchase_order / purchase_order_detail</span></td><td class="desc">采购订单CRUD+审批，支持从采购申请转单，删除后回写申请明细</td></tr>
       <tr><td>3</td><td class="module-name">收货通知</td><td>ReceivingNotice/</td><td class="api-path">/receiving-notices</td><td><span class="db-table">receiving_notice / receiving_notice_detail</span></td><td class="desc">采购收货通知，确认后触发检验路由</td></tr>
-      <tr><td>4</td><td class="module-name">采购入库</td><td>StockIn/</td><td class="api-path">/stock-ins</td><td><span class="db-table">stock_in / stock_in_detail</span></td><td class="desc">采购入库单CRUD+确认/撤回，含会计期间字段</td></tr>
-      <tr><td>5</td><td class="module-name">采购退货</td><td>PurchaseReturn/</td><td class="api-path">/purchase-returns</td><td><span class="db-table">purchase_return</span></td><td class="desc">采购退货出库</td></tr>
-      <tr><td>6</td><td class="module-name">采购价目表</td><td>PurchasePrice/</td><td class="api-path">/purchase-prices</td><td><span class="db-table">purchase_price</span></td><td class="desc">供应商+物料维度采购定价</td></tr>
-      <tr><td>7</td><td class="module-name">采购计算器</td><td>PurchaseCalc/</td><td class="api-path">/purchase-calc</td><td>—</td><td class="desc">采购量/金额计算工具</td></tr>
+      <tr><td>4</td><td class="module-name">采购退货</td><td>PurchaseReturn/</td><td class="api-path">/purchase-returns</td><td><span class="db-table">purchase_return</span></td><td class="desc">采购退货出库</td></tr>
+      <tr><td>5</td><td class="module-name">采购价目表</td><td>PurchasePrice/</td><td class="api-path">/purchase-prices</td><td><span class="db-table">purchase_price</span></td><td class="desc">供应商+物料维度采购定价</td></tr>
+      <tr><td>6</td><td class="module-name">采购计算器</td><td>PurchaseCalc/</td><td class="api-path">/purchase-calc</td><td>—</td><td class="desc">采购需求计算报表</td></tr>
+      <tr><td>7</td><td class="module-name">采购发票</td><td>PurchaseInvoice/</td><td class="api-path">/purchase-invoices</td><td><span class="db-table">purchase_invoice</span></td><td class="desc">采购发票管理，关联采购订单/收货</td></tr>
+      <tr><td>8</td><td class="module-name">采购订单仪表板</td><td>PurchasingDashboard/</td><td>—</td><td>—</td><td class="desc">采购订单可视化仪表板，图表展示订单执行状态</td></tr>
     </tbody>
   </table>
 </div>
@@ -277,7 +285,7 @@
   <div class="domain-header bg-warehouse">
     <span class="domain-icon">🏗️</span>
     <div><div class="domain-title">七、仓储管理域</div><div class="domain-subtitle">warehouse</div></div>
-    <span class="domain-count">14</span>
+    <span class="domain-count">15</span>
   </div>
   <table>
     <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
@@ -287,15 +295,16 @@
       <tr><td>3</td><td class="module-name">成品入库</td><td>—</td><td class="api-path">/finished-goods/inbound</td><td><span class="db-table">finished_goods_inventory</span></td><td class="desc">生产成品入库（含入库单管理/确认/撤回）</td></tr>
       <tr><td>4</td><td class="module-name">成品出库</td><td>—</td><td class="api-path">/finished-goods/outbound</td><td>—</td><td class="desc">销售发货出库（批次FIFO/箱码模式）</td></tr>
       <tr><td>5</td><td class="module-name">成品装箱</td><td>—</td><td class="api-path">/packing-orders</td><td><span class="db-table">packing_order / packing_box_inventory</span></td><td class="desc">装箱单管理（确认/拆箱/箱码出库）</td></tr>
-      <tr><td>6</td><td class="module-name">原料库存查询</td><td>MaterialWarehouse/</td><td class="api-path">/material-warehouse/inventory</td><td><span class="db-table">material_batch_inventory</span></td><td class="desc">原料仓库存查询（批次+库位）</td></tr>
-      <tr><td>7</td><td class="module-name">原料入库</td><td>—</td><td class="api-path">/material-warehouse/inbound</td><td><span class="db-table">material_batch_inventory</span></td><td class="desc">原料采购入库/退料入库</td></tr>
-      <tr><td>8</td><td class="module-name">原料出库</td><td>—</td><td class="api-path">/material-warehouse/outbound</td><td>—</td><td class="desc">原料领料出库</td></tr>
-      <tr><td>9</td><td class="module-name">盘点管理</td><td>StockCount/</td><td class="api-path">/stock-counts</td><td><span class="db-table">stock_count / stock_count_detail</span></td><td class="desc">盘点单CRUD，录入实盘→复核→确认执行（库存调整）</td></tr>
-      <tr><td>10</td><td class="module-name">其他出入库</td><td>—</td><td class="api-path">/abnormal-io</td><td><span class="db-table">abnormal_io / abnormal_io_detail</span></td><td class="desc">其他入库/出库/调拨，确认/驳回/撤消</td></tr>
-      <tr><td>11</td><td class="module-name">报废处置</td><td>ScrapDisposal/</td><td class="api-path">/scrap-disposal</td><td><span class="db-table">scrap_disposal</span></td><td class="desc">报废品处置管理</td></tr>
-      <tr><td>12</td><td class="module-name">报废流水</td><td>ScrapTransaction/</td><td class="api-path">/scrap-transactions</td><td>—</td><td class="desc">报废仓库存流水记录</td></tr>
-      <tr><td>13</td><td class="module-name">报废库存</td><td>ScrapInventory/</td><td>—</td><td>—</td><td class="desc">报废仓库存查询</td></tr>
-      <tr><td>14</td><td class="module-name">月度出入库报表</td><td>—</td><td class="api-path">/finished-goods/monthly-report</td><td>—</td><td class="desc">成品仓月度出入库统计报表</td></tr>
+      <tr><td>6</td><td class="module-name">原料库存查询</td><td>MaterialWarehouse/</td><td class="api-path">/material-warehouse/inventory</td><td><span class="db-table">material_batch_inventory</span></td><td class="desc">原料仓库存查询（批次+库位），含安全库存预警</td></tr>
+      <tr><td>7</td><td class="module-name">原料入库</td><td>—</td><td class="api-path">/material-warehouse/inbound</td><td><span class="db-table">material_batch_inventory</span></td><td class="desc">原料采购入库/半成品入库/退料入库</td></tr>
+      <tr><td>8</td><td class="module-name">原料出库</td><td>—</td><td class="api-path">/material-warehouse/outbound</td><td>—</td><td class="desc">原料领料出库/采购退货出库</td></tr>
+      <tr><td>9</td><td class="module-name">来料入库</td><td>StockIn/</td><td class="api-path">/stock-ins</td><td><span class="db-table">stock_in / stock_in_detail</span></td><td class="desc">采购来料入库单CRUD+确认/撤回，含会计期间字段</td></tr>
+      <tr><td>10</td><td class="module-name">盘点管理</td><td>StockCount/</td><td class="api-path">/stock-counts</td><td><span class="db-table">stock_count / stock_count_detail</span></td><td class="desc">盘点单CRUD，录入实盘→复核→确认执行（库存调整）</td></tr>
+      <tr><td>11</td><td class="module-name">其他出入库</td><td>—</td><td class="api-path">/abnormal-io</td><td><span class="db-table">abnormal_io / abnormal_io_detail</span></td><td class="desc">其他入库/出库/调拨，确认/驳回/撤消</td></tr>
+      <tr><td>12</td><td class="module-name">报废处置</td><td>ScrapDisposal/</td><td class="api-path">/scrap-disposal</td><td><span class="db-table">scrap_disposal</span></td><td class="desc">报废品处置管理</td></tr>
+      <tr><td>13</td><td class="module-name">报废流水</td><td>ScrapTransaction/</td><td class="api-path">/scrap-transactions</td><td>—</td><td class="desc">报废仓库存流水记录</td></tr>
+      <tr><td>14</td><td class="module-name">报废库存</td><td>ScrapInventory/</td><td>—</td><td>—</td><td class="desc">报废仓库存查询</td></tr>
+      <tr><td>15</td><td class="module-name">月度出入库报表</td><td>—</td><td class="api-path">/finished-goods/monthly-report</td><td>—</td><td class="desc">成品仓/原料仓/报废仓月度出入库统计报表</td></tr>
     </tbody>
   </table>
 </div>
@@ -342,13 +351,14 @@
   <div class="domain-header bg-integration">
     <span class="domain-icon">🔗</span>
     <div><div class="domain-title">十、系统集成域</div><div class="domain-subtitle">integration</div></div>
-    <span class="domain-count">2</span>
+    <span class="domain-count">3</span>
   </div>
   <table>
     <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
     <tbody>
       <tr><td>1</td><td class="module-name">批次追溯</td><td>BatchTrace/</td><td class="api-path">/batch-trace</td><td>—</td><td class="desc">成品批次全链路追溯（原料→生产→发货）</td></tr>
-      <tr><td>2</td><td class="module-name">与小药称量系统对接</td><td>—</td><td class="api-path">/integration/small-medicine</td><td>—</td><td class="desc">提供BOM清单、称量生产工单，接收称量实际数据，完成小药生产工单的报工</td></tr>
+      <tr><td>2</td><td class="module-name">新核云检验对接</td><td>XinheyunInspect/</td><td class="api-path">/integration/xhy-inspect</td><td>—</td><td class="desc">同步新核云系统检验记录/检验报工数据，含包装质量报表</td></tr>
+      <tr><td>3</td><td class="module-name">新核云库存对接</td><td>—</td><td class="api-path">/integration/xhy-inventory</td><td>—</td><td class="desc">同步新核云系统库存数据，含库存查询/出入库流水</td></tr>
     </tbody>
   </table>
 </div>
@@ -358,25 +368,27 @@
   <div class="domain-header bg-system">
     <span class="domain-icon">🔐</span>
     <div><div class="domain-title">十一、系统管理域</div><div class="domain-subtitle">system</div></div>
-    <span class="domain-count">14</span>
+    <span class="domain-count">16</span>
   </div>
   <table>
     <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
     <tbody>
-      <tr><td>1</td><td class="module-name">用户管理</td><td>User/</td><td class="api-path">/users</td><td><span class="db-table">users</span></td><td class="desc">用户CRUD，含角色分配</td></tr>
-      <tr><td>2</td><td class="module-name">角色管理</td><td>Role/</td><td class="api-path">/roles</td><td><span class="db-table">roles / role_permissions</span></td><td class="desc">角色CRUD+权限分配</td></tr>
-      <tr><td>3</td><td class="module-name">权限管理</td><td>Permission/</td><td class="api-path">/permissions</td><td><span class="db-table">permissions / permission_menu</span></td><td class="desc">菜单权限+API权限管理</td></tr>
-      <tr><td>4</td><td class="module-name">部门管理</td><td>Department/</td><td class="api-path">/departments</td><td><span class="db-table">department</span></td><td class="desc">部门树形管理</td></tr>
-      <tr><td>5</td><td class="module-name">审批管理</td><td>—</td><td class="api-path">/approval</td><td>—</td><td class="desc">通用审批流（提交/审批/反审）</td></tr>
-      <tr><td>6</td><td class="module-name">工作流引擎</td><td>Workflow/</td><td class="api-path">/workflows / /workflow-runtime</td><td><span class="db-table">workflow_definition / workflow_instance</span></td><td class="desc">工作流设计器+运行时引擎</td></tr>
-      <tr><td>7</td><td class="module-name">通知管理</td><td>—</td><td class="api-path">/notifications</td><td><span class="db-table">notifications</span></td><td class="desc">站内通知（SSE实时推送）</td></tr>
-      <tr><td>8</td><td class="module-name">安全审计</td><td>—</td><td class="api-path">/security</td><td>—</td><td class="desc">操作日志/安全审计</td></tr>
-      <tr><td>9</td><td class="module-name">API密钥</td><td>ApiKey/</td><td class="api-path">/api-keys</td><td><span class="db-table">api_key</span></td><td class="desc">外部系统API密钥管理</td></tr>
-      <tr><td>10</td><td class="module-name">用户偏好</td><td>—</td><td class="api-path">/user-preferences</td><td><span class="db-table">user_preference</span></td><td class="desc">列个性化等用户偏好持久化</td></tr>
-      <tr><td>11</td><td class="module-name">单据完结配置</td><td>DocumentCompletionConfig/</td><td class="api-path">/document-completion-config</td><td><span class="db-table">document_completion_config</span></td><td class="desc">单据自动完结规则配置</td></tr>
-      <tr><td>12</td><td class="module-name">手动完结</td><td>ManualClose/</td><td class="api-path">/manual-close</td><td>—</td><td class="desc">手动完结指定单据</td></tr>
-      <tr><td>13</td><td class="module-name">自动盘点</td><td>AutoStockCount/</td><td class="api-path">/auto-stock-count</td><td>—</td><td class="desc">定时自动盘点任务配置</td></tr>
-      <tr><td>14</td><td class="module-name">SSE推送</td><td>—</td><td class="api-path">/sse</td><td>—</td><td class="desc">Server-Sent Events实时消息推送</td></tr>
+      <tr><td>1</td><td class="module-name">认证管理</td><td>Auth/</td><td class="api-path">/auth</td><td><span class="db-table">users</span></td><td class="desc">用户登录/注册/Token刷新，JWT认证</td></tr>
+      <tr><td>2</td><td class="module-name">驾驶舱</td><td>Cockpit/</td><td class="api-path">/cockpit</td><td>—</td><td class="desc">管理驾驶舱首页，全局数据可视化看板</td></tr>
+      <tr><td>3</td><td class="module-name">用户管理</td><td>User/</td><td class="api-path">/users</td><td><span class="db-table">users</span></td><td class="desc">用户CRUD，含角色分配</td></tr>
+      <tr><td>4</td><td class="module-name">角色管理</td><td>Role/</td><td class="api-path">/roles</td><td><span class="db-table">roles / role_permissions</span></td><td class="desc">角色CRUD+权限分配</td></tr>
+      <tr><td>5</td><td class="module-name">权限管理</td><td>Permission/</td><td class="api-path">/permissions</td><td><span class="db-table">permissions / permission_menu</span></td><td class="desc">菜单权限+API权限管理</td></tr>
+      <tr><td>6</td><td class="module-name">部门管理</td><td>Department/</td><td class="api-path">/departments</td><td><span class="db-table">department</span></td><td class="desc">部门树形管理</td></tr>
+      <tr><td>7</td><td class="module-name">审批管理</td><td>—</td><td class="api-path">/approval</td><td>—</td><td class="desc">通用审批流（提交/审批/反审）</td></tr>
+      <tr><td>8</td><td class="module-name">工作流引擎</td><td>Workflow/</td><td class="api-path">/workflows / /workflow-runtime</td><td><span class="db-table">workflow_definition / workflow_instance</span></td><td class="desc">工作流设计器+运行时引擎，含我的待办</td></tr>
+      <tr><td>9</td><td class="module-name">通知管理</td><td>—</td><td class="api-path">/notifications</td><td><span class="db-table">notifications</span></td><td class="desc">站内通知（SSE实时推送）</td></tr>
+      <tr><td>10</td><td class="module-name">安全审计</td><td>—</td><td class="api-path">/security</td><td>—</td><td class="desc">操作日志/安全审计</td></tr>
+      <tr><td>11</td><td class="module-name">API密钥</td><td>ApiKey/</td><td class="api-path">/api-keys</td><td><span class="db-table">api_key</span></td><td class="desc">外部系统API密钥管理</td></tr>
+      <tr><td>12</td><td class="module-name">用户偏好</td><td>—</td><td class="api-path">/user-preferences</td><td><span class="db-table">user_preference</span></td><td class="desc">列个性化等用户偏好持久化</td></tr>
+      <tr><td>13</td><td class="module-name">单据完结配置</td><td>DocumentCompletionConfig/</td><td class="api-path">/document-completion-config</td><td><span class="db-table">document_completion_config</span></td><td class="desc">单据自动完结规则配置</td></tr>
+      <tr><td>14</td><td class="module-name">手动完结</td><td>ManualClose/</td><td class="api-path">/manual-close</td><td>—</td><td class="desc">手动完结指定单据</td></tr>
+      <tr><td>15</td><td class="module-name">自动盘点</td><td>AutoStockCount/</td><td class="api-path">/auto-stock-count</td><td>—</td><td class="desc">定时自动盘点任务配置</td></tr>
+      <tr><td>16</td><td class="module-name">SSE推送</td><td>—</td><td class="api-path">/sse</td><td>—</td><td class="desc">Server-Sent Events实时消息推送</td></tr>
     </tbody>
   </table>
 </div>
@@ -386,15 +398,16 @@
   <div class="domain-header bg-open">
     <span class="domain-icon">📱</span>
     <div><div class="domain-title">十二、开放接口域</div><div class="domain-subtitle">open</div></div>
-    <span class="domain-count">4</span>
+    <span class="domain-count">5</span>
   </div>
   <table>
     <thead><tr><th>#</th><th>功能模块</th><th>前端页面</th><th>后端API</th><th>核心数据表</th><th>功能说明</th></tr></thead>
     <tbody>
-      <tr><td>1</td><td class="module-name">移动端发货</td><td>—</td><td class="api-path">/open/shipping</td><td>—</td><td class="desc">移动端扫码发货接口</td></tr>
-      <tr><td>2</td><td class="module-name">移动端报工</td><td>—</td><td class="api-path">/open/work-reports</td><td>—</td><td class="desc">移动端快速报工接口</td></tr>
-      <tr><td>3</td><td class="module-name">移动端检验</td><td>—</td><td class="api-path">/open/inspection</td><td>—</td><td class="desc">移动端质检接口</td></tr>
-      <tr><td>4</td><td class="module-name">外部API</td><td>—</td><td class="api-path">/open/*</td><td>—</td><td class="desc">API Key认证的外部系统接口</td></tr>
+      <tr><td>1</td><td class="module-name">移动端报工</td><td>—</td><td class="api-path">/open/work-reports</td><td>—</td><td class="desc">移动端快速报工接口</td></tr>
+      <tr><td>2</td><td class="module-name">开放订单接口</td><td>—</td><td class="api-path">/open/orders</td><td>—</td><td class="desc">外部系统订单数据查询接口</td></tr>
+      <tr><td>3</td><td class="module-name">开放备料接口</td><td>—</td><td class="api-path">/open/material-preparations</td><td>—</td><td class="desc">外部系统备料数据接口</td></tr>
+      <tr><td>4</td><td class="module-name">开放BOM接口</td><td>—</td><td class="api-path">/open/bom</td><td>—</td><td class="desc">外部系统BOM数据查询接口</td></tr>
+      <tr><td>5</td><td class="module-name">外部API</td><td>—</td><td class="api-path">/open/*</td><td>—</td><td class="desc">API Key认证的外部系统接口</td></tr>
     </tbody>
   </table>
 </div>
@@ -419,36 +432,36 @@
   <h2>附录B：功能统计汇总</h2>
 
   <div class="stats-bar-container">
-    <div class="stats-bar-row"><span class="stats-bar-label">基础数据</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:76.7%;background:linear-gradient(90deg,#667eea,#764ba2);">23</div></div><span class="stats-bar-value">23</span></div>
-    <div class="stats-bar-row"><span class="stats-bar-label">销售管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:33.3%;background:linear-gradient(90deg,#f093fb,#f5576c);">10</div></div><span class="stats-bar-value">10</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">基础数据</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:80%;background:linear-gradient(90deg,#667eea,#764ba2);">24</div></div><span class="stats-bar-value">24</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">销售管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:40%;background:linear-gradient(90deg,#f093fb,#f5576c);">12</div></div><span class="stats-bar-value">12</span></div>
     <div class="stats-bar-row"><span class="stats-bar-label">计划管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:10%;background:linear-gradient(90deg,#4facfe,#00f2fe);">3</div></div><span class="stats-bar-value">3</span></div>
-    <div class="stats-bar-row"><span class="stats-bar-label">生产管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:60%;background:linear-gradient(90deg,#43e97b,#38f9d7);">18</div></div><span class="stats-bar-value">18</span></div>
-    <div class="stats-bar-row"><span class="stats-bar-label">采购管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:23.3%;background:linear-gradient(90deg,#fa709a,#fee140);">7</div></div><span class="stats-bar-value">7</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">生产管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:73.3%;background:linear-gradient(90deg,#43e97b,#38f9d7);">22</div></div><span class="stats-bar-value">22</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">采购管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:26.7%;background:linear-gradient(90deg,#fa709a,#fee140);">8</div></div><span class="stats-bar-value">8</span></div>
     <div class="stats-bar-row"><span class="stats-bar-label">质量管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:56.7%;background:linear-gradient(90deg,#a18cd1,#fbc2eb);">17</div></div><span class="stats-bar-value">17</span></div>
-    <div class="stats-bar-row"><span class="stats-bar-label">仓储管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:46.7%;background:linear-gradient(90deg,#fccb90,#d57eeb);">14</div></div><span class="stats-bar-value">14</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">仓储管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:50%;background:linear-gradient(90deg,#fccb90,#d57eeb);">15</div></div><span class="stats-bar-value">15</span></div>
     <div class="stats-bar-row"><span class="stats-bar-label">设备管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:20%;background:linear-gradient(90deg,#5ee7df,#b490ca);">6</div></div><span class="stats-bar-value">6</span></div>
     <div class="stats-bar-row"><span class="stats-bar-label">财务管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:10%;background:linear-gradient(90deg,#c3cfe2,#f5f7fa);">3</div></div><span class="stats-bar-value">3</span></div>
-    <div class="stats-bar-row"><span class="stats-bar-label">系统集成</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:6.7%;background:linear-gradient(90deg,#667eea,#764ba2);">2</div></div><span class="stats-bar-value">2</span></div>
-    <div class="stats-bar-row"><span class="stats-bar-label">系统管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:46.7%;background:linear-gradient(90deg,#89f7fe,#66a6ff);">14</div></div><span class="stats-bar-value">14</span></div>
-    <div class="stats-bar-row"><span class="stats-bar-label">开放接口</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:13.3%;background:linear-gradient(90deg,#a1c4fd,#c2e9fb);">4</div></div><span class="stats-bar-value">4</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">系统集成</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:10%;background:linear-gradient(90deg,#667eea,#764ba2);">3</div></div><span class="stats-bar-value">3</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">系统管理</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:53.3%;background:linear-gradient(90deg,#89f7fe,#66a6ff);">16</div></div><span class="stats-bar-value">16</span></div>
+    <div class="stats-bar-row"><span class="stats-bar-label">开放接口</span><div class="stats-bar-track"><div class="stats-bar-fill" style="width:16.7%;background:linear-gradient(90deg,#a1c4fd,#c2e9fb);">5</div></div><span class="stats-bar-value">5</span></div>
   </div>
 
   <table class="stats-table" style="margin-top:16px;">
     <thead><tr><th>业务域</th><th>功能模块数</th><th>后端路由数</th><th>前端页面数</th></tr></thead>
     <tbody>
-      <tr><td>基础数据</td><td>23</td><td>22</td><td>23</td></tr>
-      <tr><td>销售管理</td><td>10</td><td>8</td><td>10</td></tr>
-      <tr><td>计划管理</td><td>3</td><td>3</td><td>3</td></tr>
-      <tr><td>生产管理</td><td>18</td><td>17</td><td>15</td></tr>
-      <tr><td>采购管理</td><td>7</td><td>6</td><td>6</td></tr>
-      <tr><td>质量管理</td><td>17</td><td>17</td><td>17</td></tr>
-      <tr><td>仓储管理</td><td>14</td><td>8</td><td>7</td></tr>
+      <tr><td>基础数据</td><td>24</td><td>23</td><td>24</td></tr>
+      <tr><td>销售管理</td><td>12</td><td>8</td><td>12</td></tr>
+      <tr><td>计划管理</td><td>3</td><td>3</td><td>4</td></tr>
+      <tr><td>生产管理</td><td>22</td><td>19</td><td>24</td></tr>
+      <tr><td>采购管理</td><td>8</td><td>7</td><td>10</td></tr>
+      <tr><td>质量管理</td><td>17</td><td>17</td><td>19</td></tr>
+      <tr><td>仓储管理</td><td>15</td><td>8</td><td>26</td></tr>
       <tr><td>设备管理</td><td>6</td><td>6</td><td>6</td></tr>
       <tr><td>财务管理</td><td>3</td><td>3</td><td>3</td></tr>
-      <tr><td>系统集成</td><td>2</td><td>2</td><td>1</td></tr>
-      <tr><td>系统管理</td><td>14</td><td>16</td><td>11</td></tr>
-      <tr><td>开放接口</td><td>4</td><td>4</td><td>0</td></tr>
-      <tr><td>合计</td><td>122</td><td>113</td><td>103</td></tr>
+      <tr><td>系统集成</td><td>3</td><td>3</td><td>7</td></tr>
+      <tr><td>系统管理</td><td>16</td><td>17</td><td>11</td></tr>
+      <tr><td>开放接口</td><td>5</td><td>4</td><td>0</td></tr>
+      <tr><td>合计</td><td>134</td><td>118</td><td>150</td></tr>
     </tbody>
   </table>
 </div>

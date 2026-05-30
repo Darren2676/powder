@@ -252,6 +252,122 @@
         </a-space>
       </div>
     </a-modal>
+
+    <!-- FIFO批次选择弹窗 -->
+    <a-modal
+      v-model:open="fifoVisible"
+      :width="1100"
+      :footer="null"
+      :mask-closable="false"
+      destroy-on-close
+      :style="fifoModalStyle"
+    >
+      <template #title>
+        <div class="drag-handle" @mousedown="onFifoDragStart">填充未领量 - FIFO批次选择</div>
+      </template>
+      <a-spin :spinning="fifoLoading">
+        <div style="display:flex; gap:12px;">
+          <!-- 左侧：物料列表 -->
+          <div style="width:280px; flex-shrink:0; border-right:1px solid #f0f0f0; padding-right:12px;">
+            <div style="font-weight:600; margin-bottom:8px; font-size:13px;">未领料物料 ({{ fifoMaterials.length }})</div>
+            <div v-for="mat in fifoMaterials" :key="mat.material_number"
+              :class="['fifo-mat-row', { 'fifo-mat-active': fifoActiveItem === mat.material_number }]"
+              @click="fifoSelectMaterial(mat)"
+            >
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-weight:500; font-size:12px;">{{ mat.material_number }}</span>
+                <span style="font-size:11px; color:#fa8c16;">{{ mat.remaining_quantity }} {{ mat.unit }}</span>
+              </div>
+              <div style="font-size:11px; color:#888; margin-top:2px;">{{ mat.material_name }}</div>
+              <div style="font-size:11px; color:#52c41a; margin-top:1px;">默认仓库: {{ mat.default_warehouse || '无' }}</div>
+            </div>
+            <a-empty v-if="fifoMaterials.length === 0" description="无未领料物料" :image="null" style="padding:16px 0;" />
+          </div>
+
+          <!-- 右侧：批次详情 -->
+          <div style="flex:1; min-width:0;">
+            <template v-if="fifoCurrentInfo">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <a-space :size="12">
+                  <span style="font-weight:600;">{{ fifoCurrentInfo.item_number }}</span>
+                  <span style="color:#888;">{{ fifoCurrentInfo.item_name }}</span>
+                </a-space>
+                <a-space :size="8">
+                  <span style="font-size:12px; color:#888;">仓库:</span>
+                  <a-select
+                    :value="fifoCurrentInfo.warehouse_number"
+                    size="small"
+                    style="width:180px;"
+                    @change="(v: string) => fifoChangeWarehouse(fifoActiveItem, v)"
+                  >
+                    <a-select-option v-for="wh in fifoCurrentInfo.warehouses" :key="wh.warehouse_number" :value="wh.warehouse_number">
+                      {{ wh.warehouse_number }} - {{ wh.warehouse_name }} ({{ wh.quantity }})
+                    </a-select-option>
+                  </a-select>
+                  <span style="font-size:12px; color:#888;">可用量:</span>
+                  <span style="font-weight:600; color:#1890ff;">{{ fifoCurrentInfo.available_qty }}</span>
+                </a-space>
+              </div>
+
+              <a-table
+                :columns="[
+                  { title: '选择', key: 'selected', width: 50 },
+                  { title: '批次号', dataIndex: 'batch_number', key: 'batch_number', width: 140 },
+                  { title: '入库日期', dataIndex: 'inbound_date', key: 'inbound_date', width: 100 },
+                  { title: '供应商', dataIndex: 'supplier_name', key: 'supplier_name', width: 100 },
+                  { title: '可用数量', dataIndex: 'available', key: 'available', width: 90, align: 'right' },
+                  { title: '分配数量', key: 'allocated_qty', width: 120 },
+                  { title: '生产单号', dataIndex: 'production_order_number', key: 'production_order_number', width: 140 }
+                ]"
+                :data-source="fifoCurrentAllocations"
+                :pagination="false"
+                size="small"
+                row-key="batch_number"
+                bordered
+                :scroll="{ y: 300 }"
+              >
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'selected'">
+                    <a-checkbox :checked="record.selected" @change="() => fifoToggleBatch(record)" />
+                  </template>
+                  <template v-if="column.key === 'inbound_date'">
+                    {{ record.inbound_date ? record.inbound_date.substring(0, 10) : '-' }}
+                  </template>
+                  <template v-if="column.key === 'allocated_qty'">
+                    <a-input-number
+                      :value="record.allocated_qty"
+                      :min="0"
+                      :max="record.available"
+                      size="small"
+                      style="width:100px;"
+                      :disabled="!record.selected"
+                      @change="(v: number | null) => fifoChangeAllocatedQty(record, v)"
+                    />
+                  </template>
+                </template>
+              </a-table>
+
+              <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:12px; color:#888;">
+                  已选批次: {{ fifoCurrentAllocations.filter((a: any) => a.selected).length }} / {{ fifoCurrentAllocations.length }}
+                </span>
+                <span style="font-size:13px;">
+                  分配合计: <b style="color:#1890ff;">{{ fifoTotalAllocated }}</b>
+                  <span style="color:#888; margin-left:8px;">需求: {{ fifoMaterials.find((m: any) => m.material_number === fifoActiveItem)?.remaining_quantity || 0 }}</span>
+                </span>
+              </div>
+            </template>
+            <a-empty v-else description="请从左侧选择物料" style="padding:60px 0;" />
+          </div>
+        </div>
+      </a-spin>
+
+      <!-- 底部操作 -->
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px; border-top:1px solid #f0f0f0; padding-top:12px;">
+        <a-button @click="fifoVisible = false">取消</a-button>
+        <a-button type="primary" @click="fifoConfirm">确认选择</a-button>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -260,6 +376,8 @@ import { ref, computed, onMounted, nextTick } from 'vue'
 import { message } from 'ant-design-vue'
 import { ReloadOutlined, PlusOutlined, DeleteOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { queryByOrder, createMaterialIssue, deleteMaterialIssue } from '@/api/production/materialIssue'
+import { getMaterialBatchOptionsBulk, getMaterialBatchOptions } from '@/api/warehouse/materialWarehouse'
+import { useModalDrag } from '@/composables/useModalDrag'
 
 interface DetailItem {
   _uid: number
@@ -295,6 +413,8 @@ interface StepGroup {
   stepStatusText: string
   stepStatusColor: string
 }
+
+const { modalStyle: fifoModalStyle, onDragStart: onFifoDragStart, resetDrag: resetFifoDrag } = useModalDrag()
 
 let uidSeq = 0
 
@@ -558,15 +678,193 @@ const removeBatchRow = (index: number) => {
   issueInputList.value.splice(index, 1)
 }
 
-const fillRemaining = () => {
-  let count = 0
+// ==================== FIFO批次选择 ====================
+const fifoVisible = ref(false)
+const fifoLoading = ref(false)
+const fifoData = ref<Record<string, any>>({})
+const fifoActiveItem = ref('')
+
+const fifoMaterials = computed(() => {
+  return issueInputList.value
+    .filter(d => !d.is_added && d.remaining_quantity > 0)
+    .reduce((acc: any[], d) => {
+      if (!acc.find(a => a.material_number === d.material_number)) {
+        acc.push({
+          material_number: d.material_number,
+          material_name: d.material_name,
+          unit: d.unit,
+          remaining_quantity: d.remaining_quantity,
+          default_warehouse: d.default_warehouse
+        })
+      }
+      return acc
+    }, [])
+})
+
+const fifoCurrentAllocations = computed(() => {
+  if (!fifoActiveItem.value || !fifoData.value[fifoActiveItem.value]) return []
+  return fifoData.value[fifoActiveItem.value].allocations || []
+})
+
+const fifoCurrentInfo = computed(() => {
+  if (!fifoActiveItem.value || !fifoData.value[fifoActiveItem.value]) return null
+  return fifoData.value[fifoActiveItem.value]
+})
+
+const fifoTotalAllocated = computed(() => {
+  if (!fifoActiveItem.value) return 0
+  return fifoCurrentAllocations.value.filter((a: any) => a.selected).reduce((s: number, a: any) => s + (a.allocated_qty || 0), 0)
+})
+
+const fillRemaining = async () => {
+  const materials = fifoMaterials.value
+  if (materials.length === 0) {
+    message.warning('没有未领料的物料')
+    return
+  }
+
+  fifoLoading.value = true
+  fifoVisible.value = true
+  resetFifoDrag()
+  try {
+    const items = materials.map(m => ({
+      item_number: m.material_number,
+      warehouse_number: m.default_warehouse || '',
+      required_quantity: m.remaining_quantity
+    }))
+    const res: any = await getMaterialBatchOptionsBulk({ items })
+    fifoData.value = res?.data || {}
+    // 默认选中第一个物料
+    const firstKey = Object.keys(fifoData.value)[0]
+    fifoActiveItem.value = firstKey || ''
+  } catch (err: any) {
+    message.error(err?.response?.data?.message || '获取批次库存失败')
+  } finally {
+    fifoLoading.value = false
+  }
+}
+
+// 切换物料行
+const fifoSelectMaterial = (mat: any) => {
+  fifoActiveItem.value = mat.material_number
+}
+
+// 切换仓库
+const fifoChangeWarehouse = async (itemNumber: string, warehouseNumber: string) => {
+  try {
+    const mat = fifoMaterials.value.find((m: any) => m.material_number === itemNumber)
+    const res: any = await getMaterialBatchOptions({ item_number: itemNumber, warehouse_number: warehouseNumber })
+    const batches = res?.data || []
+    let remaining = mat?.remaining_quantity || 0
+    const allocations = batches.map((b: any) => {
+      const batchQty = parseFloat(b.quantity)
+      let allocated = 0
+      if (remaining > 0 && batchQty > 0) {
+        allocated = Math.min(remaining, batchQty)
+        remaining -= allocated
+      }
+      return {
+        batch_number: b.batch_number,
+        quantity: batchQty,
+        available: batchQty,
+        inbound_date: b.inbound_date,
+        supplier_number: b.supplier_number || '',
+        supplier_name: b.supplier_name || '',
+        production_order_number: b.production_order_number || '',
+        selected: allocated > 0,
+        allocated_qty: allocated
+      }
+    })
+    const info = fifoData.value[itemNumber]
+    if (info) {
+      const wh = info.warehouses?.find((w: any) => w.warehouse_number === warehouseNumber)
+      info.warehouse_number = warehouseNumber
+      info.warehouse_name = wh?.warehouse_name || ''
+      info.available_qty = batches.reduce((s: number, b: any) => s + parseFloat(b.quantity), 0)
+      info.allocations = allocations
+    }
+  } catch {
+    message.error('查询批次库存失败')
+  }
+}
+
+// 勾选/取消批次
+const fifoToggleBatch = (alloc: any) => {
+  alloc.selected = !alloc.selected
+  if (alloc.selected && alloc.allocated_qty === 0) {
+    const totalAllocated = fifoCurrentAllocations.value.filter((a: any) => a !== alloc && a.selected).reduce((s: number, a: any) => s + (a.allocated_qty || 0), 0)
+    const mat = fifoMaterials.value.find((m: any) => m.material_number === fifoActiveItem.value)
+    const maxNeed = (mat?.remaining_quantity || 0) - totalAllocated
+    alloc.allocated_qty = Math.min(alloc.available, Math.max(0, maxNeed))
+  }
+  if (!alloc.selected) {
+    alloc.allocated_qty = 0
+  }
+}
+
+// 修改分配数量
+const fifoChangeAllocatedQty = (alloc: any, value: number | null) => {
+  const v = value || 0
+  if (v > alloc.available) {
+    message.warning(`分配数量不能超过可用量 ${alloc.available}`)
+    alloc.allocated_qty = alloc.available
+    return
+  }
+  alloc.allocated_qty = v
+  if (v > 0 && !alloc.selected) alloc.selected = true
+  if (v === 0) alloc.selected = false
+}
+
+// 确认FIFO选择
+const fifoConfirm = () => {
+  // 清除原有的 is_added 行和填充值
+  issueInputList.value = issueInputList.value.filter(d => !d.is_added)
   for (const d of issueInputList.value) {
-    if (!d.is_added && d.remaining_quantity > 0) {
-      d.input_actual_quantity = d.remaining_quantity
-      count++
+    d.input_actual_quantity = null
+    d.input_batch_number = ''
+  }
+
+  let filledCount = 0
+  for (const [itemNumber, info] of Object.entries(fifoData.value)) {
+    const selectedAllocs = (info.allocations || []).filter((a: any) => a.selected && a.allocated_qty > 0)
+    if (selectedAllocs.length === 0) continue
+
+    // 找到该物料在 issueInputList 中的原始行
+    const originalRows = issueInputList.value.filter(d => d.material_number === itemNumber && !d.is_added)
+    if (originalRows.length === 0) continue
+
+    const originalRow = originalRows[0]!
+    // 第一个分配写入原始行
+    originalRow.input_actual_quantity = selectedAllocs[0].allocated_qty
+    originalRow.input_batch_number = selectedAllocs[0].batch_number
+    filledCount++
+
+    // 后续分配用 addBatchRow 添加
+    for (let i = 1; i < selectedAllocs.length; i++) {
+      const idx = issueInputList.value.findIndex(d => d._uid === originalRow?._uid)
+      if (idx < 0) continue
+      let insertIdx = idx
+      for (let j = idx + 1; j < issueInputList.value.length; j++) {
+        if (issueInputList.value[j]?.id === originalRow?.id) insertIdx = j
+        else break
+      }
+      const maxLineNo = issueInputList.value.filter(d => d.id === originalRow?.id).reduce((max, d) => Math.max(max, d.line_number), 0)
+      const newRow: DetailItem = {
+        ...originalRow,
+        _uid: ++uidSeq,
+        is_added: true,
+        line_number: maxLineNo + 1,
+        remaining_quantity: 0,
+        input_actual_quantity: selectedAllocs[i].allocated_qty,
+        input_batch_number: selectedAllocs[i].batch_number
+      } as DetailItem
+      issueInputList.value.splice(insertIdx + 1, 0, newRow)
+      filledCount++
     }
   }
-  message.success(`已填充 ${count} 项未领量`)
+
+  fifoVisible.value = false
+  message.success(`已填充 ${filledCount} 项领料数量`)
 }
 
 const handleSave = async () => {
@@ -639,4 +937,27 @@ onMounted(() => {
 :deep(.candidate-row) { cursor: pointer; }
 :deep(.candidate-row:hover td) { background: #e6f7ff !important; }
 :deep(.ant-collapse-header) { align-items: center !important; }
+
+/* FIFO批次选择样式 */
+.fifo-mat-row {
+  padding: 8px 10px;
+  margin-bottom: 4px;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.fifo-mat-row:hover {
+  border-color: #1890ff;
+  background: #f0f8ff;
+}
+.fifo-mat-active {
+  border-color: #1890ff;
+  background: #e6f7ff;
+  box-shadow: 0 0 0 1px #1890ff;
+}
+.drag-handle {
+  cursor: move;
+  user-select: none;
+}
 </style>

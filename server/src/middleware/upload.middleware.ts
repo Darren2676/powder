@@ -18,8 +18,10 @@ const storage = multer.diskStorage({
     cb(null, UPLOAD_DIR);
   },
   filename: (req, file, cb) => {
+    // 修复中文文件名编码：multer 的 originalname 可能是 latin1 编码，需转为 utf-8
+    const originalName = Buffer.from(file.originalname, 'latin1').toString('utf-8');
     const randomName = crypto.randomBytes(16).toString('hex');
-    const ext = path.extname(file.originalname);
+    const ext = path.extname(originalName);
     cb(null, `${randomName}${ext}`);
   }
 });

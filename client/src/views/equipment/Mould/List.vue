@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, createVNode, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, PlusOutlined, DownloadOutlined, UploadOutlined, CopyOutlined, DownOutlined } from '@ant-design/icons-vue'
+import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, PlusOutlined, DownloadOutlined, UploadOutlined, CopyOutlined, DownOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getMoulds, createMould, updateMould, deleteMould, exportMoulds, importMoulds, approveMould, withdrawMould, updateMouldStrokes, updateMouldLifeSettings, scrapMould } from '@/api/equipment/mould'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getMfgBomHeaders } from '@/api/master-data/mfgBom'
 import { useTableList } from '@/composables/useTableList'
+import { useColumnPreference } from '@/composables/useColumnPreference'
+import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { APPROVAL_STATUS } from '@/constants/statuses'
 import { generateExportFilename } from '@/utils/exportFilename'
 
@@ -156,40 +158,48 @@ const createModalVisible = ref(false)
 const createLoading = ref(false)
 const createForm = reactive<Mould>(emptyForm())
 
-const columns = [
-  { title: '模具编号', dataIndex: 'item_number', key: 'item_number' },
-  { title: '模具名称', dataIndex: 'item_name', key: 'item_name' },
-  { title: '产品编号', dataIndex: 'product_number', key: 'product_number' },
-  { title: '制造BOM编号', dataIndex: 'mfg_bom_number', key: 'mfg_bom_number' },
-  { title: '产品净重', dataIndex: 'product_net_weight', key: 'product_net_weight' },
-  { title: '单耗', dataIndex: 'unit_consumption', key: 'unit_consumption' },
-  { title: '成型件编号', dataIndex: 'formed_part_number', key: 'formed_part_number' },
-  { title: '成型件规格', dataIndex: 'formed_part_specifications', key: 'formed_part_specifications' },
-  { title: '成型件单耗', dataIndex: 'formed_part_materia_consumption', key: 'formed_part_materia_consumption' },
-  { title: '成型件数量', dataIndex: 'formed_parts_number', key: 'formed_parts_number' },
-  { title: '设计模穴数', dataIndex: 'design_cavities_number', key: 'design_cavities_number' },
-  { title: '设计模次', dataIndex: 'design_operation_frequency', key: 'design_operation_frequency' },
-  { title: '理论班产', dataIndex: 'design_production_number', key: 'design_production_number' },
-  { title: '实际模穴数', dataIndex: 'actual_cavities_number', key: 'actual_cavities_number' },
-  { title: '实际模次', dataIndex: 'actual_operation_frequency', key: 'actual_operation_frequency' },
-  { title: '实际班产', dataIndex: 'actual_production_number', key: 'actual_production_number' },
-  { title: '设备类型', dataIndex: 'equipment_type', key: 'equipment_type' },
-  { title: '产品名称', dataIndex: 'product_name', key: 'product_name' },
-  { title: '产品分类编号', dataIndex: 'product_class_number', key: 'product_class_number' },
-  { title: '产品分类名称', dataIndex: 'product_class_name', key: 'product_class_name' },
-  { title: '产品属性', dataIndex: 'product_properties', key: 'product_properties' },
-  { title: '基本单位', dataIndex: 'basic_unit', key: 'basic_unit' },
-  { title: '规格', dataIndex: 'specifications', key: 'specifications' },
-  { title: '产品图号', dataIndex: 'product_drawing_number', key: 'product_drawing_number' },
-  { title: '胶料编号', dataIndex: 'rubber_compound_number', key: 'rubber_compound_number' },
-  { title: '班产定额', dataIndex: 'batch_production_quota', key: 'batch_production_quota' },
-  { title: '标准合格率', dataIndex: 'standard_pass_rate', key: 'standard_pass_rate' },
-  { title: '寿命进度', key: 'life_progress', width: 150 },
-  { title: '寿命状态', dataIndex: 'life_status', key: 'life_status', width: 90 },
-  { title: '下次保养', dataIndex: 'next_maintenance_date', key: 'next_maintenance_date', width: 110 },
-  { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 100 },
-  { title: '操作', key: 'action', width: 120, fixed: 'right' as const }
+const defaultDataColumns: any[] = [
+  { title: '模具编号', dataIndex: 'item_number', key: 'item_number', width: 120, sorter: (a: any, b: any) => (a.item_number || '').localeCompare(b.item_number || ''), resizable: true },
+  { title: '模具名称', dataIndex: 'item_name', key: 'item_name', width: 140, resizable: true },
+  { title: '产品编号', dataIndex: 'product_number', key: 'product_number', width: 120, resizable: true },
+  { title: '制造BOM编号', dataIndex: 'mfg_bom_number', key: 'mfg_bom_number', width: 130, resizable: true },
+  { title: '产品净重', dataIndex: 'product_net_weight', key: 'product_net_weight', width: 100, resizable: true },
+  { title: '单耗', dataIndex: 'unit_consumption', key: 'unit_consumption', width: 80, resizable: true },
+  { title: '成型件编号', dataIndex: 'formed_part_number', key: 'formed_part_number', width: 120, resizable: true },
+  { title: '成型件规格', dataIndex: 'formed_part_specifications', key: 'formed_part_specifications', width: 120, resizable: true },
+  { title: '成型件单耗', dataIndex: 'formed_part_materia_consumption', key: 'formed_part_materia_consumption', width: 100, resizable: true },
+  { title: '成型件数量', dataIndex: 'formed_parts_number', key: 'formed_parts_number', width: 100, resizable: true },
+  { title: '设计模穴数', dataIndex: 'design_cavities_number', key: 'design_cavities_number', width: 100, resizable: true },
+  { title: '设计模次', dataIndex: 'design_operation_frequency', key: 'design_operation_frequency', width: 100, resizable: true },
+  { title: '理论班产', dataIndex: 'design_production_number', key: 'design_production_number', width: 100, resizable: true },
+  { title: '实际模穴数', dataIndex: 'actual_cavities_number', key: 'actual_cavities_number', width: 100, resizable: true },
+  { title: '实际模次', dataIndex: 'actual_operation_frequency', key: 'actual_operation_frequency', width: 100, resizable: true },
+  { title: '实际班产', dataIndex: 'actual_production_number', key: 'actual_production_number', width: 100, resizable: true },
+  { title: '设备类型', dataIndex: 'equipment_type', key: 'equipment_type', width: 100, resizable: true },
+  { title: '产品名称', dataIndex: 'product_name', key: 'product_name', width: 140, resizable: true },
+  { title: '产品分类编号', dataIndex: 'product_class_number', key: 'product_class_number', width: 110, resizable: true },
+  { title: '产品分类名称', dataIndex: 'product_class_name', key: 'product_class_name', width: 110, resizable: true },
+  { title: '产品属性', dataIndex: 'product_properties', key: 'product_properties', width: 100, resizable: true },
+  { title: '基本单位', dataIndex: 'basic_unit', key: 'basic_unit', width: 80, resizable: true },
+  { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 120, resizable: true },
+  { title: '产品图号', dataIndex: 'product_drawing_number', key: 'product_drawing_number', width: 110, resizable: true },
+  { title: '胶料编号', dataIndex: 'rubber_compound_number', key: 'rubber_compound_number', width: 110, resizable: true },
+  { title: '班产定额', dataIndex: 'batch_production_quota', key: 'batch_production_quota', width: 100, resizable: true },
+  { title: '标准合格率', dataIndex: 'standard_pass_rate', key: 'standard_pass_rate', width: 100, resizable: true },
+  { title: '寿命进度', key: 'life_progress', width: 150, resizable: true },
+  { title: '寿命状态', dataIndex: 'life_status', key: 'life_status', width: 90, resizable: true },
+  { title: '下次保养', dataIndex: 'next_maintenance_date', key: 'next_maintenance_date', width: 110, resizable: true },
+  { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 100, resizable: true }
 ]
+
+const {
+  columns, columnSettingVisible, columnSettingList, columnSettingSaving,
+  openColumnSetting, moveColumnUp, moveColumnDown, saveColumnSetting, resetColumnSetting,
+  loadColumnPreference, handleResizeColumn
+} = useColumnPreference('mould_list', defaultDataColumns, {
+  fixedLeft: [{ title: '行号', key: 'rowIndex', width: 60, fixed: 'left' as const }],
+  fixedRight: [{ title: '操作', key: 'action', width: 120, fixed: 'right' as const }]
+})
 
 const handleCreate = () => {
   Object.assign(createForm, emptyForm())
@@ -487,6 +497,7 @@ watch(() => [editForm.actual_cavities_number, editForm.actual_operation_frequenc
 })
 
 onMounted(() => {
+  loadColumnPreference()
   fetchData()
 })
 </script>
@@ -521,6 +532,10 @@ onMounted(() => {
             <template #icon><PlusOutlined /></template>
             新建
           </a-button>
+          <a-button @click="openColumnSetting">
+            <template #icon><SettingOutlined /></template>
+            列设置
+          </a-button>
         </a-space>
       </template>
 
@@ -535,8 +550,12 @@ onMounted(() => {
         size="middle"
         bordered
         @change="handleTableChange"
+        @resizeColumn="handleResizeColumn"
       >
-        <template #bodyCell="{ column, record }">
+        <template #bodyCell="{ column, record, index }">
+          <template v-if="column.key === 'rowIndex'">
+            {{ (pagination.current - 1) * pagination.pageSize + index + 1 }}
+          </template>
           <template v-if="column.key === 'approval_status'">
             <a-tag :color="record.approval_status === APPROVAL_STATUS.APPROVED ? 'green' : 'orange'">
               {{ record.approval_status || APPROVAL_STATUS.UNAPPROVED }}
@@ -584,6 +603,18 @@ onMounted(() => {
         </template>
       </a-table>
     </a-card>
+
+    <!-- 列设置抽屉 -->
+    <ColumnSettingDrawer
+      :open="columnSettingVisible"
+      :settingList="columnSettingList"
+      :saving="columnSettingSaving"
+      @update:open="columnSettingVisible = $event"
+      @moveUp="moveColumnUp"
+      @moveDown="moveColumnDown"
+      @save="saveColumnSetting"
+      @reset="resetColumnSetting"
+    />
 
     <!-- 编辑弹窗 -->
     <a-modal v-model:open="editModalVisible" title="修改模具" :confirm-loading="editLoading" @ok="handleEditSubmit" width="700px">

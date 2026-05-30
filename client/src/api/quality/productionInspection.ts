@@ -12,8 +12,8 @@ export const getInspectionsByOrder = (orderNo: string) =>
 export const updateProductionInspection = (id: string, data: any) =>
   request.put(`/quality/production-inspections/${encodeURIComponent(id)}`, data)
 
-export const completeInspection = (id: string) =>
-  request.put(`/quality/production-inspections/${encodeURIComponent(id)}/complete`)
+export const completeInspection = (id: string, data?: any) =>
+  request.put(`/quality/production-inspections/${encodeURIComponent(id)}/complete`, data || {})
 
 export const defectHandling = (id: string, data: any) =>
   request.put(`/quality/production-inspections/${encodeURIComponent(id)}/defect-handling`, data)

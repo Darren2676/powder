@@ -10,7 +10,8 @@ import {
   update,
   remove,
   confirm,
-  reject
+  reject,
+  cancelReturnOrder
 } from './returnOrder.controller';
 import { validateCreateReturnOrder, validateUpdateReturnOrder } from '../../../validators/sales.validator';
 
@@ -24,6 +25,7 @@ router.get('/:return_order_number', authenticate, getDetail);
 router.post('/', authenticate, validateCreateReturnOrder, create);
 router.put('/:return_order_number', authenticate, validateUpdateReturnOrder, update);
 router.delete('/:return_order_number', authenticate, remove);
+router.post('/:return_order_number/cancel', authenticate, cancelReturnOrder);
 router.post('/:return_order_number/confirm', authenticate, confirm);
 router.post('/:return_order_number/reject', authenticate, reject);
 

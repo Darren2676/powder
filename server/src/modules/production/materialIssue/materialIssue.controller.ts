@@ -114,13 +114,62 @@ export const queryByOrder = async (req: Request, res: Response, next: NextFuncti
       ORDER BY line_number
     `, { replacements: { prepNo: preparation.preparation_number } });
 
-    // 4. 查询历史领料记录
+    // 4. 查询历史领料记录（含明细行、已退量）
     const [previousIssues]: any = await sequelize.query(`
-      SELECT issue_number, total_issue_items, issue_status, remark, creation_date, creation_man
+      SELECT issue_number, source_type, total_issue_items, issue_status, remark, creation_date, creation_man
       FROM material_issue
       WHERE preparation_number = :prepNo
       ORDER BY creation_date DESC
     `, { replacements: { prepNo: preparation.preparation_number } });
+
+    // 4b. 查询每个领料单的明细行
+    if (previousIssues.length > 0) {
+      const issueNumbers = previousIssues.map((i: any) => i.issue_number);
+      const inClause = issueNumbers.map((_: any, idx: number) => `:in${idx}`).join(',');
+      const inReplacements: Record<string, string> = {};
+      issueNumbers.forEach((num: string, idx: number) => { inReplacements[`in${idx}`] = num; });
+
+      const [allDetails]: any = await sequelize.query(`
+        SELECT id, issue_number, line_number, material_number, material_name, material_type, unit,
+               required_quantity, actual_quantity, batch_number, step_number, work_center_name, default_warehouse
+        FROM material_issue_detail
+        WHERE issue_number IN (${inClause})
+        ORDER BY issue_number, line_number
+      `, { replacements: inReplacements });
+
+      // 4c. 查询已退数量（按领料单+物料汇总）
+      const [allReturned]: any = await sequelize.query(`
+        SELECT rd.material_number, rd.batch_number, r.issue_number,
+               SUM(rd.return_quantity) as total_returned
+        FROM material_return_detail rd
+        JOIN material_return r ON rd.return_number = r.return_number
+        WHERE r.issue_number IN (${inClause})
+        GROUP BY rd.material_number, rd.batch_number, r.issue_number
+      `, { replacements: inReplacements });
+
+      // 构建 (issue_number + material_number) -> 已退量 映射
+      const returnedMap = new Map<string, number>();
+      for (const r of allReturned) {
+        const key = `${r.issue_number}|${r.material_number}|${r.batch_number || ''}`;
+        returnedMap.set(key, (returnedMap.get(key) || 0) + (parseFloat(r.total_returned) || 0));
+      }
+
+      // 嵌入明细到 each previousIssue
+      const detailMap = new Map<string, any[]>();
+      for (const d of allDetails) {
+        if (!detailMap.has(d.issue_number)) detailMap.set(d.issue_number, []);
+        const retKey = `${d.issue_number}|${d.material_number}|${d.batch_number || ''}`;
+        const alreadyReturned = returnedMap.get(retKey) || 0;
+        const actualQty = parseFloat(d.actual_quantity) || 0;
+        d.max_return = Math.max(0, actualQty - alreadyReturned);
+        d.already_returned = alreadyReturned;
+        detailMap.get(d.issue_number)!.push(d);
+      }
+
+      for (const issue of previousIssues) {
+        issue.details = detailMap.get(issue.issue_number) || [];
+      }
+    }
 
     res.json(success({ order, preparation, details, previousIssues }, '查询成功'));
   } catch (err) { next(err); }
@@ -738,13 +787,23 @@ export const deleteMaterialIssue = async (req: Request, res: Response, next: Nex
         }
       }
 
-      // D. 回退备料明细已领量
-      if (detail.preparation_detail_id) {
-        await sequelize.query(
-          `UPDATE material_preparation_detail SET issued_quantity = ISNULL(issued_quantity, 0) - :qty WHERE id = :detailId`,
-          { replacements: { qty: actualQty, detailId: detail.preparation_detail_id }, transaction }
-        );
-      }
+    }
+
+    // D. 回退备料明细已领量：重新计算所有涉及的备料明细行（排除当前撤回的领料单）
+    // 收集所有涉及的 preparation_detail_id（去重）
+    const affectedDetailIds = [...new Set(detailRows.map((d: any) => d.preparation_detail_id).filter(Boolean))] as number[];
+    for (const detailId of affectedDetailIds) {
+      const [reissuedRows]: any = await sequelize.query(`
+        SELECT ISNULL(SUM(d.actual_quantity), 0) as total_issued
+        FROM material_issue_detail d
+        WHERE d.preparation_detail_id = :detailId
+          AND d.issue_number != :currentIssueNo
+      `, { replacements: { detailId, currentIssueNo: issue_number }, transaction });
+      const reissuedQty = parseFloat(reissuedRows[0]?.total_issued) || 0;
+      await sequelize.query(
+        `UPDATE material_preparation_detail SET issued_quantity = :qty WHERE id = :detailId`,
+        { replacements: { qty: reissuedQty, detailId }, transaction }
+      );
     }
 
     // E. 重算备料单状态

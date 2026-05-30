@@ -358,3 +358,21 @@ export const generateSemiProductionInboundOrderNumber = async (transaction?: any
   }
   return prefix + String(seq).padStart(3, '0');
 };
+
+// ==================== 样品申请编号 ====================
+
+export const generateSampleRequestNumber = async (transaction?: any): Promise<string> => {
+  const today = dayjs().format('YYYYMMDD');
+  const prefix = `SR-${today}-`;
+  const [rows]: any = await sequelize.query(
+    `SELECT TOP 1 request_number FROM sample_request WHERE request_number LIKE :prefix ORDER BY request_number DESC`,
+    { replacements: { prefix: `${prefix}%` }, ...(transaction ? { transaction } : {}) }
+  );
+  let seq = 1;
+  if (rows.length > 0) {
+    const last = rows[0].request_number as string;
+    const lastSeq = parseInt(last.substring(prefix.length));
+    if (!isNaN(lastSeq)) seq = lastSeq + 1;
+  }
+  return `${prefix}${String(seq).padStart(3, '0')}`;
+};

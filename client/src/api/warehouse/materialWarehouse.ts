@@ -90,6 +90,16 @@ export function withdrawSemiInboundOrder(inbound_order_number: string) {
   return request.post(`/material-warehouse/semi-inbound-orders/${inbound_order_number}/withdraw`)
 }
 
+// ==================== 批次库存 ====================
+
+export function getMaterialBatchOptions(params: { item_number: string; warehouse_number: string }) {
+  return request.get('/material-warehouse/batch-options', { params })
+}
+
+export function getMaterialBatchOptionsBulk(data: { items: Array<{ item_number: string; warehouse_number: string; required_quantity: number }> }) {
+  return request.post('/material-warehouse/batch-options-bulk', data)
+}
+
 // ==================== 采购退货出库 ====================
 
 export function getReturnOutboundList(params?: { page?: number; limit?: number; search?: string; return_status?: string }) {

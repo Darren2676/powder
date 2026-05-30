@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>报销单管理功能 - 开发工作量评估</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 16mm 14mm; }
+  body {
+    font-family: "Microsoft YaHei", "SimHei", "PingFang SC", sans-serif;
+    font-size: 12px;
+    line-height: 1.7;
+    color: #1a1a1a;
+    max-width: 100%; padding: 0; margin: 0;
+  }
+  h1 { font-size: 20px; text-align: center; margin: 0 0 6px 0; padding-bottom: 10px; border-bottom: 2px solid #1890ff; color: #0d1a26; }
+  h2 { font-size: 15px; margin: 22px 0 8px 0; padding: 5px 0 5px 10px; border-left: 4px solid #1890ff; background: #f0f5ff; color: #0d1a26; page-break-after: avoid; }
+  h3 { font-size: 13px; margin: 14px 0 6px 0; color: #1a3a5c; page-break-after: avoid; }
+  h4 { font-size: 12px; margin: 10px 0 4px 0; color: #2a4a6c; }
+  p { margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 11px; page-break-inside: avoid; }
+  th { background: #1890ff; color: #fff; padding: 5px 6px; text-align: left; font-weight: 600; }
+  td { padding: 4px 6px; border: 1px solid #d9d9d9; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafafa; }
+  pre { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 3px; padding: 8px 10px; font-size: 10.5px; line-height: 1.4; overflow-x: auto; white-space: pre-wrap; word-break: break-all; font-family: Consolas, "Courier New", monospace; page-break-inside: avoid; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 10.5px; background: #f0f0f0; padding: 1px 3px; border-radius: 2px; }
+  pre code { background: none; padding: 0; }
+  ul, ol { margin: 4px 0; padding-left: 20px; }
+  li { margin: 2px 0; }
+  strong { color: #cf1322; }
+  hr { border: none; border-top: 1px solid #e0e0e0; margin: 16px 0; }
+  .footer { text-align: center; font-size: 10px; color: #999; margin-top: 20px; padding-top: 6px; border-top: 1px solid #e0e0e0; }
+  .note { background: #fff7e6; border: 1px solid #ffd591; border-radius: 3px; padding: 8px 10px; margin: 6px 0; font-size: 11px; }
+  .note strong { color: #d46b08; }
+  .tag { display: inline-block; background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; border-radius: 3px; padding: 1px 6px; font-size: 10px; margin: 0 2px; }
+  .summary-table td { text-align: center; }
+  .highlight { background: #f6ffed; }
+</style>
+</head>
+<body>
+
+<h1>报销单管理功能 — 开发工作量评估</h1>
+<p style="text-align:center;color:#666;">Seals MES System &nbsp;|&nbsp; 2026年5月</p>
+
+<!-- ==================== 方案概述 ==================== -->
+<h2>一、功能概述</h2>
+<p><strong>业务描述：</strong>员工新建报销单并填写费用明细，提交后进入多级审批流程（审批步骤和审批人可配置），审批通过后完成报销。系统自动计算报销总额、退回/补领金额，支持差旅费专用字段及附件上传。</p>
+
+<h3>1.1 流程状态机</h3>
+<pre>员工新建 → 草稿
+     │
+     ▼ 提交（配置审批步骤）
+待审批（step 1）
+     │
+     ▼ 审批通过（当前步骤）
+审批中（step +1） ←──────┐
+     │                    │
+     ▼ 最后一步通过        │ 驳回
+已审批                    │
+     │                    ▼
+     │               已驳回 ──重新提交──→ 待审批（重置步骤）
+     │
+     ▼ 撤回（仅申请人）
+草稿
+
+反审（仅 manager/admin）：已审批 → 草稿</pre>
+
+<h3>1.2 结算自动计算</h3>
+<pre>总额 = SUM(费用明细.amount)
+若 总额 ≥ 预支金额：补领 = 总额 - 预支，退回 = 0
+若 总额 &lt; 预支金额：退回 = 预支 - 总额，补领 = 0</pre>
+
+<h3>1.3 角色权限</h3>
+<table>
+<tr><th>操作</th><th>申请人（staff）</th><th>审批人</th><th>管理人员（manager/admin）</th></tr>
+<tr><td>新建报销单</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td>编辑（草稿/已驳回）</td><td>✅（本人）</td><td>❌</td><td>❌</td></tr>
+<tr><td>提交审批</td><td>✅（本人）</td><td>❌</td><td>❌</td></tr>
+<tr><td>审批通过/驳回</td><td>❌</td><td>✅（当前步骤审批人）</td><td>❌</td></tr>
+<tr><td>撤回</td><td>✅（本人）</td><td>❌</td><td>❌</td></tr>
+<tr><td>反审</td><td>❌</td><td>❌</td><td>✅</td></tr>
+<tr><td>删除（仅草稿）</td><td>✅（本人）</td><td>❌</td><td>❌</td></tr>
+<tr><td>上传/删除附件</td><td>✅</td><td>✅</td><td>✅</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 数据库设计 ==================== -->
+<h2>二、数据库设计</h2>
+
+<h3>2.1 主表 — expense_claim</h3>
+<table>
+<tr><th>字段名</th><th>类型</th><th>说明</th><th>来源</th></tr>
+<tr><td><code>id</code></td><td><code>INT IDENTITY(1,1) PK</code></td><td>主键</td><td>系统</td></tr>
+<tr><td><code>claim_number</code></td><td><code>NVARCHAR(30) UNIQUE</code></td><td>编号 RE-YYYYMMDD-NNN</td><td>系统生成</td></tr>
+<tr><td><code>claim_date</code></td><td><code>DATE</code></td><td>报销日期</td><td>系统（创建日）</td></tr>
+<tr><td><code>claim_type</code></td><td><code>NVARCHAR(50)</code></td><td>报销类型：差旅费/日常报销/招待费/其他</td><td>申请人</td></tr>
+<tr><td><code>applicant_id</code></td><td><code>INT</code></td><td>申请人（关联 users.id）</td><td>系统</td></tr>
+<tr><td><code>applicant_name</code></td><td><code>NVARCHAR(50)</code></td><td>申请人姓名（冗余）</td><td>系统</td></tr>
+<tr><td><code>department</code></td><td><code>NVARCHAR(100)</code></td><td>部门</td><td>申请人</td></tr>
+<tr><td><code>purpose</code></td><td><code>NVARCHAR(500)</code></td><td>事由</td><td>申请人</td></tr>
+<tr><td><code>total_amount</code></td><td><code>DECIMAL(18,2)</code></td><td>报销总额（明细汇总）</td><td>系统自动</td></tr>
+<tr><td><code>advance_amount</code></td><td><code>DECIMAL(18,2)</code></td><td>预支金额</td><td>申请人</td></tr>
+<tr><td><code>return_amount</code></td><td><code>DECIMAL(18,2)</code></td><td>退回金额</td><td>系统自动</td></tr>
+<tr><td><code>supplement_amount</code></td><td><code>DECIMAL(18,2)</code></td><td>补领金额</td><td>系统自动</td></tr>
+<tr><td><code>approval_status</code></td><td><code>NVARCHAR(20)</code></td><td>审批状态：草稿/待审批/审批中/已审批/已驳回/已撤回</td><td>系统</td></tr>
+<tr><td><code>current_step</code></td><td><code>INT</code></td><td>当前审批步骤（0=草稿/已通过）</td><td>系统</td></tr>
+<tr><td><code>remark</code></td><td><code>NVARCHAR(1000)</code></td><td>备注</td><td>申请人</td></tr>
+<tr><td><code>created_by / created_at / updated_by / updated_at</code></td><td></td><td>标准审计字段</td><td>系统</td></tr>
+</table>
+
+<h3>2.2 费用明细表 — expense_claim_item</h3>
+<table>
+<tr><th>字段名</th><th>类型</th><th>说明</th></tr>
+<tr><td><code>id</code></td><td><code>INT IDENTITY(1,1) PK</code></td><td>主键</td></tr>
+<tr><td><code>claim_number</code></td><td><code>NVARCHAR(30) FK</code></td><td>关联主表，ON DELETE CASCADE</td></tr>
+<tr><td><code>expense_category</code></td><td><code>NVARCHAR(50)</code></td><td>费用类别：交通费/住宿费/出差补贴/餐饮费/其他</td></tr>
+<tr><td><code>trip_from</code></td><td><code>NVARCHAR(100)</code></td><td>起点（差旅专用）</td></tr>
+<tr><td><code>trip_to</code></td><td><code>NVARCHAR(100)</code></td><td>终点（差旅专用）</td></tr>
+<tr><td><code>trip_start_date</code></td><td><code>DATE</code></td><td>出发日期（差旅专用）</td></tr>
+<tr><td><code>trip_end_date</code></td><td><code>DATE</code></td><td>返回日期（差旅专用）</td></tr>
+<tr><td><code>vehicle_type</code></td><td><code>NVARCHAR(50)</code></td><td>交通工具（差旅专用）</td></tr>
+<tr><td><code>receipt_count</code></td><td><code>INT</code></td><td>单据张数</td></tr>
+<tr><td><code>person_count</code></td><td><code>INT</code></td><td>人数（补贴类）</td></tr>
+<tr><td><code>days</code></td><td><code>DECIMAL(5,1)</code></td><td>天数（补贴类）</td></tr>
+<tr><td><code>subsidy_rate</code></td><td><code>DECIMAL(18,2)</code></td><td>补贴标准/单价</td></tr>
+<tr><td><code>amount</code></td><td><code>DECIMAL(18,2)</code></td><td>金额</td></tr>
+<tr><td><code>item_remark</code></td><td><code>NVARCHAR(500)</code></td><td>明细备注</td></tr>
+<tr><td><code>sort_order</code></td><td><code>INT</code></td><td>排序</td></tr>
+</table>
+
+<h3>2.3 审批步骤表 — expense_claim_approval_step</h3>
+<table>
+<tr><th>字段名</th><th>类型</th><th>说明</th></tr>
+<tr><td><code>id</code></td><td><code>INT IDENTITY(1,1) PK</code></td><td>主键</td></tr>
+<tr><td><code>claim_number</code></td><td><code>NVARCHAR(30) FK</code></td><td>关联主表，ON DELETE CASCADE</td></tr>
+<tr><td><code>step_number</code></td><td><code>INT</code></td><td>步骤序号 1/2/3...</td></tr>
+<tr><td><code>step_name</code></td><td><code>NVARCHAR(100)</code></td><td>步骤名称：主管审批/财务复核/出纳确认</td></tr>
+<tr><td><code>approver_id</code></td><td><code>INT</code></td><td>审批人 user.id</td></tr>
+<tr><td><code>approver_name</code></td><td><code>NVARCHAR(50)</code></td><td>审批人姓名</td></tr>
+<tr><td><code>status</code></td><td><code>NVARCHAR(20)</code></td><td>待审批/已通过/已驳回</td></tr>
+<tr><td><code>approved_at</code></td><td><code>DATETIME</code></td><td>审批时间</td></tr>
+<tr><td><code>remark</code></td><td><code>NVARCHAR(500)</code></td><td>审批意见</td></tr>
+</table>
+
+<h3>2.4 附件表 — expense_claim_attachment</h3>
+<table>
+<tr><th>字段名</th><th>类型</th><th>说明</th></tr>
+<tr><td><code>id</code></td><td><code>INT IDENTITY(1,1) PK</code></td><td>主键</td></tr>
+<tr><td><code>claim_number</code></td><td><code>NVARCHAR(30) FK</code></td><td>关联主表，ON DELETE CASCADE</td></tr>
+<tr><td><code>file_name</code></td><td><code>NVARCHAR(200)</code></td><td>文件名</td></tr>
+<tr><td><code>file_url</code></td><td><code>NVARCHAR(500)</code></td><td>文件路径</td></tr>
+<tr><td><code>file_size</code></td><td><code>INT</code></td><td>文件大小（字节）</td></tr>
+<tr><td><code>uploaded_by</code></td><td><code>NVARCHAR(50)</code></td><td>上传人</td></tr>
+<tr><td><code>uploaded_at</code></td><td><code>DATETIME</code></td><td>上传时间</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== API 设计 ==================== -->
+<h2>三、API 设计</h2>
+<table>
+<tr><th>方法</th><th>路径</th><th>说明</th><th>权限</th></tr>
+<tr><td><code>GET</code></td><td><code>/expense-claims</code></td><td>列表查询（分页+搜索+状态筛选+类型筛选）</td><td>全部</td></tr>
+<tr><td><code>GET</code></td><td><code>/expense-claims/claim-types</code></td><td>报销类型+费用类别字典</td><td>全部</td></tr>
+<tr><td><code>GET</code></td><td><code>/expense-claims/:id</code></td><td>详情（主表+明细+审批步骤+附件）</td><td>全部</td></tr>
+<tr><td><code>POST</code></td><td><code>/expense-claims</code></td><td>新建</td><td>全部</td></tr>
+<tr><td><code>PUT</code></td><td><code>/expense-claims/:id</code></td><td>编辑（仅草稿/已驳回）</td><td>申请人</td></tr>
+<tr><td><code>DELETE</code></td><td><code>/expense-claims/:id</code></td><td>删除（仅草稿）</td><td>申请人</td></tr>
+<tr><td><code>POST</code></td><td><code>/expense-claims/:id/submit</code></td><td>提交审批（草稿/已驳回 → 待审批）</td><td>申请人</td></tr>
+<tr><td><code>POST</code></td><td><code>/expense-claims/:id/approve</code></td><td>当前步骤审批通过</td><td>当前步骤审批人</td></tr>
+<tr><td><code>POST</code></td><td><code>/expense-claims/:id/reject</code></td><td>当前步骤驳回</td><td>当前步骤审批人</td></tr>
+<tr><td><code>POST</code></td><td><code>/expense-claims/:id/withdraw</code></td><td>撤回（→ 草稿）</td><td>申请人</td></tr>
+<tr><td><code>POST</code></td><td><code>/expense-claims/:id/reverse</code></td><td>反审（已审批 → 草稿）</td><td>manager / admin</td></tr>
+<tr><td><code>POST</code></td><td><code>/expense-claims/:id/attachments</code></td><td>上传附件（multipart/form-data）</td><td>全部</td></tr>
+<tr><td><code>DELETE</code></td><td><code>/expense-claims/:id/attachments/:attachId</code></td><td>删除附件</td><td>全部</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 文件改造清单 ==================== -->
+<h2>四、文件改造清单</h2>
+<table>
+<tr><th>类型</th><th>文件路径</th><th>改造内容</th></tr>
+<tr><td>新增</td><td><code>src/sql/migrations/003_expense_claim.sql</code></td><td>4张表 + 索引 + 外键</td></tr>
+<tr><td>新增</td><td><code>server/src/modules/finance/expenseClaim/expenseClaim.service.ts</code></td><td>业务逻辑：编号生成、状态机、多级审批流转、金额汇总</td></tr>
+<tr><td>新增</td><td><code>server/src/modules/finance/expenseClaim/expenseClaim.controller.ts</code></td><td>控制器：14个接口</td></tr>
+<tr><td>新增</td><td><code>server/src/modules/finance/expenseClaim/expenseClaim.routes.ts</code></td><td>路由定义</td></tr>
+<tr><td>新增</td><td><code>client/src/api/finance/expenseClaim.ts</code></td><td>API 接口定义（13个函数）</td></tr>
+<tr><td>新增</td><td><code>client/src/views/finance/ExpenseClaim/List.vue</code></td><td>列表页（搜索+筛选+操作菜单）</td></tr>
+<tr><td>新增</td><td><code>client/src/views/finance/ExpenseClaim/Detail.vue</code></td><td>详情页（基础信息+可编辑明细+审批步骤+附件）</td></tr>
+<tr><td>修改</td><td><code>server/src/modules/finance/index.ts</code></td><td>挂载 <code>expenseClaimRoutes</code></td></tr>
+<tr><td>修改</td><td><code>server/src/services/approval.service.ts</code></td><td><code>moduleConfig</code> 注册 <code>expense_claim</code>，审批看板可见</td></tr>
+<tr><td>修改</td><td><code>server/src/migrate-menu-perms.ts</code></td><td>新增"报销单管理"页面权限</td></tr>
+<tr><td>修改</td><td><code>client/src/router/finance.ts</code></td><td>新增 List/Detail 路由</td></tr>
+<tr><td>修改</td><td><code>client/src/store/menu.ts</code></td><td><code>MENU_CACHE_VERSION</code> 升级</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 工作量评估 ==================== -->
+<h2>五、开发工作量评估</h2>
+
+<h3>5.1 后端开发</h3>
+<table>
+<tr><th>序号</th><th>任务</th><th>详细内容</th><th>估时</th></tr>
+<tr><td>1.1</td><td>数据库建表</td><td>4张表（主表+明细+审批步骤+附件）+ 索引 + 外键 + 迁移脚本</td><td>0.5天</td></tr>
+<tr><td>1.2</td><td>编号生成</td><td>Service 内置 <code>generateClaimNumber</code>，格式 RE-YYYYMMDD-NNN</td><td>0.5天</td></tr>
+<tr><td>1.3</td><td>状态机 + 多级审批</td><td>6种状态流转校验 + 审批步骤创建/重置/推进/驳回逻辑</td><td>2天</td></tr>
+<tr><td>1.4</td><td>金额自动计算</td><td><code>refreshClaimAmounts</code>：总额汇总 + 退回/补领推导</td><td>0.5天</td></tr>
+<tr><td>1.5</td><td>Controller 层</td><td>14个接口 + 事务管理 + 状态校验 + 审批人身份验证</td><td>2天</td></tr>
+<tr><td>1.6</td><td>Routes + 模块注册</td><td>路由定义 + <code>finance/index.ts</code> 挂载 + <code>requireRole</code> 中间件</td><td>0.5天</td></tr>
+<tr><td>1.7</td><td>审批框架集成</td><td><code>approval.service.ts</code> <code>moduleConfig</code> 注册 + 审批日志写入</td><td>0.5天</td></tr>
+<tr><td>1.8</td><td>附件上传</td><td>对接 <code>upload.middleware.ts</code>（multer）+ 附件 CRUD</td><td>0.5天</td></tr>
+<tr><td>1.9</td><td>菜单权限配置</td><td><code>migrate-menu-perms.ts</code> 追加页面权限项</td><td>0.5天</td></tr>
+<tr><td colspan="3" style="text-align:right;font-weight:bold;">后端小计</td><td style="font-weight:bold;">7.5天</td></tr>
+</table>
+
+<h3>5.2 前端开发</h3>
+<table>
+<tr><th>序号</th><th>任务</th><th>详细内容</th><th>估时</th></tr>
+<tr><td>2.1</td><td>API 接口定义</td><td><code>client/src/api/finance/expenseClaim.ts</code>，13个接口封装</td><td>0.3天</td></tr>
+<tr><td>2.2</td><td>列表页</td><td><code>List.vue</code>：搜索栏（单号/申请人/事由）+ 审批状态筛选 + 报销类型筛选 + 操作菜单（提交/审批/驳回/撤回/反审/删除）+ 列设置</td><td>2天</td></tr>
+<tr><td>2.3</td><td>详情页-基础信息</td><td>基础信息展示 + 结算区（总额/预支/退回/补领）+ 编辑弹窗</td><td>1天</td></tr>
+<tr><td>2.4</td><td>详情页-可编辑明细表</td><td>行内新增/编辑/删除费用明细，差旅费行条件渲染额外字段（起止地点/交通工具/人数/天数/补贴标准）</td><td>2天</td></tr>
+<tr><td>2.5</td><td>详情页-审批步骤条</td><td><code>a-steps</code> 展示审批流程，每步显示审批人和状态</td><td>0.5天</td></tr>
+<tr><td>2.6</td><td>详情页-附件区</td><td>上传/删除/预览附件，对接 <code>a-upload</code></td><td>0.5天</td></tr>
+<tr><td>2.7</td><td>详情页-审批操作</td><td>审批通过/驳回（含意见输入）/撤回/反审交互</td><td>0.7天</td></tr>
+<tr><td>2.8</td><td>菜单与路由</td><td>财务结算域新增菜单 + 路由配置 + 缓存版本升级</td><td>0.5天</td></tr>
+<tr><td colspan="3" style="text-align:right;font-weight:bold;">前端小计</td><td style="font-weight:bold;">7.5天</td></tr>
+</table>
+
+<h3>5.3 联调测试</h3>
+<table>
+<tr><th>序号</th><th>任务</th><th>详细内容</th><th>估时</th></tr>
+<tr><td>3.1</td><td>流程测试</td><td>完整流程：新建→编辑明细→提交→审批通过→已审批，含异常路径（驳回→重新提交、撤回、反审）</td><td>1天</td></tr>
+<tr><td>3.2</td><td>金额计算验证</td><td>明细增删改后总额自动汇总，退回/补领推导正确</td><td>0.5天</td></tr>
+<tr><td>3.3</td><td>审批流测试</td><td>多级审批步骤配置、审批人身份验证、步骤推进逻辑</td><td>0.5天</td></tr>
+<tr><td>3.4</td><td>附件测试</td><td>上传/删除/预览，文件大小限制</td><td>0.5天</td></tr>
+<tr><td colspan="3" style="text-align:right;font-weight:bold;">联调测试小计</td><td style="font-weight:bold;">2.5天</td></tr>
+</table>
+
+<h3>5.4 汇总</h3>
+<table class="summary-table">
+<tr><th>模块</th><th>估时</th></tr>
+<tr><td>后端开发</td><td>7.5 天</td></tr>
+<tr><td>前端开发</td><td>7.5 天</td></tr>
+<tr><td>联调测试</td><td>2.5 天</td></tr>
+<tr class="highlight"><td><strong>总计</strong></td><td><strong>17.5 天（3.5 周/1人）</strong></td></tr>
+</table>
+
+<p style="text-align:center;margin-top:8px;">
+若 2 人并行（1 人后端 + 1 人前端），可在 <strong>2 周内</strong> 完成。
+</p>
+
+<hr>
+
+<!-- ==================== 影响因素分析 ==================== -->
+<h2>六、关键影响因素</h2>
+<table>
+<tr><th>因素</th><th>影响</th><th>说明</th></tr>
+<tr><td><strong>自定义多级审批流</strong></td><td>⚠️ 增耗时</td><td>不复用现有 <code>approval.service.ts</code> 三态框架（仅支持草稿→待审批→已审批），需独立实现步骤配置+流转+驳回+撤回逻辑，约 +2.5天</td></tr>
+<tr><td><strong>可编辑明细表格</strong></td><td>⚠️ 增耗时</td><td>详情页需支持行内新增/编辑/删除费用明细，交互复杂度高于纯展示，约 +1天</td></tr>
+<tr><td><strong>差旅费专用字段</strong></td><td>⚠️ 增耗时</td><td>同一明细表中差旅费行有额外字段（起止地点/交通工具/人数/天数/补贴标准），前端需条件渲染，约 +0.5天</td></tr>
+<tr><td><strong>附件上传</strong></td><td>⚠️ 增耗时</td><td>需对接现有 <code>upload.middleware.ts</code>（multer），增加附件表CRUD，约 +0.5天</td></tr>
+<tr><td><strong>无需控资金流</strong></td><td>✅ 省时</td><td>不对接支付/银行接口，结算闭环仅做金额计算记录</td></tr>
+<tr><td><strong>复用 composable</strong></td><td>✅ 省时</td><td>列表页直接复用 <code>useTableList</code> + <code>useColumnPreference</code></td></tr>
+<tr><td><strong>复用 upload 模块</strong></td><td>✅ 省时</td><td>附件上传直接使用项目已有的 <code>upload.middleware.ts</code>，无需从零开发</td></tr>
+<tr><td><strong>无移动端适配</strong></td><td>✅ 省时</td><td>基础方案不含 <code>client-mobile</code></td></tr>
+</table>
+
+<div class="footer">Seals MES System — 报销单管理功能开发工作量评估 &nbsp;|&nbsp; 宁国市睿信信息技术有限责任公司</div>
+</body>
+</html>

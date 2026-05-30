@@ -2880,3 +2880,79 @@ export async function getMaterialInventoryRecord(itemNumber: string, warehouseNu
   );
   return rows[0];
 }
+
+/** 查找可用的成品生产单（已审批+已派发+未入库+物料类型为成品+有工序） */
+export async function findFinishedProductOrderForAutoInbound() {
+  const rows = await query<{
+    production_order_number: string; item_number: string; item_name: string;
+    item_type: string; planned_quantity: number;
+  }>(
+    `SELECT TOP 1 po.production_order_number, po.item_number, po.item_name,
+       im.item_type, po.planned_quantity
+     FROM production_order po
+     JOIN item_master im ON po.item_number = im.item_number
+     WHERE po.approval_status = N'已审批'
+       AND po.plan_status IN (N'已派发', N'已备料', N'生产中')
+       AND im.item_type = N'成品'
+       AND (po.inbound_status IS NULL OR po.inbound_status = N'未入库')
+       AND EXISTS (SELECT 1 FROM process_task pt WHERE pt.production_order_number = po.production_order_number AND pt.approval_status = N'已审批')
+     ORDER BY po.production_order_number DESC`
+  );
+  return rows[0] || null;
+}
+
+/** 查找可用的非成品生产单（已审批+已派发+未入库+物料类型非成品+有工序） */
+export async function findNonFinishedProductOrderForAutoInbound() {
+  const rows = await query<{
+    production_order_number: string; item_number: string; item_name: string;
+    item_type: string; planned_quantity: number;
+  }>(
+    `SELECT TOP 1 po.production_order_number, po.item_number, po.item_name,
+       im.item_type, po.planned_quantity
+     FROM production_order po
+     JOIN item_master im ON po.item_number = im.item_number
+     WHERE po.approval_status = N'已审批'
+       AND po.plan_status IN (N'已派发', N'已备料', N'生产中')
+       AND im.item_type != N'成品'
+       AND (po.inbound_status IS NULL OR po.inbound_status = N'未入库')
+       AND EXISTS (SELECT 1 FROM process_task pt WHERE pt.production_order_number = po.production_order_number AND pt.approval_status = N'已审批')
+     ORDER BY po.production_order_number DESC`
+  );
+  return rows[0] || null;
+}
+
+/** 获取成品入库单详情 */
+export async function getProductionInboundOrderDetailsByOrder(productionOrderNumber: string) {
+  const rows = await query<any>(
+    `SELECT * FROM production_inbound_order_detail WHERE production_order_number = @pon`,
+    { pon: { type: T.NVarChar, value: productionOrderNumber } }
+  );
+  return rows;
+}
+
+/** 获取半成品入库单详情 */
+export async function getSemiProductionInboundOrderDetailsByOrder(productionOrderNumber: string) {
+  const rows = await query<any>(
+    `SELECT * FROM semi_production_inbound_order_detail WHERE production_order_number = @pon`,
+    { pon: { type: T.NVarChar, value: productionOrderNumber } }
+  );
+  return rows;
+}
+
+/** 获取成品入库单主表 */
+export async function getProductionInboundOrderByNumber(inboundOrderNumber: string) {
+  const rows = await query<any>(
+    `SELECT * FROM production_inbound_order WHERE inbound_order_number = @ion`,
+    { ion: { type: T.NVarChar, value: inboundOrderNumber } }
+  );
+  return rows[0] || null;
+}
+
+/** 获取半成品入库单主表 */
+export async function getSemiProductionInboundOrderByNumber(inboundOrderNumber: string) {
+  const rows = await query<any>(
+    `SELECT * FROM semi_production_inbound_order WHERE inbound_order_number = @ion`,
+    { ion: { type: T.NVarChar, value: inboundOrderNumber } }
+  );
+  return rows[0] || null;
+}

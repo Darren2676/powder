@@ -25,6 +25,7 @@ interface SalesOrderHeader {
   customer_number: string
   customer_name: string
   head_of_sales: string
+  head_of_sales_id?: number | null
   linkman: string
   contacts: string
   order_date: string | null
@@ -49,6 +50,7 @@ interface SalesOrderDetail {
   product_drawing_number: string
   order_quantity: number
   unit_price: number
+  tax_rate: number
   total_amount: number
   delivery_date: string | null
   promised_delivery_date: string | null
@@ -66,6 +68,7 @@ const emptyHeader = (): SalesOrderHeader => ({
   customer_number: '',
   customer_name: '',
   head_of_sales: '',
+  head_of_sales_id: null,
   linkman: '',
   contacts: '',
   order_date: null,
@@ -88,6 +91,7 @@ const emptyDetail = (): SalesOrderDetail => ({
   product_drawing_number: '',
   order_quantity: 0,
   unit_price: 0,
+  tax_rate: 0,
   total_amount: 0,
   delivery_date: null,
   promised_delivery_date: null,
@@ -210,7 +214,8 @@ const defaultDetailDataColumns = [
   { title: '单位', dataIndex: 'basic_unit', key: 'basic_unit', width: 55, resizable: true },
   { title: '产品图号', dataIndex: 'product_drawing_number', key: 'product_drawing_number', width: 110, resizable: true },
   { title: '订单数量', dataIndex: 'order_quantity', key: 'order_quantity', width: 80, resizable: true },
-  { title: '单价', dataIndex: 'unit_price', key: 'unit_price', width: 65, resizable: true },
+  { title: '含税单价', dataIndex: 'unit_price', key: 'unit_price', width: 65, resizable: true },
+  { title: '税率(%)', dataIndex: 'tax_rate', key: 'tax_rate', width: 55, resizable: true },
   { title: '金额', dataIndex: 'total_amount', key: 'total_amount', width: 90, resizable: true },
   { title: '交货日期', dataIndex: 'delivery_date', key: 'delivery_date', width: 115, resizable: true },
   { title: '承诺交货日期', dataIndex: 'promised_delivery_date', key: 'promised_delivery_date', width: 115, resizable: true },
@@ -218,6 +223,7 @@ const defaultDetailDataColumns = [
   { title: '发货状态', dataIndex: 'shipping_status', key: 'shipping_status', width: 100, resizable: true },
   { title: '生产状态', dataIndex: 'production_status', key: 'production_status', width: 110, resizable: true },
   { title: '退货状态', dataIndex: 'return_status', key: 'return_status', width: 90, resizable: true },
+  { title: '开票状态', dataIndex: 'invoice_status', key: 'invoice_status', width: 90, resizable: true },
   { title: '客户物料号', dataIndex: 'customer_item_number', key: 'customer_item_number', width: 120, resizable: true },
   { title: '客户物料描述', dataIndex: 'customer_item_description', key: 'customer_item_description', width: 140, resizable: true },
   { title: '备注', dataIndex: 'remark', key: 'remark', width: 100, resizable: true },
@@ -249,7 +255,8 @@ const detailViewBaseColumns = [
   { title: '单位', dataIndex: 'basic_unit', key: 'basic_unit', width: 70, resizable: true },
   { title: '产品图号', dataIndex: 'product_drawing_number', key: 'product_drawing_number', width: 120, resizable: true },
   { title: '订单数量', dataIndex: 'order_quantity', key: 'order_quantity', width: 100, resizable: true },
-  { title: '单价', dataIndex: 'unit_price', key: 'unit_price', width: 100, resizable: true },
+  { title: '含税单价', dataIndex: 'unit_price', key: 'unit_price', width: 100, resizable: true },
+  { title: '税率(%)', dataIndex: 'tax_rate', key: 'tax_rate', width: 70, resizable: true },
   { title: '金额', dataIndex: 'total_amount', key: 'total_amount', width: 120, resizable: true },
   { title: '交货日期', dataIndex: 'delivery_date', key: 'delivery_date', width: 130, resizable: true },
   { title: '承诺交货日期', dataIndex: 'promised_delivery_date', key: 'promised_delivery_date', width: 130, resizable: true },
@@ -257,6 +264,7 @@ const detailViewBaseColumns = [
   { title: '发货状态', dataIndex: 'shipping_status', key: 'shipping_status', width: 100, resizable: true },
   { title: '生产状态', dataIndex: 'production_status', key: 'production_status', width: 110, resizable: true },
   { title: '退货状态', dataIndex: 'return_status', key: 'return_status', width: 100, resizable: true },
+  { title: '开票状态', dataIndex: 'invoice_status', key: 'invoice_status', width: 100, resizable: true },
   { title: '客户物料号', dataIndex: 'customer_item_number', key: 'customer_item_number', width: 130, resizable: true },
   { title: '客户物料描述', dataIndex: 'customer_item_description', key: 'customer_item_description', width: 150, resizable: true },
   { title: '备注', dataIndex: 'remark', key: 'remark', width: 150, resizable: true }
@@ -303,8 +311,17 @@ const handleCustomerSelect = (val: string, form: SalesOrderHeader) => {
   if (found) {
     form.customer_name = found.raw.customer_name || ''
     form.head_of_sales = found.raw.head_of_sales || ''
+    form.head_of_sales_id = found.raw.head_of_sales_id || null
     form.linkman = found.raw.linkman || ''
     form.contacts = found.raw.contacts || ''
+    // 客户税率带入明细行
+    const customerTaxRate = found.raw.sales_tax_rate
+    if (customerTaxRate !== undefined && customerTaxRate !== null) {
+      const details = form === createForm ? createDetails.value : editDetails.value
+      details.forEach(d => {
+        if (!d.tax_rate) d.tax_rate = customerTaxRate
+      })
+    }
   }
 }
 
@@ -357,13 +374,16 @@ const handleProductSelect = async (val: string, detail: SalesOrderDetail) => {
       const priceRes: any = await getSalesPriceForOrder({ customer_number: customerNumber, item_number: val })
       if (priceRes?.success && priceRes.data) {
         detail.unit_price = priceRes.data.unit_price || 0
+        detail.tax_rate = priceRes.data.tax_rate || 0
         calcAmount(detail)
       } else {
         detail.unit_price = 0
+        detail.tax_rate = 0
         calcAmount(detail)
       }
     } catch {
       detail.unit_price = 0
+      detail.tax_rate = 0
       calcAmount(detail)
     }
   }
@@ -417,7 +437,13 @@ const handleAddCreateDetail = () => {
     ? Math.max(...createDetails.value.map(d => d.line_number))
     : 0
   const defaultDelivery = createDeliveryDate.value ? dayjs(createDeliveryDate.value).format('YYYY-MM-DD') : null
-  createDetails.value.push({ ...emptyDetail(), line_number: maxLine + 10, delivery_date: defaultDelivery })
+  const newLine = { ...emptyDetail(), line_number: maxLine + 10, delivery_date: defaultDelivery }
+  // 已选客户时，新行带入客户税率
+  if (createForm.customer_number && !newLine.tax_rate) {
+    const found = customerOptions.value.find(o => o.value === createForm.customer_number)
+    if (found?.raw?.sales_tax_rate) newLine.tax_rate = found.raw.sales_tax_rate
+  }
+  createDetails.value.push(newLine)
 }
 
 const handleRemoveCreateDetail = (index: number) => {
@@ -430,7 +456,7 @@ const handleCreateSubmit = async () => {
   const emptyPriceDetails = createDetails.value.filter(d => !d.item_number || (d.unit_price || 0) <= 0)
   if (emptyPriceDetails.length > 0) {
     const lines = emptyPriceDetails.map(d => d.line_number).join(', ')
-    message.warning(`明细行行号 ${lines} 未录入单价，请手工录入价格信息后保存`)
+    message.warning(`明细行行号 ${lines} 未录入含税单价，请手工录入价格信息后保存`)
     return
   }
   createLoading.value = true
@@ -501,7 +527,7 @@ const handleDvDetailCreate = () => {
 }
 const handleDvDetailCreateOk = async () => {
   if (!dvDetailCreateForm.item_number) { message.warning('请选择产品'); return }
-  if ((dvDetailCreateForm.unit_price || 0) <= 0) { message.warning('产品未录入单价，请手工录入价格信息后保存'); return }
+  if ((dvDetailCreateForm.unit_price || 0) <= 0) { message.warning('产品未录入含税单价，请手工录入价格信息后保存'); return }
   dvDetailSaving.value = true
   try {
     const submitData = { ...dvDetailCreateForm, delivery_date: dvCreateDeliveryDate.value ? dayjs(dvCreateDeliveryDate.value).format('YYYY-MM-DD') : null, promised_delivery_date: dvCreatePromisedDeliveryDate.value ? dayjs(dvCreatePromisedDeliveryDate.value).format('YYYY-MM-DD') : null }
@@ -527,7 +553,7 @@ const handleDvDetailEdit = (record: any) => {
 }
 const handleDvDetailEditOk = async () => {
   if (!dvDetailEditForm.id) return
-  if (!detailViewIsApproved.value && (dvDetailEditForm.unit_price || 0) <= 0) { message.warning('产品未录入单价，请手工录入价格信息后保存'); return }
+  if (!detailViewIsApproved.value && (dvDetailEditForm.unit_price || 0) <= 0) { message.warning('产品未录入含税单价，请手工录入价格信息后保存'); return }
   dvDetailSaving.value = true
   try {
     const submitData = { ...dvDetailEditForm, delivery_date: dvEditDeliveryDate.value ? dayjs(dvEditDeliveryDate.value).format('YYYY-MM-DD') : null, promised_delivery_date: dvEditPromisedDeliveryDate.value ? dayjs(dvEditPromisedDeliveryDate.value).format('YYYY-MM-DD') : null }
@@ -596,7 +622,13 @@ const handleAddEditDetail = () => {
     ? Math.max(...editDetails.value.map(d => d.line_number))
     : 0
   const defaultDelivery = editDeliveryDate.value ? dayjs(editDeliveryDate.value).format('YYYY-MM-DD') : null
-  editDetails.value.push({ ...emptyDetail(), line_number: maxLine + 10, delivery_date: defaultDelivery })
+  const newLine = { ...emptyDetail(), line_number: maxLine + 10, delivery_date: defaultDelivery }
+  // 已选客户时，新行带入客户税率
+  if (editForm.customer_number && !newLine.tax_rate) {
+    const found = customerOptions.value.find(o => o.value === editForm.customer_number)
+    if (found?.raw?.sales_tax_rate) newLine.tax_rate = found.raw.sales_tax_rate
+  }
+  editDetails.value.push(newLine)
 }
 
 const handleRemoveEditDetail = (index: number) => {
@@ -608,7 +640,7 @@ const handleEditSubmit = async () => {
   const emptyPriceDetails = editDetails.value.filter(d => !d.item_number || (d.unit_price || 0) <= 0)
   if (emptyPriceDetails.length > 0) {
     const lines = emptyPriceDetails.map(d => d.line_number).join(', ')
-    message.warning(`明细行行号 ${lines} 未录入单价，请手工录入价格信息后保存`)
+    message.warning(`明细行行号 ${lines} 未录入含税单价，请手工录入价格信息后保存`)
     return
   }
   editLoading.value = true
@@ -1009,7 +1041,10 @@ const handleBatchAction = (action: string) => {
             <a-input-number v-model:value="record.order_quantity" size="small" :min="0" style="width: 100%" @change="calcAmount(record)" />
           </template>
           <template v-else-if="column.key === 'unit_price'">
-            <a-input-number v-model:value="record.unit_price" size="small" :min="0" :precision="4" style="width: 100%" @change="calcAmount(record)" />
+            <a-input-number v-model:value="record.unit_price" size="small" :min="0" :precision="2" style="width: 100%" @change="calcAmount(record)" />
+          </template>
+          <template v-else-if="column.key === 'tax_rate'">
+            <a-input-number v-model:value="record.tax_rate" size="small" :min="0" :max="100" :precision="2" style="width: 100%" />
           </template>
           <template v-else-if="column.key === 'total_amount'">
             <span style="color: #1677ff; font-weight: 600">{{ record.total_amount?.toFixed(2) || '0.00' }}</span>
@@ -1054,6 +1089,9 @@ const handleBatchAction = (action: string) => {
               <a-select-option value="部分退货">部分退货</a-select-option>
               <a-select-option value="全部退货">全部退货</a-select-option>
             </a-select>
+          </template>
+          <template v-else-if="column.key === 'invoice_status'">
+            <a-tag :color="record.invoice_status === '已开票' ? 'green' : record.invoice_status === '部分开票' ? 'orange' : 'default'">{{ record.invoice_status || '未开票' }}</a-tag>
           </template>
           <template v-else-if="column.key === 'remark'">
             <a-input v-model:value="record.remark" size="small" />
@@ -1221,7 +1259,10 @@ const handleBatchAction = (action: string) => {
             <a-input-number v-model:value="record.order_quantity" size="small" :min="0" :disabled="editIsApproved" style="width: 100%" @change="calcAmount(record)" />
           </template>
           <template v-else-if="column.key === 'unit_price'">
-            <a-input-number v-model:value="record.unit_price" size="small" :min="0" :precision="4" :disabled="editIsApproved" style="width: 100%" @change="calcAmount(record)" />
+            <a-input-number v-model:value="record.unit_price" size="small" :min="0" :precision="2" :disabled="editIsApproved" style="width: 100%" @change="calcAmount(record)" />
+          </template>
+          <template v-else-if="column.key === 'tax_rate'">
+            <a-input-number v-model:value="record.tax_rate" size="small" :min="0" :max="100" :precision="2" :disabled="editIsApproved" style="width: 100%" />
           </template>
           <template v-else-if="column.key === 'total_amount'">
             <span style="color: #1677ff; font-weight: 600">{{ record.total_amount?.toFixed(2) || '0.00' }}</span>
@@ -1266,6 +1307,9 @@ const handleBatchAction = (action: string) => {
               <a-select-option value="部分退货">部分退货</a-select-option>
               <a-select-option value="全部退货">全部退货</a-select-option>
             </a-select>
+          </template>
+          <template v-else-if="column.key === 'invoice_status'">
+            <a-tag :color="record.invoice_status === '已开票' ? 'green' : record.invoice_status === '部分开票' ? 'orange' : 'default'">{{ record.invoice_status || '未开票' }}</a-tag>
           </template>
           <template v-else-if="column.key === 'remark'">
             <a-input v-model:value="record.remark" size="small" />
@@ -1378,6 +1422,9 @@ const handleBatchAction = (action: string) => {
                 <template v-else-if="column.key === 'return_status'">
                   <a-tag :color="detailRecord.return_status === '全部退货' ? 'red' : detailRecord.return_status === '部分退货' ? 'orange' : detailRecord.return_status === '未退货' ? 'blue' : 'default'">{{ detailRecord.return_status || '未申请' }}</a-tag>
                 </template>
+                <template v-else-if="column.key === 'invoice_status'">
+                  <a-tag :color="detailRecord.invoice_status === '已开票' ? 'green' : detailRecord.invoice_status === '部分开票' ? 'orange' : 'default'">{{ detailRecord.invoice_status || '未开票' }}</a-tag>
+                </template>
                 <template v-else-if="column.key === 'dv_action'">
                   <a-space :size="2">
                     <a-tooltip title="编辑"><a-button type="link" size="small" @click="handleDvDetailEdit(detailRecord)"><EditOutlined /></a-button></a-tooltip>
@@ -1455,12 +1502,12 @@ const handleBatchAction = (action: string) => {
             <a-form-item label="订单数量"><a-input-number v-model:value="dvDetailCreateForm.order_quantity" :min="0" style="width: 100%" @change="dvCalcAmount(dvDetailCreateForm)" /></a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="单价"><a-input-number v-model:value="dvDetailCreateForm.unit_price" :min="0" :precision="4" style="width: 100%" @change="dvCalcAmount(dvDetailCreateForm)" /></a-form-item>
+            <a-form-item label="单价"><a-input-number v-model:value="dvDetailCreateForm.unit_price" :min="0" :precision="2" style="width: 100%" @change="dvCalcAmount(dvDetailCreateForm)" /></a-form-item>
           </a-col>
         </a-row>
         <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item label="金额"><a-input-number :value="dvDetailCreateForm.total_amount" disabled style="width: 100%" /></a-form-item>
+            <a-form-item label="金额"><a-input-number :value="dvDetailCreateForm.total_amount" :precision="2" disabled style="width: 100%" /></a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="交货日期"><a-date-picker v-model:value="dvCreateDeliveryDate" style="width: 100%" /></a-form-item>
@@ -1582,12 +1629,12 @@ const handleBatchAction = (action: string) => {
             <a-form-item label="订单数量"><a-input-number v-model:value="dvDetailEditForm.order_quantity" :min="0" :disabled="detailViewIsApproved" style="width: 100%" @change="dvCalcAmount(dvDetailEditForm)" /></a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="单价"><a-input-number v-model:value="dvDetailEditForm.unit_price" :min="0" :precision="4" :disabled="detailViewIsApproved" style="width: 100%" @change="dvCalcAmount(dvDetailEditForm)" /></a-form-item>
+            <a-form-item label="单价"><a-input-number v-model:value="dvDetailEditForm.unit_price" :min="0" :precision="2" :disabled="detailViewIsApproved" style="width: 100%" @change="dvCalcAmount(dvDetailEditForm)" /></a-form-item>
           </a-col>
         </a-row>
         <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item label="金额"><a-input-number :value="dvDetailEditForm.total_amount" disabled style="width: 100%" /></a-form-item>
+            <a-form-item label="金额"><a-input-number :value="dvDetailEditForm.total_amount" :precision="2" disabled style="width: 100%" /></a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="交货日期"><a-date-picker v-model:value="dvEditDeliveryDate" style="width: 100%" /></a-form-item>

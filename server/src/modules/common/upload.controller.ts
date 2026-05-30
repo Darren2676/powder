@@ -7,9 +7,10 @@ export const uploadFile = (req: Request, res: Response) => {
     return;
   }
   const file = req.file as any;
+  const originalName = Buffer.from(file.originalname, 'latin1').toString('utf-8');
   const url = `/uploads/${file.filename}`;
   res.json(success({
-    originalName: file.originalname,
+    originalName,
     filename: file.filename,
     url,
     size: file.size,

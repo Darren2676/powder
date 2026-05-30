@@ -304,6 +304,7 @@ export default { name: 'CockpitPage' }
   padding: 16px;
   background: #f0f2f5;
   min-height: 100vh;
+  zoom: 0.765;
 }
 .cockpit-header {
   display: flex;

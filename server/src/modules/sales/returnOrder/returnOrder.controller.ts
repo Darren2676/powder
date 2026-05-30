@@ -711,6 +711,164 @@ export const exportReturnOrderDetailsSelected = async (req: Request, res: Respon
   } catch (err) { next(err); }
 };
 
+// ==================== 撤消退货单（已确认→已取消，回冲库存+回退销售订单） ====================
+export const cancelReturnOrder = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { return_order_number } = req.params;
+    const operator = (req as any).user?.username || '';
+
+    const transaction = await sequelize.transaction();
+    try {
+      // 1. 校验退货单状态
+      const [headerRows]: any = await sequelize.query(
+        `SELECT * FROM return_order WITH (UPDLOCK) WHERE return_order_number = :rn`,
+        { replacements: { rn: return_order_number }, transaction }
+      );
+      if (headerRows.length === 0) {
+        await transaction.rollback();
+        res.status(404).json({ success: false, message: '退货单不存在' }); return;
+      }
+      const header = headerRows[0];
+      if (header.status !== '已确认') {
+        await transaction.rollback();
+        res.status(400).json({ success: false, message: '只有已确认状态的退货单可以撤消' }); return;
+      }
+
+      // 2. 查询退货单明细
+      const [rtDetails]: any = await sequelize.query(
+        `SELECT * FROM return_order_detail WHERE return_order_number = :rn`,
+        { replacements: { rn: return_order_number }, transaction }
+      );
+
+      // 3. 如果已入库，则回冲库存
+      if (header.inbound_status === '已入库') {
+        // 3a. 查找该退货单对应的库存流水
+        const [txRows]: any = await sequelize.query(
+          `SELECT * FROM inventory_transaction WHERE source_number = :rn AND source_type = N'退货入库' AND (status IS NULL OR status != N'作废')`,
+          { replacements: { rn: return_order_number }, transaction }
+        );
+
+        if (txRows.length > 0) {
+          // 3b. 查找退货入库生成的成品批次记录
+          const [batchRows]: any = await sequelize.query(
+            `SELECT * FROM finished_batch_inventory WHERE return_order_number = :rn AND status = N'正常'`,
+            { replacements: { rn: return_order_number }, transaction }
+          );
+
+          // 3c. 扣减批次库存
+          for (const batch of batchRows) {
+            const newQty = Number(batch.quantity) - Number(batch.initial_quantity);
+            if (newQty <= 0) {
+              // 扣减后为0或负数，标记为作废
+              await sequelize.query(
+                `UPDATE finished_batch_inventory SET status = N'作废', last_updated = GETDATE() WHERE id = :id`,
+                { replacements: { id: batch.id }, transaction }
+              );
+            } else {
+              await sequelize.query(
+                `UPDATE finished_batch_inventory SET quantity = :qty, last_updated = GETDATE() WHERE id = :id`,
+                { replacements: { qty: newQty, id: batch.id }, transaction }
+              );
+            }
+          }
+
+          // 3d. 扣减汇总库存
+          for (const tx of txRows) {
+            await sequelize.query(
+              `UPDATE finished_goods_inventory SET quantity = CASE WHEN quantity - :qty < 0 THEN 0 ELSE quantity - :qty END, last_updated = GETDATE()
+               WHERE item_number = :item_number AND warehouse_number = :warehouse_number AND quality_status = :quality_status`,
+              { replacements: { qty: tx.quantity, item_number: tx.item_number, warehouse_number: tx.warehouse_number, quality_status: tx.quality_status || '合格品' }, transaction }
+            );
+          }
+
+          // 3e. 标记库存流水为作废
+          await sequelize.query(
+            `UPDATE inventory_transaction SET status = N'作废', void_operator = :op, void_date = GETDATE()
+             WHERE source_number = :rn AND source_type = N'退货入库' AND (status IS NULL OR status != N'作废')`,
+            { replacements: { rn: return_order_number, op: operator }, transaction }
+          );
+        }
+      }
+
+      // 4. 回退销售订单明细的 refunded_quantity + 重算 return_status / shipping_status
+      for (const d of rtDetails) {
+        if (d.sales_detail_id && d.sales_detail_id > 0) {
+          const qty = Number(d.return_quantity) || 0;
+          // 回退 refunded_quantity
+          await sequelize.query(
+            `UPDATE sales_order_detail SET refunded_quantity = CASE WHEN ISNULL(refunded_quantity, 0) - :qty < 0 THEN 0 ELSE ISNULL(refunded_quantity, 0) - :qty END
+             WHERE id = :id`,
+            { replacements: { qty, id: d.sales_detail_id }, transaction }
+          );
+          // 重算 return_status
+          await syncReturnStatus(d.sales_detail_id, transaction);
+        }
+      }
+
+      // 5. 重新计算 sales_order_detail 的 shipping_status
+      const salesDetailIds = [...new Set(
+        rtDetails
+          .map((d: any) => d.sales_detail_id)
+          .filter((id: number) => id > 0)
+      )];
+
+      for (const detailId of salesDetailIds) {
+        const [detailRows]: any = await sequelize.query(
+          `SELECT order_quantity, ISNULL(shipped_quantity, 0) as shipped_quantity,
+                 ISNULL(refunded_quantity, 0) as refunded_quantity
+           FROM sales_order_detail WHERE id = :id`,
+          { replacements: { id: detailId }, transaction }
+        );
+        if (detailRows.length === 0) continue;
+
+        const orderQty = Number(detailRows[0].order_quantity) || 0;
+        const shippedQty = Number(detailRows[0].shipped_quantity) || 0;
+        const refundedQty = Number(detailRows[0].refunded_quantity) || 0;
+        const netShipped = shippedQty - refundedQty;
+
+        let newStatus = '未申请';
+        if (netShipped > 0) {
+          if (netShipped >= orderQty) {
+            newStatus = netShipped > orderQty ? '超额发货' : '全部发货';
+          } else {
+            newStatus = '部分发货';
+          }
+        } else {
+          const [aggRows]: any = await sequelize.query(`
+            SELECT ISNULL(SUM(srd.ship_quantity), 0) as total_applied
+            FROM shipping_request_detail srd
+            INNER JOIN shipping_request sr ON sr.request_number = srd.request_number
+            WHERE srd.sales_detail_id = :detailId AND sr.status != N'已取消'
+          `, { replacements: { detailId }, transaction });
+          const totalApplied = Number(aggRows[0]?.total_applied) || 0;
+          if (totalApplied > 0) {
+            newStatus = totalApplied >= orderQty ? '全部发货' : '部分发货';
+          }
+        }
+
+        await sequelize.query(
+          `UPDATE sales_order_detail SET shipping_status = :status WHERE id = :id`,
+          { replacements: { status: newStatus, id: detailId }, transaction }
+        );
+        await syncLineStatus(detailId as number, transaction);
+      }
+
+      // 6. 更新退货单状态为已取消
+      await sequelize.query(
+        `UPDATE return_order SET status = N'已取消', inbound_status = CASE WHEN inbound_status = N'已入库' THEN N'已取消' ELSE inbound_status END
+         WHERE return_order_number = :rn`,
+        { replacements: { rn: return_order_number }, transaction }
+      );
+
+      await transaction.commit();
+      res.json(success(null, '退货单已撤消'));
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
+    }
+  } catch (err) { next(err); }
+};
+
 // ==================== 驳回退货单 ====================
 export const reject = async (req: Request, res: Response, next: NextFunction) => {
   try {

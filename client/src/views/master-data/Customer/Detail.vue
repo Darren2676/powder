@@ -3,6 +3,8 @@ import { ref, onMounted, createVNode, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { CONDITION_STATUS } from '@/constants/statuses'
+import { useModalDrag } from '@/composables/useModalDrag'
+import { chinaRegions, parseRegion, joinRegion } from '@/data/chinaRegions'
 import {
   ArrowLeftOutlined, CheckCircleOutlined, StopOutlined, ExclamationCircleOutlined,
   UploadOutlined, DownloadOutlined, DeleteOutlined, PlusOutlined, EditOutlined,
@@ -28,8 +30,14 @@ const attachments = ref<any[]>([])
 // 地址弹窗
 const addressModalVisible = ref(false)
 const addressModalTitle = ref('新增地址')
-const addressForm = ref<any>({ address_type: '公司地址', region: '', detail_address: '', receiver: '', mobile: '', telephone: '', fax: '' })
+const addressForm = ref<any>({ address_type: '公司地址', region: '', regionValues: [], detail_address: '', receiver: '', mobile: '', telephone: '', fax: '' })
 const editingAddressId = ref<number | null>(null)
+const { modalStyle: addressModalStyle, onDragStart: addressDragStart, resetDrag: addressResetDrag } = useModalDrag()
+
+const handleRegionChange = (values: string[]) => {
+  addressForm.value.regionValues = values
+  addressForm.value.region = joinRegion(values)
+}
 
 // 附件上传
 const fileInputRef = ref<HTMLInputElement>()
@@ -83,19 +91,25 @@ const handleToggleCondition = () => {
 const handleAddAddress = () => {
   addressModalTitle.value = '新增地址'
   editingAddressId.value = null
-  addressForm.value = { address_type: '公司地址', region: '', detail_address: '', receiver: '', mobile: '', telephone: '', fax: '' }
+  addressForm.value = { address_type: '公司地址', region: '', regionValues: [], detail_address: '', receiver: '', mobile: '', telephone: '', fax: '' }
+  addressResetDrag()
   addressModalVisible.value = true
 }
 
 const handleEditAddress = (addr: any) => {
   addressModalTitle.value = '编辑地址'
   editingAddressId.value = addr.id
-  addressForm.value = { ...addr }
+  addressForm.value = { ...addr, regionValues: parseRegion(addr.region || '') }
+  addressResetDrag()
   addressModalVisible.value = true
 }
 
 const handleAddressSubmit = async () => {
   try {
+    // 提交前同步 region 字段
+    if (addressForm.value.regionValues && addressForm.value.regionValues.length > 0) {
+      addressForm.value.region = joinRegion(addressForm.value.regionValues)
+    }
     if (editingAddressId.value) {
       await updateCustomerAddress(editingAddressId.value, addressForm.value)
       message.success('更新地址成功')
@@ -350,7 +364,11 @@ onMounted(() => { fetchDetail() })
     </div>
 
     <!-- 地址编辑弹窗 -->
-    <a-modal v-model:open="addressModalVisible" :title="addressModalTitle" @ok="handleAddressSubmit" okText="确认" cancelText="取消" width="600px">
+    <a-modal v-model:open="addressModalVisible" @ok="handleAddressSubmit" okText="确认" cancelText="取消" width="600px"
+      :style="addressModalStyle">
+      <template #title>
+        <div class="drag-handle" @mousedown="addressDragStart">{{ addressModalTitle }}</div>
+      </template>
       <a-form :label-col="{ span: 6 }" :wrapper-col="{ span: 16 }">
         <a-form-item label="地址类型">
           <a-select v-model:value="addressForm.address_type">
@@ -359,7 +377,16 @@ onMounted(() => { fetchDetail() })
             <a-select-option value="收货地址">收货地址</a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="所在地区"><a-input v-model:value="addressForm.region" placeholder="请输入" /></a-form-item>
+        <a-form-item label="所在地区">
+          <a-cascader
+            v-model:value="addressForm.regionValues"
+            :options="chinaRegions"
+            placeholder="请选择省/市/区县"
+            change-on-select
+            style="width: 100%"
+            @change="handleRegionChange"
+          />
+        </a-form-item>
         <a-form-item label="详细地址"><a-input v-model:value="addressForm.detail_address" placeholder="请输入" /></a-form-item>
         <a-form-item label="收货人"><a-input v-model:value="addressForm.receiver" placeholder="请输入" /></a-form-item>
         <a-form-item label="手机"><a-input v-model:value="addressForm.mobile" placeholder="请输入" /></a-form-item>
@@ -534,5 +561,9 @@ onMounted(() => { fetchDetail() })
 }
 :deep(.ant-descriptions-item-content) {
   color: #333;
+}
+.drag-handle {
+  cursor: move;
+  user-select: none;
 }
 </style>

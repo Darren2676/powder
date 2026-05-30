@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, DownloadOutlined, UploadOutlined, HistoryOutlined, DownOutlined, CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, InboxOutlined, SettingOutlined } from '@ant-design/icons-vue'
-import { getMaterialPreparations, deleteMaterialPreparation, exportMaterialPreparations, importMaterialPreparations, generateFromOrder, getOrdersForGenerate, getPreparationDetails, updatePreparationDetails } from '@/api/production/materialPreparation'
+import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, DownloadOutlined, UploadOutlined, HistoryOutlined, DownOutlined, CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, InboxOutlined, SettingOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons-vue'
+import { getMaterialPreparations, deleteMaterialPreparation, exportMaterialPreparations, importMaterialPreparations, generateFromOrder, getOrdersForGenerate, getPreparationDetails, updatePreparationDetails, updateDetailAutoWeigh } from '@/api/production/materialPreparation'
 import { useAuthStore } from '@/store/auth'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
@@ -56,6 +56,7 @@ interface PreparationDetail {
   supply_type: string
   default_warehouse: string
   bom_path: string
+  auto_weigh: string
   remark: string
 }
 
@@ -290,30 +291,48 @@ const detailHeader = ref<MaterialPreparation | null>(null)
 const detailList = ref<PreparationDetail[]>([])
 const detailSaving = ref(false)
 const detailEditing = ref(false)
+const detailSelectedRowKeys = ref<number[]>([])
+const detailRowSelection = computed(() => ({
+  selectedRowKeys: detailSelectedRowKeys.value,
+  onChange: (keys: number[]) => { detailSelectedRowKeys.value = keys },
+}))
 
-const detailColumns = [
-  { title: '行号', dataIndex: 'line_number', key: 'line_number', width: 60 },
-  { title: '物料编号', dataIndex: 'material_number', key: 'material_number', width: 120 },
-  { title: '物料名称', dataIndex: 'material_name', key: 'material_name', width: 140 },
-  { title: '物料类型', dataIndex: 'material_type', key: 'material_type', width: 90 },
-  { title: '单位', dataIndex: 'unit', key: 'unit', width: 60 },
-  { title: 'BOM标准用量', dataIndex: 'bom_standard_quantity', key: 'bom_standard_quantity', width: 110 },
-  { title: '损耗率%', dataIndex: 'bom_wastage_rate', key: 'bom_wastage_rate', width: 80 },
-  { title: 'BOM实际用量', dataIndex: 'bom_actual_quantity', key: 'bom_actual_quantity', width: 110 },
-  { title: '需求数量', dataIndex: 'required_quantity', key: 'required_quantity', width: 100 },
-  { title: '调整数量', key: 'adjusted_quantity', width: 110 },
-  { title: '已领料', dataIndex: 'issued_quantity', key: 'issued_quantity', width: 80 },
-  { title: '工序', dataIndex: 'step_number', key: 'step_number', width: 60 },
-  { title: '工作中心', dataIndex: 'work_center_name', key: 'work_center_name', width: 110 },
-  { title: '关键物料', key: 'is_key_material', width: 80 },
-  { title: '仓库', dataIndex: 'default_warehouse', key: 'default_warehouse', width: 90 }
+const detailDefaultDataColumns: any[] = [
+  { title: '行号', dataIndex: 'line_number', key: 'line_number', width: 60, resizable: true },
+  { title: '物料编号', dataIndex: 'material_number', key: 'material_number', width: 120, resizable: true },
+  { title: '物料名称', dataIndex: 'material_name', key: 'material_name', width: 140, resizable: true },
+  { title: '物料类型', dataIndex: 'material_type', key: 'material_type', width: 90, resizable: true },
+  { title: '单位', dataIndex: 'unit', key: 'unit', width: 60, resizable: true },
+  { title: 'BOM标准用量', dataIndex: 'bom_standard_quantity', key: 'bom_standard_quantity', width: 110, resizable: true },
+  { title: '损耗率%', dataIndex: 'bom_wastage_rate', key: 'bom_wastage_rate', width: 80, resizable: true },
+  { title: 'BOM实际用量', dataIndex: 'bom_actual_quantity', key: 'bom_actual_quantity', width: 110, resizable: true },
+  { title: '需求数量', dataIndex: 'required_quantity', key: 'required_quantity', width: 100, resizable: true },
+  { title: '调整数量', key: 'adjusted_quantity', width: 110, resizable: true },
+  { title: '已领料', dataIndex: 'issued_quantity', key: 'issued_quantity', width: 80, resizable: true },
+  { title: '工序', dataIndex: 'step_number', key: 'step_number', width: 60, resizable: true },
+  { title: '工作中心', dataIndex: 'work_center_name', key: 'work_center_name', width: 110, resizable: true },
+  { title: '关键物料', key: 'is_key_material', width: 80, resizable: true },
+  { title: '自动称量', dataIndex: 'auto_weigh', key: 'auto_weigh', width: 100, resizable: true },
+  { title: '仓库', dataIndex: 'default_warehouse', key: 'default_warehouse', width: 90, resizable: true }
 ]
+
+const {
+  columns: detailColumns, columnSettingVisible: detailColumnSettingVisible, columnSettingList: detailColumnSettingList, columnSettingSaving: detailColumnSettingSaving,
+  openColumnSetting: openDetailColumnSetting, moveColumnUp: moveDetailColumnUp, moveColumnDown: moveDetailColumnDown,
+  saveColumnSetting: saveDetailColumnSetting, resetColumnSetting: resetDetailColumnSetting,
+  loadColumnPreference: loadDetailColumnPreference, handleResizeColumn: handleDetailResizeColumn
+} = useColumnPreference('prep_detail_list', detailDefaultDataColumns, {
+  fixedLeft: [],
+  fixedRight: []
+})
 
 const handleViewDetails = async (record: MaterialPreparation) => {
   detailLoading.value = true
   detailResetDrag()
+  detailSelectedRowKeys.value = []
   detailModalVisible.value = true
   detailEditing.value = false
+  loadDetailColumnPreference()
   try {
     const res = await getPreparationDetails(record.preparation_number)
     if (res.success) {
@@ -338,6 +357,23 @@ const handleSaveDetails = async () => {
     else { message.error(res.message || '保存失败') }
   } catch { message.error('保存失败') }
   finally { detailSaving.value = false }
+}
+
+// ==================== 批量修改明细自动称量 ====================
+const handleDetailAutoWeigh = async (value: 'Y' | 'N') => {
+  if (detailSelectedRowKeys.value.length === 0) { message.warning('请先勾选明细行'); return }
+  try {
+    const res: any = await updateDetailAutoWeigh(detailHeader.value!.preparation_number, detailSelectedRowKeys.value, value)
+    if (res.success) {
+      message.success(`已更新 ${res.data?.updatedCount || detailSelectedRowKeys.value.length} 条明细`)
+      detailSelectedRowKeys.value = []
+      // 刷新明细数据
+      const refreshRes = await getPreparationDetails(detailHeader.value!.preparation_number)
+      if (refreshRes.success) {
+        detailList.value = refreshRes.data.details
+      }
+    } else { message.error(res.message || '更新失败') }
+  } catch { message.error('更新失败') }
 }
 
 onMounted(async () => { await loadColumnPreference(); fetchData() })
@@ -559,28 +595,45 @@ const handleBatchAction = (action: string) => {
 
           <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
             <span style="font-weight: 600; font-size: 14px;">物料明细列表</span>
-            <a-space v-if="detailHeader.approval_status === '草稿'">
-              <a-button v-if="!detailEditing" size="small" @click="detailEditing = true">
-                <template #icon><EditOutlined /></template>
-                调整数量
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <a-button size="small" :disabled="detailSelectedRowKeys.length === 0" @click="handleDetailAutoWeigh('Y')">
+                <template #icon><CheckOutlined /></template>
+                设为自动称量
               </a-button>
-              <template v-else>
-                <a-button size="small" @click="detailEditing = false">取消</a-button>
-                <a-button type="primary" size="small" :loading="detailSaving" @click="handleSaveDetails">保存</a-button>
-              </template>
-            </a-space>
+              <a-button size="small" :disabled="detailSelectedRowKeys.length === 0" @click="handleDetailAutoWeigh('N')">
+                <template #icon><CloseOutlined /></template>
+                取消自动称量
+              </a-button>
+              <a-button size="small" @click="openDetailColumnSetting">
+                <template #icon><SettingOutlined /></template>
+                列设置
+              </a-button>
+              <a-space v-if="detailHeader.approval_status === '草稿'">
+                <a-button v-if="!detailEditing" size="small" @click="detailEditing = true">
+                  <template #icon><EditOutlined /></template>
+                  调整数量
+                </a-button>
+                <template v-else>
+                  <a-button size="small" @click="detailEditing = false">取消</a-button>
+                  <a-button type="primary" size="small" :loading="detailSaving" @click="handleSaveDetails">保存</a-button>
+                </template>
+              </a-space>
+            </div>
           </div>
 
+          <div v-if="detailSelectedRowKeys.length > 0" style="margin-bottom:4px;color:#1890ff;font-size:12px;">已选择 {{ detailSelectedRowKeys.length }} 条明细</div>
           <a-table
             :columns="detailColumns"
             :data-source="detailList"
             :pagination="false"
             :scroll="{ x: 'max-content', y: 400 }"
+            :row-selection="detailRowSelection"
             row-key="id"
             size="small"
             bordered
+            @resizeColumn="handleDetailResizeColumn"
           >
-            <template #bodyCell="{ column, record }">
+            <template #bodyCell="{ column, record, text }">
               <template v-if="column.key === 'adjusted_quantity'">
                 <template v-if="detailEditing">
                   <a-input-number v-model:value="record.adjusted_quantity" :min="0" :precision="4" size="small" style="width: 100%" />
@@ -594,6 +647,9 @@ const handleBatchAction = (action: string) => {
               <template v-else-if="column.key === 'is_key_material'">
                 <span v-if="record.is_key_material" style="color: #fa8c16; font-weight: bold;">*</span>
                 <span v-else style="color: #999;">-</span>
+              </template>
+              <template v-else-if="column.key === 'auto_weigh'">
+                <a-tag :color="record.auto_weigh === 'Y' ? 'blue' : 'default'">{{ record.auto_weigh === 'Y' ? '是' : '否' }}</a-tag>
               </template>
             </template>
             <template #summary>
@@ -613,7 +669,7 @@ const handleBatchAction = (action: string) => {
                   <a-table-summary-cell style="text-align: right;">
                     {{ detailList.reduce((sum, d) => sum + (parseFloat(String(d.issued_quantity)) || 0), 0).toFixed(4) }}
                   </a-table-summary-cell>
-                  <a-table-summary-cell :col-span="4" />
+                  <a-table-summary-cell :col-span="5" />
                 </a-table-summary-row>
               </a-table-summary>
             </template>
@@ -633,6 +689,17 @@ const handleBatchAction = (action: string) => {
       @moveDown="moveColumnDown"
       @save="saveColumnSetting"
       @reset="resetColumnSetting"
+    />
+
+    <!-- 备料明细列设置抽屉 -->
+    <ColumnSettingDrawer
+      v-model:open="detailColumnSettingVisible"
+      :settingList="detailColumnSettingList"
+      :saving="detailColumnSettingSaving"
+      @moveUp="moveDetailColumnUp"
+      @moveDown="moveDetailColumnDown"
+      @save="saveDetailColumnSetting"
+      @reset="resetDetailColumnSetting"
     />
   </div>
 </template>

@@ -5,7 +5,7 @@ import {
   getInventoryList, manualInbound, getPendingInbound, productionInbound,
   manualOutbound, adjustInventory, getTransactionList,
   getSafetyStockAlerts, updateSafetyStock, getItemOptions, getWarehouseOptions,
-  getBatchInventory, getBatchOptions,
+  getBatchInventory, getBatchOptions, getBatchOptionsBulk,
   getSemiInboundOrderList, getSemiInboundOrderDetail, withdrawSemiInboundOrder,
   getReturnOutboundList, getReturnOutboundDetail, executeReturnOutbound
 } from './materialWarehouse.controller';
@@ -31,6 +31,7 @@ router.get('/item-options', authenticate, getItemOptions);
 router.get('/warehouse-options', authenticate, getWarehouseOptions);
 router.get('/batch-inventory', authenticate, getBatchInventory);
 router.get('/batch-options', authenticate, getBatchOptions);
+router.post('/batch-options-bulk', authenticate, getBatchOptionsBulk);
 router.get('/completed-material-stock-counts', authenticate, getCompletedMaterialStockCounts);
 router.get('/stock-counts-by-warehouse', authenticate, getStockCountsByWarehouse);
 router.get('/material-monthly-report', authenticate, getMaterialMonthlyReport);

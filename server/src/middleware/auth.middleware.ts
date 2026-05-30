@@ -5,15 +5,21 @@ import { User } from '../models';
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    let token: string | undefined;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    } else if (req.query && req.query.token) {
+      // 支持 URL query 参数传递 token（用于打印等新标签页场景）
+      token = req.query.token as string;
+    }
+
+    if (!token) {
       return res.status(401).json({
         success: false,
         message: '未提供认证令牌'
       });
     }
-
-    const token = authHeader.substring(7);
     
     try {
       const decoded = verifyToken(token);

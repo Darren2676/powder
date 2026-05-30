@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>计划管理全链路状态变化 - 睿信橡胶密封件MES系统</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #fff; color: #333; line-height: 1.8; }
+  .page { max-width: 1100px; margin: 0 auto; padding: 40px 32px; }
+  h1 { text-align: center; font-size: 26px; color: #1a1a2e; margin-bottom: 6px; }
+  .subtitle { text-align: center; color: #888; font-size: 13px; margin-bottom: 32px; }
+  h2 { font-size: 18px; color: #1a1a2e; margin: 28px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 15px; color: #333; margin: 18px 0 8px; }
+  .intro { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 6px; padding: 14px 18px; margin-bottom: 20px; font-size: 13px; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 10px 14px; margin: 10px 0; font-size: 13px; color: #666; }
+  .warn { background: #fff1f0; border-left: 4px solid #f5222d; padding: 10px 14px; margin: 10px 0; font-size: 13px; color: #666; }
+  .info { background: #e6f7ff; border-left: 4px solid #1890ff; padding: 10px 14px; margin: 10px 0; font-size: 13px; color: #0050b3; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 13px; }
+  th, td { border: 1px solid #ddd; padding: 7px 10px; text-align: left; }
+  th { background: #f5f5f5; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 11px; margin-right: 4px; }
+  .b-blue { background: #e6f7ff; color: #1890ff; }
+  .b-green { background: #f6ffed; color: #52c41a; }
+  .b-red { background: #fff1f0; color: #f5222d; }
+  .b-orange { background: #fff7e6; color: #fa8c16; }
+  .b-purple { background: #f9f0ff; color: #722ed1; }
+  code { background: #f5f5f5; border: 1px solid #e8e8e8; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  .path { color: #999; font-size: 11px; }
+  .footer { text-align: center; color: #999; font-size: 11px; margin-top: 36px; padding-top: 16px; border-top: 1px solid #eee; }
+  .arrow-chain { text-align: center; font-size: 14px; font-weight: bold; color: #1890ff; margin: 10px 0; letter-spacing: 2px; }
+  @media print { .page { padding: 0; max-width: 100%; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>计划管理全链路状态变化</h1>
+<div class="subtitle">睿信橡胶密封件MES系统 | 基于源码逐行对照梳理 | 2026年5月15日</div>
+
+<div class="intro">
+  <strong>文档说明：</strong>本文档完整梳理"计划管理"中涉及的全部状态字段变化规则，涵盖
+  <span class="badge b-blue">生产计划 Production_plan</span>
+  <span class="badge b-green">生产单 production_order</span>
+  <span class="badge b-orange">工序任务 process_task</span>
+  <span class="badge b-red">销售订单明细 sales_order_detail</span>
+  四个核心实体。每个状态变化均标注触发条件和源码定位。
+</div>
+
+<!-- ==================== 一、Production_plan ==================== -->
+<h2>一、Production_plan — 生产计划</h2>
+
+<h3>1.1 approval_status（审批状态）</h3>
+<table>
+<tr><th>变化</th><th>触发条件</th><th>代码位置</th></tr>
+<tr><td>草稿 → <b>已审批</b></td><td>计划审批通过</td><td><code>plan.controller.ts</code></td></tr>
+</table>
+
+<h3>1.2 plan_status（计划状态）</h3>
+<table>
+<tr><th>变化</th><th>触发条件</th><th>代码位置</th></tr>
+<tr><td>→ <b>待加入任务</b></td><td>MPS/MRP计算生成新计划，或删除生产单回退</td><td><code>mps.controller.ts</code> / <code>order.controller.ts L252</code></td></tr>
+<tr><td>待加入任务 → <b>已加入任务</b></td><td>创建生产单时回写</td><td><code>order.controller.ts L368</code></td></tr>
+<tr><td>已加入任务 → <b>待加入任务</b></td><td>删除生产单时回退</td><td><code>order.controller.ts L252</code> / <code>purchaseReq.controller.ts L278</code></td></tr>
+</table>
+
+<h3>1.3 mrp_status（MRP状态）</h3>
+<table>
+<tr><th>变化</th><th>触发条件</th><th>代码位置</th></tr>
+<tr><td>NULL → MRP标记</td><td>MRP运算时需要将计划加入任务列表</td><td><code>mrp.controller.ts L971</code></td></tr>
+<tr><td>→ NULL</td><td>删除生产单或采购申请时恢复</td><td><code>order.controller.ts L252</code></td></tr>
+</table>
+
+<p class="path">源码位置：server/src/modules/planning/plan/plan.controller.ts</p>
+
+<!-- ==================== 二、Production_order ==================== -->
+<h2>二、Production_order — 生产单（核心状态）</h2>
+
+<h3>2.1 approval_status（审批状态）</h3>
+<table>
+<tr><th>变化</th><th>触发条件</th><th>代码位置</th></tr>
+<tr><td>草稿 → <b>已审批</b></td><td>审批通过（前提条件：未审批不可派发）</td><td><code>dispatch.ts L192</code></td></tr>
+</table>
+
+<h3>2.2 plan_status（计划状态）— 全链路核心状态</h3>
+
+<div class="arrow-chain">未开始 → 已派发 → 已备料 → 生产中 → 已完成</div>
+
+<table>
+<tr><th>变化</th><th>触发操作</th><th>回写销售明细</th><th>代码位置</th></tr>
+<tr>
+  <td>未开始 → <b>已派发</b></td>
+  <td><code>dispatchAndGenerateCore</code> — 派发生成工序任务+备料单+委外申请</td>
+  <td><code>production_status → '计划中'</code></td>
+  <td><code>dispatch.ts L205</code></td>
+</tr>
+<tr>
+  <td>已派发 → <b>已备料</b></td>
+  <td>首道工序物料全部领完（领料出库回调）</td>
+  <td><code>production_status → '待生产'</code></td>
+  <td><code>materialIssue.controller.ts L467</code></td>
+</tr>
+<tr>
+  <td>已备料 → <b>已派发</b></td>
+  <td>撤回领料后首道工序不再全部领完</td>
+  <td>—</td>
+  <td><code>materialIssue.controller.ts L855</code> / <code>materialReturn.controller.ts L348</code></td>
+</tr>
+<tr>
+  <td>已派发 → <b>已备料</b></td>
+  <td>退料后再领料，首道又全部齐套</td>
+  <td>—</td>
+  <td><code>materialReturn.controller.ts L572</code></td>
+</tr>
+<tr>
+  <td>已备料 → <b>生产中</b></td>
+  <td>首次报工（<code>syncTaskCompletion</code>检测 <code>qtyDelta > 0</code>）</td>
+  <td><code>production_status → '生产中'</code></td>
+  <td><code>taskSync.ts L62</code></td>
+</tr>
+<tr>
+  <td>生产中 → <b>已完成</b></td>
+  <td>所有工序 <code>task_status IN (已完成,已关闭)</code> 且 <code>inspect_status IN (检验合格,无需检,已处理)</code></td>
+  <td><code>production_status → '生产完成'</code> + 触发自动入库</td>
+  <td><code>taskSync.ts L77-93</code></td>
+</tr>
+<tr>
+  <td>已完成 → <b>生产中</b></td>
+  <td>撤销重报删除末道报工，但仍有前道报工记录</td>
+  <td>—（单向递进不回退）</td>
+  <td><code>taskSync.ts L39-41</code>（completed>0且<planned → 进行中）</td>
+</tr>
+<tr>
+  <td>生产中 → <b>已备料/已派发</b></td>
+  <td>撤销重报删除全部报工，completed 归零</td>
+  <td>—（单向递进不回退）</td>
+  <td><code>taskSync.ts L44-48</code>（completed≤0 → 未开始）</td>
+</tr>
+</table>
+
+<div class="warn">
+  <strong>关键校验：</strong>派发前必须 <code>approval_status='已审批'</code> 且 <code>plan_status='未开始'</code>（dispatch.ts L192-197）。
+</div>
+
+<h3>2.3 inbound_status（入库状态）— 独立于 plan_status 流转</h3>
+
+<div class="arrow-chain">未入库 → 部分入库 → 全部入库</div>
+
+<table>
+<tr><th>变化</th><th>触发操作</th><th>代码位置</th></tr>
+<tr><td>未入库 → <b>部分入库</b></td><td>首次生产入库确认</td><td><code>finishedGoods.ts L117</code></td></tr>
+<tr><td>部分入库 → <b>全部入库</b></td><td>累计入库量 >= 计划量</td><td><code>finishedGoods.ts L117</code></td></tr>
+<tr><td>全部入库/部分入库 → <b>未入库</b></td><td>入库撤回</td><td><code>material.ts L526</code></td></tr>
+</table>
+
+<div class="note">
+  <strong>说明：</strong>生产单可多次分批入库。<code>inbound_status</code> 独立于 <code>plan_status</code> 流转，互不阻塞。入库确认触发倒冲扣减+成品库存流水+会计期间匹配。
+</div>
+
+<p class="path">源码位置：server/src/services/orderDispatch/dispatch.ts、server/src/services/workReport/taskSync.ts</p>
+
+<!-- ==================== 三、Process_task ==================== -->
+<h2>三、Process_task — 工序任务</h2>
+
+<h3>3.1 task_status（任务状态）</h3>
+
+<div class="arrow-chain">未开始 → 进行中 → 已完成</div>
+
+<table>
+<tr><th>变化</th><th>触发条件</th><th>代码位置</th></tr>
+<tr><td>未开始 → <b>进行中</b></td><td><code>completed_quantity > 0 且 < planned</code>（首次报工后）</td><td><code>taskSync.ts L39-42</code></td></tr>
+<tr><td>进行中 → <b>已完成</b></td><td><code>completed_quantity >= planned</code>（报工后达到计划量）</td><td><code>taskSync.ts L34-38</code></td></tr>
+<tr><td>已完成 → <b>进行中</b></td><td>报工删除后 <code>0 < completed < planned</code></td><td><code>taskSync.ts L39-42</code></td></tr>
+<tr><td>进行中/已完成 → <b>未开始</b></td><td>报工全部删除后 <code>completed = 0</code></td><td><code>taskSync.ts L44-48</code></td></tr>
+</table>
+
+<h3>3.2 inspect_status（检验状态）</h3>
+
+<table>
+<tr><th>变化</th><th>触发条件</th><th>代码位置</th></tr>
+<tr><td>NULL → <b>待检验</b></td><td>报工后自动创建检验单（专检/自检）</td><td><code>subscriber.ts L79</code></td></tr>
+<tr><td>NULL → <b>无需检</b></td><td>工艺路线配置 <code>inspect_type=无需检</code></td><td><code>subscriber.ts L33</code></td></tr>
+<tr><td>待检验/检验中 → <b>检验合格</b></td><td>检验完成，结论为合格</td><td><code>productionInspection.controller.ts</code></td></tr>
+<tr><td>待检验/检验中 → <b>检验不合格</b></td><td>检验完成，结论为不合格</td><td><code>productionInspection.controller.ts</code></td></tr>
+<tr><td>检验不合格 → <b>已处理</b></td><td>NC单处理完成（返修/让步/报废）</td><td><code>productionInspection.controller.ts</code></td></tr>
+<tr><td>待检验/检验中 → <b>NULL</b></td><td>检验单被删除</td><td><code>productionInspection.controller.ts L381</code></td></tr>
+</table>
+
+<div class="info">
+  <strong>检验门控放行条件（allowedStatuses）：</strong><code>无需检</code> / <code>检验合格</code> / <code>已处理</code> — 下道工序报工前必须检查上道工序满足以上任一状态。
+</div>
+
+<p class="path">源码位置：server/src/services/workReport/taskSync.ts、server/src/modules/quality/productionInspection/subscriber.ts</p>
+
+<!-- ==================== 四、Sales_order_detail ==================== -->
+<h2>四、Sales_order_detail — 销售订单明细 production_status</h2>
+
+<h3>4.1 单向递进链路</h3>
+
+<div class="arrow-chain">未加入计划 → 待排产 → 计划中 → 待生产 → 生产中 → 生产完成</div>
+
+<div class="note">
+  <strong>核心原则：单向递进，永不回退。</strong><code>syncProductionStatus</code> 使用等级排序实现：<br>
+  <code>未加入计划(0) &lt; 待排产(1) &lt; 计划中(2) &lt; 待生产(3) &lt; 生产中(4) &lt; 生产完成(5)</code><br>
+  <code>newRank &lt;= currentRank</code> 时跳过更新（salesOrderSync.service.ts L85）。
+</div>
+
+<table>
+<tr><th>变化</th><th>等级</th><th>触发来源</th><th>回写函数</th></tr>
+<tr><td>→ <b>待排产</b></td><td>1</td><td>MPS从销售订单导入生产计划</td><td><code>mps.controller.ts L452</code></td></tr>
+<tr><td>→ <b>计划中</b></td><td>2</td><td>生产单派发（<code>plan_status='已派发'</code>）</td><td><code>syncProductionStatus(orderNo, '计划中')</code></td></tr>
+<tr><td>→ <b>待生产</b></td><td>3</td><td>首道备料完成（<code>plan_status='已备料'</code>）</td><td><code>syncProductionStatus(orderNo, '待生产')</code></td></tr>
+<tr><td>→ <b>生产中</b></td><td>4</td><td>首次报工（<code>plan_status='生产中'</code>）</td><td><code>syncProductionStatus(orderNo, '生产中')</code></td></tr>
+<tr><td>→ <b>生产完成</b></td><td>5</td><td>所有工序完成（<code>plan_status='已完成'</code>）</td><td><code>syncProductionStatus(orderNo, '生产完成')</code></td></tr>
+</table>
+
+<h3>4.2 回写链路</h3>
+
+<div class="info">
+  <strong>数据流：</strong><br>
+  <code>production_order.production_number</code> → <code>Production_plan.production_number</code><br>
+  → <code>Production_plan.source_order_number + source_line_number</code><br>
+  → <code>sales_order_detail.sales_order_number + line_number</code><br>
+  → 确认 <code>source_order_number</code> 真实存在于 <code>sales_order</code> 表中（排除预测单等非销售来源）
+</div>
+
+<p class="path">源码位置：server/src/services/salesOrderSync.service.ts L38-95</p>
+
+<!-- ==================== 五、全链路状态联动总图 ==================== -->
+<h2>五、全链路状态联动总图</h2>
+
+<table>
+<tr><th>阶段</th><th>Production_plan.plan_status</th><th>Production_order.plan_status</th><th>Sales_order_detail.production_status</th><th>关键触发操作</th></tr>
+<tr>
+  <td><span class="badge b-blue">1</span></td>
+  <td>待加入任务</td>
+  <td>—</td>
+  <td>未加入计划 → 待排产</td>
+  <td>MPS/MRP 从销售订单导入</td>
+</tr>
+<tr>
+  <td><span class="badge b-blue">2</span></td>
+  <td>待加入任务 → 已加入任务</td>
+  <td>未开始（创建）</td>
+  <td>保持不变（待排产）</td>
+  <td>创建生产单</td>
+</tr>
+<tr>
+  <td><span class="badge b-blue">3</span></td>
+  <td>保持不变</td>
+  <td>未开始 → 已派发</td>
+  <td>待排产 → 计划中</td>
+  <td>生产单派发</td>
+</tr>
+<tr>
+  <td><span class="badge b-blue">4</span></td>
+  <td>保持不变</td>
+  <td>已派发 → 已备料</td>
+  <td>计划中 → 待生产</td>
+  <td>首道物料领完</td>
+</tr>
+<tr>
+  <td><span class="badge b-blue">5</span></td>
+  <td>保持不变</td>
+  <td>已备料 → 生产中</td>
+  <td>待生产 → 生产中</td>
+  <td>首次报工</td>
+</tr>
+<tr>
+  <td><span class="badge b-green">6</span></td>
+  <td>保持不变</td>
+  <td>生产中 → 已完成</td>
+  <td>生产中 → 生产完成</td>
+  <td>所有工序完成任务+检验</td>
+</tr>
+</table>
+
+<!-- ==================== 六、回退场景 ==================== -->
+<h2>六、状态回退场景</h2>
+
+<table>
+<tr><th>场景</th><th>Production_order.plan_status</th><th>Process_task.task_status</th><th>Process_task.inspect_status</th><th>Sales_order_detail</th></tr>
+<tr>
+  <td><b>撤回领料</b></td>
+  <td>已备料 → 已派发</td>
+  <td>不变</td>
+  <td>不变</td>
+  <td>不变（单向递进）</td>
+</tr>
+<tr>
+  <td><b>单个报工删除</b><br>（门控：只能删最后一道）</td>
+  <td>可能 已完成→生产中<br>或 生产中→已备料/已派发</td>
+  <td>已完成→进行中→未开始</td>
+  <td>已处理→NULL</td>
+  <td>不变（单向递进）</td>
+</tr>
+<tr>
+  <td><b>撤销重报</b><br>（从目标工序到末道全部删除）</td>
+  <td>已完成→生产中<br>→已备料/已派发</td>
+  <td>级联回退</td>
+  <td>级联清除</td>
+  <td>不变（单向递进）</td>
+</tr>
+<tr>
+  <td><b>返修回退</b><br>（返修工序后全部级联删除）</td>
+  <td>已完成→生产中</td>
+  <td>返修工序回退到未开始</td>
+  <td>级联清除</td>
+  <td>不变（单向递进）</td>
+</tr>
+<tr>
+  <td><b>入库撤回</b></td>
+  <td>不变</td>
+  <td>不变</td>
+  <td>不变</td>
+  <td>不变</td>
+</tr>
+</table>
+
+<div class="warn">
+  <strong>重要约束：</strong><code>sales_order_detail.production_status</code> 采用<strong>单向递进</strong>机制，永不回退。即使生产单因撤销重报/返修回退到「生产中」或「已备料」，销售明细的生产状态仍保持「生产完成」不变。这确保了销售端数据不会被后端操作污染。
+</div>
+
+<!-- ==================== 七、关键API与文件索引 ==================== -->
+<h2>七、关键源码文件索引</h2>
+
+<table>
+<tr><th>文件</th><th>职责</th></tr>
+<tr><td><code>server/src/services/workReport/taskSync.ts</code></td><td>工序任务状态同步 + 生产单 plan_status 自动流转</td></tr>
+<tr><td><code>server/src/services/salesOrderSync.service.ts</code></td><td>销售订单明细 production_status 单向递进回写</td></tr>
+<tr><td><code>server/src/services/orderDispatch/dispatch.ts</code></td><td>生产单派发（未开始→已派发）+ 工序任务/备料单生成</td></tr>
+<tr><td><code>server/src/modules/production/materialIssue/materialIssue.controller.ts</code></td><td>领料出库 → plan_status 已派发→已备料 及撤回</td></tr>
+<tr><td><code>server/src/modules/production/materialReturn/materialReturn.controller.ts</code></td><td>退料入库 → plan_status 已备料→已派发/已备料→已备料</td></tr>
+<tr><td><code>server/src/modules/planning/plan/plan.controller.ts</code></td><td>Production_plan CRUD 及状态管理</td></tr>
+<tr><td><code>server/src/modules/planning/mps/mps.controller.ts</code></td><td>MPS 计算 → 创建 Production_plan + 回写销售明细</td></tr>
+<tr><td><code>server/src/modules/planning/mrp/mrp.controller.ts</code></td><td>MRP 运算 → 需要采购的生产计划标记 mrp_status</td></tr>
+<tr><td><code>server/src/modules/quality/productionInspection/subscriber.ts</code></td><td>检验单自动创建 + inspect_status 设置</td></tr>
+<tr><td><code>server/src/services/manualClose.service.ts</code></td><td>手动关闭生产单（需 plan_status=已完成 + inbound_status=全部入库）</td></tr>
+</table>
+
+<div class="footer">
+  文档生成时间：2026年5月15日 | 基于系统源码逐行对照梳理 | 计划管理全链路状态变化
+</div>
+
+</div>
+</body>
+</html>

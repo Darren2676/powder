@@ -221,9 +221,8 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
         const batch = queue.filter(q => q.level === minLevel);
         queue = queue.filter(q => q.level !== minLevel);
 
-        // Level 0 是成品本身，不需要生成mrp_run_detail，直接展开BOM
+        // Level 0: 成品写入 mrp_run_detail 并展开BOM子件
         if (minLevel === 0) {
-          // 成品无需做净需求计算(已由MPS完成)，直接展开子件
           const itemNumbers = [...new Set(batch.map(b => b.item_number))];
           if (itemNumbers.length === 0) continue;
 
@@ -241,21 +240,61 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
             }
           }
 
-          // 查询item_master获取lead_time_days
+          // 查询item_master获取成品物料信息（含 item_type / business_scope）
           const { placeholders: imPH, replacements: imRepl } = buildInClause(itemNumbers, 'im');
           const [imRows]: any = await sequelize.query(
-            `SELECT item_number, lead_time_days FROM item_master WHERE item_number IN (${imPH})`,
+            `SELECT item_number, lead_time_days, item_type, business_scope, item_name, specifications, basic_unit FROM item_master WHERE item_number IN (${imPH})`,
             { replacements: imRepl, transaction }
           );
-          const leadTimeMap: Record<string, number> = {};
-          for (const r of imRows) { leadTimeMap[r.item_number] = parseInt(r.lead_time_days) || 0; }
+          const itemMasterMap: Record<string, any> = {};
+          for (const r of imRows) { itemMasterMap[r.item_number] = r; }
 
           for (const entry of batch) {
             const bom = bomMap[entry.item_number];
-            if (!bom) continue; // 成品无BOM则无子件可展开
-
-            const leadTime = leadTimeMap[entry.item_number] || 0;
+            const imInfo = itemMasterMap[entry.item_number] || {};
+            const leadTime = parseInt(imInfo.lead_time_days) || 0;
             const startDate = entry.due_date ? subtractDays(entry.due_date, leadTime) : null;
+            const plannedQty = Math.round(entry.quantity * 10000) / 10000;
+
+            // 将成品写入 mrp_run_detail，确保即使子件库存充足也能生成生产单
+            await sequelize.query(`
+              INSERT INTO mrp_run_detail (
+                mrp_run_number, source_production_number, bom_level, parent_item_number,
+                item_number, item_name, specifications, basic_unit, item_type, business_scope, mfg_bom_number,
+                gross_requirement, on_hand_inventory, wip_quantity, in_transit_po, pending_pr, safety_stock,
+                net_requirement, planned_start_date, planned_due_date, lead_time_days,
+                action_type, result_status, produce_quantity, purchase_quantity, bom_path
+              ) VALUES (
+                :mrp_run_number, :source_production_number, 0, NULL,
+                :item_number, :item_name, :specifications, :basic_unit, :item_type, :business_scope, :mfg_bom_number,
+                :gross_requirement, 0, 0, 0, 0, 0,
+                :net_requirement, :planned_start_date, :planned_due_date, :lead_time_days,
+                N'生产', N'待确认', :net_requirement, 0, :bom_path
+              )
+            `, {
+              replacements: {
+                mrp_run_number,
+                source_production_number: entry.source_plan,
+                item_number: entry.item_number,
+                item_name: imInfo.item_name || entry.item_name || '',
+                specifications: imInfo.specifications || entry.specifications || '',
+                basic_unit: imInfo.basic_unit || entry.basic_unit || '',
+                item_type: imInfo.item_type || '',
+                business_scope: imInfo.business_scope || '',
+                mfg_bom_number: bom?.bom_number || null,
+                gross_requirement: plannedQty,
+                net_requirement: plannedQty,
+                planned_start_date: startDate,
+                planned_due_date: entry.due_date,
+                lead_time_days: leadTime,
+                bom_path: (entry.bom_path || '').substring(0, 500)
+              },
+              transaction
+            });
+
+            allResults.push({ item_number: entry.item_number, action_type: '生产', net_requirement: plannedQty });
+
+            if (!bom) continue; // 成品无BOM则无子件可展开
 
             // 查子件
             const [details]: any = await sequelize.query(

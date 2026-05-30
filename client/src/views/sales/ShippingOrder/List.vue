@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import {
-  SearchOutlined, ReloadOutlined, EyeOutlined, EditOutlined,
-  PrinterOutlined, CheckCircleOutlined, SettingOutlined
+  SearchOutlined, ReloadOutlined, DownOutlined,
+  PrinterOutlined, CheckCircleOutlined, SettingOutlined, ExclamationCircleOutlined,
+  StopOutlined
 } from '@ant-design/icons-vue'
 import {
   getShippingOrders, getShippingOrderDetail,
   updateShippingOrderLogistics, updateShippingOrderStatus,
-  getShippingOrderPrintData
+  getShippingOrderPrintData, cancelShippingOrder
 } from '@/api/sales/shippingOrder'
 import { getInvoicesByShippingDetail } from '@/api/sales/salesInvoice'
+import { getLogisticsCompanies } from '@/api/master-data/logisticsCompany'
+import { getCustomerDetail } from '@/api/master-data/customer'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import dayjs from 'dayjs'
@@ -44,13 +47,14 @@ const {
   loadColumnPreference, handleResizeColumn
 } = useColumnPreference('shipping_order_list', defaultDataColumns, {
   fixedLeft: [{ title: '发货单号', dataIndex: 'shipping_order_number', key: 'shipping_order_number', width: 170, fixed: 'left' as const, resizable: true }],
-  fixedRight: [{ title: '操作', key: 'action', width: 220, fixed: 'right' as const }]
+  fixedRight: [{ title: '操作', key: 'action', width: 120, fixed: 'right' as const }]
 })
 
 const statusColors: Record<string, string> = {
+  '待发货': 'orange',
   '已发货': 'blue',
   '已签收': 'green',
-  '已取消': 'default'
+  '已取消': 'red'
 }
 
 const formatDate = (date: any) => date ? dayjs(date).format('YYYY-MM-DD') : '-'
@@ -59,6 +63,7 @@ const formatDateTime = (date: any) => date ? dayjs(date).format('YYYY-MM-DD HH:m
 // ==================== 详情弹窗 ====================
 const detailVisible = ref(false)
 const { modalStyle: detailModalStyle, onDragStart: detailDragStart, resetDrag: detailResetDrag } = useModalDrag()
+const { modalStyle: logisticsModalStyle, onDragStart: logisticsDragStart, resetDrag: logisticsResetDrag } = useModalDrag()
 const detailLoading = ref(false)
 const detailHeader = ref<any>({})
 const detailItems = ref<any[]>([])
@@ -127,7 +132,7 @@ const relatedInvoiceColumns = [
   { title: '开票日期', dataIndex: 'invoice_date', width: 110 },
   { title: '客户名称', dataIndex: 'customer_name', width: 140 },
   { title: '开票数量', dataIndex: 'invoice_quantity', width: 90 },
-  { title: '单价', dataIndex: 'unit_price', width: 90 },
+  { title: '含税单价', dataIndex: 'unit_price', width: 90 },
   { title: '不含税金额', dataIndex: 'amount_without_tax', width: 110 },
   { title: '审批状态', dataIndex: 'approval_status', width: 90 }
 ]
@@ -145,7 +150,37 @@ const logisticsForm = reactive({
   contact_phone: ''
 })
 
-const handleEditLogistics = (record: any) => {
+const logisticsCompanyList = ref<any[]>([])
+
+const loadLogisticsCompanies = async () => {
+  try {
+    const res: any = await getLogisticsCompanies({ page: 1, limit: 9999, condition: '启用' })
+    logisticsCompanyList.value = res.data?.items || res.data || []
+  } catch { /* ignore */ }
+}
+
+const fillCustomerInfo = async (customerNumber: string) => {
+  try {
+    const res: any = await getCustomerDetail(customerNumber)
+    if (!res?.success) return
+    const c = res.data
+    // 优先从 customer_address 中取"发货地址"
+    const shipAddr = (c.addresses || []).find((a: any) => (a.address_type || '').trim() === '发货地址')
+    if (shipAddr) {
+      if (!logisticsForm.shipping_address) logisticsForm.shipping_address = [shipAddr.region, shipAddr.detail_address].filter(Boolean).join('')
+      if (!logisticsForm.contact_person) logisticsForm.contact_person = shipAddr.receiver || ''
+      if (!logisticsForm.contact_phone) logisticsForm.contact_phone = shipAddr.mobile || shipAddr.telephone || ''
+    } else {
+      // 没有发货地址记录，则从客户主表取
+      const fullAddr = [c.region, c.region2, c.region3, c.region4, c.detail_address].filter(Boolean).join('')
+      if (!logisticsForm.shipping_address) logisticsForm.shipping_address = fullAddr
+      if (!logisticsForm.contact_person) logisticsForm.contact_person = c.linkman || ''
+      if (!logisticsForm.contact_phone) logisticsForm.contact_phone = c.contacts || c.telephone || ''
+    }
+  } catch { /* ignore */ }
+}
+
+const handleEditLogistics = async (record: any) => {
   logisticsForm.shipping_order_number = record.shipping_order_number
   logisticsForm.carrier = record.carrier || ''
   logisticsForm.tracking_number = record.tracking_number || ''
@@ -153,7 +188,21 @@ const handleEditLogistics = (record: any) => {
   logisticsForm.shipping_address = record.shipping_address || ''
   logisticsForm.contact_person = record.contact_person || ''
   logisticsForm.contact_phone = record.contact_phone || ''
+  logisticsResetDrag()
   logisticsVisible.value = true
+  await Promise.all([loadLogisticsCompanies(), fillCustomerInfo(record.customer_number)])
+}
+
+const handleCarrierSelect = (val: string) => {
+  const found = logisticsCompanyList.value.find((c: any) => c.company_name === val || c.company_number === val)
+  if (found) {
+    logisticsForm.carrier = found.company_name || val
+    logisticsForm.contact_person = found.contact_person || logisticsForm.contact_person
+    logisticsForm.contact_phone = found.mobile || found.telephone || logisticsForm.contact_phone
+    logisticsForm.shipping_address = logisticsForm.shipping_address || found.address || ''
+  } else {
+    logisticsForm.carrier = val
+  }
 }
 
 const handleLogisticsSubmit = async () => {
@@ -183,7 +232,8 @@ const handleLogisticsSubmit = async () => {
 const handleConfirmReceive = (record: any) => {
   Modal.confirm({
     title: '签收确认',
-    content: `确认发货单 ${record.shipping_order_number} 已签收？`,
+    icon: createVNode(ExclamationCircleOutlined),
+    content: `确认发货单「${record.shipping_order_number}」已签收？`,
     okText: '确认签收',
     cancelText: '取消',
     onOk: async () => {
@@ -195,6 +245,33 @@ const handleConfirmReceive = (record: any) => {
         }
       } catch (err: any) {
         message.error(err.response?.data?.message || '操作失败')
+      }
+    }
+  })
+}
+
+// ==================== 撤消发货单 ====================
+const handleCancelOrder = (record: any) => {
+  const statusLabel = (record.status || '').trim()
+  const extraWarning = statusLabel === '已发货' ? '\n\n⚠ 此发货单已出库，撤消后将回冲库存（含批次库存、箱码状态回退）并作废出库流水。' : ''
+  Modal.confirm({
+    title: '确认撤消',
+    icon: createVNode(ExclamationCircleOutlined),
+    content: `确定要撤消发货单「${record.shipping_order_number}」吗？当前状态：${statusLabel}${extraWarning}`,
+    okText: '确认撤消',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: async () => {
+      try {
+        const res: any = await cancelShippingOrder(record.shipping_order_number)
+        if (res?.success) {
+          message.success('发货单已撤消')
+          fetchData()
+        } else {
+          message.error(res?.message || '撤消失败')
+        }
+      } catch (err: any) {
+        message.error(err.response?.data?.message || '撤消失败')
       }
     }
   })
@@ -384,21 +461,25 @@ onMounted(async () => {
           <span v-else style="color: #ccc">-</span>
         </template>
         <template v-else-if="column.key === 'action'">
-          <a-space>
-            <a-button type="link" size="small" @click="handleViewDetail(record)">
-              <EyeOutlined /> 详情
-            </a-button>
-            <a-button type="link" size="small" @click="handleEditLogistics(record)" :disabled="record.status === '已取消'">
-              <EditOutlined /> 物流
-            </a-button>
-            <a-button type="link" size="small" @click="handlePrint(record)">
-              <PrinterOutlined /> 打印
-            </a-button>
-            <a-button type="link" size="small" @click="handleConfirmReceive(record)"
-              :disabled="record.status !== '已发货'" style="color: #52c41a"
-            >
-              <CheckCircleOutlined /> 签收
-            </a-button>
+          <a-space :size="4">
+            <a-button type="link" size="small" @click="handleViewDetail(record)">查看</a-button>
+            <a-divider type="vertical" />
+            <a-dropdown :trigger="['click']">
+              <a-button type="link" size="small" @click.stop>更多<DownOutlined style="font-size: 10px; margin-left: 2px;" /></a-button>
+              <template #overlay>
+                <a-menu>
+                  <a-menu-item v-if="(record.status || '').trim() !== '已取消'" @click="handleEditLogistics(record)">物流信息</a-menu-item>
+                  <a-menu-item @click="handlePrint(record)"><PrinterOutlined style="margin-right:4px" />打印</a-menu-item>
+                  <a-menu-item v-if="(record.status || '').trim() === '已发货'" @click="handleConfirmReceive(record)">
+                    <span style="color: #52c41a"><CheckCircleOutlined style="margin-right:4px" />签收</span>
+                  </a-menu-item>
+                  <a-menu-divider v-if="(record.status || '').trim() !== '已取消' && (record.status || '').trim() !== '已签收'" />
+                  <a-menu-item v-if="(record.status || '').trim() !== '已取消' && (record.status || '').trim() !== '已签收'" @click="handleCancelOrder(record)">
+                    <span style="color: #ff4d4f"><StopOutlined style="margin-right:4px" />撤消</span>
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
           </a-space>
         </template>
       </template>
@@ -468,11 +549,25 @@ onMounted(async () => {
     </a-modal>
 
     <!-- 物流信息编辑弹窗 -->
-    <a-modal v-model:open="logisticsVisible" title="编辑物流信息" width="600px"
+    <a-modal v-model:open="logisticsVisible" width="600px"
+      :style="logisticsModalStyle"
       @ok="handleLogisticsSubmit" :confirmLoading="logisticsLoading" okText="保存">
+      <template #title>
+        <div class="drag-handle" @mousedown="logisticsDragStart">编辑物流信息</div>
+      </template>
       <a-form :label-col="{ span: 5 }" :wrapper-col="{ span: 18 }">
         <a-form-item label="承运商">
-          <a-input v-model:value="logisticsForm.carrier" placeholder="请输入承运商" />
+          <a-select
+            v-model:value="logisticsForm.carrier"
+            show-search
+            option-filter-prop="label"
+            placeholder="选择或输入承运商"
+            style="width: 100%"
+            allow-clear
+            @change="handleCarrierSelect"
+          >
+            <a-select-option v-for="c in logisticsCompanyList" :key="c.company_number" :value="c.company_name" :label="c.company_name">{{ c.company_name }}</a-select-option>
+          </a-select>
         </a-form-item>
         <a-form-item label="运单号">
           <a-input v-model:value="logisticsForm.tracking_number" placeholder="请输入运单号" />

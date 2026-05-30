@@ -28,6 +28,8 @@ const UnitList = () => import('@/views/master-data/Unit/List.vue');
 const StorageLocationList = () => import('@/views/master-data/StorageLocation/List.vue');
 const ItemMasterList = () => import('@/views/master-data/ItemMaster/List.vue');
 const LogisticsCompanyList = () => import('@/views/master-data/LogisticsCompany/List.vue');
+const EngineeringChangeList = () => import('@/views/master-data/EngineeringChange/List.vue');
+const EngineeringChangeDetail = () => import('@/views/master-data/EngineeringChange/Detail.vue');
 
 export const masterDataRoutes: RouteRecordRaw[] = [
   { path: 'customers', name: 'CustomerList', component: CustomerList, meta: {"title":"客户管理"} },
@@ -57,4 +59,6 @@ export const masterDataRoutes: RouteRecordRaw[] = [
   { path: 'storage-locations', name: 'StorageLocationList', component: StorageLocationList, meta: {"title":"库位管理"} },
   { path: 'item-masters', name: 'ItemMasterList', component: ItemMasterList, meta: {"title":"物料主数据管理"} },
   { path: 'logistics-companies', name: 'LogisticsCompanyList', component: LogisticsCompanyList, meta: {"title":"物流公司管理"} },
+  { path: 'engineering-changes', name: 'EngineeringChangeList', component: EngineeringChangeList, meta: {"title":"工程更改"} },
+  { path: 'engineering-changes/:id', name: 'EngineeringChangeDetail', component: EngineeringChangeDetail, meta: {"title":"工程更改详情"} },
 ];

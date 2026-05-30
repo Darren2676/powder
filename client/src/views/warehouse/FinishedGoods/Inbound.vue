@@ -4,6 +4,7 @@ import { message } from 'ant-design-vue'
 import { SearchOutlined, ReloadOutlined, ImportOutlined } from '@ant-design/icons-vue'
 import { getPendingInbound, productionInbound, getWarehouseOptions } from '@/api/warehouse/finishedGoods'
 import { useOpenAccountingPeriods } from '@/composables/useOpenAccountingPeriods'
+import { useModalDrag } from '@/composables/useModalDrag'
 import dayjs from 'dayjs'
 
 const loading = ref(false)
@@ -31,12 +32,15 @@ const columns = [
   { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 130 },
   { title: '单位', dataIndex: 'basic_unit', key: 'basic_unit', width: 70 },
   { title: '计划数量', dataIndex: 'planned_quantity', key: 'planned_quantity', width: 100 },
+  { title: '末道正品数', dataIndex: 'last_step_qualified', key: 'last_step_qualified', width: 110 },
   { title: '已入库数量', dataIndex: 'inbound_qty', key: 'inbound_qty', width: 110 },
   { title: '待入库数量', dataIndex: 'pending_inbound_qty', key: 'pending_inbound_qty', width: 110 },
   { title: '入库状态', dataIndex: 'inbound_status', key: 'inbound_status', width: 100 },
   { title: '生产日期', dataIndex: 'production_date', key: 'production_date', width: 110 },
   { title: '生产状态', dataIndex: 'plan_status', key: 'plan_status', width: 100 }
 ]
+
+const { modalStyle: inboundModalStyle, onDragStart: inboundOnDragStart, resetDrag: inboundResetDrag } = useModalDrag()
 
 const formatDate = (date: any) => {
   if (!date) return '-'
@@ -102,7 +106,7 @@ const handleInbound = () => {
   const selected = dataSource.value.filter(d => selectedRowKeys.value.includes(d.production_order_number))
   inboundItems.value = selected.map(d => ({
     ...d,
-    inbound_qty: Number(d.pending_inbound_qty) || (Number(d.planned_quantity) - (Number(d.inbound_quantity) || 0))
+    inbound_qty: Number(d.pending_inbound_qty) || (Number(d.last_step_qualified || d.planned_quantity) - (Number(d.inbound_quantity) || 0))
   }))
   inboundWarehouse.warehouse_number = ''
   inboundWarehouse.warehouse_name = ''
@@ -111,6 +115,7 @@ const handleInbound = () => {
   if (noOpenPeriod.value) {
     message.warning('当前没有已开启的会计期间，请联系财务开启后再操作')
   }
+  inboundResetDrag()
   inboundVisible.value = true
 }
 
@@ -254,13 +259,16 @@ onMounted(() => {
     <!-- 入库弹窗 -->
     <a-modal
       v-model:open="inboundVisible"
-      title="生产完工入库"
       width="1100px"
       :bodyStyle="{ maxHeight: '70vh', overflowY: 'auto' }"
       @ok="handleInboundSubmit"
       :confirmLoading="submitLoading"
       okText="确认入库"
+      :style="inboundModalStyle"
     >
+      <template #title>
+        <div class="drag-handle" @mousedown="inboundOnDragStart">生产完工入库</div>
+      </template>
       <a-form layout="inline" style="margin-bottom: 16px">
         <a-form-item label="入库仓库" required>
           <a-select
@@ -307,3 +315,7 @@ onMounted(() => {
     </a-modal>
   </div>
 </template>
+
+<style scoped>
+.drag-handle { cursor: move; user-select: none; }
+</style>

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, PlusOutlined, SearchOutlined, DownloadOutlined, UploadOutlined, HistoryOutlined, DownOutlined, ShoppingCartOutlined, SettingOutlined, LineChartOutlined } from '@ant-design/icons-vue'
-import { getPlans, createPlan, updatePlan, deletePlan, exportPlans, importPlans, getSalesOrdersForImport, importFromSalesOrder, getForecastsForImport, importFromForecast } from '@/api/planning/plan'
+import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, PlusOutlined, SearchOutlined, DownloadOutlined, UploadOutlined, HistoryOutlined, DownOutlined, ShoppingCartOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { getPlans, createPlan, updatePlan, deletePlan, exportPlans, importPlans, getSalesOrdersForImport, importFromSalesOrder } from '@/api/planning/plan'
 import { getItems } from '@/api/master-data/itemMaster'
 import { useAuthStore } from '@/store/auth'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
@@ -439,83 +439,7 @@ const handleSoImportSubmit = async () => {
   }
 }
 
-// ==================== 从销售预测导入 ====================
-const fcImportVisible = ref(false)
-const fcImportLoading = ref(false)
-const fcImportSubmitLoading = ref(false)
-const fcImportSearch = ref('')
-const fcImportData = ref<any[]>([])
-const fcImportSelectedKeys = ref<number[]>([])
 
-const fcImportColumns = [
-  { title: '预测单号', dataIndex: 'forecast_number', width: 160 },
-  { title: '行号', dataIndex: 'line_number', width: 70 },
-  { title: '客户名称', dataIndex: 'customer_name', width: 140 },
-  { title: '产品编号', dataIndex: 'item_number', width: 130 },
-  { title: '产品名称', dataIndex: 'item_name', width: 160 },
-  { title: '规格', dataIndex: 'specifications', width: 120 },
-  { title: '单位', dataIndex: 'basic_unit', width: 60 },
-  { title: '预测数量', dataIndex: 'forecast_quantity', width: 100 },
-  { title: '结束日期', dataIndex: 'end_date', key: 'end_date', width: 110 },
-  { title: '状态', dataIndex: 'status', key: 'fc_status', width: 100 }
-]
-
-const handleFcImportOpen = async () => {
-  fcImportVisible.value = true
-  fcImportSelectedKeys.value = []
-  fcImportSearch.value = ''
-  fetchFcImportData()
-}
-
-const fetchFcImportData = async () => {
-  fcImportLoading.value = true
-  try {
-    const res: any = await getForecastsForImport({ search: fcImportSearch.value })
-    if (res?.success) {
-      fcImportData.value = res.data || []
-    }
-  } catch {
-    message.error('获取销售预测数据失败')
-  } finally {
-    fcImportLoading.value = false
-  }
-}
-
-const handleFcImportSubmit = async () => {
-  if (fcImportSelectedKeys.value.length === 0) {
-    message.warning('请先选择需要导入的预测明细'); return
-  }
-  const selected = fcImportData.value.filter(d => fcImportSelectedKeys.value.includes(d.detail_id))
-
-  fcImportSubmitLoading.value = true
-  try {
-    const res: any = await importFromForecast({
-      items: selected.map(d => ({
-        detail_id: d.detail_id,
-        forecast_number: d.forecast_number,
-        line_number: d.line_number,
-        item_number: d.item_number,
-        item_name: d.item_name,
-        specifications: d.specifications,
-        basic_unit: d.basic_unit,
-        product_drawing_number: d.product_drawing_number,
-        rubber_compound_number: d.rubber_compound_number,
-        batch_production_quota: d.batch_production_quota,
-        forecast_quantity: d.forecast_quantity,
-        end_date: d.end_date
-      }))
-    })
-    if (res?.success) {
-      message.success(res.message || `成功从预测导入 ${res.data?.imported || 0} 条生产计划`)
-      fcImportVisible.value = false
-      fetchData()
-    }
-  } catch (err: any) {
-    message.error(err.response?.data?.message || '导入失败')
-  } finally {
-    fcImportSubmitLoading.value = false
-  }
-}
 
 // ==================== 批量审批操作 ====================
 const batchLoading = ref(false)
@@ -605,10 +529,7 @@ onMounted(async () => {
           <template #icon><ShoppingCartOutlined /></template>
           从销售订单导入
         </a-button>
-        <a-button @click="handleFcImportOpen" type="dashed">
-          <template #icon><LineChartOutlined /></template>
-          从销售预测导入
-        </a-button>
+
       </div>
     </div>
 
@@ -867,54 +788,7 @@ onMounted(async () => {
       </a-table>
     </a-modal>
 
-    <!-- 从销售预测导入弹窗 -->
-    <a-modal
-      v-model:open="fcImportVisible"
-      title="从销售预测导入到生产计划"
-      width="1200px"
-      :bodyStyle="{ maxHeight: '70vh', overflowY: 'auto' }"
-      @ok="handleFcImportSubmit"
-      :confirmLoading="fcImportSubmitLoading"
-      :okText="`确认导入 (${fcImportSelectedKeys.length})`"
-      :okButtonProps="{ disabled: fcImportSelectedKeys.length === 0 }"
-    >
-      <a-alert
-        message="说明：仅显示审批状态为【已审批】且明细状态为【未开始】的销售预测明细。选择导入后，系统将自动创建生产计划，并将对应预测明细状态更新为【计划中】。"
-        type="info"
-        show-icon
-        style="margin-bottom: 12px"
-      />
-      <div style="margin-bottom: 12px">
-        <a-input-search
-          v-model:value="fcImportSearch"
-          placeholder="搜索预测单号/客户/产品编号/名称"
-          style="width: 320px"
-          allow-clear
-          @search="fetchFcImportData"
-          @pressEnter="fetchFcImportData"
-        />
-      </div>
-      <a-table
-        :columns="fcImportColumns"
-        :data-source="fcImportData"
-        :loading="fcImportLoading"
-        :row-selection="{ selectedRowKeys: fcImportSelectedKeys, onChange: (keys: number[]) => { fcImportSelectedKeys = keys } }"
-        row-key="detail_id"
-        :pagination="{ pageSize: 50, showTotal: (total: number) => `共 ${total} 条` }"
-        :scroll="{ x: 1200, y: 400 }"
-        size="small"
-        bordered
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'end_date'">
-            {{ record.end_date ? dayjs(record.end_date).format('YYYY-MM-DD') : '-' }}
-          </template>
-          <template v-else-if="column.key === 'fc_status'">
-            <a-tag color="default">{{ record.status || '未开始' }}</a-tag>
-          </template>
-        </template>
-      </a-table>
-    </a-modal>
+
 
     <!-- 列设置 Drawer -->
     <ColumnSettingDrawer

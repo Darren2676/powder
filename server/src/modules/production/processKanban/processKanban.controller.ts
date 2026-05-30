@@ -9,6 +9,7 @@ export const getKanbanOrders = async (req: Request, res: Response, next: NextFun
     const limit = parseInt(req.query.limit as string) || 20;
     const search = (req.query.search as string) || '';
     const planStatus = (req.query.plan_status as string) || '';
+    const itemProperties = (req.query.item_properties as string) || '';
 
     const conditions: string[] = [`po.approval_status = N'已审批'`];
     const replacements: any = {};
@@ -21,11 +22,15 @@ export const getKanbanOrders = async (req: Request, res: Response, next: NextFun
       conditions.push(`po.plan_status = :planStatus`);
       replacements.planStatus = planStatus;
     }
+    if (itemProperties) {
+      conditions.push(`im.item_properties = :itemProperties`);
+      replacements.itemProperties = itemProperties;
+    }
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
     const [countResult]: any = await sequelize.query(
-      `SELECT COUNT(*) as total FROM production_order po ${whereClause}`,
+      `SELECT COUNT(*) as total FROM production_order po LEFT JOIN item_master im ON po.item_number = im.item_number ${whereClause}`,
       { replacements }
     );
     const total = countResult[0].total;
@@ -36,8 +41,9 @@ export const getKanbanOrders = async (req: Request, res: Response, next: NextFun
         SELECT po.production_order_number, po.item_number, po.item_name, po.specifications,
                po.basic_unit, po.planned_quantity, po.plan_status,
                po.production_date, po.equipment_name,
+               im.item_properties,
                ROW_NUMBER() OVER (ORDER BY po.production_date DESC, po.production_order_number DESC) AS _row_num
-        FROM production_order po ${whereClause}
+        FROM production_order po LEFT JOIN item_master im ON po.item_number = im.item_number ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
 

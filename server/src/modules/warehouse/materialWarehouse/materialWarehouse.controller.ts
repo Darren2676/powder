@@ -385,6 +385,104 @@ export const getBatchOptions = async (req: Request, res: Response, next: NextFun
   } catch (err) { next(err); }
 };
 
+// ==================== 批量FIFO批次推荐 ====================
+export const getBatchOptionsBulk = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { items } = req.body;
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      res.json(success({})); return;
+    }
+
+    const result: Record<string, any> = {};
+
+    for (const item of items) {
+      const { item_number, warehouse_number, required_quantity } = item;
+      if (!item_number) continue;
+
+      // 查询可用仓库列表
+      const [whRows]: any = await sequelize.query(`
+        SELECT warehouse_number, warehouse_name, quantity
+        FROM material_inventory
+        WHERE item_number = :item_number AND quantity > 0
+        ORDER BY quantity DESC
+      `, { replacements: { item_number } });
+
+      // 确定查询仓库：优先用指定仓库，无则取库存最多的仓库
+      let targetWh = warehouse_number || '';
+      let targetWhName = '';
+      if (targetWh) {
+        const found = whRows.find((r: any) => r.warehouse_number === targetWh);
+        if (found) targetWhName = found.warehouse_name || '';
+        else { targetWh = whRows.length > 0 ? whRows[0].warehouse_number : ''; targetWhName = whRows.length > 0 ? whRows[0].warehouse_name || '' : ''; }
+      } else if (whRows.length > 0) {
+        targetWh = whRows[0].warehouse_number;
+        targetWhName = whRows[0].warehouse_name || '';
+      }
+
+      // 查询批次库存（FIFO）
+      let batches: any[] = [];
+      let availableQty = 0;
+      if (targetWh) {
+        const [rows]: any = await sequelize.query(`
+          SELECT batch_number, quantity, initial_quantity, inbound_date,
+                 supplier_number, supplier_name, production_order_number, status
+          FROM material_batch_inventory
+          WHERE item_number = :item_number AND warehouse_number = :warehouse_number
+            AND quantity > 0 AND status = N'正常'
+          ORDER BY inbound_date ASC, id ASC
+        `, { replacements: { item_number, warehouse_number: targetWh } });
+        batches = rows;
+        availableQty = batches.reduce((sum: number, r: any) => sum + parseFloat(r.quantity), 0);
+      }
+
+      // FIFO自动分配
+      let remaining = Number(required_quantity) || 0;
+      const allocations = batches.map((b: any) => {
+        const batchQty = parseFloat(b.quantity);
+        let allocated = 0;
+        if (remaining > 0 && batchQty > 0) {
+          allocated = Math.min(remaining, batchQty);
+          remaining -= allocated;
+        }
+        return {
+          batch_number: b.batch_number,
+          quantity: batchQty,
+          available: batchQty,
+          inbound_date: b.inbound_date,
+          supplier_number: b.supplier_number || '',
+          supplier_name: b.supplier_name || '',
+          production_order_number: b.production_order_number || '',
+          selected: allocated > 0,
+          allocated_qty: allocated
+        };
+      });
+
+      result[item_number] = {
+        item_number,
+        item_name: '',
+        warehouse_number: targetWh,
+        warehouse_name: targetWhName,
+        available_qty: availableQty,
+        warehouses: whRows.map((r: any) => ({ warehouse_number: r.warehouse_number, warehouse_name: r.warehouse_name, quantity: r.quantity })),
+        allocations
+      };
+    }
+
+    // 批量补充 item_name
+    const itemNumbers = Object.keys(result);
+    if (itemNumbers.length > 0) {
+      const [imRows]: any = await sequelize.query(`
+        SELECT item_number, item_name FROM item_master WHERE item_number IN (${itemNumbers.map((_, i) => `:im${i}`).join(',')})
+      `, { replacements: Object.fromEntries(itemNumbers.map((k, i) => [`im${i}`, k])) });
+      for (const r of imRows) {
+        if (result[r.item_number]) result[r.item_number].item_name = r.item_name;
+      }
+    }
+
+    res.json(success(result));
+  } catch (err) { next(err); }
+};
+
 // ==================== 半成品生产入库单列表 ====================
 export const getSemiInboundOrderList = async (req: Request, res: Response, next: NextFunction) => {
   try {

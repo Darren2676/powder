@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>销售退货单撤消方案</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "Microsoft YaHei", "SimSun", sans-serif; font-size: 11pt; line-height: 1.7; color: #1a1a2e; padding: 0; }
+
+  /* 封面 */
+  .cover { page-break-after: always; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; text-align: center; }
+  .cover-line { width: 80%; border-top: 3px solid #1a3a6b; margin: 24px auto; }
+  .cover h1 { font-size: 28pt; color: #1a3a6b; letter-spacing: 4px; margin-bottom: 8px; }
+  .cover h2 { font-size: 16pt; color: #4a6a9b; font-weight: normal; margin-bottom: 32px; }
+  .cover .meta { font-size: 11pt; color: #666; line-height: 2; }
+  .cover .meta span { margin: 0 12px; }
+
+  /* 标题 */
+  h1 { font-size: 18pt; color: #1a3a6b; border-bottom: 2px solid #1a3a6b; padding-bottom: 6px; margin: 28px 0 16px; }
+  h2 { font-size: 14pt; color: #2a5a8b; margin: 20px 0 12px; }
+  h3 { font-size: 12pt; color: #3a6a9b; margin: 16px 0 8px; }
+
+  /* 段落 */
+  p { margin: 6px 0; text-indent: 2em; }
+
+  /* 表格 */
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 10pt; }
+  th, td { border: 1px solid #c0c8d4; padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: #e8eff8; color: #1a3a6b; font-weight: 600; white-space: nowrap; }
+  tr:nth-child(even) td { background: #f7f9fc; }
+
+  /* 代码块 */
+  .code-block { background: #f0f3f8; border: 1px solid #d0d8e4; border-radius: 4px; padding: 12px 16px; margin: 10px 0; font-family: "Consolas", "Courier New", monospace; font-size: 9.5pt; line-height: 1.5; white-space: pre-wrap; word-break: break-all; color: #2a2a3e; }
+
+  /* 流程图 */
+  .flow-container { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 16px 0; }
+  .flow-box { display: inline-block; padding: 8px 16px; border-radius: 6px; font-size: 10.5pt; font-weight: 600; text-align: center; min-width: 72px; }
+  .flow-arrow { font-size: 14pt; color: #888; }
+  .bg-draft { background: #fff3e0; color: #e65100; border: 1px solid #e65100; }
+  .bg-pending { background: #e3f2fd; color: #1565c0; border: 1px solid #1565c0; }
+  .bg-approved { background: #e8f5e9; color: #2e7d32; border: 1px solid #2e7d32; }
+  .bg-confirmed { background: #f3e5f5; color: #6a1b9a; border: 1px solid #6a1b9a; }
+  .bg-rejected { background: #fce4ec; color: #c62828; border: 1px solid #c62828; }
+  .bg-cancelled { background: #efebe9; color: #4e342e; border: 1px solid #4e342e; }
+  .bg-inbound { background: #e0f2f1; color: #00695c; border: 1px solid #00695c; }
+
+  /* 列表 */
+  ul, ol { margin: 6px 0 6px 2em; }
+  li { margin: 3px 0; }
+
+  /* 高亮框 */
+  .highlight-box { background: #fffde7; border-left: 4px solid #f9a825; padding: 10px 16px; margin: 12px 0; border-radius: 0 4px 4px 0; }
+  .danger-box { background: #fce4ec; border-left: 4px solid #c62828; padding: 10px 16px; margin: 12px 0; border-radius: 0 4px 4px 0; }
+  .info-box { background: #e3f2fd; border-left: 4px solid #1565c0; padding: 10px 16px; margin: 12px 0; border-radius: 0 4px 4px 0; }
+
+  .page-break { page-break-before: always; }
+  .toc a { text-decoration: none; color: #1a3a6b; }
+  .toc li { margin: 4px 0; }
+</style>
+</head>
+<body>
+
+<!-- ==================== 封面 ==================== -->
+<div class="cover">
+  <div class="cover-line"></div>
+  <h1>Seals MES 系统</h1>
+  <h2>销售退货单撤消方案</h2>
+  <div class="cover-line"></div>
+  <div class="meta">
+    <p>文档版本：V1.0</p>
+    <p>编制日期：2026年5月15日</p>
+    <p>适用模块：销售管理 → 退货单</p>
+  </div>
+</div>
+
+<!-- ==================== 目录 ==================== -->
+<h1>目 录</h1>
+<div class="toc">
+<ol>
+  <li><a href="#sec1">方案概述</a></li>
+  <li><a href="#sec2">退货单状态流转</a></li>
+  <li><a href="#sec3">撤消前置条件与阻止检查</a></li>
+  <li><a href="#sec4">撤消回冲逻辑详解</a>
+    <ol>
+      <li><a href="#sec4-1">库存回冲</a></li>
+      <li><a href="#sec4-2">销售订单回写回退</a></li>
+      <li><a href="#sec4-3">退货单状态更新</a></li>
+    </ol>
+  </li>
+  <li><a href="#sec5">数据表变更清单</a></li>
+  <li><a href="#sec6">API 接口定义</a></li>
+  <li><a href="#sec7">前端交互设计</a></li>
+  <li><a href="#sec8">完整撤消时序图</a></li>
+  <li><a href="#sec9">异常场景处理</a></li>
+  <li><a href="#sec10">与发货单撤消方案的对比</a></li>
+</ol>
+</div>
+
+<!-- ==================== 1. 方案概述 ==================== -->
+<div class="page-break"></div>
+<h1 id="sec1">1. 方案概述</h1>
+<p>销售退货单在"已确认"状态时，意味着退货已经入库完成（库存已增加、销售订单的退款数量已回写）。此时如果需要取消这笔退货，不能简单删除记录，必须逆向执行库存回冲和业务数据回退，以确保系统数据的完整性和一致性。</p>
+<p>本方案为"已确认+已入库"状态的销售退货单提供完整的撤消能力，涵盖库存回冲、销售订单回写回退、状态流转等全链路操作。</p>
+
+<div class="info-box">
+  <strong>设计原则：</strong>
+  <ul>
+    <li>撤消操作必须在事务中完成，保证原子性</li>
+    <li>库存流水不物理删除，标记"作废"保留审计轨迹</li>
+    <li>批次库存扣减后为0则标记作废，否则更新数量</li>
+    <li>汇总库存按（物料+仓库+质量状态）维度扣减</li>
+    <li>销售订单的 refunded_quantity、return_status、shipping_status 必须联动重算</li>
+  </ul>
+</div>
+
+<!-- ==================== 2. 状态流转 ==================== -->
+<h1 id="sec2">2. 退货单状态流转</h1>
+
+<h2>2.1 完整状态流转图</h2>
+<div class="flow-container">
+  <span class="flow-box bg-draft">草稿</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box bg-pending">审批中</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-box bg-approved">已审批</span>
+  <span class="flow-arrow">→确认退货→</span>
+  <span class="flow-box bg-confirmed">已确认</span>
+  <span class="flow-arrow">→撤消→</span>
+  <span class="flow-box bg-cancelled">已取消</span>
+</div>
+<div style="margin: 8px 0 8px 2em;">
+  <p style="text-indent:0">已审批 → 驳回 → <span class="flow-box bg-rejected" style="display:inline-block;padding:4px 10px;font-size:9pt;">已驳回</span></p>
+</div>
+
+<h2>2.2 各状态说明</h2>
+<table>
+  <tr><th>状态</th><th>status 字段值</th><th>说明</th><th>可执行操作</th></tr>
+  <tr><td>草稿</td><td>待确认</td><td>新建后的初始状态，approval_status=草稿</td><td>编辑、提交审核、删除</td></tr>
+  <tr><td>审批中</td><td>待确认</td><td>已提交审批流，approval_status=审批中</td><td>撤回提交</td></tr>
+  <tr><td>已审批</td><td>待确认</td><td>审批通过，可确认退货</td><td>确认退货、反审退回、驳回</td></tr>
+  <tr><td>已确认</td><td>已确认</td><td>退货已确认，自动触发入库</td><td><strong style="color:#c62828">撤消</strong></td></tr>
+  <tr><td>已驳回</td><td>已驳回</td><td>审批通过后被驳回</td><td>—</td></tr>
+  <tr><td>已取消</td><td>已取消</td><td>已确认的退货单被撤消</td><td>—</td></tr>
+</table>
+
+<h2>2.3 入库状态联动</h2>
+<table>
+  <tr><th>退货单 status</th><th>inbound_status</th><th>说明</th></tr>
+  <tr><td>待确认 / 已驳回</td><td>未入库 / NULL</td><td>尚未确认，未触发入库</td></tr>
+  <tr><td>已确认</td><td>已入库</td><td>确认后自动入库成功</td></tr>
+  <tr><td>已确认</td><td>未入库 / 入库失败</td><td>确认后入库失败（罕见）</td></tr>
+  <tr><td>已取消</td><td>已取消</td><td>撤消时从"已入库"变更</td></tr>
+</table>
+
+<!-- ==================== 3. 前置条件 ==================== -->
+<div class="page-break"></div>
+<h1 id="sec3">3. 撤消前置条件与阻止检查</h1>
+
+<h2>3.1 前置条件</h2>
+<table>
+  <tr><th>#</th><th>条件</th><th>不满足时提示</th></tr>
+  <tr><td>1</td><td>退货单 status = '已确认'</td><td>"只有已确认状态的退货单可以撤消"</td></tr>
+  <tr><td>2</td><td>退货单存在（未物理删除）</td><td>"退货单不存在"</td></tr>
+</table>
+
+<h2>3.2 撤消执行路径</h2>
+<div class="highlight-box">
+  <strong>根据 inbound_status 分两个路径：</strong>
+  <ul>
+    <li><strong>已入库</strong>：需执行完整库存回冲（步骤3a~3e）+ 销售订单回退（步骤4~5）+ 状态更新（步骤6）</li>
+    <li><strong>未入库/入库失败</strong>：跳过库存回冲，仅执行销售订单回退（步骤4~5）+ 状态更新（步骤6）</li>
+  </ul>
+</div>
+
+<!-- ==================== 4. 回冲逻辑详解 ==================== -->
+<h1 id="sec4">4. 撤消回冲逻辑详解</h1>
+
+<h2 id="sec4-1">4.1 库存回冲（inbound_status = '已入库' 时执行）</h2>
+
+<h3>4.1.1 查找退货入库流水</h3>
+<div class="code-block">SELECT * FROM inventory_transaction
+WHERE source_number = :return_order_number
+  AND source_type = N'退货入库'
+  AND (status IS NULL OR status != N'作废')</div>
+<p>根据退货单号 + 来源类型"退货入库"匹配所有未作废的库存流水记录。</p>
+
+<h3>4.1.2 查找退货入库生成的成品批次</h3>
+<div class="code-block">SELECT * FROM finished_batch_inventory
+WHERE return_order_number = :return_order_number
+  AND status = N'正常'</div>
+<p>退货入库时会为每个明细行生成新的成品批次（FB-开头），此时需要扣减或作废这些批次。</p>
+
+<h3>4.1.3 扣减批次库存</h3>
+<table>
+  <tr><th>条件</th><th>操作</th><th>SQL 逻辑</th></tr>
+  <tr>
+    <td>扣减后数量 ≤ 0</td>
+    <td>标记批次为"作废"</td>
+    <td><code>UPDATE finished_batch_inventory SET status = N'作废' WHERE id = :id</code></td>
+  </tr>
+  <tr>
+    <td>扣减后数量 &gt; 0</td>
+    <td>更新批次数量</td>
+    <td><code>UPDATE finished_batch_inventory SET quantity = :newQty WHERE id = :id</code></td>
+  </tr>
+</table>
+<div class="info-box">
+  <strong>计算公式：</strong>newQty = batch.quantity - batch.initial_quantity（入库时 initial_quantity 即为入库数量）
+</div>
+
+<h3>4.1.4 扣减汇总库存</h3>
+<p>按（物料编号 + 仓库编号 + 质量状态）维度扣减 <code>finished_goods_inventory</code>：</p>
+<div class="code-block">UPDATE finished_goods_inventory
+SET quantity = CASE WHEN quantity - :qty &lt; 0 THEN 0 ELSE quantity - :qty END,
+    last_updated = GETDATE()
+WHERE item_number = :item_number
+  AND warehouse_number = :warehouse_number
+  AND quality_status = :quality_status</div>
+
+<h3>4.1.5 标记库存流水作废</h3>
+<div class="code-block">UPDATE inventory_transaction
+SET status = N'作废', void_operator = :operator, void_date = GETDATE()
+WHERE source_number = :return_order_number
+  AND source_type = N'退货入库'
+  AND (status IS NULL OR status != N'作废')</div>
+<div class="highlight-box">
+  <strong>审计原则：</strong>库存流水不物理删除，仅标记"作废"并记录作废操作人和作废时间，保留完整审计轨迹。
+</div>
+
+<!-- ==================== 4.2 销售订单回写回退 ==================== -->
+<div class="page-break"></div>
+<h2 id="sec4-2">4.2 销售订单回写回退</h2>
+
+<h3>4.2.1 回退 refunded_quantity</h3>
+<p>退货确认时，系统将退货数量累加到 <code>sales_order_detail.refunded_quantity</code>。撤消时需逆向扣减：</p>
+<div class="code-block">UPDATE sales_order_detail
+SET refunded_quantity = CASE
+  WHEN ISNULL(refunded_quantity, 0) - :qty &lt; 0 THEN 0
+  ELSE ISNULL(refunded_quantity, 0) - :qty END
+WHERE id = :sales_detail_id</div>
+
+<h3>4.2.2 重算 return_status</h3>
+<p>调用 <code>syncReturnStatus(sales_detail_id, transaction)</code> 服务函数，根据最新的 refunded_quantity 重新计算退货状态。</p>
+
+<h3>4.2.3 重算 shipping_status</h3>
+<p>根据更新后的 shipped_quantity 和 refunded_quantity，重新计算发货状态：</p>
+<table>
+  <tr><th>条件</th><th>shipping_status</th></tr>
+  <tr><td>净发货量 &gt; 订单数量</td><td>超额发货</td></tr>
+  <tr><td>净发货量 = 订单数量</td><td>全部发货</td></tr>
+  <tr><td>0 &lt; 净发货量 &lt; 订单数量</td><td>部分发货</td></tr>
+  <tr><td>净发货量 = 0 且有发货申请</td><td>全部发货 / 部分发货（取决于申请量）</td></tr>
+  <tr><td>净发货量 = 0 且无发货申请</td><td>未申请</td></tr>
+</table>
+<div class="info-box">
+  <strong>净发货量公式：</strong>netShipped = shipped_quantity - refunded_quantity
+</div>
+
+<h3>4.2.4 同步行状态与订单头状态</h3>
+<p>调用 <code>syncLineStatus(sales_detail_id, transaction)</code> 服务函数，联动更新行状态和订单头状态。</p>
+
+<!-- ==================== 4.3 退货单状态更新 ==================== -->
+<h2 id="sec4-3">4.3 退货单状态更新</h2>
+<div class="code-block">UPDATE return_order
+SET status = N'已取消',
+    inbound_status = CASE WHEN inbound_status = N'已入库' THEN N'已取消' ELSE inbound_status END
+WHERE return_order_number = :return_order_number</div>
+
+<!-- ==================== 5. 数据表变更清单 ==================== -->
+<div class="page-break"></div>
+<h1 id="sec5">5. 数据表变更清单</h1>
+
+<table>
+  <tr><th>#</th><th>数据表</th><th>操作类型</th><th>变更内容</th><th>条件</th></tr>
+  <tr><td>1</td><td>return_order</td><td>UPDATE</td><td>status→已取消, inbound_status→已取消</td><td>return_order_number 匹配</td></tr>
+  <tr><td>2</td><td>finished_batch_inventory</td><td>UPDATE</td><td>扣减 quantity 或 status→作废</td><td>return_order_number 匹配且 status=正常</td></tr>
+  <tr><td>3</td><td>finished_goods_inventory</td><td>UPDATE</td><td>扣减 quantity（下限为0）</td><td>item_number + warehouse_number + quality_status 匹配</td></tr>
+  <tr><td>4</td><td>inventory_transaction</td><td>UPDATE</td><td>status→作废, void_operator, void_date</td><td>source_number=退货单号 AND source_type=退货入库</td></tr>
+  <tr><td>5</td><td>sales_order_detail</td><td>UPDATE</td><td>refunded_quantity↓, return_status重算, shipping_status重算</td><td>退货明细关联的 sales_detail_id</td></tr>
+  <tr><td>6</td><td>sales_order / sales_order_line</td><td>UPDATE</td><td>行状态、订单头状态联动更新</td><td>syncLineStatus 服务联动</td></tr>
+</table>
+
+<!-- ==================== 6. API 接口 ==================== -->
+<h1 id="sec6">6. API 接口定义</h1>
+
+<h2>6.1 撤消退货单</h2>
+<table>
+  <tr><th>项目</th><th>说明</th></tr>
+  <tr><td>方法</td><td>POST</td></tr>
+  <tr><td>路径</td><td>/api/v1/return-orders/:return_order_number/cancel</td></tr>
+  <tr><td>认证</td><td>Bearer Token（JWT）</td></tr>
+  <tr><td>请求参数</td><td>return_order_number（URL路径参数）</td></tr>
+  <tr><td>请求体</td><td>无</td></tr>
+  <tr><td>成功响应</td><td><code>{ "success": true, "message": "退货单已撤消" }</code></td></tr>
+  <tr><td>失败响应</td><td><code>{ "success": false, "message": "只有已确认状态的退货单可以撤消" }</code></td></tr>
+</table>
+
+<h2>6.2 错误码</h2>
+<table>
+  <tr><th>HTTP 状态码</th><th>message</th><th>触发条件</th></tr>
+  <tr><td>404</td><td>退货单不存在</td><td>return_order_number 找不到</td></tr>
+  <tr><td>400</td><td>只有已确认状态的退货单可以撤消</td><td>status 不是"已确认"</td></tr>
+</table>
+
+<!-- ==================== 7. 前端交互 ==================== -->
+<div class="page-break"></div>
+<h1 id="sec7">7. 前端交互设计</h1>
+
+<h2>7.1 撤消按钮位置</h2>
+<p>在退货单列表页，操作列的"更多"下拉菜单中，仅当 <code>record.status === '已确认'</code> 时显示"撤消"按钮。</p>
+
+<h2>7.2 确认弹窗</h2>
+<p>点击"撤消"后弹出确认对话框：</p>
+<table>
+  <tr><th>场景</th><th>弹窗标题</th><th>弹窗内容</th></tr>
+  <tr>
+    <td>已入库</td>
+    <td>撤消确认</td>
+    <td>确认撤消退货单「RT-xxxxxxxx-xxx」？<br><br>⚠ 此退货单已入库，撤消后将自动回冲库存并作废入库流水。</td>
+  </tr>
+  <tr>
+    <td>未入库</td>
+    <td>撤消确认</td>
+    <td>确认撤消退货单「RT-xxxxxxxx-xxx」？</td>
+  </tr>
+</table>
+
+<h2>7.3 状态筛选器</h2>
+<p>退货单列表页的状态筛选下拉已增加"已取消"选项，支持按状态筛选已撤消的退货单。</p>
+
+<h2>7.4 状态徽章颜色</h2>
+<table>
+  <tr><th>状态</th><th>徽章颜色</th><th>Ant Design 状态值</th></tr>
+  <tr><td>待确认</td><td>蓝色</td><td>processing</td></tr>
+  <tr><td>已确认</td><td>绿色</td><td>success</td></tr>
+  <tr><td>已驳回</td><td>灰色</td><td>default</td></tr>
+  <tr><td>已取消</td><td>红色</td><td>error</td></tr>
+</table>
+
+<!-- ==================== 8. 时序图 ==================== -->
+<div class="page-break"></div>
+<h1 id="sec8">8. 完整撤消时序图</h1>
+
+<h2>8.1 已入库退货单撤消</h2>
+<div class="code-block">用户 → 前端: 点击"更多 → 撤消"
+前端 → 前端: 弹出确认对话框（含库存回冲警告）
+前端 → 后端: POST /return-orders/:rn/cancel
+
+后端 → 数据库: BEGIN TRANSACTION
+后端 → 数据库: SELECT * FROM return_order WITH (UPDLOCK) WHERE rn = :rn
+后端 → 数据库: 校验 status = '已确认'
+
+alt inbound_status = '已入库'
+  后端 → 数据库: 查找 inventory_transaction（退货入库流水）
+  后端 → 数据库: 查找 finished_batch_inventory（退货批次）
+  后端 → 数据库: 逐批次扣减 quantity / 标记作废
+  后端 → 数据库: 扣减 finished_goods_inventory（汇总库存）
+  后端 → 数据库: 标记 inventory_transaction 为作废
+end
+
+后端 → 数据库: 查找 return_order_detail
+loop 每条退货明细
+  后端 → 数据库: 回退 sales_order_detail.refunded_quantity
+  后端 → 数据库: syncReturnStatus() 重算退货状态
+end
+
+loop 每个关联的 sales_detail_id
+  后端 → 数据库: 重算 shipping_status
+  后端 → 数据库: syncLineStatus() 联动更新
+end
+
+后端 → 数据库: UPDATE return_order SET status='已取消'
+后端 → 数据库: COMMIT TRANSACTION
+
+后端 → 前端: { success: true, message: '退货单已撤消' }
+前端 → 前端: message.success('退货单已撤消')
+前端 → 后端: 刷新列表 fetchData()</div>
+
+<!-- ==================== 9. 异常场景 ==================== -->
+<h1 id="sec9">9. 异常场景处理</h1>
+
+<table>
+  <tr><th>#</th><th>异常场景</th><th>处理方式</th></tr>
+  <tr><td>1</td><td>撤消时批次库存不足（已被其他出库消耗）</td><td>quantity 扣减后为负数时，取 0 而非负值；汇总库存同理</td></tr>
+  <tr><td>2</td><td>撤消时库存流水已被手动作废</td><td>WHERE 条件排除 status='作废'，只处理有效流水</td></tr>
+  <tr><td>3</td><td>入库失败但状态为已确认</td><td>跳过库存回冲步骤（inbound_status≠'已入库'），仅回退销售订单数据</td></tr>
+  <tr><td>4</td><td>撤消过程中数据库异常</td><td>事务回滚，所有变更不生效</td></tr>
+  <tr><td>5</td><td>并发撤消同一退货单</td><td>UPDLOCK 行锁防止并发，第二次请求校验 status 已变更而失败</td></tr>
+  <tr><td>6</td><td>refunded_quantity 扣减后为负</td><td>CASE WHEN 限制下限为 0</td></tr>
+</table>
+
+<!-- ==================== 10. 对比 ==================== -->
+<div class="page-break"></div>
+<h1 id="sec10">10. 与发货单撤消方案的对比</h1>
+
+<table>
+  <tr><th>对比项</th><th>发货单撤消</th><th>销售退货单撤消</th></tr>
+  <tr><td>可撤消状态</td><td>待发货、已发货</td><td>已确认</td></tr>
+  <tr><td>不可撤消状态</td><td>已签收、已取消</td><td>待确认、已驳回、已取消</td></tr>
+  <tr><td>库存操作方向</td><td>回冲（加回库存）</td><td>扣减（减去库存）</td></tr>
+  <tr><td>批次库存处理</td><td>加回原出库批次数量</td><td>扣减退货入库批次数量/作废</td></tr>
+  <tr><td>汇总库存处理</td><td>syncFinishedGoodsSummary</td><td>CASE WHEN 扣减（下限0）</td></tr>
+  <tr><td>流水作废方向</td><td>出库流水作废</td><td>入库流水作废</td></tr>
+  <tr><td>销售订单回写</td><td>shipped_quantity↓</td><td>refunded_quantity↓</td></tr>
+  <tr><td>前置阻止检查</td><td>退货单存在/已开票检查</td><td>无额外阻止（仅状态校验）</td></tr>
+  <tr><td>箱码回退</td><td>packing_box 状态回退</td><td>无箱码关联</td></tr>
+  <tr><td>API 路由</td><td>POST /shipping-orders/:sn/cancel</td><td>POST /return-orders/:rn/cancel</td></tr>
+</table>
+
+<div class="danger-box">
+  <strong>关键区别：</strong>发货单撤消是"加回库存"（出库→回冲），销售退货单撤消是"减去库存"（入库→逆向入库）。方向相反，但审计原则一致——流水不物理删除，仅标记作废。
+</div>
+
+</body>
+</html>

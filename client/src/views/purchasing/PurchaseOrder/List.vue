@@ -259,7 +259,8 @@ const handleBatchAction = (action: string) => {
 }
 
 const handlePrint = (record: any) => {
-  window.open(`/api/purchase-orders/${encodeURIComponent(record.purchase_order_number)}/print`, '_blank')
+  const token = localStorage.getItem('token') || ''
+  window.open(`/api/v1/purchase-orders/${encodeURIComponent(record.purchase_order_number)}/print?token=${encodeURIComponent(token)}`, '_blank')
 }
 
 const handleClose = (record: any) => {
@@ -468,7 +469,7 @@ const handleExport = async () => {
                   <a-menu-item v-if="(record.approval_status || '').trim() === '待审批'" @click="handleWithdraw(record)">撤回</a-menu-item>
                   <a-menu-item v-if="(record.approval_status || '').trim() === '已审批'" @click="handleReverse(record)">反审批</a-menu-item>
                   <a-menu-divider v-if="(record.approval_status || '').trim() !== '草稿'" />
-                  <a-menu-item v-if="(record.approval_status || '').trim() === '已审批'" @click="handlePrint(record)"><PrinterOutlined style="margin-right:4px" />打印</a-menu-item>
+                  <a-menu-item v-if="(record.approval_status || '').trim() !== '草稿'" @click="handlePrint(record)"><PrinterOutlined style="margin-right:4px" />打印</a-menu-item>
                   <a-menu-item v-if="(record.approval_status || '').trim() === '已审批' && (record.order_status || '').trim() !== '已完成' && (record.order_status || '').trim() !== '已关闭'" @click="openStockIn(record)">入库</a-menu-item>
                   <a-menu-item v-if="(record.approval_status || '').trim() === '已审批' && (record.order_status || '').trim() !== '待执行' && (record.order_status || '').trim() !== '已关闭'" @click="handleReturn(record)"><SwapOutlined style="margin-right:4px" />退货</a-menu-item>
                   <a-menu-item v-if="(record.order_status || '').trim() !== '已关闭' && (record.order_status || '').trim() !== '已完成'" @click="handleClose(record)">关闭</a-menu-item>

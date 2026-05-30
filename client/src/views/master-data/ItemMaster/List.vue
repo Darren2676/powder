@@ -283,7 +283,8 @@ const emptyForm = () => ({
   purchase_unit: '',
   // 质量检验分区字段"
   incoming_inspection: 'N',
-  enable_quality_chars: 'N'
+  enable_quality_chars: 'N',
+  enable_prod_quality_chars: 'N'
 })
 
 // ========== 新建弹窗 ==========
@@ -1156,8 +1157,14 @@ onMounted(() => {
                   <a-select-option value="N">不需要</a-select-option>
                 </a-select>
               </a-form-item></a-col>
-              <a-col v-if="createForm.incoming_inspection === 'Y'" :span="12"><a-form-item label="启用质量特性">
+              <a-col v-if="createForm.incoming_inspection === 'Y'" :span="12"><a-form-item label="来料启用质量特性">
                 <a-select v-model:value="createForm.enable_quality_chars">
+                  <a-select-option value="Y">启用</a-select-option>
+                  <a-select-option value="N">不启用</a-select-option>
+                </a-select>
+              </a-form-item></a-col>
+              <a-col :span="12"><a-form-item label="生产启用质量特性">
+                <a-select v-model:value="createForm.enable_prod_quality_chars">
                   <a-select-option value="Y">启用</a-select-option>
                   <a-select-option value="N">不启用</a-select-option>
                 </a-select>
@@ -1533,8 +1540,14 @@ onMounted(() => {
                       <a-select-option value="N">不需要</a-select-option>
                     </a-select>
                   </a-form-item></a-col>
-                  <a-col v-if="editForm.incoming_inspection === 'Y'" :span="12"><a-form-item label="启用质量特性">
+                  <a-col v-if="editForm.incoming_inspection === 'Y'" :span="12"><a-form-item label="来料启用质量特性">
                     <a-select v-model:value="editForm.enable_quality_chars">
+                      <a-select-option value="Y">启用</a-select-option>
+                      <a-select-option value="N">不启用</a-select-option>
+                    </a-select>
+                  </a-form-item></a-col>
+                  <a-col :span="12"><a-form-item label="生产启用质量特性">
+                    <a-select v-model:value="editForm.enable_prod_quality_chars">
                       <a-select-option value="Y">启用</a-select-option>
                       <a-select-option value="N">不启用</a-select-option>
                     </a-select>
@@ -1927,6 +1940,8 @@ onMounted(() => {
         <a-divider orientation="left">质量检验</a-divider>
         <a-descriptions :column="3" bordered size="small">
           <a-descriptions-item label="来料检验">{{ detailData.incoming_inspection === 'Y' ? '需要' : '不需要' }}</a-descriptions-item>
+          <a-descriptions-item label="来料启用质量特性">{{ detailData.enable_quality_chars === 'Y' ? '启用' : '不启用' }}</a-descriptions-item>
+          <a-descriptions-item label="生产启用质量特性">{{ detailData.enable_prod_quality_chars === 'Y' ? '启用' : '不启用' }}</a-descriptions-item>
           <a-descriptions-item label="标准合格率">{{ detailData.standard_pass_rate || '-' }}</a-descriptions-item>
         </a-descriptions>
 

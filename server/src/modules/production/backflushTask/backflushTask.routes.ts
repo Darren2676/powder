@@ -11,6 +11,7 @@ router.get('/', authenticate, ctrl.list);
 router.get('/export', authenticate, ctrl.exportExcel);
 router.get('/summary/:orderNo', authenticate, ctrl.summary);
 router.get('/readiness/:orderNo', authenticate, ctrl.readiness);
+router.patch('/auto-weigh', authenticate, ctrl.updateAutoWeigh);
 router.get('/:id/details', authenticate, ctrl.detail);
 router.post('/generate', authenticate, ctrl.generate);
 router.post('/:id/retry', authenticate, ctrl.retry);

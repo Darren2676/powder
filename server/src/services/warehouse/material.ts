@@ -181,8 +181,17 @@ export const productionInboundMaterial = async (
       // 5. 更新生产单入库状态
       const currentInbound = Number(item.inbound_quantity) || 0;
       const totalInbound = currentInbound + inboundQty;
-      const plannedQty = Number(item.planned_quantity) || 0;
-      const newInboundStatus = totalInbound >= plannedQty ? '全部入库' : '部分入库';
+      // 使用末道正品数判断入库状态，而非计划数量
+      let compareQty = Number(item.planned_quantity) || 0;
+      if (item.production_order_number) {
+        const [lastStepResult]: any = await sequelize.query(
+          `SELECT ISNULL(SUM(ISNULL(qualified_quantity, 0)), 0) as last_qualified FROM work_report WHERE production_order_number = :pon AND step_number = (SELECT MAX(step_number) FROM work_report WHERE production_order_number = :pon)`,
+          { replacements: { pon: item.production_order_number }, transaction }
+        );
+        const lastStepQualified = Number(lastStepResult[0]?.last_qualified) || 0;
+        if (lastStepQualified > 0) compareQty = lastStepQualified;
+      }
+      const newInboundStatus = totalInbound >= compareQty ? '全部入库' : '部分入库';
 
       await sequelize.query(
         'UPDATE production_order SET inbound_quantity = :totalInbound, inbound_status = :status WHERE production_order_number = :pon',
