@@ -4,7 +4,7 @@
       <div class="login-logo">
         <div class="logo-icon">MES</div>
       </div>
-      <h1 class="login-title">睿信MES</h1>
+      <h1 class="login-title">睿信塑粉MOM</h1>
       <p class="login-subtitle">生产执行管理系统 · 移动端</p>
     </div>
 
@@ -45,7 +45,7 @@
     </div>
 
     <div class="login-footer">
-      <p>橡胶密封件生产管理系统</p>
+      <p>塑粉生产管理系统</p>
     </div>
   </div>
 </template>

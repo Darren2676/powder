@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Seals MES System - Git版本管理与生产部署操作手册</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 16mm 14mm; }
+  body {
+    font-family: "Microsoft YaHei", "SimHei", "PingFang SC", sans-serif;
+    font-size: 11.5px;
+    line-height: 1.68;
+    color: #1a1a1a;
+    max-width: 100%; padding: 0; margin: 0; background: #fff;
+  }
+
+  .cover { page-break-after: always; text-align: center; padding: 70px 40px 40px 40px; }
+  .cover h1 { font-size: 26px; color: #0d1a26; margin: 130px 0 16px 0; padding-bottom: 18px; border-bottom: 3px solid #1890ff; }
+  .cover .subtitle { font-size: 17px; color: #1890ff; margin: 16px 0 36px 0; }
+  .cover .meta { font-size: 13px; color: #666; margin: 8px 0; }
+  .cover .toc { text-align: left; max-width: 520px; margin: 50px auto 0 auto; font-size: 12.5px; }
+  .cover .toc h3 { color: #1890ff; border-bottom: 1px solid #e0e0e0; padding-bottom: 8px; margin: 24px 0 10px 0; }
+  .cover .toc li { margin: 6px 0; color: #555; }
+
+  h1 { font-size: 20px; text-align: center; margin: 0 0 18px 0; padding-bottom: 8px; border-bottom: 2px solid #1890ff; color: #0d1a26; }
+  h2 { font-size: 15px; margin: 26px 0 10px 0; padding: 5px 0 5px 10px; border-left: 4px solid #1890ff; background: #f0f5ff; color: #0d1a26; page-break-after: avoid; }
+  h3 { font-size: 13px; margin: 18px 0 7px 0; color: #1a3a5c; page-break-after: avoid; }
+  h4 { font-size: 12px; margin: 12px 0 5px 0; color: #2a4a6c; }
+  p { margin: 5px 0; }
+
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 14px 0; font-size: 10.5px; page-break-inside: avoid; }
+  th { background: #1890ff; color: #fff; padding: 6px 7px; text-align: left; font-weight: 600; font-size: 10.5px; }
+  td { padding: 5px 7px; border: 1px solid #d9d9d9; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafafa; }
+
+  pre {
+    background: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    border-radius: 3px;
+    padding: 9px 12px;
+    font-size: 10px;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: Consolas,"Courier New",monospace;
+    page-break-inside: avoid;
+    margin: 6px 0 12px 0;
+  }
+
+  .diagram { text-align: center; margin: 10px 0 14px 0; page-break-inside: avoid; }
+  .diagram pre { display: inline-block; text-align: left; background: #f0f5ff; border: 1px solid #91d5ff; padding: 10px 14px; }
+
+  .box-info { border: 1px solid #91d5ff; background: #e6f7ff; padding: 10px 14px; border-radius: 4px; margin: 8px 0 14px 0; page-break-inside: avoid; font-size: 11px; }
+  .box-warn { border: 1px solid #ffd591; background: #fffbe6; padding: 10px 14px; border-radius: 4px; margin: 8px 0 14px 0; page-break-inside: avoid; font-size: 11px; }
+  .box-danger { border: 1px solid #ffa39e; background: #fff1f0; padding: 10px 14px; border-radius: 4px; margin: 8px 0 14px 0; page-break-inside: avoid; font-size: 11px; }
+  .box-success { border: 1px solid #b7eb8f; background: #f6ffed; padding: 10px 14px; border-radius: 4px; margin: 8px 0 14px 0; page-break-inside: avoid; font-size: 11px; }
+
+  .step-box { border: 1px solid #d9d9d9; border-radius: 4px; padding: 10px 14px; margin: 6px 0 10px 0; page-break-inside: avoid; }
+  .step-num { display: inline-block; background: #1890ff; color: #fff; width: 22px; height: 22px; border-radius: 11px; text-align: center; line-height: 22px; font-weight: 700; margin-right: 8px; font-size: 11px; }
+
+  .tag-main { background: #cf1322; color: #fff; padding: 1px 8px; border-radius: 2px; font-size: 10px; font-weight: 600; }
+  .tag-dev { background: #1890ff; color: #fff; padding: 1px 8px; border-radius: 2px; font-size: 10px; font-weight: 600; }
+  .tag-feat { background: #52c41a; color: #fff; padding: 1px 8px; border-radius: 2px; font-size: 10px; font-weight: 600; }
+  .tag-rel { background: #faad14; color: #fff; padding: 1px 8px; border-radius: 2px; font-size: 10px; font-weight: 600; }
+  .tag-hot { background: #ff4d4f; color: #fff; padding: 1px 8px; border-radius: 2px; font-size: 10px; font-weight: 600; }
+
+  .cmd { color: #08979c; font-weight: 600; }
+  .file { color: #d46b08; }
+
+  .checklist { list-style: none; padding: 0; }
+  .checklist li { padding: 3px 0 3px 24px; position: relative; }
+  .checklist li::before { content: '☐'; position: absolute; left: 2px; color: #1890ff; }
+
+  .page-break { page-break-before: always; }
+  ul, ol { margin: 5px 0; padding-left: 20px; }
+  li { margin: 3px 0; }
+  .footer { text-align: center; color: #999; font-size: 9px; padding: 8px 0; border-top: 1px solid #e0e0e0; margin-top: 16px; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- COVER -->
+<!-- ============================================================ -->
+<div class="cover">
+  <h1>Seals MES System</h1>
+  <div class="subtitle">Git 版本管理与生产部署操作手册</div>
+  <p class="meta">版本: v2.0 | 日期: 2026年6月</p>
+  <p class="meta">仓库: github.com/Darren2676/rubber</p>
+  <div class="toc">
+    <h3>第一篇：Git 版本管理策略</h3>
+    <ol>
+      <li>仓库现状与分支结构</li>
+      <li>Git Flow 分支模型</li>
+      <li>版本号规范与 Tag 管理</li>
+      <li>提交信息规范 (Conventional Commits)</li>
+      <li>日常开发工作流</li>
+      <li>代码审查与合并流程</li>
+    </ol>
+    <h3>第二篇：生产环境部署流程</h3>
+    <ol start="7">
+      <li>环境准备清单</li>
+      <li>首次部署（全新服务器）</li>
+      <li>部署验证</li>
+    </ol>
+    <h3>第三篇：功能更新与Bug修复上线流程</h3>
+    <ol start="10">
+      <li>新功能开发 → 生产上线全流程</li>
+      <li>Bug 修复（紧急热修复）流程</li>
+      <li>版本发布操作步骤</li>
+      <li>升级后验证与回滚方案</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PART 1: VERSION MANAGEMENT -->
+<!-- ============================================================ -->
+<div class="page-break"></div>
+<h1>第一篇：Git 版本管理策略</h1>
+
+<h2>1. 仓库现状与分支结构</h2>
+
+<h3>1.1 当前仓库信息</h3>
+<table>
+  <tr><th width="140">配置项</th><th>当前值</th></tr>
+  <tr><td>远程仓库</td><td>https://github.com/Darren2676/rubber.git</td></tr>
+  <tr><td>主分支</td><td><span class="tag-main">main</span> — 生产环境代码</td></tr>
+  <tr><td>开发分支</td><td><span class="tag-dev">develop</span> — 日常开发集成</td></tr>
+  <tr><td>功能分支</td><td><span class="tag-feat">feature/production-subcontract</span>、<span class="tag-feat">feature/menu-optimization</span></td></tr>
+  <tr><td>已发布 Tag</td><td>v1.0.0、v1.1.0、v1.2.0</td></tr>
+</table>
+
+<h3>1.2 当前分支实况</h3>
+<div class="diagram">
+<pre>
+main        ─────●─────────────●──────────────────────●─── v1.2.0  ← 生产环境
+                  ↑             ↑                      ↑
+develop     ────●─●─●─●─●─●─●─●─●────              feature/*
+                  ↑     ↑           ↑
+feature/     ──[A]───[B]──────[subcontract]  (进行中)
+                  ↑
+feature/     ──[menu-optimization]  (进行中)
+</pre>
+</div>
+
+<div class="box-info">
+  <strong>当前状态</strong>：<span class="tag-feat">feature/production-subcontract</span> 是当前工作的功能分支（HEAD），<span class="tag-main">main</span> 处于 v1.2.0，下一次发布将为 v1.3.0。
+</div>
+
+<h2>2. Git Flow 分支模型</h2>
+
+<h3>2.1 分支角色定义</h3>
+<table>
+  <tr><th>分支</th><th>命名</th><th>来源</th><th>合并目标</th><th>生命周期</th><th>保护</th></tr>
+  <tr><td><span class="tag-main">main</span></td><td>固定</td><td>—</td><td>—</td><td>永久</td><td>锁定：禁止直接推送，仅通过 MR/PR 合并</td></tr>
+  <tr><td><span class="tag-dev">develop</span></td><td>固定</td><td>main</td><td>—</td><td>永久</td><td>保护：仅通过 MR/PR 合并</td></tr>
+  <tr><td><span class="tag-feat">feature/*</span></td><td>feature/功能名</td><td>develop</td><td>develop</td><td>合并后删除</td><td>无</td></tr>
+  <tr><td><span class="tag-rel">release/*</span></td><td>release/x.x.x</td><td>develop</td><td>main + develop</td><td>合并后删除</td><td>保护：仅修复 Bug</td></tr>
+  <tr><td><span class="tag-hot">hotfix/*</span></td><td>hotfix/问题描述</td><td>main</td><td>main + develop</td><td>合并后删除</td><td>无</td></tr>
+</table>
+
+<h3>2.2 完整分支流程图</h3>
+<div class="diagram">
+<pre>
+时间 →
+
+main        ─────●────────────●──────────────────────●─────────●──────
+                  ↑            ↑                      ↑         ↑
+                  │            │                      │         │
+release/x.x    ───[测试修复]─→─●                hotfix/* ───[修复]─→─●
+                  ↑                               ↑
+                  │                               │ (紧急)
+develop     ──●─●─●─●─●─●─●─●─●─●─●─●─●─●─●─●─●─●─●─●─●─●─
+              ↑       ↑           ↑     ↑
+              │       │           │     │
+feature/A  ──[开发]─→─●           │  feature/C ──[开发]
+              ↑                   │
+feature/B  ──[开发]──────────────→─●
+</pre>
+</div>
+
+<h3>2.3 GitHub 分支保护设置</h3>
+<p>在 GitHub 仓库 → Settings → Branches 中配置：</p>
+<table>
+  <tr><th>分支</th><th>保护规则</th></tr>
+  <tr><td>main</td><td>需要 Pull Request 审查 (≥1人)、禁止直接推送、要求 CI 通过、不允许强制推送</td></tr>
+  <tr><td>develop</td><td>需要 Pull Request 审查 (≥1人)、禁止直接推送、不允许强制推送</td></tr>
+  <tr><td>release/*</td><td>禁止直接推送（仅允许 Bug 修复的小型提交）</td></tr>
+</table>
+
+<h2>3. 版本号规范与 Tag 管理</h2>
+
+<h3>3.1 语义化版本 (SemVer 2.0)</h3>
+<div class="diagram">
+<pre>
+  v MAJOR . MINOR . PATCH
+    │       │       │
+    │       │       └── 修订号：Bug修复、小优化（v1.0.0 → v1.0.1）
+    │       └────────── 次版本号：新功能、向下兼容（v1.0.0 → v1.1.0）
+    └────────────────── 主版本号：不兼容重大变更（v1.x.x → v2.0.0）
+</pre>
+</div>
+
+<h3>3.2 版本号同步位置</h3>
+<table>
+  <tr><th>位置</th><th>文件</th><th>操作</th></tr>
+  <tr><td>Git Tag</td><td>—</td><td><span class="cmd">git tag -a v1.3.0 -m "v1.3.0 - 生产委外功能"</span></td></tr>
+  <tr><td>后端</td><td><span class="file">server/package.json</span></td><td>修改 "version": "1.3.0"</td></tr>
+  <tr><td>前端</td><td><span class="file">client/package.json</span></td><td>修改 "version": "1.3.0"</td></tr>
+</table>
+
+<h3>3.3 Tag 操作命令</h3>
+<pre>
+# 创建 Tag
+git tag -a v1.3.0 -m "v1.3.0 - 新增生产委外功能"
+
+# 查看所有 Tag
+git tag -l
+
+# 推送 Tag 到远程
+git push origin v1.3.0
+
+# 推送所有 Tag
+git push origin --tags
+
+# 删除本地 Tag（打错了需要重打）
+git tag -d v1.3.0
+
+# 删除远程 Tag
+git push origin --delete v1.3.0
+</pre>
+
+<h2>4. 提交信息规范 (Conventional Commits)</h2>
+
+<table>
+  <tr><th>类型</th><th>说明</th><th>示例</th></tr>
+  <tr><td><span class="tag-feat">feat</span></td><td>新功能</td><td><span class="cmd">feat(production): 新增委外发料和收回功能</span></td></tr>
+  <tr><td><span class="tag-feat">fix</span></td><td>Bug 修复</td><td><span class="cmd">fix(warehouse): 修复入库单撤回时库存未恢复</span></td></tr>
+  <tr><td>docs</td><td>文档更新</td><td><span class="cmd">docs: 更新部署手册中IIS配置部分</span></td></tr>
+  <tr><td>style</td><td>样式调整</td><td><span class="cmd">style(ui): 调整表格列宽和对齐方式</span></td></tr>
+  <tr><td>refactor</td><td>代码重构</td><td><span class="cmd">refactor(auth): 抽取JWT验证为独立中间件</span></td></tr>
+  <tr><td>perf</td><td>性能优化</td><td><span class="cmd">perf(db): 优化物料查询SQL避免全表扫描</span></td></tr>
+  <tr><td>test</td><td>测试相关</td><td><span class="cmd">test(e2e): 添加生产入库流程端到端测试</span></td></tr>
+  <tr><td>chore</td><td>构建/工具</td><td><span class="cmd">chore(deps): 升级Vite到7.4.0</span></td></tr>
+  <tr><td>db</td><td>数据库变更</td><td><span class="cmd">db(migration): 新增委外发料表</span></td></tr>
+</table>
+
+<div class="box-warn">
+  <strong>提交前检查</strong>：提交信息用中文或英文均可，但同一功能分支内应保持一致。类型（type）必须使用英文小写。
+</div>
+
+<h2>5. 日常开发工作流</h2>
+
+<h3>5.1 开始新功能开发</h3>
+
+<div class="step-box">
+  <p><span class="step-num">1</span> <strong>从 develop 拉取最新代码</strong></p>
+  <pre>git checkout develop
+git pull origin develop</pre>
+</div>
+<div class="step-box">
+  <p><span class="step-num">2</span> <strong>创建功能分支</strong></p>
+  <pre>git checkout -b feature/委外发料</pre>
+  <p>命名规则：<span class="cmd">feature/功能简述</span>，使用英文或拼音，小写加连字符。</p>
+</div>
+<div class="step-box">
+  <p><span class="step-num">3</span> <strong>开发过程中频繁提交</strong></p>
+  <pre># 前端开发
+cd client && npm run dev
+# 修改代码...
+git add src/components/OutsourcingIssue.vue
+git commit -m "feat(production): 添加委外发料单页面组件"
+
+# 后端开发
+cd server && npm run dev
+# 修改代码...
+git add src/modules/production/outsourcingIssue/
+git commit -m "feat(production): 实现委外发料API接口"</pre>
+</div>
+<div class="step-box">
+  <p><span class="step-num">4</span> <strong>推送功能分支到远程</strong></p>
+  <pre>git push -u origin feature/委外发料</pre>
+  <p>定期推送确保代码有远程备份，也便于其他开发者查看进度。</p>
+</div>
+<div class="step-box">
+  <p><span class="step-num">5</span> <strong>本地测试通过后，创建 Pull Request</strong></p>
+  <ul>
+    <li>在 GitHub 上发起 <span class="cmd">feature/委外发料 → develop</span> 的 Pull Request</li>
+    <li>填写 PR 描述：变更内容、测试情况、影响范围</li>
+    <li>指派审查人（Reviewer）</li>
+  </ul>
+</div>
+<div class="step-box">
+  <p><span class="step-num">6</span> <strong>代码审查通过后合并</strong></p>
+  <pre># 审查人审核通过后，在 GitHub 上点击 "Merge pull request"
+# 或本地合并：
+git checkout develop
+git pull origin develop
+git merge feature/委外发料
+git push origin develop</pre>
+</div>
+<div class="step-box">
+  <p><span class="step-num">7</span> <strong>删除功能分支</strong></p>
+  <pre># 本地删除
+git branch -d feature/委外发料
+
+# 远程删除
+git push origin --delete feature/委外发料</pre>
+</div>
+
+<h3>5.2 同步 develop 最新代码到功能分支</h3>
+<p>如果功能分支开发周期较长，需要定期同步 develop 的最新代码避免冲突：</p>
+<pre>
+# 在功能分支上执行
+git checkout feature/委外发料
+git merge develop
+# 解决冲突后提交
+git push origin feature/委外发料
+</pre>
+
+<div class="page-break"></div>
+<h2>6. 代码审查与合并流程</h2>
+
+<h3>6.1 Pull Request 检查清单</h3>
+<table>
+  <tr><th width="30">#</th><th>检查项</th></tr>
+  <tr><td>1</td><td>代码是否遵循项目编码规范</td></tr>
+  <tr><td>2</td><td>是否包含无用的 console.log 或调试代码</td></tr>
+  <tr><td>3</td><td>是否有硬编码的密码、密钥或敏感信息</td></tr>
+  <tr><td>4</td><td>数据库变更是否编写了迁移脚本（up + down）</td></tr>
+  <tr><td>5</td><td>新增 API 是否有输入校验</td></tr>
+  <tr><td>6</td><td>是否影响现有功能（回归风险评估）</td></tr>
+  <tr><td>7</td><td>前端构建是否通过（npm run build 无错误）</td></tr>
+  <tr><td>8</td><td>后端编译是否通过（npm run build 无错误）</td></tr>
+</table>
+
+<h2>6.2 合并冲突解决</h2>
+<div class="box-info">
+  <strong>产生冲突时的操作步骤：</strong>
+  <pre>
+# 1. 在功能分支上合并 develop
+git checkout feature/xxx
+git merge develop
+
+# 2. Git 提示冲突后，手动编辑冲突文件
+#    &lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD        ← 你的代码
+#    =======                     ← 分隔线
+#    &gt;&gt;&gt;&gt;&gt;&gt;&gt; develop      ← develop 的代码
+
+# 3. 解决所有冲突后
+git add .
+git commit -m "merge: 解决与develop的合并冲突"
+
+# 4. 推送
+git push origin feature/xxx
+  </pre>
+</div>
+
+<!-- ============================================================ -->
+<!-- PART 2: DEPLOYMENT -->
+<!-- ============================================================ -->
+<div class="page-break"></div>
+<h1>第二篇：生产环境部署流程</h1>
+
+<h2>7. 环境准备清单</h2>
+
+<h3>7.1 服务器要求</h3>
+<table>
+  <tr><th width="180">组件</th><th>要求</th><th>验证命令</th></tr>
+  <tr><td>操作系统</td><td>Windows Server 2016+ 或 Windows 10/11</td><td><span class="cmd">winver</span></td></tr>
+  <tr><td>Node.js</td><td>v20.x LTS</td><td><span class="cmd">node -v</span></td></tr>
+  <tr><td>SQL Server</td><td>2008 R2+ (推荐 2014 SP3)</td><td>SSMS 连接测试</td></tr>
+  <tr><td>IIS</td><td>10.0 + URL Rewrite 2.1 + ARR 3.0</td><td><span class="cmd">iisreset /status</span></td></tr>
+  <tr><td>PM2 (可选)</td><td>latest</td><td><span class="cmd">pm2 -v</span></td></tr>
+  <tr><td>Git</td><td>2.x+</td><td><span class="cmd">git --version</span></td></tr>
+</table>
+
+<h3>7.2 部署前置检查</h3>
+<ul class="checklist">
+  <li>SQL Server 已安装且 TCP/IP 协议已启用（端口 1433）</li>
+  <li>数据库 XYMES / PowderMom 已创建</li>
+  <li>防火墙已开放端口：80 (IIS)、3000 (后端)、1433 (数据库-如需远程)</li>
+  <li>Node.js 已安装（<span class="cmd">node -v</span> 确认）</li>
+  <li>IIS 已安装 + URL Rewrite 模块 + ARR 模块</li>
+  <li>ARR 已启用代理（Server Proxy Settings → Enable proxy）</li>
+  <li>目录 <span class="file">D:\SealsMES\</span> 已创建</li>
+</ul>
+
+<h2>8. 首次部署（全新服务器）</h2>
+
+<div class="step-box">
+  <p><span class="step-num">1</span> <strong>克隆代码仓库</strong></p>
+  <pre>cd /d D:\
+git clone https://github.com/Darren2676/rubber.git SealsMES
+cd SealsMES
+git checkout main</pre>
+  <p>如果服务器无法访问外网，可在开发机上下载 ZIP 包后通过 U 盘拷贝。</p>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">2</span> <strong>安装后端依赖并编译</strong></p>
+  <pre>cd /d D:\SealsMES\server
+npm install --production
+npm run build</pre>
+  <p>若服务器无网络，在开发机执行 <span class="cmd">npm install</span> 后连同 <span class="file">node_modules</span> 一起拷贝。</p>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">3</span> <strong>配置环境变量</strong></p>
+  <pre># 创建 server/.env 文件，内容：
+PORT=3000
+DB_HOST=127.0.0.1
+DB_PORT=1433
+DB_NAME=PowderMom
+DB_USER=sa
+DB_PASSWORD=cowork
+JWT_SECRET=请替换为一个随机的长字符串（32位以上）
+JWT_EXPIRES_IN=24h
+JWT_REFRESH_EXPIRES_IN=7d
+UPLOAD_DIR=uploads
+MAX_FILE_SIZE=10485760</pre>
+  <div class="box-danger"><strong>重要</strong>：<span class="file">.env</span> 文件包含数据库密码，已在 <span class="file">.gitignore</span> 中排除，不会被提交到 Git。生产环境务必修改 JWT_SECRET 为强随机字符串。</div>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">4</span> <strong>创建上传目录</strong></p>
+  <pre>mkdir D:\SealsMES\server\uploads
+mkdir D:\SealsMES\server\logs</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">5</span> <strong>测试后端启动</strong></p>
+  <pre>cd /d D:\SealsMES\server
+node dist/server.js</pre>
+  <p>看到以下输出表示成功：</p>
+  <pre>数据库连接成功
+数据库同步完成
+服务器运行在端口 3000
+API地址: http://localhost:3000/api</pre>
+  <p>按 <span class="cmd">Ctrl+C</span> 停止测试。</p>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">6</span> <strong>配置 PM2 管理后端进程</strong></p>
+  <pre># 安装 PM2
+npm install -g pm2
+
+# 使用已有的 PM2 配置
+cd /d D:\SealsMES\server
+pm2 start ecosystem.config.js
+
+# 设置开机自启
+npm install -g pm2-windows-startup
+pm2-startup install
+pm2 save</pre>
+  <p>常用 PM2 命令：</p>
+  <pre>pm2 list          # 查看进程状态
+pm2 logs          # 查看日志
+pm2 restart all   # 重启所有
+pm2 stop all      # 停止所有</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">7</span> <strong>构建并部署前端</strong></p>
+  <p><em>在开发机上执行构建，将产物复制到服务器：</em></p>
+  <pre># 在开发机上
+cd /d "d:\powder\Seals MES System\client"
+npm install
+npm run build
+# 将 dist/ 文件夹复制到服务器 D:\SealsMES\client\dist\</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">8</span> <strong>配置 IIS 网站</strong></p>
+  <p>创建 <span class="file">D:\SealsMES\client\dist\web.config</span>：</p>
+  <pre>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;configuration&gt;
+  &lt;system.webServer&gt;
+    &lt;rewrite&gt;
+      &lt;rules&gt;
+        &lt;rule name="API Proxy" stopProcessing="true"&gt;
+          &lt;match url="^api/(.*)" /&gt;
+          &lt;action type="Rewrite" url="http://127.0.0.1:3000/api/{R:1}" /&gt;
+        &lt;/rule&gt;
+        &lt;rule name="Uploads Proxy" stopProcessing="true"&gt;
+          &lt;match url="^uploads/(.*)" /&gt;
+          &lt;action type="Rewrite" url="http://127.0.0.1:3000/uploads/{R:1}" /&gt;
+        &lt;/rule&gt;
+        &lt;rule name="Vue Router"&gt;
+          &lt;match url=".*" /&gt;
+          &lt;conditions&gt;
+            &lt;add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" /&gt;
+            &lt;add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" /&gt;
+          &lt;/conditions&gt;
+          &lt;action type="Rewrite" url="/index.html" /&gt;
+        &lt;/rule&gt;
+      &lt;/rules&gt;
+    &lt;/rewrite&gt;
+  &lt;/system.webServer&gt;
+&lt;/configuration&gt;</pre>
+  <p>然后在 IIS 管理器中 → 右键"网站" → "添加网站"：</p>
+  <table>
+    <tr><th>配置项</th><th>值</th></tr>
+    <tr><td>网站名称</td><td>SealsMES</td></tr>
+    <tr><td>物理路径</td><td>D:\SealsMES\client\dist</td></tr>
+    <tr><td>端口</td><td>80</td></tr>
+  </table>
+</div>
+
+<h2>9. 部署验证</h2>
+<table>
+  <tr><th width="30">#</th><th>检查项</th><th>操作</th><th>预期结果</th></tr>
+  <tr><td>1</td><td>后端 API</td><td>浏览器访问 <span class="cmd">http://localhost:3000/api</span></td><td>返回 JSON { "success": true }</td></tr>
+  <tr><td>2</td><td>前端页面</td><td>浏览器访问 <span class="cmd">http://localhost</span></td><td>显示登录页面</td></tr>
+  <tr><td>3</td><td>用户登录</td><td>输入 admin / admin123</td><td>进入系统仪表板</td></tr>
+  <tr><td>4</td><td>数据库连接</td><td>浏览器访问 <span class="cmd">http://localhost:3000/api/v1/health</span></td><td>"database": "ok"</td></tr>
+  <tr><td>5</td><td>基础功能</td><td>依次点击物料管理、客户管理等菜单</td><td>正常显示数据</td></tr>
+  <tr><td>6</td><td>外网访问</td><td>客户端浏览器访问 <span class="cmd">http://服务器IP</span></td><td>显示登录页面</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<!-- PART 3: UPDATE WORKFLOW -->
+<!-- ============================================================ -->
+<div class="page-break"></div>
+<h1>第三篇：功能更新与 Bug 修复上线流程</h1>
+
+<h2>10. 新功能开发 → 生产上线全流程</h2>
+
+<p>以下以 "新增委外发料功能" 为例，展示从开发到上线的完整流程。</p>
+
+<h3>10.1 全流程概览</h3>
+<div class="diagram">
+<pre>
+┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐   ┌──────────┐
+│ 开发环境  │   │ 代码评审  │   │ 发布准备  │   │ 生产部署  │   │ 验证监控  │
+│ (本地)   │ → │ (GitHub) │ → │ (release) │ → │ (服务器)  │ → │ (运维)   │
+└──────────┘   └──────────┘   └──────────┘   └──────────┘   └──────────┘
+  1-5天          1-2天          1天            0.5天          持续
+</pre>
+</div>
+
+<h3>10.2 阶段一：开发环境（本地开发）</h3>
+
+<div class="step-box">
+  <p><span class="step-num">A1</span> <strong>从 develop 创建功能分支</strong></p>
+  <pre>git checkout develop
+git pull origin develop
+git checkout -b feature/委外发料</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">A2</span> <strong>本地开发（前端 + 后端同时启动）</strong></p>
+  <pre># 终端1：启动后端（已有 .env 指向本地开发数据库）
+cd server
+npm run dev
+# → 后端运行在 http://localhost:3000
+
+# 终端2：启动前端（Vite 开发服务器）
+cd client
+npm run dev
+# → 前端运行在 http://localhost:5173</pre>
+  <p>开发过程中前端自动代理 API 到后端，支持热更新。</p>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">A3</span> <strong>频繁提交代码</strong></p>
+  <pre># 每个小功能点提交一次
+git add .
+git commit -m "feat(production): 添加委外发料单页面组件"
+git push origin feature/委外发料</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">A4</span> <strong>本地自测</strong></p>
+  <ul class="checklist">
+    <li>前端构建通过：<span class="cmd">cd client && npm run build</span> 无报错</li>
+    <li>后端编译通过：<span class="cmd">cd server && npm run build</span> 无报错</li>
+    <li>新功能 CRUD 操作正常</li>
+    <li>旧功能不受影响（回归测试）</li>
+    <li>数据库迁移脚本已编写且可正向执行和回滚</li>
+  </ul>
+</div>
+
+<h3>10.3 阶段二：代码评审（Pull Request）</h3>
+
+<div class="step-box">
+  <p><span class="step-num">B1</span> <strong>发起 Pull Request</strong></p>
+  <ul>
+    <li>在 GitHub 仓库中点击 "Pull requests" → "New pull request"</li>
+    <li>base: <span class="tag-dev">develop</span>, compare: <span class="tag-feat">feature/委外发料</span></li>
+    <li>填写 PR 标题和描述（变更内容、测试结果、影响范围）</li>
+    <li>在右侧面板指定 Reviewer</li>
+  </ul>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">B2</span> <strong>Reviewer 审查代码</strong></p>
+  <p>审查者检查：代码规范、逻辑正确性、安全性、数据库迁移、前后端一致性。</p>
+  <p>如有问题，在代码行上添加 Comment，开发者修改后推送新提交，PR 自动更新。</p>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">B3</span> <strong>审查通过 → 合并到 develop</strong></p>
+  <pre># GitHub 上点击 "Merge pull request"（选择 "Squash and merge" 推荐）
+# 或本地执行：
+git checkout develop
+git pull origin develop
+git merge feature/委外发料
+git push origin develop
+git branch -d feature/委外发料</pre>
+</div>
+
+<h3>10.4 阶段三：发布准备（Release 分支）</h3>
+
+<div class="step-box">
+  <p><span class="step-num">C1</span> <strong>创建 release 分支</strong></p>
+  <pre>git checkout develop
+git pull origin develop
+git checkout -b release/1.3.0</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">C2</span> <strong>更新版本号</strong></p>
+  <pre># 编辑 server/package.json → "version": "1.3.0"
+# 编辑 client/package.json → "version": "1.3.0"
+git add .
+git commit -m "chore: bump version to 1.3.0"</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">C3</span> <strong>在测试环境（或本地）最终验证</strong></p>
+  <ul class="checklist">
+    <li>全量构建通过（前端 + 后端）</li>
+    <li>核心业务流程正常（登录→创建单据→审批→入库→出库）</li>
+    <li>新功能完整可用</li>
+    <li>数据库迁移可正常执行</li>
+    <li>无控制台错误或异常日志</li>
+  </ul>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">C4</span> <strong>合并到 main 并打 Tag</strong></p>
+  <pre>git checkout main
+git pull origin main
+git merge release/1.3.0
+git tag -a v1.3.0 -m "v1.3.0 - 新增委外发料功能和Bug修复"
+
+# 同步合并回 develop
+git checkout develop
+git merge release/1.3.0
+
+# 推送
+git push origin main
+git push origin develop
+git push origin v1.3.0
+
+# 删除 release 分支
+git branch -d release/1.3.0
+git push origin --delete release/1.3.0</pre>
+</div>
+
+<div class="page-break"></div>
+<h3>10.5 阶段四：生产环境部署</h3>
+
+<div class="box-danger">
+  <strong>部署前务必执行以下备份操作！</strong>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">D1</span> <strong>备份数据库</strong></p>
+  <pre>-- 在 SSMS 中执行
+BACKUP DATABASE PowderMom
+TO DISK = 'D:\Backup\PowderMom_v1.2.0_20260601.bak'
+WITH FORMAT, COMPRESSION;
+GO</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">D2</span> <strong>备份现有应用</strong></p>
+  <pre>xcopy D:\SealsMES D:\Backup\SealsMES_v1.2.0_20260601 /E /I /Y</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">D3</span> <strong>停止后端服务</strong></p>
+  <pre># PM2 方式
+pm2 stop seals-mes-api
+
+# 或 Windows 服务方式
+net stop SealsMES-API</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">D4</span> <strong>拉取最新代码</strong></p>
+  <pre>cd /d D:\SealsMES
+git fetch origin
+git checkout main
+git pull origin main</pre>
+  <p>确认当前 Tag：<span class="cmd">git describe --tags</span> 应输出 <span class="cmd">v1.3.0</span></p>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">D5</span> <strong>更新后端</strong></p>
+  <pre>cd /d D:\SealsMES\server
+npm install --production
+npm run build</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">D6</span> <strong>执行数据库迁移（如有）</strong></p>
+  <pre># 手动迁移脚本模式（当前项目使用方式）
+# 启动后端时 initDatabase() 会自动执行迁移检查
+
+# 或使用 Sequelize CLI（如果已配置）
+npx sequelize-cli db:migrate</pre>
+  <div class="box-warn"><strong>注意</strong>：当前项目在 <span class="file">server/src/models/index.ts</span> 中使用手动 SQL 迁移方式，启动时自动检测并执行。如需新增迁移，在该文件中添加 SQL 检查语句。</div>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">D7</span> <strong>构建前端并部署</strong></p>
+  <pre># 在开发机或服务器上
+cd /d D:\SealsMES\client
+npm install
+npm run build
+
+# 复制 dist 到 IIS 目录（如果构建在开发机）
+xcopy dist D:\SealsMES\client\dist /E /I /Y</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">D8</span> <strong>启动后端服务</strong></p>
+  <pre># PM2 方式
+cd /d D:\SealsMES\server
+pm2 start seals-mes-api
+
+# 或 Windows 服务方式
+net start SealsMES-API
+
+# 查看启动日志确认正常
+pm2 logs seals-mes-api --lines 20</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">D9</span> <strong>验证部署</strong></p>
+  <table>
+    <tr><th>#</th><th>检查项</th><th>操作</th><th>通过标准</th></tr>
+    <tr><td>1</td><td>服务状态</td><td><span class="cmd">pm2 list</span></td><td>status: online</td></tr>
+    <tr><td>2</td><td>数据库</td><td>查看启动日志</td><td>"数据库连接成功"</td></tr>
+    <tr><td>3</td><td>API</td><td>访问 /api/v1/health</td><td>"database":"ok"</td></tr>
+    <tr><td>4</td><td>登录</td><td>浏览器登录系统</td><td>正常进入仪表板</td></tr>
+    <tr><td>5</td><td>新功能</td><td>操作新功能模块</td><td>CRUD 正常</td></tr>
+    <tr><td>6</td><td>旧功能</td><td>抽查核心页面</td><td>数据正常</td></tr>
+  </table>
+</div>
+
+<div class="page-break"></div>
+<h2>11. Bug 修复（紧急热修复）流程</h2>
+
+<h3>11.1 适用场景</h3>
+<p>生产环境发现紧急 Bug（如：登录失败、入库数据错误、审批流程异常），需要立即修复并上线。</p>
+
+<h3>11.2 热修复流程</h3>
+<div class="diagram">
+<pre>
+步骤    操作                        分支                   时间
+───     ────                        ────                   ────
+ 1     从 main 创建 hotfix 分支     hotfix/fix-login        即时
+ 2     在 hotfix 分支修复 Bug       hotfix/fix-login       1-4h
+ 3     本地测试通过                  hotfix/fix-login       0.5h
+ 4     合并到 main + 打补丁 Tag     main → v1.3.1           即时
+ 5     部署到生产环境                服务器                 0.5h
+ 6     同步合并回 develop           develop                 即时
+</pre>
+</div>
+
+<h3>11.3 具体操作步骤</h3>
+
+<div class="step-box">
+  <p><span class="step-num">H1</span> <strong>从 main 创建热修复分支</strong></p>
+  <pre>git checkout main
+git pull origin main
+git checkout -b hotfix/fix-login-token</pre>
+  <p>命名：<span class="cmd">hotfix/问题简述</span></p>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">H2</span> <strong>修复 Bug 并提交</strong></p>
+  <pre># 修复代码...
+git add .
+git commit -m "fix(auth): 修复登录Token验证过期判断错误
+原因：JWT过期时间比较逻辑使用了本地时间而非服务器时间
+影响：用户登录后短时间内Token被判过期
+修复：使用iat+exp字段计算，而非Date.now()比较"
+git push origin hotfix/fix-login-token</pre>
+  <p>提交信息务必写清楚：Bug 原因、影响范围、修复方法。</p>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">H3</span> <strong>合并到 main 并打补丁版本 Tag</strong></p>
+  <pre>git checkout main
+git pull origin main
+git merge hotfix/fix-login-token
+git tag -a v1.2.1 -m "v1.2.1 - 修复登录Token验证异常"
+git push origin main v1.2.1</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">H4</span> <strong>执行生产部署（精简版）</strong></p>
+  <pre># 1. 备份（至少备份修改涉及的文件）
+# 2. 停止服务
+pm2 stop seals-mes-api
+
+# 3. 拉取代码
+cd /d D:\SealsMES
+git pull origin main
+
+# 4. 重新编译后端
+cd server && npm run build
+
+# 5. 重新构建前端（如前端有改动）
+cd ../client && npm run build
+
+# 6. 启动服务
+cd ../server && pm2 start seals-mes-api
+
+# 7. 验证修复
+# 打开浏览器，执行之前报错的操作，确认 Bug 已修复</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">H5</span> <strong>同步合并回 develop</strong></p>
+  <pre>git checkout develop
+git pull origin develop
+git merge hotfix/fix-login-token
+git push origin develop
+
+# 删除 hotfix 分支
+git branch -d hotfix/fix-login-token
+git push origin --delete hotfix/fix-login-token</pre>
+  <div class="box-warn"><strong>关键</strong>：务必同步合并回 develop，否则下次从 develop 发版时这些修复会丢失！</div>
+</div>
+
+<div class="page-break"></div>
+<h2>12. 升级后验证与回滚方案</h2>
+
+<h3>12.1 升级后完整验证清单</h3>
+<table>
+  <tr><th width="30">#</th><th>验证项</th><th>方法</th><th>通过标准</th></tr>
+  <tr><td>1</td><td>PM2 进程状态</td><td><span class="cmd">pm2 list</span></td><td>status: online, uptime 持续增长</td></tr>
+  <tr><td>2</td><td>后端启动日志</td><td><span class="cmd">pm2 logs --lines 50</span></td><td>无 ERROR，"数据库连接成功"</td></tr>
+  <tr><td>3</td><td>健康检查</td><td><span class="cmd">curl http://localhost:3000/api/v1/health</span></td><td>healthy, db: ok</td></tr>
+  <tr><td>4</td><td>登录功能</td><td>浏览器登录 admin/admin123</td><td>成功进入仪表板</td></tr>
+  <tr><td>5</td><td>基础数据 CRUD</td><td>新增/编辑/删除一条客户记录</td><td>各操作正常</td></tr>
+  <tr><td>6</td><td>单据流程</td><td>创建→审批 一个生产单</td><td>状态流转正确</td></tr>
+  <tr><td>7</td><td>报表查询</td><td>打开出入库报表页面</td><td>数据正常展示</td></tr>
+  <tr><td>8</td><td>导入导出</td><td>导入Excel + 导出Excel</td><td>文件生成正常，数据正确</td></tr>
+  <tr><td>9</td><td>新功能</td><td>操作本次新增的功能</td><td>功能正常</td></tr>
+  <tr><td>10</td><td>移动端</td><td>用手机浏览器访问</td><td>页面响应式正常</td></tr>
+</table>
+
+<h3>12.2 回滚方案</h3>
+<p>如果升级后发现问题无法快速修复，立即执行回滚：</p>
+
+<div class="step-box">
+  <p><span class="step-num">R1</span> <strong>停止当前服务</strong></p>
+  <pre>pm2 stop seals-mes-api</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">R2</span> <strong>恢复应用代码到上一个版本</strong></p>
+  <pre># 方式A：Git 回退
+cd /d D:\SealsMES
+git checkout v1.2.0
+
+# 方式B：还原备份
+xcopy D:\Backup\SealsMES_v1.2.0 D:\SealsMES /E /I /Y</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">R3</span> <strong>恢复数据库（如有表结构变更）</strong></p>
+  <pre>-- 在 SSMS 中执行
+USE master;
+GO
+ALTER DATABASE PowderMom SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+GO
+RESTORE DATABASE PowderMom
+FROM DISK = 'D:\Backup\PowderMom_v1.2.0_20260601.bak'
+WITH REPLACE;
+GO
+ALTER DATABASE PowderMom SET MULTI_USER;
+GO</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">R4</span> <strong>重新编译并启动</strong></p>
+  <pre>cd /d D:\SealsMES\server
+npm run build
+pm2 start seals-mes-api</pre>
+</div>
+
+<div class="step-box">
+  <p><span class="step-num">R5</span> <strong>验证回滚成功 + 通知相关人员</strong></p>
+  <pre># 执行 12.1 的验证清单
+# 通知使用方系统已回滚，升级暂时推迟</pre>
+</div>
+
+<h3>12.3 快速参考卡</h3>
+<table>
+  <tr><th>场景</th><th>操作</th><th>命令</th></tr>
+  <tr><td>创建功能分支</td><td>从 develop 创建</td><td><span class="cmd">git checkout -b feature/xxx develop</span></td></tr>
+  <tr><td>合并到 develop</td><td>GitHub PR 或本地 merge</td><td><span class="cmd">git checkout develop && git merge feature/xxx</span></td></tr>
+  <tr><td>发布新版本</td><td>release → main + tag</td><td><span class="cmd">git tag -a v1.x.0 && git push origin v1.x.0</span></td></tr>
+  <tr><td>紧急修复</td><td>hotfix → main + tag + develop</td><td><span class="cmd">git checkout -b hotfix/xxx main</span></td></tr>
+  <tr><td>部署到生产</td><td>拉取 → 编译 → 重启</td><td><span class="cmd">git pull && npm run build && pm2 restart</span></td></tr>
+  <tr><td>回滚</td><td>切 Tag → 编译 → 重启</td><td><span class="cmd">git checkout v1.x.0 && npm run build && pm2 restart</span></td></tr>
+  <tr><td>查看当前 Tag</td><td>确认版本</td><td><span class="cmd">git describe --tags</span></td></tr>
+  <tr><td>重启服务</td><td>应用更新</td><td><span class="cmd">pm2 restart seals-mes-api</span></td></tr>
+</table>
+
+<div class="footer">
+  Seals MES System — Git 版本管理与生产部署操作手册 v2.0 &nbsp;|&nbsp; 仓库: github.com/Darren2676/rubber &nbsp;|&nbsp; 2026年6月
+</div>
+
+</body>
+</html>

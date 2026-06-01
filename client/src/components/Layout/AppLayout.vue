@@ -34,7 +34,7 @@ onMounted(async () => {
     >
       <div class="logo">
         <img src="@/assets/logo.jpg" alt="Logo" class="logo-img" />
-        <span v-if="!collapsed" class="logo-text">睿信橡胶密封件MES系统</span>
+        <span v-if="!collapsed" class="logo-text">睿信塑粉MOM系统</span>
       </div>
       <AppSidebar :collapsed="collapsed" />
     </a-layout-sider>
@@ -51,7 +51,7 @@ onMounted(async () => {
 
       <!-- Footer -->
       <a-layout-footer class="app-footer">
-        睿信橡胶密封件MES系统 ©2026 Created by 宁国市睿信信息技术有限责任公司
+        睿信塑粉MOM系统 ©2026 Created by 宁国市睿信信息技术有限责任公司
       </a-layout-footer>
     </a-layout>
   </a-layout>

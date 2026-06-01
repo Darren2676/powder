@@ -341,8 +341,10 @@ onMounted(() => { fetchData(); fetchAllUnits() })
               <a-checkbox v-model:checked="editForm.default_material">原料</a-checkbox>
             </a-space>
           </a-form-item>
+          <a-form-item label="备注">
+            <a-textarea v-model:value="editForm.remark" :rows="2" placeholder="请输入备注" />
+          </a-form-item>
         </a-form>
-
         <div class="conversion-section">
           <div v-for="(conv, idx) in editForm.conversions" :key="idx" class="conversion-row">
             <span class="conv-qty">1</span>
@@ -384,6 +386,9 @@ onMounted(() => { fetchData(); fetchAllUnits() })
               <a-checkbox v-model:checked="createForm.default_semi">半成品</a-checkbox>
               <a-checkbox v-model:checked="createForm.default_material">原料</a-checkbox>
             </a-space>
+          </a-form-item>
+          <a-form-item label="备注">
+            <a-textarea v-model:value="createForm.remark" :rows="2" placeholder="请输入备注" />
           </a-form-item>
         </a-form>
 

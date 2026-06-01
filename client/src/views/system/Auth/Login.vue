@@ -52,7 +52,7 @@ const goToRegister = () => {
   <div class="login-container">
     <a-card class="login-card" title="">
       <div class="login-header">
-        <h1>睿信橡胶密封件MES系统</h1>
+        <h1>睿信塑粉MOM系统</h1>
         <p>欢迎登录</p>
       </div>
 

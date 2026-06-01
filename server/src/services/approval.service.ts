@@ -41,7 +41,8 @@ const moduleConfig: Record<string, { tableName: string; primaryKey: string; disp
   'piece_rate_price_header': { tableName: 'piece_rate_price_header', primaryKey: 'price_list_number', displayName: '计件单价表' },
   'standard_cost_header': { tableName: 'standard_cost_header', primaryKey: 'cost_list_number', displayName: '标准成本单价表' },
   'piece_rate_wage_header': { tableName: 'piece_rate_wage_header', primaryKey: 'wage_number', displayName: '计件工资表' },
-  'sample_request': { tableName: 'sample_request', primaryKey: 'request_number', displayName: '样品申请' }
+  'sample_request': { tableName: 'sample_request', primaryKey: 'request_number', displayName: '样品申请' },
+  'process_parameter_header': { tableName: 'process_parameter_header', primaryKey: 'parameter_number', displayName: '工艺参数' }
 };
 
 export const getModuleConfig = (module: string) => {

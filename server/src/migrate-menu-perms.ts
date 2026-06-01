@@ -74,6 +74,8 @@ async function migrate() {
       { name: '物料属性', code: 'materia-properties', parent_code: 'product-data', menu_key: 'materia-properties', route: '/materia-properties', sort: 1 },
       { name: '物料分类', code: 'material-classes', parent_code: 'product-data', menu_key: 'material-classes', route: '/material-classes', sort: 2 },
       { name: '产品分类', code: 'product-classes', parent_code: 'product-data', menu_key: 'product-classes', route: '/product-classes', sort: 3 },
+      { name: '工艺参数', code: 'process-parameters', parent_code: 'product-data', menu_key: 'process-parameters', route: '/process-parameters', sort: 8 },
+      { name: '塑粉参数', code: 'plastic-powder-parameters', parent_code: 'product-data', menu_key: 'plastic-powder-parameters', route: '/plastic-powder-parameters', sort: 9 },
       // BOM管理 (bom-management)
       { name: 'BOM结构树', code: 'bom-tree', parent_code: 'bom-management', menu_key: 'bom-tree', route: '/bom-tree', sort: 2 },
       { name: '制造BOM', code: 'mfg-boms', parent_code: 'bom-management', menu_key: 'mfg-boms', route: '/mfg-boms', sort: 3 },

@@ -24,6 +24,9 @@ import customerMaterialMappingRoutes from './customerMaterialMapping/customerMat
 import materialRoutes from './material/material.routes';
 import productRoutes from './product/product.routes';
 import engineeringChangeRoutes from './engineeringChange/engineeringChange.routes';
+import processParameterRoutes from './processParameter/processParameter.routes';
+import plasticPowderParameterRoutes from './plasticPowderParameter/plasticPowderParameter.routes';
+import plasticProcessCategoryRoutes from './plasticProcessCategory/plasticProcessCategory.routes';
 
 const router = Router();
 
@@ -51,5 +54,8 @@ router.use('/customer-material-mappings', customerMaterialMappingRoutes);
 router.use('/materials', materialRoutes);
 router.use('/products', productRoutes);
 router.use('/engineering-change-lifecycles', engineeringChangeRoutes);
+router.use('/process-parameters', processParameterRoutes);
+router.use('/plastic-powder-parameters', plasticPowderParameterRoutes);
+router.use('/plastic-process-categories', plasticProcessCategoryRoutes);
 
 export default router;

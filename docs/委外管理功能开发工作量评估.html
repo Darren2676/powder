@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>委外管理功能 - 开发工作量评估</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 16mm 14mm; }
+  body {
+    font-family: "Microsoft YaHei", "SimHei", "PingFang SC", sans-serif;
+    font-size: 12px;
+    line-height: 1.7;
+    color: #1a1a1a;
+    max-width: 100%; padding: 0; margin: 0;
+  }
+  h1 { font-size: 20px; text-align: center; margin: 0 0 6px 0; padding-bottom: 10px; border-bottom: 2px solid #1890ff; color: #0d1a26; }
+  h2 { font-size: 15px; margin: 22px 0 8px 0; padding: 5px 0 5px 10px; border-left: 4px solid #1890ff; background: #f0f5ff; color: #0d1a26; page-break-after: avoid; }
+  h3 { font-size: 13px; margin: 14px 0 6px 0; color: #1a3a5c; page-break-after: avoid; }
+  h4 { font-size: 12px; margin: 10px 0 4px 0; color: #2a4a6c; }
+  p { margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 11px; page-break-inside: avoid; }
+  th { background: #1890ff; color: #fff; padding: 5px 6px; text-align: left; font-weight: 600; }
+  td { padding: 4px 6px; border: 1px solid #d9d9d9; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafafa; }
+  pre { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 3px; padding: 8px 10px; font-size: 10.5px; line-height: 1.4; overflow-x: auto; white-space: pre-wrap; word-break: break-all; font-family: Consolas, "Courier New", monospace; page-break-inside: avoid; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 10.5px; background: #f0f0f0; padding: 1px 3px; border-radius: 2px; }
+  pre code { background: none; padding: 0; }
+  ul, ol { margin: 4px 0; padding-left: 20px; }
+  li { margin: 2px 0; }
+  strong { color: #cf1322; }
+  hr { border: none; border-top: 1px solid #e0e0e0; margin: 16px 0; }
+  .footer { text-align: center; font-size: 10px; color: #999; margin-top: 20px; padding-top: 6px; border-top: 1px solid #e0e0e0; }
+  .note { background: #fff7e6; border: 1px solid #ffd591; border-radius: 3px; padding: 8px 10px; margin: 6px 0; font-size: 11px; }
+  .note strong { color: #d46b08; }
+  .tag { display: inline-block; background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; border-radius: 3px; padding: 1px 6px; font-size: 10px; margin: 0 2px; }
+  .summary-table td { text-align: center; }
+  .highlight { background: #f6ffed; }
+</style>
+</head>
+<body>
+
+<h1>委外管理功能 — 开发工作量评估</h1>
+<p style="text-align:center;color:#666;">Seals MES System &nbsp;|&nbsp; 2026年5月</p>
+
+<!-- ==================== 方案概述 ==================== -->
+<h2>一、功能概述</h2>
+<p><strong>业务描述：</strong>管理生产工序委外加工全流程，从委外申请、委外订单、发料、收回、质检到结算的完整闭环。同时提供委外单价管理和退货入库功能，并支持移动端扫码发料和收回操作。</p>
+
+<h3>1.1 业务流程</h3>
+<pre>生产工单/工序任务 → 生成委外申请
+     │
+     ▼ 转单
+委外订单（审批后生效）
+     │
+     ├─▶ 委外发料（原料出库→供应商）
+     │       │ 审批 → 确认发料（扣减库存）
+     │       │ 支持分批追加发料
+     │
+     ├─▶ 委外收回（供应商→入待检仓）
+     │       │ 确认收回（自动创建质检单）
+     │       │ 支持分批追加回收
+     │
+     ├─▶ 委外质检（合格/不合格判定）
+     │       │ 完成质检 → 合格品入下一工序仓/成品仓
+     │
+     ├─▶ 退货入库（质检合格品入库到线边仓/下一工序仓）
+     │
+     └─▶ 委外结算（按单价×数量计算，审核后可登记付款）</pre>
+
+<h3>1.2 子模块一览</h3>
+<table>
+<tr><th>子模块</th><th>数据结构</th><th>核心功能</th><th>审批</th><th>移动端</th><th>导入导出</th></tr>
+<tr><td><strong>委外申请</strong></td><td>主从表（req + req_detail）</td><td>CRUD + 转单生成委外订单 + 导出</td><td>✅ 审批框架集成</td><td>❌</td><td>✅ 导出</td></tr>
+<tr><td><strong>委外订单</strong></td><td>单表（order）</td><td>CRUD + 发出/确认收回/关闭 + 审批 + 导出</td><td>✅ 审批框架集成</td><td>❌</td><td>✅ 导出</td></tr>
+<tr><td><strong>委外发料</strong></td><td>主从表（issue + issue_detail）</td><td>创建/审批/确认发料 + 追加发料 + 扣减库存 + 导出</td><td>✅ 审批+确认</td><td>✅ 扫码发料</td><td>✅ 导出</td></tr>
+<tr><td><strong>委外收回</strong></td><td>主从表（receipt + receipt_detail）</td><td>创建/确认收回 + 自动创建质检单 + 追加回收 + 入待检仓</td><td>❌ 确认即生效</td><td>✅ 扫码收回</td><td>❌</td></tr>
+<tr><td><strong>委外质检</strong></td><td>单表（inspection）</td><td>创建/填写结果/完成质检 + 合格/不合格判定 + 导出</td><td>❌</td><td>❌</td><td>✅ 导出</td></tr>
+<tr><td><strong>退货入库</strong></td><td>主从表（return_stockin + detail）</td><td>创建/确认入库 + 库存增加 + 导出</td><td>❌ 确认即生效</td><td>❌</td><td>✅ 导出</td></tr>
+<tr><td><strong>委外结算</strong></td><td>单表（settlement）</td><td>创建/审核/登记付款 + 导出</td><td>✅ 审核</td><td>❌</td><td>✅ 导出</td></tr>
+<tr><td><strong>委外单价</strong></td><td>主从表（price + price_detail）</td><td>CRUD + Excel导入/导出</td><td>❌</td><td>❌</td><td>✅ 导出+导入</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 数据库设计 ==================== -->
+<h2>二、数据库设计</h2>
+
+<h3>2.1 委外申请主表 — outsourcing_req</h3>
+<table>
+<tr><th>字段名</th><th>类型</th><th>说明</th></tr>
+<tr><td><code>outsourcing_req_number</code></td><td><code>NVARCHAR(50) PK</code></td><td>申请编号，如 OR-20260525-001</td></tr>
+<tr><td><code>production_order_number</code></td><td><code>NVARCHAR(50)</code></td><td>生产订单编号</td></tr>
+<tr><td><code>production_number</code></td><td><code>NVARCHAR(50)</code></td><td>生产编号</td></tr>
+<tr><td><code>item_number / item_name</code></td><td><code>NVARCHAR(100/200)</code></td><td>物料编号/名称</td></tr>
+<tr><td><code>specifications</code></td><td><code>NVARCHAR(200)</code></td><td>规格</td></tr>
+<tr><td><code>basic_unit</code></td><td><code>NVARCHAR(50)</code></td><td>基本单位</td></tr>
+<tr><td><code>planned_quantity</code></td><td><code>DECIMAL(18,4)</code></td><td>计划数量</td></tr>
+<tr><td><code>approval_status</code></td><td><code>NVARCHAR(20)</code></td><td>审批状态：草稿/已审批</td></tr>
+<tr><td><code>order_status</code></td><td><code>NVARCHAR(20)</code></td><td>订单状态</td></tr>
+<tr><td><code>remark / creation_date / creation_man</code></td><td><code>...</code></td><td>备注/创建日期/创建人</td></tr>
+</table>
+
+<h3>2.2 委外申请明细表 — outsourcing_req_detail</h3>
+<table>
+<tr><th>字段名</th><th>类型</th><th>说明</th></tr>
+<tr><td><code>outsourcing_req_number</code></td><td><code>NVARCHAR(50) FK</code></td><td>关联主表</td></tr>
+<tr><td><code>line_number</code></td><td><code>INT</code></td><td>行号</td></tr>
+<tr><td><code>process_task_number</code></td><td><code>NVARCHAR(50)</code></td><td>工序任务编号</td></tr>
+<tr><td><code>step_number</code></td><td><code>INT</code></td><td>工序号</td></tr>
+<tr><td><code>standard_process_number/name</code></td><td><code>NVARCHAR</code></td><td>标准工序编号/名称</td></tr>
+<tr><td><code>work_center_number/name</code></td><td><code>NVARCHAR</code></td><td>工作中心编号/名称</td></tr>
+<tr><td><code>planned_quantity / ordered_quantity</code></td><td><code>DECIMAL(18,4)</code></td><td>计划数量/已下单数量</td></tr>
+<tr><td><code>status</code></td><td><code>NVARCHAR(20)</code></td><td>明细状态</td></tr>
+</table>
+
+<h3>2.3 委外订单表 — outsourcing_order</h3>
+<table>
+<tr><th>字段名</th><th>类型</th><th>说明</th></tr>
+<tr><td><code>outsourcing_order_number</code></td><td><code>NVARCHAR(50) PK</code></td><td>订单编号</td></tr>
+<tr><td><code>process_task_number / production_order_number</code></td><td><code>NVARCHAR(50)</code></td><td>工序任务/生产订单编号</td></tr>
+<tr><td><code>item_number/name/specifications/basic_unit</code></td><td><code>NVARCHAR</code></td><td>物料信息</td></tr>
+<tr><td><code>planned_quantity / received_quantity</code></td><td><code>DECIMAL(18,4)</code></td><td>计划/收回数量</td></tr>
+<tr><td><code>supplier_number/name</code></td><td><code>NVARCHAR</code></td><td>供应商编号/名称</td></tr>
+<tr><td><code>unit_price / total_amount</code></td><td><code>DECIMAL(18,4)</code></td><td>单价/总金额</td></tr>
+<tr><td><code>approval_status / order_status</code></td><td><code>NVARCHAR(20)</code></td><td>审批状态/订单状态（待发出/已发出/已收回/已关闭）</td></tr>
+<tr><td><code>issued_quantity / qualified_quantity / settlement_quantity</code></td><td><code>DECIMAL(18,4)</code></td><td>已发料/合格/结算数量</td></tr>
+<tr><td><code>issue_status / receipt_status / settlement_status</code></td><td><code>NVARCHAR(20)</code></td><td>发料/收回/结算状态</td></tr>
+</table>
+
+<h3>2.4 其他表（简要）</h3>
+<table>
+<tr><th>表名</th><th>结构</th><th>核心字段</th></tr>
+<tr><td><code>outsourcing_material_issue</code></td><td>主表 + <code>outsourcing_material_issue_detail</code></td><td>issue_number, outsourcing_order_number, warehouse, handler, status + 明细(item, batch, issued_quantity, unit)</td></tr>
+<tr><td><code>outsourcing_receipt</code></td><td>主表 + <code>outsourcing_receipt_detail</code></td><td>receipt_number, outsourcing_order_number, inspection_status, qualified/unqualified_quantity + 明细(item, receipt/qualified/unqualified_quantity)</td></tr>
+<tr><td><code>outsourcing_inspection</code></td><td>单表</td><td>inspection_number, receipt_number, inspection_result, qualified/unqualified_quantity, defect_description, handling_method</td></tr>
+<tr><td><code>outsourcing_return_stockin</code></td><td>主表 + <code>outsourcing_return_stockin_detail</code></td><td>stockin_number, outsourcing_order_number, warehouse_from/to, step_number, work_center + 明细(item, qualified_quantity, batch_number)</td></tr>
+<tr><td><code>outsourcing_settlement</code></td><td>单表</td><td>settlement_number, outsourcing_order_number, settlement_quantity, unit_price, total_amount, tax_rate/amount, payment_status, paid_amount</td></tr>
+<tr><td><code>outsourcing_price</code></td><td>主表 + <code>outsourcing_price_detail</code></td><td>供应商+物料维度的委外加工单价表</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== API 设计 ==================== -->
+<h2>三、API 设计</h2>
+
+<h3>3.1 委外申请（7个接口）</h3>
+<table>
+<tr><th>方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><code>GET</code></td><td><code>/outsourcing-reqs</code></td><td>列表查询（分页+搜索+审批/订单状态筛选）</td></tr>
+<tr><td><code>GET</code></td><td><code>/outsourcing-reqs/:id</code></td><td>详情（主表+明细）</td></tr>
+<tr><td><code>POST</code></td><td><code>/outsourcing-reqs</code></td><td>创建（主+明细）</td></tr>
+<tr><td><code>PUT</code></td><td><code>/outsourcing-reqs/:id</code></td><td>更新（仅草稿）</td></tr>
+<tr><td><code>DELETE</code></td><td><code>/outsourcing-reqs/:id</code></td><td>删除（仅草稿）</td></tr>
+<tr><td><code>POST</code></td><td><code>/outsourcing-reqs/:id/to-order</code></td><td>转单生成委外订单</td></tr>
+<tr><td><code>GET</code></td><td><code>/outsourcing-reqs/export</code></td><td>导出Excel</td></tr>
+</table>
+
+<h3>3.2 委外订单（9个接口）</h3>
+<table>
+<tr><th>方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><code>GET</code></td><td><code>/outsourcing-orders</code></td><td>列表查询</td></tr>
+<tr><td><code>GET</code></td><td><code>/outsourcing-orders/:id</code></td><td>详情</td></tr>
+<tr><td><code>POST</code></td><td><code>/outsourcing-orders</code></td><td>创建</td></tr>
+<tr><td><code>PUT</code></td><td><code>/outsourcing-orders/:id</code></td><td>更新</td></tr>
+<tr><td><code>DELETE</code></td><td><code>/outsourcing-orders/:id</code></td><td>删除</td></tr>
+<tr><td><code>POST</code></td><td><code>/outsourcing-orders/:id/send-out</code></td><td>发出</td></tr>
+<tr><td><code>POST</code></td><td><code>/outsourcing-orders/:id/confirm-receipt</code></td><td>确认收回</td></tr>
+<tr><td><code>POST</code></td><td><code>/outsourcing-orders/:id/close</code></td><td>关闭</td></tr>
+<tr><td><code>GET</code></td><td><code>/outsourcing-orders/export</code></td><td>导出Excel</td></tr>
+</table>
+
+<h3>3.3 委外发料（8个接口 + 移动端4个接口）</h3>
+<table>
+<tr><th>方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><code>GET</code></td><td><code>/outsourcing-issues</code></td><td>列表查询</td></tr>
+<tr><td><code>GET</code></td><td><code>/outsourcing-issues/:id</code></td><td>详情</td></tr>
+<tr><td><code>POST</code></td><td><code>/outsourcing-issues</code></td><td>创建</td></tr>
+<tr><td><code>PUT</code></td><td><code>/outsourcing-issues/:id</code></td><td>更新</td></tr>
+<tr><td><code>DELETE</code></td><td><code>/outsourcing-issues/:id</code></td><td>删除</td></tr>
+<tr><td><code>POST</code></td><td><code>/outsourcing-issues/:id/approve</code></td><td>审批</td></tr>
+<tr><td><code>POST</code></td><td><code>/outsourcing-issues/:id/confirm</code></td><td>确认发料（扣减库存）</td></tr>
+<tr><td><code>POST</code></td><td><code>/outsourcing-issues/append</code></td><td>追加发料（分批）</td></tr>
+<tr><td><code>GET</code></td><td><code>/outsourcing-issues/export</code></td><td>导出Excel</td></tr>
+<tr><td colspan="3" style="color:#999">移动端：GET /:order_number / POST / / POST /:type/:number/photos / GET /:type/:number/label</td></tr>
+</table>
+
+<h3>3.4 其他子模块接口</h3>
+<table>
+<tr><th>子模块</th><th>接口数</th><th>关键操作</th></tr>
+<tr><td>委外收回</td><td>5 + 移动端4</td><td>创建/确认收回(入待检仓+自动创建质检单)/追加回收</td></tr>
+<tr><td>委外质检</td><td>5</td><td>创建/更新结果/完成质检(合格品入下一工序仓)</td></tr>
+<tr><td>退货入库</td><td>4</td><td>列表/详情/确认入库(库存增加)/导出</td></tr>
+<tr><td>委外结算</td><td>5</td><td>创建/审核/登记付款/导出</td></tr>
+<tr><td>委外单价</td><td>7</td><td>CRUD + Excel导出/导入</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 文件改造清单 ==================== -->
+<h2>四、文件改造清单</h2>
+<table>
+<tr><th>类型</th><th>文件路径</th><th>改造内容</th></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingReq/outsourcingReq.controller.ts</code></td><td>委外申请控制器：CRUD + 转单 + 导出（334行）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingReq/outsourcingReq.routes.ts</code></td><td>路由定义（7个接口）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingOrder/outsourcingOrder.controller.ts</code></td><td>委外订单控制器：CRUD + 发出/收回/关闭 + 审批集成 + 导出（411行）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingOrder/outsourcingOrder.routes.ts</code></td><td>路由定义（9个接口）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingIssue/outsourcingIssue.controller.ts</code></td><td>委外发料控制器：CRUD + 审批/确认 + 追加发料 + 库存扣减 + 导出（421行）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingIssue/outsourcingIssue.mobile.controller.ts</code></td><td>移动端发料：扫码获取订单/提交发料/拍照/打印标签（374行）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingIssue/outsourcingIssue.routes.ts</code></td><td>Web路由（8个接口）+ 移动端路由（4个接口）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingReceipt/outsourcingReceipt.controller.ts</code></td><td>委外收回控制器：创建/确认(入待检仓+自动创建质检单) + 追加回收（543行）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingReceipt/outsourcingReceipt.mobile.controller.ts</code></td><td>移动端收回：扫码/提交/拍照/打印标签（527行）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingReceipt/outsourcingReceipt.routes.ts</code></td><td>Web路由（5个接口）+ 移动端路由（4个接口）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingInspection/outsourcingInspection.controller.ts</code></td><td>委外质检控制器：创建/更新结果/完成质检(入下一工序仓) + 导出（414行）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingInspection/outsourcingInspection.routes.ts</code></td><td>路由定义（5个接口）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingReturnStockin/outsourcingReturnStockin.controller.ts</code></td><td>退货入库控制器：创建/确认入库(库存增加) + 导出（241行）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingReturnStockin/outsourcingReturnStockin.routes.ts</code></td><td>路由定义（4个接口）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingSettlement/outsourcingSettlement.controller.ts</code></td><td>委外结算控制器：创建/审核/登记付款 + 导出（224行）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingSettlement/outsourcingSettlement.routes.ts</code></td><td>路由定义（5个接口）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingPrice/outsourcingPrice.controller.ts</code></td><td>委外单价控制器：CRUD + Excel导出/导入（342行）</td></tr>
+<tr><td>新增</td><td><code>server/.../outsourcingPrice/outsourcingPrice.routes.ts</code></td><td>路由定义（7个接口）</td></tr>
+<tr><td>新增</td><td><code>client/src/views/production/OutsourcingReq/List.vue</code></td><td>委外申请列表页（402行）</td></tr>
+<tr><td>新增</td><td><code>client/src/views/production/OutsourcingOrder/List.vue</code></td><td>委外订单列表页（365行）</td></tr>
+<tr><td>新增</td><td><code>client/src/views/production/OutsourcingIssue/List.vue</code></td><td>委外发料列表页（300行）</td></tr>
+<tr><td>新增</td><td><code>client/src/views/production/OutsourcingReceipt/List.vue</code></td><td>委外收回列表页（266行）</td></tr>
+<tr><td>新增</td><td><code>client/src/views/production/OutsourcingInspection/List.vue</code></td><td>委外质检列表页（285行）</td></tr>
+<tr><td>新增</td><td><code>client/src/views/production/OutsourcingSettlement/List.vue</code></td><td>委外结算列表页（364行）</td></tr>
+<tr><td>新增</td><td><code>client/src/views/production/OutsourcingPrice/List.vue</code></td><td>委外单价列表页（321行）</td></tr>
+<tr><td>新增</td><td><code>client/src/api/production/outsourcingReq.ts</code></td><td>委外申请API</td></tr>
+<tr><td>新增</td><td><code>client/src/api/production/outsourcingOrder.ts</code></td><td>委外订单API</td></tr>
+<tr><td>新增</td><td><code>client/src/api/production/outsourcingIssue.ts</code></td><td>委外发料API</td></tr>
+<tr><td>新增</td><td><code>client/src/api/production/outsourcingReceipt.ts</code></td><td>委外收回API</td></tr>
+<tr><td>新增</td><td><code>client/src/api/production/outsourcingInspection.ts</code></td><td>委外质检API</td></tr>
+<tr><td>新增</td><td><code>client/src/api/production/outsourcingSettlement.ts</code></td><td>委外结算API</td></tr>
+<tr><td>新增</td><td><code>client/src/api/production/outsourcingPrice.ts</code></td><td>委外单价API</td></tr>
+<tr><td>新增</td><td><code>server/src/sql/migrations/051_outsourcing_tables.ts</code></td><td>6张表+明细表+字段扩展（352行）</td></tr>
+<tr><td>新增</td><td><code>server/src/sql/migrations/052_outsourcing_menus.ts</code></td><td>委外管理菜单配置（128行）</td></tr>
+<tr><td>新增</td><td><code>server/src/sql/migrations/060_outsourcing_flow_refactor.ts</code></td><td>流程重构：字段扩展+退货入库表（89行）</td></tr>
+<tr><td>修改</td><td><code>server/src/services/documentNumber.service.ts</code></td><td>新增3个编号生成（委外申请/订单/发料/收回）</td></tr>
+<tr><td>修改</td><td><code>server/src/services/approval.service.ts</code></td><td>注册 <code>outsourcing_req</code> + <code>outsourcing_order</code> 审批模块</td></tr>
+<tr><td>修改</td><td><code>server/src/validators/production.validator.ts</code></td><td>新增委外申请/订单的创建/更新校验器</td></tr>
+<tr><td>修改</td><td><code>server/src/modules/production/index.ts</code></td><td>注册8个子模块路由</td></tr>
+<tr><td>修改</td><td><code>client/src/router/production.ts</code></td><td>新增7条路由 + 权限映射</td></tr>
+<tr><td>修改</td><td><code>client/src/router/index.ts</code></td><td>权限映射新增7项</td></tr>
+<tr><td>修改</td><td>菜单配置（permission表）</td><td>生产管理下新增委外管理子菜单组 + 7个页面菜单项</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 工作量评估 ==================== -->
+<h2>五、开发工作量评估</h2>
+
+<h3>5.1 后端开发</h3>
+<table>
+<tr><th>序号</th><th>任务</th><th>详细内容</th><th>估时</th></tr>
+<tr><td>1.1</td><td>数据库建表</td><td>11张表（含明细表）+ 字段扩展 + 唯一约束 + 3个迁移脚本</td><td>1天</td></tr>
+<tr><td>1.2</td><td>编号生成</td><td><code>documentNumber.service.ts</code> 新增4个编号生成（委外申请/订单/发料/收回）</td><td>0.5天</td></tr>
+<tr><td>1.3</td><td>委外申请 Controller</td><td>CRUD(主从) + 转单生成委外订单 + 参数校验 + 导出，7个接口</td><td>2天</td></tr>
+<tr><td>1.4</td><td>委外订单 Controller</td><td>CRUD + 发出/确认收回/关闭 + 审批框架集成 + 状态流转 + 导出，9个接口</td><td>2.5天</td></tr>
+<tr><td>1.5</td><td>委外发料 Controller</td><td>CRUD(主从) + 审批/确认(扣减库存) + 追加发料(分批) + 库存事务 + 导出，8个接口</td><td>2.5天</td></tr>
+<tr><td>1.6</td><td>委外收回 Controller</td><td>创建(主从)/确认收回(入待检仓+自动创建质检单) + 追加回收 + 库存事务，5个接口</td><td>2天</td></tr>
+<tr><td>1.7</td><td>委外质检 Controller</td><td>创建/更新结果/完成质检(合格品入下一工序仓/更新订单合格数量) + 导出，5个接口</td><td>1.5天</td></tr>
+<tr><td>1.8</td><td>退货入库 Controller</td><td>创建(主从)/确认入库(库存增加) + 导出，4个接口</td><td>1天</td></tr>
+<tr><td>1.9</td><td>委外结算 Controller</td><td>创建/审核/登记付款 + 金额计算(含税) + 导出，5个接口</td><td>1.5天</td></tr>
+<tr><td>1.10</td><td>委外单价 Controller</td><td>CRUD(主从) + Excel导出/导入，7个接口</td><td>1.5天</td></tr>
+<tr><td>1.11</td><td>移动端API（发料+收回）</td><td>扫码获取订单/提交发料/提交收回/拍照上传/打印标签，8个接口</td><td>3天</td></tr>
+<tr><td>1.12</td><td>审批框架集成</td><td><code>approval.service.ts</code> 注册 outsourcing_req + outsourcing_order + 回调处理</td><td>1天</td></tr>
+<tr><td>1.13</td><td>验证器 + 路由注册 + 菜单</td><td><code>production.validator.ts</code> + 8个子模块路由注册 + permission表菜单 + 缓存版本号</td><td>1天</td></tr>
+<tr><td colspan="3" style="text-align:right;font-weight:bold;">后端小计</td><td style="font-weight:bold;">21天</td></tr>
+</table>
+
+<h3>5.2 前端开发</h3>
+<table>
+<tr><th>序号</th><th>任务</th><th>详细内容</th><th>估时</th></tr>
+<tr><td>2.1</td><td>API 接口定义</td><td>7个API文件，共约50个接口</td><td>0.5天</td></tr>
+<tr><td>2.2</td><td>委外申请列表页</td><td><code>List.vue</code>：搜索 + 表格 + 主从弹窗CRUD + 转单操作 + 审批 + 导出 + 列个性化</td><td>2.5天</td></tr>
+<tr><td>2.3</td><td>委外订单列表页</td><td><code>List.vue</code>：搜索 + 表格 + 弹窗CRUD + 发出/收回/关闭操作 + 审批 + 导出 + 状态流转列 + 列个性化</td><td>2.5天</td></tr>
+<tr><td>2.4</td><td>委外发料列表页</td><td><code>List.vue</code>：搜索 + 表格 + 弹窗创建 + 审批/确认操作 + 追加发料 + 状态列 + 列个性化</td><td>2天</td></tr>
+<tr><td>2.5</td><td>委外收回列表页</td><td><code>List.vue</code>：搜索 + 表格 + 弹窗创建 + 确认收回操作 + 追加回收 + 检验状态列 + 列个性化</td><td>2天</td></tr>
+<tr><td>2.6</td><td>委外质检列表页</td><td><code>List.vue</code>：搜索 + 表格 + 弹窗创建/填写结果 + 完成质检操作 + 导出 + 列个性化</td><td>1.5天</td></tr>
+<tr><td>2.7</td><td>委外结算列表页</td><td><code>List.vue</code>：搜索 + 表格 + 弹窗创建 + 审核/付款操作 + 金额列 + 导出 + 列个性化</td><td>1.5天</td></tr>
+<tr><td>2.8</td><td>委外单价列表页</td><td><code>List.vue</code>：搜索 + 表格 + 弹窗CRUD(主从) + Excel导入/导出 + 列个性化</td><td>2天</td></tr>
+<tr><td>2.9</td><td>菜单与路由</td><td>生产管理域新增委外管理子菜单组 + 7个页面菜单项 + 路由配置 + 权限映射</td><td>0.5天</td></tr>
+<tr><td colspan="3" style="text-align:right;font-weight:bold;">前端小计</td><td style="font-weight:bold;">15天</td></tr>
+</table>
+
+<h3>5.3 联调测试</h3>
+<table>
+<tr><th>序号</th><th>任务</th><th>详细内容</th><th>估时</th></tr>
+<tr><td>3.1</td><td>委外申请+订单流程测试</td><td>创建申请→审批→转单→发出→收回→关闭，含异常路径</td><td>1.5天</td></tr>
+<tr><td>3.2</td><td>发料+收回+质检+退货入库流程测试</td><td>发料审批→确认(库存扣减)→收回(入待检仓)→质检(合格入库)→退货入库，含分批场景</td><td>2天</td></tr>
+<tr><td>3.3</td><td>结算+单价测试</td><td>委外结算审核/付款 + 单价CRUD + Excel导入/导出</td><td>1天</td></tr>
+<tr><td>3.4</td><td>跨模块联动测试</td><td>生产调度自动生成委外申请 + 审批回调更新状态 + 库存联动验证</td><td>1天</td></tr>
+<tr><td>3.5</td><td>移动端测试</td><td>扫码发料/收回 + 拍照上传 + 打印标签</td><td>1天</td></tr>
+<tr><td colspan="3" style="text-align:right;font-weight:bold;">联调测试小计</td><td style="font-weight:bold;">6.5天</td></tr>
+</table>
+
+<h3>5.4 汇总</h3>
+<table class="summary-table">
+<tr><th>模块</th><th>估时</th></tr>
+<tr><td>后端开发</td><td>21 天</td></tr>
+<tr><td>前端开发</td><td>15 天</td></tr>
+<tr><td>联调测试</td><td>6.5 天</td></tr>
+<tr class="highlight"><td><strong>总计</strong></td><td><strong>42.5 天（约 8.5 周/1人）</strong></td></tr>
+</table>
+
+<p style="text-align:center;margin-top:8px;">
+若 2 人并行（1 人后端 + 1 人前端），可在 <strong>4.5 周内</strong> 完成。<br>
+若 3 人并行（1 后端 + 1 前端 + 1 移动端），可在 <strong>3.5 周内</strong> 完成。
+</p>
+
+<hr>
+
+<!-- ==================== 影响因素分析 ==================== -->
+<h2>六、关键影响因素</h2>
+<table>
+<tr><th>因素</th><th>影响</th><th>说明</th></tr>
+<tr><td><strong>8个子模块、11张表</strong></td><td>⚠️ 增耗时</td><td>子模块数量多，表结构复杂（4个主从结构），是系统中最庞大的业务域之一</td></tr>
+<tr><td><strong>全流程状态联动</strong></td><td>⚠️ 增耗时</td><td>申请→订单→发料→收回→质检→退货入库→结算，各环节状态互锁（如收回后自动创建质检单、质检完成后自动入库），级联逻辑增加 Service 层复杂度约 3 天</td></tr>
+<tr><td><strong>库存事务一致性</strong></td><td>⚠️ 增耗时</td><td>发料确认扣减库存、收回确认入待检仓、质检完成入下一工序仓、退货入库增加库存，4处库存写操作需在事务内完成，增加约 2 天</td></tr>
+<tr><td><strong>移动端API</strong></td><td>⚠️ 增耗时</td><td>发料+收回各需移动端 controller（扫码/拍照/打印标签），增加后端约 3 天</td></tr>
+<tr><td><strong>分批操作</strong></td><td>⚠️ 增耗时</td><td>发料和收回均支持分批追加，需维护已发/已收数量汇总，增加约 1 天</td></tr>
+<tr><td><strong>审批框架集成</strong></td><td>✅ 省时</td><td>委外申请+订单复用 <code>approval.service.ts</code> 审批框架，不做自定义工作流，免去审批节点编排约 2-3 天</td></tr>
+<tr><td><strong>复用现有基础设施</strong></td><td>✅ 省时</td><td>复用 <code>useTableList</code>/<code>useColumnPreference</code>/<code>useModalDrag</code> + <code>exportToExcel</code>/<code>exceljs</code> + <code>documentNumber.service</code>，减少重复编码</td></tr>
+<tr><td><strong>生产调度自动生成委外申请</strong></td><td>⚠️ 增耗时</td><td>生产调度模块已实现自动生成委外申请（<code>orderDispatch</code>），需确保字段兼容，增加约 0.5 天联调</td></tr>
+</table>
+
+<div class="footer">Seals MES System — 委外管理功能开发工作量评估 &nbsp;|&nbsp; 宁国市睿信信息技术有限责任公司</div>
+</body>
+</html>

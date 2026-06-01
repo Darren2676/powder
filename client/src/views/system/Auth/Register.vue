@@ -101,7 +101,7 @@ const goToLogin = () => {
   <div class="register-container">
     <a-card class="register-card" title="">
       <div class="register-header">
-        <h1>睿信橡胶密封件MES系统</h1>
+        <h1>睿信塑粉MOM系统</h1>
         <p>创建新账号</p>
       </div>
 

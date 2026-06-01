@@ -1,7 +1,7 @@
 <template>
   <div class="login-page">
     <div class="login-header">
-      <h2>睿信MES</h2>
+      <h2>睿信塑粉MOM</h2>
       <p>销售订单管理</p>
     </div>
     <van-form @submit="handleLogin" class="login-form">

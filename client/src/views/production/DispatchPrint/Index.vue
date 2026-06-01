@@ -337,6 +337,37 @@ const formatDate = (dateStr: string | null) => {
   return dayjs(dateStr).format('YYYY-MM-DD')
 }
 
+// ==================== 塑粉生产单打印（不良品记录→产品工艺数） ====================
+const handlePowderPrint = async () => {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先勾选需要打印的调度单')
+    return
+  }
+  detailPrintLoading.value = true
+  try {
+    const res = await getPrintData(selectedRowKeys.value)
+    if (res.success && res.data?.items?.length > 0) {
+      detailPrintData.value = res.data.items
+      const qrMap: Record<string, string> = {}
+      for (const item of res.data.items) {
+        const orderNum = item.order.production_order_number
+        const mobileUrl = `${window.location.protocol}//${window.location.hostname}:5174/order/${encodeURIComponent(orderNum)}`
+        try {
+          qrMap[orderNum] = await QRCode.toDataURL(mobileUrl, { width: 120, margin: 1, errorCorrectionLevel: 'M' })
+        } catch { qrMap[orderNum] = '' }
+      }
+      qrCodeMap.value = qrMap
+      setTimeout(() => { triggerPowderPrint() }, 300)
+    } else {
+      message.warning('未获取到打印数据')
+    }
+  } catch {
+    message.error('获取打印数据失败')
+  } finally {
+    detailPrintLoading.value = false
+  }
+}
+
 // ==================== 详细打印功能（三栏：基本信息+备料清单+工序任务） ====================
 const qrCodeMap = ref<Record<string, string>>({})
 
@@ -377,6 +408,138 @@ const handleDetailPrint = async () => {
   } finally {
     detailPrintLoading.value = false
   }
+}
+
+const triggerPowderPrint = () => {
+  const items = detailPrintData.value
+  if (!items || items.length === 0) return
+
+  const printWindow = window.open('', '_blank', 'width=800,height=1000')
+  if (!printWindow) {
+    message.error('无法打开打印窗口，请检查浏览器是否允许弹出窗口')
+    return
+  }
+
+  const calcDailyOutput = (order: any) => {
+    const cavity = Number(order.actual_cavity_count) || 0
+    const hole = Number(order.actual_hole_count) || 0
+    if (cavity > 0 && hole > 0) return String(cavity * hole)
+    return order.actual_daily_output || order.batch_production_quota || '-'
+  }
+  const fmtTime = (dt: string | null) => { if (!dt) return ''; return dayjs(dt).format('MM-DD HH:mm') }
+  const fmtQty = (v: any) => { if (v === null || v === undefined || v === '') return ''; const n = Number(v); if (isNaN(n)) return String(v); return String(parseFloat(n.toFixed(4))) }
+
+  let pagesHtml = ''
+  items.forEach((item: any, pageIdx: number) => {
+    const order = item.order
+    const materials = item.materials || []
+    const tasks = item.tasks || []
+    const processParams = item.process_parameters || []
+    const scheduleName = getScheduleName(order.schedule_id)
+    const isLast = pageIdx === items.length - 1
+    const orderNum = order.production_order_number || ''
+    const qrDataUrl = qrCodeMap.value[orderNum] || ''
+    const ext = item.ext_fields || {}
+
+    const headerHtml = `
+      <div class="page-header-area">
+        <div class="header-left-space"></div><div class="header-left-space"></div>
+        <div class="header-center"><div class="page-title">塑粉生产单</div><div class="page-subtitle">睿信塑粉MOM系统</div></div>
+        <div class="header-qr">${qrDataUrl ? '<img class="qr-img" src="' + qrDataUrl + '" /><div class="qr-hint">扫码备料/报工</div>' : ''}</div>
+      </div>
+      <div class="page-meta">
+        <span>生产单号: ${orderNum}</span>
+        <span>第 ${pageIdx + 1} 页 / 共 ${items.length} 页</span>
+        <span>打印时间: ${dayjs().format('YYYY-MM-DD HH:mm')}</span>
+      </div>`
+
+    let infoRowsHtml = ''
+    infoRowsHtml += `<tr><td class="info-label">生产单编号</td><td class="info-value">${orderNum}</td><td class="info-label">生产计划编号</td><td class="info-value">${order.production_number || ''}</td><td class="info-label">生产日期</td><td class="info-value">${formatDate(order.production_date)}</td></tr>`
+    infoRowsHtml += `<tr><td class="info-label">产品编号</td><td class="info-value">${order.item_number || ''}</td><td class="info-label">产品名称</td><td class="info-value">${order.item_name || ''}</td><td class="info-label">规格</td><td class="info-value">${order.specifications || ''}</td></tr>`
+    infoRowsHtml += `<tr><td class="info-label">单位</td><td class="info-value">${order.basic_unit || ''}</td><td class="info-label">计划数量</td><td class="info-value">${order.planned_quantity ?? ''}</td><td class="info-label">班次</td><td class="info-value">${scheduleName}</td></tr>`
+    infoRowsHtml += `<tr><td class="info-label">设备名称</td><td class="info-value">${order.equipment_name || order.equipment_number || ''}</td><td class="info-label">设备编号</td><td class="info-value">${order.equipment_number || ''}</td><td class="info-label">胶料编号</td><td class="info-value">${order.rubber_compound_number || ''}</td></tr>`
+    infoRowsHtml += `<tr><td class="info-label">模具编号</td><td class="info-value">${order.mould_number || ''}</td><td class="info-label">成型件规格</td><td class="info-value">${order.formed_part_specifications || ''}</td><td class="info-label">成型件单耗</td><td class="info-value">${order.formed_part_unit_consumption || ''}</td></tr>`
+    infoRowsHtml += `<tr><td class="info-label">实际模腔</td><td class="info-value">${order.actual_cavity_count || ''}</td><td class="info-label">实际模穴</td><td class="info-value">${order.actual_hole_count || ''}</td><td class="info-label">实际班产</td><td class="info-value highlight">${calcDailyOutput(order)}</td></tr>`
+    infoRowsHtml += `<tr><td class="info-label">产品图号</td><td class="info-value">${ext.product_drawing_number || order.product_drawing_number || ''}</td><td class="info-label">班产定额</td><td class="info-value">${ext.batch_production_quota || order.batch_production_quota || ''}</td><td class="info-label">标准合格率</td><td class="info-value">${ext.standard_pass_rate || ''}</td></tr>`
+    infoRowsHtml += `<tr><td class="info-label">备注</td><td class="info-value" colspan="5">${order.remark || ''}</td></tr>`
+    const infoHtml = `<div class="section"><div class="section-title">一、生产单基本信息</div><table class="info-table">${infoRowsHtml}</table></div>`
+
+    let materialsBodyHtml = ''
+    if (materials.length > 0) {
+      materials.forEach((m: any, mIdx: number) => {
+        materialsBodyHtml += '<tr>' + '<td>' + (mIdx + 1) + '</td>' + '<td>' + (m.material_number || '') + '</td>' + '<td class="text-left">' + (m.material_name || '') + '</td>' + '<td>' + (m.material_type || '') + '</td>' + '<td>' + (m.unit || '') + '</td>' + '<td class="text-right">' + fmtQty(m.bom_standard_quantity) + '</td>' + '<td class="text-right">' + fmtQty(m.required_quantity) + '</td>' + '<td class="text-right">' + fmtQty(m.adjusted_quantity) + '</td>' + '<td class="text-right">' + fmtQty(m.issued_quantity) + '</td>' + '<td class="blank-cell"></td' + '<td>' + (m.work_center_name || '') + '</td>' + '<td>' + (m.default_warehouse || '') + '</td>' + '<td class="text-left">' + (m.remark || '') + '</td>' + '</tr>'
+      })
+    } else { materialsBodyHtml = '<tr><td colspan="13" class="empty-note">暂无备料数据</td></tr>' }
+    const materialsHtml = `<div class="section"><div class="section-title">二、备料清单 <span class="section-count">（共 ${materials.length} 项）</span></div><table class="data-table"><thead><tr><th style="width:30px">序号</th><th style="width:90px">物料编号</th><th style="width:140px">物料名称</th><th style="width:45px">类型</th><th style="width:35px">单位</th><th style="width:55px">BOM用量</th><th style="width:55px">需求量</th><th style="width:55px">调整量</th><th style="width:55px">已领量</th><th style="width:60px">实发量</th><th style="width:70px">工作中心</th><th style="width:55px">仓库</th><th style="width:60px">备注</th></tr></thead><tbody>${materialsBodyHtml}</tbody></table></div>`
+
+    let tasksBodyHtml = ''
+    if (tasks.length > 0) {
+      tasks.forEach((t: any, tIdx: number) => {
+        tasksBodyHtml += '<tr>' + '<td>' + (tIdx + 1) + '</td>' + '<td>' + (t.step_number || '') + '</td>' + '<td>' + (t.standard_process_number || '') + '</td>' + '<td class="text-left">' + (t.standard_process_name || '') + '</td>' + '<td>' + (t.work_center_name || t.work_center_number || '') + '</td>' + '<td class="text-right">' + fmtQty(t.planned_quantity) + '</td>' + '<td class="text-right">' + fmtQty(t.completed_quantity) + '</td>' + '<td class="blank-cell"></td' + '<td>' + (t.process_material_input_number || '') + '</td>' + '<td class="text-right">' + fmtQty(t.process_material_input_quantity) + '</td>' + '<td>' + fmtTime(t.planned_start_time) + '</td>' + '<td>' + fmtTime(t.planned_end_time) + '</td>' + '<td>' + (t.task_status || '') + '</td>' + '<td class="text-left">' + (t.remark || '') + '</td>' + '</tr>'
+      })
+    } else { tasksBodyHtml = '<tr><td colspan="14" class="empty-note">暂无工序任务数据</td></tr>' }
+    const tasksHtml = `<div class="section"><div class="section-title">三、工序任务 <span class="section-count">（共 ${tasks.length} 项）</span></div><table class="data-table"><thead><tr><th style="width:30px">序号</th><th style="width:40px">工序号</th><th style="width:65px">工序编号</th><th>工序名称</th><th style="width:70px">工作中心</th><th style="width:55px">计划数量</th><th style="width:55px">已完成</th><th style="width:60px">实际数量</th><th style="width:65px">投入物料</th><th style="width:50px">投入量</th><th style="width:70px">计划开始</th><th style="width:70px">计划结束</th><th style="width:45px">状态</th><th style="width:60px">备注</th></tr></thead><tbody>${tasksBodyHtml}</tbody></table></div>`
+
+    // --- 第四栏：产品工艺数 ---
+    let paramsBodyHtml = ''
+    if (processParams.length > 0) {
+      processParams.forEach((p: any, pIdx: number) => {
+        const stepLabel = (p.step_number || '') + '-' + (p.step_name || '')
+        const rangeLabel = (p.min_value && p.max_value) ? `${p.min_value}~${p.max_value}` : (p.min_value || p.max_value || '')
+        paramsBodyHtml += '<tr>' + '<td>' + (pIdx + 1) + '</td>' + '<td class="text-left">' + stepLabel + '</td>' + '<td class="text-left">' + (p.param_name || '') + '</td>' + '<td>' + (p.param_code || '') + '</td>' + '<td class="text-right highlight">' + (p.param_value || '') + '</td>' + '<td>' + (p.unit || '') + '</td>' + '<td>' + (p.param_type || '') + '</td>' + '<td>' + rangeLabel + '</td>' + '<td class="text-left">' + (p.process_category_name || '') + '</td>' + '<td class="text-left">' + (p.remark || '') + '</td>' + '</tr>'
+      })
+    } else { paramsBodyHtml = '<tr><td colspan="10" class="empty-note">暂无工艺参数数据（请确认该产品已录入已审批的工艺参数）</td></tr>' }
+    const paramsHtml = `<div class="section"><div class="section-title">四、产品工艺数 <span class="section-count">（共 ${processParams.length} 项，产品编号：${order.item_number || ''}）</span></div><table class="data-table"><thead><tr><th style="width:30px">序号</th><th style="width:100px">工序</th><th>参数名称</th><th style="width:60px">参数编码</th><th style="width:70px">参数值</th><th style="width:40px">单位</th><th style="width:40px">类型</th><th style="width:70px">范围</th><th style="width:70px">分类</th><th style="width:60px">备注</th></tr></thead><tbody>${paramsBodyHtml}</tbody></table></div>`
+
+    const footerHtml = `<div class="detail-footer">备注：此流转卡作为工资核算依据，请妥善保存。</div><div class="confirm-row"><span class="confirm-item">报工完成确认: <span class="sig-line"></span></span><span class="confirm-item">仓库入库确认: <span class="sig-line"></span></span></div>`
+
+    pagesHtml += `<div class="page${isLast ? ' last-page' : ''}\">
+      ${headerHtml}
+      ${infoHtml}
+      ${materialsHtml}
+      ${tasksHtml}
+      ${paramsHtml}
+      ${footerHtml}
+    </div>`
+  })
+
+  printWindow.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>塑粉生产单 - 详细打印</title><style>
+    @page { size: A4 portrait; margin: 6mm 8mm; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: "Microsoft YaHei", "SimHei", sans-serif; color: #000; font-size: 8px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page { page-break-after: always; padding: 1mm 0; }
+    .page.last-page { page-break-after: avoid; }
+    .page-header-area { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+    .header-left-space { width: 100px; }
+    .header-center { flex: 1; text-align: center; }
+    .page-title { font-size: 16px; font-weight: bold; letter-spacing: 4px; }
+    .page-subtitle { font-size: 9px; color: #666; margin-top: 1px; }
+    .header-qr { width: 100px; text-align: center; }
+    .qr-img { width: 80px; height: 80px; }
+    .qr-hint { font-size: 7px; color: #666; }
+    .page-meta { display: flex; justify-content: space-between; font-size: 9px; color: #666; margin-bottom: 4px; padding: 0 2px; }
+    .section { margin-bottom: 6px; }
+    .section-title { font-size: 11px; font-weight: bold; margin-bottom: 3px; padding-left: 6px; border-left: 3px solid #333; }
+    .section-count { font-size: 9px; color: #666; }
+    .info-table { width: 100%; border-collapse: collapse; }
+    .info-table td { border: 1px solid #000; padding: 3px 5px; font-size: 9px; line-height: 1.4; }
+    .info-label { background-color: #f5f5f5; font-weight: bold; text-align: right; width: 80px; white-space: nowrap; }
+    .info-value { min-width: 80px; }
+    .highlight { background-color: #fffbe6; font-weight: bold; }
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th { border: 1px solid #000; background-color: #f5f5f5; padding: 2px 4px; font-size: 8px; font-weight: bold; text-align: center; }
+    .data-table td { border: 1px solid #000; padding: 2px 4px; font-size: 8px; text-align: center; }
+    .text-left { text-align: left; }
+    .text-right { text-align: right; }
+    .blank-cell { min-width: 50px; }
+    .empty-note { text-align: center; color: #999; font-size: 9px; padding: 4px; }
+    .detail-footer { font-size: 9px; color: #666; margin-top: 4px; }
+    .confirm-row { display: flex; justify-content: space-between; margin-top: 6px; }
+    .confirm-item { font-size: 9px; }
+    .sig-line { display: inline-block; width: 120px; border-bottom: 1px solid #000; margin-left: 4px; }
+  </style></head><body>${pagesHtml}</body></html>`)
+  printWindow.document.close()
+  setTimeout(() => { printWindow.print() }, 500)
 }
 
 const triggerDetailPrint = () => {
@@ -441,7 +604,7 @@ const triggerDetailPrint = () => {
         <div class="header-left-space"></div>
         <div class="header-center">
           <div class="page-title">${pageTitle}</div>
-          <div class="page-subtitle">睿信橡胶密封件MES系统</div>
+          <div class="page-subtitle">睿信塑粉MOM系统</div>
         </div>
         <div class="header-qr">
           ${qrDataUrl ? '<img class="qr-img" src="' + qrDataUrl + '" /><div class="qr-hint">扫码备料/报工</div>' : ''}
@@ -983,6 +1146,14 @@ onMounted(async () => {
         <a-button
           :disabled="selectedRowKeys.length === 0"
           :loading="detailPrintLoading"
+          @click="handlePowderPrint"
+        >
+          <FileTextOutlined />
+          塑粉生产单 ({{ selectedRowKeys.length }})
+        </a-button>
+        <a-button
+          :disabled="selectedRowKeys.length === 0"
+          :loading="detailPrintLoading"
           @click="handleDetailPrint"
         >
           <FileTextOutlined />
@@ -1098,7 +1269,7 @@ onMounted(async () => {
         <div class="print-page">
           <div class="print-header">
             <div class="print-title">生产调度单</div>
-            <div class="print-subtitle">睿信橡胶密封件MES系统</div>
+            <div class="print-subtitle">睿信塑粉MOM系统</div>
           </div>
 
           <div class="print-info">

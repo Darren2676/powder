@@ -830,7 +830,40 @@ export const getPrintData = async (req: Request, res: Response, next: NextFuncti
         { replacements: { orderNum } }
       );
 
-      results.push({ order, materials, tasks, item_type: itemType, ext_fields: extFields });
+      // 4. 查询产品工艺参数（仅已审批+启用）
+      // 优先匹配工艺路线级参数（process_route_number = 产品编号），无则回退到产品级默认参数（process_route_number IS NULL）
+      let processParams: any[] = [];
+      // 4a. 先查工艺路线级参数
+      const [routeParams]: any = await sequelize.query(
+        `SELECT d.line_number, d.step_number, d.step_name,
+          d.param_name, d.param_code, d.param_value, d.unit,
+          d.param_type, d.min_value, d.max_value, d.process_category_code, d.process_category_name, d.remark
+        FROM process_parameter_header h
+        INNER JOIN process_parameter_detail d ON h.parameter_number = d.parameter_number
+        WHERE h.item_number = :itemNumber AND h.approval_status = N'已审批' AND h.[condition] = N'启用'
+          AND h.process_route_number IS NOT NULL
+        ORDER BY d.line_number`,
+        { replacements: { itemNumber: order.item_number } }
+      );
+      if (routeParams.length > 0) {
+        processParams = routeParams;
+      } else {
+        // 4b. 回退查产品级默认参数
+        const [defaultParams]: any = await sequelize.query(
+          `SELECT d.line_number, d.step_number, d.step_name,
+            d.param_name, d.param_code, d.param_value, d.unit,
+            d.param_type, d.min_value, d.max_value, d.process_category_code, d.process_category_name, d.remark
+          FROM process_parameter_header h
+          INNER JOIN process_parameter_detail d ON h.parameter_number = d.parameter_number
+          WHERE h.item_number = :itemNumber AND h.approval_status = N'已审批' AND h.[condition] = N'启用'
+            AND h.process_route_number IS NULL
+          ORDER BY d.line_number`,
+          { replacements: { itemNumber: order.item_number } }
+        );
+        processParams = defaultParams;
+      }
+
+      results.push({ order, materials, tasks, item_type: itemType, ext_fields: extFields, process_parameters: processParams });
     }
 
     res.json(success({ items: results }, '获取打印数据成功'));

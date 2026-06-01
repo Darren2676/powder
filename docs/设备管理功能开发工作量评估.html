@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>设备管理功能 - 开发工作量评估</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 16mm 14mm; }
+  body {
+    font-family: "Microsoft YaHei", "SimHei", "PingFang SC", sans-serif;
+    font-size: 12px;
+    line-height: 1.7;
+    color: #1a1a1a;
+    max-width: 100%; padding: 0; margin: 0;
+  }
+  h1 { font-size: 20px; text-align: center; margin: 0 0 6px 0; padding-bottom: 10px; border-bottom: 2px solid #1890ff; color: #0d1a26; }
+  h2 { font-size: 15px; margin: 22px 0 8px 0; padding: 5px 0 5px 10px; border-left: 4px solid #1890ff; background: #f0f5ff; color: #0d1a26; page-break-after: avoid; }
+  h3 { font-size: 13px; margin: 14px 0 6px 0; color: #1a3a5c; page-break-after: avoid; }
+  h4 { font-size: 12px; margin: 10px 0 4px 0; color: #2a4a6c; }
+  p { margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 11px; page-break-inside: avoid; }
+  th { background: #1890ff; color: #fff; padding: 5px 6px; text-align: left; font-weight: 600; }
+  td { padding: 4px 6px; border: 1px solid #d9d9d9; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafafa; }
+  pre { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 3px; padding: 8px 10px; font-size: 10.5px; line-height: 1.4; overflow-x: auto; white-space: pre-wrap; word-break: break-all; font-family: Consolas, "Courier New", monospace; page-break-inside: avoid; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 10.5px; background: #f0f0f0; padding: 1px 3px; border-radius: 2px; }
+  pre code { background: none; padding: 0; }
+  ul, ol { margin: 4px 0; padding-left: 20px; }
+  li { margin: 2px 0; }
+  strong { color: #cf1322; }
+  hr { border: none; border-top: 1px solid #e0e0e0; margin: 16px 0; }
+  .footer { text-align: center; font-size: 10px; color: #999; margin-top: 20px; padding-top: 6px; border-top: 1px solid #e0e0e0; }
+  .note { background: #fff7e6; border: 1px solid #ffd591; border-radius: 3px; padding: 8px 10px; margin: 6px 0; font-size: 11px; }
+  .note strong { color: #d46b08; }
+  .tag { display: inline-block; background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; border-radius: 3px; padding: 1px 6px; font-size: 10px; margin: 0 2px; }
+  .summary-table td { text-align: center; }
+  .highlight { background: #f6ffed; }
+</style>
+</head>
+<body>
+
+<h1>设备管理功能 — 开发工作量评估</h1>
+<p style="text-align:center;color:#666;">Seals MES System &nbsp;|&nbsp; 2026年5月</p>
+
+<!-- ==================== 方案概述 ==================== -->
+<h2>一、功能概述</h2>
+<p><strong>业务描述：</strong>管理工厂设备台账与模具的全生命周期，涵盖设备状态监控、停机记录、保养计划、OEE效率分析，以及模具寿命追踪、维修记录等。设备与模具两大业务线相互独立但共享管理范式（审批/导出/列个性化）。</p>
+
+<h3>1.1 模块关系</h3>
+<pre>设备台账 (equipment)
+    │ equipment_number
+    ├──▶ 设备停机记录 (equipment_downtime)
+    │       │ 故障记录 + 维修成本
+    ├──▶ 保养计划 (equipment_maintenance_plan)
+    │       │ 自动生成 + 执行/完成/取消
+    └──▶ OEE效率看板 (equipment_oee)
+            │ 可用率×性能率×质量率 = OEE
+            │ 支持从生产数据自动计算
+
+模具台账 (mould)
+    │ mould_number
+    ├──▶ 模具维修记录 (mould_maintenance)
+            │ 冲次累积 + 寿命追踪 + 报废</pre>
+
+<h3>1.2 子模块一览</h3>
+<table>
+<tr><th>子模块</th><th>数据结构</th><th>核心功能</th><th>审批</th><th>导入导出</th><th>特色功能</th></tr>
+<tr><td><strong>设备台账</strong></td><td>单表 + 9个扩展字段</td><td>CRUD + 状态管理 + 保养设置</td><td>✅ 审批/撤审</td><td>✅ 导出+导入</td><td>状态概览 + 状态变更 + 保养周期设置</td></tr>
+<tr><td><strong>设备停机</strong></td><td>单表 + 4个索引</td><td>CRUD + 故障/维修记录</td><td>✅ 审核/撤审</td><td>✅ 导出</td><td>停机类型分类 + 维修成本 + 替换零件</td></tr>
+<tr><td><strong>保养计划</strong></td><td>单表 + 4个索引</td><td>CRUD + 自动生成 + 执行/完成/取消</td><td>✅ 审核/撤审</td><td>✅ 导出</td><td>按保养周期自动生成计划 + 保养项清单</td></tr>
+<tr><td><strong>OEE看板</strong></td><td>单表 + 唯一约束</td><td>记录管理 + 看板 + 自动计算</td><td>❌</td><td>❌</td><td>可用率/性能率/质量率计算 + ECharts仪表盘 + 从生产数据自动取值</td></tr>
+<tr><td><strong>模具台账</strong></td><td>单表</td><td>CRUD + 冲次管理 + 寿命设置 + 报废</td><td>✅ 审批/撤审</td><td>✅ 导出+导入</td><td>冲次累积 + 寿命预警 + 报废处理 + 使用中模数统计</td></tr>
+<tr><td><strong>模具维修</strong></td><td>单表</td><td>CRUD</td><td>❌</td><td>✅ 导出+导入</td><td>维修类型 + 关联模具 + 维修成本</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 数据库设计 ==================== -->
+<h2>二、数据库设计</h2>
+
+<h3>2.1 设备台账表 — equipment</h3>
+<table>
+<tr><th>字段名</th><th>类型</th><th>说明</th></tr>
+<tr><td><code>id</code></td><td><code>INT IDENTITY(1,1) PK</code></td><td>主键</td></tr>
+<tr><td><code>equipment_number</code></td><td><code>NVARCHAR(50) UQ</code></td><td>设备编号</td></tr>
+<tr><td><code>equipment_name</code></td><td><code>NVARCHAR(100)</code></td><td>设备名称</td></tr>
+<tr><td><code>equipment_model</code></td><td><code>NVARCHAR(100)</code></td><td>设备型号</td></tr>
+<tr><td><code>manufacturer</code></td><td><code>NVARCHAR(100)</code></td><td>制造商</td></tr>
+<tr><td><code>work_center_number/name</code></td><td><code>NVARCHAR</code></td><td>所属工作中心</td></tr>
+<tr><td><code>purchase_date / commissioning_date</code></td><td><code>DATE</code></td><td>购入/投产日期</td></tr>
+<tr><td><code>equipment_status</code></td><td><code>NVARCHAR(20) DEFAULT '闲置'</code></td><td>设备状态（闲置/运行/故障/保养/报废）</td></tr>
+<tr><td><code>location / department</code></td><td><code>NVARCHAR</code></td><td>位置/部门</td></tr>
+<tr><td><code>daily_running_hours</code></td><td><code>DECIMAL(4,1) DEFAULT 24.0</code></td><td>每日运行时长</td></tr>
+<tr><td><code>maintenance_cycle_days</code></td><td><code>INT DEFAULT 30</code></td><td>保养周期（天）</td></tr>
+<tr><td><code>last_maintenance_date / next_maintenance_date</code></td><td><code>DATE</code></td><td>上次/下次保养日期</td></tr>
+<tr><td><code>total_running_hours</code></td><td><code>DECIMAL(10,1) DEFAULT 0</code></td><td>累计运行时长</td></tr>
+<tr><td><code>last_status_change_time</code></td><td><code>DATETIME</code></td><td>最后状态变更时间</td></tr>
+<tr><td><code>approval_status</code></td><td><code>NVARCHAR(20)</code></td><td>审批状态</td></tr>
+<tr><td><code>remark / creation_date / creation_man</code></td><td><code>...</code></td><td>备注/创建信息</td></tr>
+</table>
+
+<h3>2.2 设备停机记录表 — equipment_downtime</h3>
+<table>
+<tr><th>字段名</th><th>类型</th><th>说明</th></tr>
+<tr><td><code>id</code></td><td><code>INT IDENTITY(1,1) PK</code></td><td>主键</td></tr>
+<tr><td><code>equipment_number</code></td><td><code>NVARCHAR(50)</code></td><td>设备编号（索引）</td></tr>
+<tr><td><code>downtime_type</code></td><td><code>NVARCHAR(20)</code></td><td>停机类型（故障/保养/换模/其他）</td></tr>
+<tr><td><code>start_time / end_time</code></td><td><code>DATETIME</code></td><td>停机开始/结束时间</td></tr>
+<tr><td><code>duration_minutes</code></td><td><code>INT</code></td><td>停机时长（分钟）</td></tr>
+<tr><td><code>fault_reason / treatment / replaced_parts</code></td><td><code>NVARCHAR(500)</code></td><td>故障原因/处理措施/更换零件</td></tr>
+<tr><td><code>cost</code></td><td><code>DECIMAL(18,2)</code></td><td>维修成本</td></tr>
+<tr><td><code>performed_by</code></td><td><code>NVARCHAR(50)</code></td><td>执行人</td></tr>
+<tr><td><code>approval_status</code></td><td><code>NVARCHAR(20)</code></td><td>审核状态</td></tr>
+</table>
+
+<h3>2.3 保养计划表 — equipment_maintenance_plan</h3>
+<table>
+<tr><th>字段名</th><th>类型</th><th>说明</th></tr>
+<tr><td><code>id</code></td><td><code>INT IDENTITY(1,1) PK</code></td><td>主键</td></tr>
+<tr><td><code>plan_number</code></td><td><code>NVARCHAR(50)</code></td><td>计划编号</td></tr>
+<tr><td><code>equipment_number</code></td><td><code>NVARCHAR(50)</code></td><td>设备编号（索引）</td></tr>
+<tr><td><code>maintenance_type</code></td><td><code>NVARCHAR(20)</code></td><td>保养类型（日常/定期/大修）</td></tr>
+<tr><td><code>planned_date / actual_date</code></td><td><code>DATE</code></td><td>计划/实际日期</td></tr>
+<tr><td><code>maintenance_items</code></td><td><code>NVARCHAR(2000)</code></td><td>保养项目清单</td></tr>
+<tr><td><code>responsible_person</code></td><td><code>NVARCHAR(50)</code></td><td>负责人</td></tr>
+<tr><td><code>plan_status</code></td><td><code>NVARCHAR(20) DEFAULT '待执行'</code></td><td>计划状态（待执行/执行中/已完成/已取消）</td></tr>
+<tr><td><code>approval_status</code></td><td><code>NVARCHAR(20)</code></td><td>审核状态</td></tr>
+</table>
+
+<h3>2.4 OEE记录表 — equipment_oee</h3>
+<table>
+<tr><th>字段名</th><th>类型</th><th>说明</th></tr>
+<tr><td><code>id</code></td><td><code>INT IDENTITY(1,1) PK</code></td><td>主键</td></tr>
+<tr><td><code>equipment_number + record_date + shift_id</code></td><td><code>NVARCHAR+DATE+NVARCHAR UQ</code></td><td>设备+日期+班次唯一</td></tr>
+<tr><td><code>planned_time_minutes / downtime_minutes / actual_run_minutes</code></td><td><code>INT</code></td><td>计划/停机/实际运行时长</td></tr>
+<tr><td><code>ideal_output / actual_output / good_output</code></td><td><code>DECIMAL(18,4)</code></td><td>理想/实际/合格产量</td></tr>
+<tr><td><code>availability_rate / performance_rate / quality_rate / oee_rate</code></td><td><code>DECIMAL(5,2)</code></td><td>可用率/性能率/质量率/OEE</td></tr>
+<tr><td><code>data_source</code></td><td><code>NVARCHAR(20) DEFAULT '自动'</code></td><td>数据来源（自动/手动）</td></tr>
+</table>
+
+<h3>2.5 模具台账表 — mould</h3>
+<table>
+<tr><th>字段名</th><th>类型</th><th>说明</th></tr>
+<tr><td><code>id</code></td><td><code>INT IDENTITY(1,1) PK</code></td><td>主键</td></tr>
+<tr><td><code>mould_number / mould_name</code></td><td><code>NVARCHAR(50/100) UQ</code></td><td>模具编号/名称</td></tr>
+<tr><td><code>mould_type / specifications</code></td><td><code>NVARCHAR</code></td><td>模具类型/规格</td></tr>
+<tr><td><code>item_number / item_name</code></td><td><code>NVARCHAR</code></td><td>关联产品</td></tr>
+<tr><td><code>location / storage_location</code></td><td><code>NVARCHAR</code></td><td>使用位置/存放位置</td></tr>
+<tr><td><code>total_strokes / max_strokes</code></td><td><code>INT</code></td><td>累计冲次/最大寿命冲次</td></tr>
+<tr><td><code>maintenance_cycle_days</code></td><td><code>INT</code></td><td>保养周期（天）</td></tr>
+<tr><td><code>mould_status</code></td><td><code>NVARCHAR(20)</code></td><td>状态（使用中/闲置/维修中/报废）</td></tr>
+<tr><td><code>current_in_use_count</code></td><td><code>INT</code></td><td>当前使用中模数</td></tr>
+<tr><td><code>approval_status</code></td><td><code>NVARCHAR(20)</code></td><td>审批状态</td></tr>
+</table>
+
+<h3>2.6 模具维修记录表 — mould_maintenance</h3>
+<table>
+<tr><th>字段名</th><th>类型</th><th>说明</th></tr>
+<tr><td><code>id</code></td><td><code>INT IDENTITY(1,1) PK</code></td><td>主键</td></tr>
+<tr><td><code>mould_number</code></td><td><code>NVARCHAR(50)</code></td><td>模具编号</td></tr>
+<tr><td><code>maintenance_type</code></td><td><code>NVARCHAR(20)</code></td><td>维修类型（日常/定期/大修/紧急）</td></tr>
+<tr><td><code>maintenance_date</code></td><td><code>DATE</code></td><td>维修日期</td></tr>
+<tr><td><code>description / result</code></td><td><code>NVARCHAR</code></td><td>维修描述/结果</td></tr>
+<tr><td><code>cost</code></td><td><code>DECIMAL(18,2)</code></td><td>维修成本</td></tr>
+<tr><td><code>performed_by</code></td><td><code>NVARCHAR(50)</code></td><td>执行人</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== API 设计 ==================== -->
+<h2>三、API 设计</h2>
+
+<h3>3.1 设备台账（10个接口）</h3>
+<table>
+<tr><th>方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><code>GET</code></td><td><code>/equipments</code></td><td>列表查询（分页+搜索）</td></tr>
+<tr><td><code>GET</code></td><td><code>/equipments/status-overview</code></td><td>设备状态概览统计</td></tr>
+<tr><td><code>GET</code></td><td><code>/equipments/export</code></td><td>导出Excel</td></tr>
+<tr><td><code>POST</code></td><td><code>/equipments</code></td><td>创建</td></tr>
+<tr><td><code>POST</code></td><td><code>/equipments/import</code></td><td>导入Excel</td></tr>
+<tr><td><code>PUT</code></td><td><code>/equipments/:id</code></td><td>更新</td></tr>
+<tr><td><code>PUT</code></td><td><code>/equipments/:id/status</code></td><td>更新设备状态</td></tr>
+<tr><td><code>PUT</code></td><td><code>/equipments/:id/maintenance-settings</code></td><td>更新保养设置</td></tr>
+<tr><td><code>PUT</code></td><td><code>/equipments/:id/approve</code></td><td>审批</td></tr>
+<tr><td><code>PUT</code></td><td><code>/equipments/:id/withdraw</code></td><td>撤审</td></tr>
+<tr><td><code>DELETE</code></td><td><code>/equipments/:id</code></td><td>删除</td></tr>
+</table>
+
+<h3>3.2 设备停机（7个接口）</h3>
+<table>
+<tr><th>方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><code>GET</code></td><td><code>/equipment-downtime</code></td><td>列表查询（设备+类型+日期筛选）</td></tr>
+<tr><td><code>GET</code></td><td><code>/equipment-downtime/export</code></td><td>导出Excel</td></tr>
+<tr><td><code>POST</code></td><td><code>/equipment-downtime</code></td><td>创建</td></tr>
+<tr><td><code>PUT</code></td><td><code>/equipment-downtime/:id</code></td><td>更新</td></tr>
+<tr><td><code>DELETE</code></td><td><code>/equipment-downtime/:id</code></td><td>删除</td></tr>
+<tr><td><code>PUT</code></td><td><code>/equipment-downtime/:id/approve</code></td><td>审核</td></tr>
+<tr><td><code>PUT</code></td><td><code>/equipment-downtime/:id/withdraw</code></td><td>撤审</td></tr>
+</table>
+
+<h3>3.3 保养计划（11个接口）</h3>
+<table>
+<tr><th>方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><code>GET</code></td><td><code>/equipment-maintenance-plan</code></td><td>列表查询</td></tr>
+<tr><td><code>GET</code></td><td><code>/equipment-maintenance-plan/export</code></td><td>导出Excel</td></tr>
+<tr><td><code>POST</code></td><td><code>/equipment-maintenance-plan</code></td><td>创建</td></tr>
+<tr><td><code>POST</code></td><td><code>/equipment-maintenance-plan/auto-generate</code></td><td>按保养周期自动生成计划</td></tr>
+<tr><td><code>PUT</code></td><td><code>/equipment-maintenance-plan/:id</code></td><td>更新</td></tr>
+<tr><td><code>PUT</code></td><td><code>/equipment-maintenance-plan/:id/execute</code></td><td>开始执行</td></tr>
+<tr><td><code>PUT</code></td><td><code>/equipment-maintenance-plan/:id/complete</code></td><td>完成保养</td></tr>
+<tr><td><code>PUT</code></td><td><code>/equipment-maintenance-plan/:id/cancel</code></td><td>取消计划</td></tr>
+<tr><td><code>DELETE</code></td><td><code>/equipment-maintenance-plan/:id</code></td><td>删除</td></tr>
+<tr><td><code>PUT</code></td><td><code>/equipment-maintenance-plan/:id/approve</code></td><td>审核</td></tr>
+<tr><td><code>PUT</code></td><td><code>/equipment-maintenance-plan/:id/withdraw</code></td><td>撤审</td></tr>
+</table>
+
+<h3>3.4 OEE（5个接口）</h3>
+<table>
+<tr><th>方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><code>GET</code></td><td><code>/equipment-oee/dashboard</code></td><td>OEE看板数据（ECharts聚合）</td></tr>
+<tr><td><code>GET</code></td><td><code>/equipment-oee</code></td><td>列表查询</td></tr>
+<tr><td><code>POST</code></td><td><code>/equipment-oee/calculate</code></td><td>从生产数据自动计算OEE</td></tr>
+<tr><td><code>POST</code></td><td><code>/equipment-oee</code></td><td>手动保存OEE记录</td></tr>
+<tr><td><code>DELETE</code></td><td><code>/equipment-oee/:id</code></td><td>删除记录</td></tr>
+</table>
+
+<h3>3.5 模具台账（10个接口）</h3>
+<table>
+<tr><th>方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><code>GET</code></td><td><code>/moulds</code></td><td>列表查询</td></tr>
+<tr><td><code>GET</code></td><td><code>/moulds/export</code></td><td>导出Excel</td></tr>
+<tr><td><code>POST</code></td><td><code>/moulds</code></td><td>创建</td></tr>
+<tr><td><code>POST</code></td><td><code>/moulds/import</code></td><td>导入Excel</td></tr>
+<tr><td><code>PUT</code></td><td><code>/moulds/:id</code></td><td>更新</td></tr>
+<tr><td><code>PUT</code></td><td><code>/moulds/:id/strokes</code></td><td>更新冲次（累积）</td></tr>
+<tr><td><code>PUT</code></td><td><code>/moulds/:id/life-settings</code></td><td>更新寿命设置</td></tr>
+<tr><td><code>PUT</code></td><td><code>/moulds/:id/scrap</code></td><td>报废模具</td></tr>
+<tr><td><code>PUT</code></td><td><code>/moulds/:id/approve</code></td><td>审批</td></tr>
+<tr><td><code>PUT</code></td><td><code>/moulds/:id/withdraw</code></td><td>撤审</td></tr>
+<tr><td><code>DELETE</code></td><td><code>/moulds/:id</code></td><td>删除</td></tr>
+</table>
+
+<h3>3.6 模具维修（6个接口）</h3>
+<table>
+<tr><th>方法</th><th>路径</th><th>说明</th></tr>
+<tr><td><code>GET</code></td><td><code>/mould-maintenance</code></td><td>列表查询</td></tr>
+<tr><td><code>GET</code></td><td><code>/mould-maintenance/export</code></td><td>导出Excel</td></tr>
+<tr><td><code>POST</code></td><td><code>/mould-maintenance</code></td><td>创建</td></tr>
+<tr><td><code>POST</code></td><td><code>/mould-maintenance/import</code></td><td>导入Excel</td></tr>
+<tr><td><code>PUT</code></td><td><code>/mould-maintenance/:id</code></td><td>更新</td></tr>
+<tr><td><code>DELETE</code></td><td><code>/mould-maintenance/:id</code></td><td>删除</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 文件改造清单 ==================== -->
+<h2>四、文件改造清单</h2>
+<table>
+<tr><th>类型</th><th>文件路径</th><th>改造内容</th></tr>
+<tr><td>新增</td><td><code>server/.../equipment/equipment.controller.ts</code></td><td>设备台账控制器：CRUD + 状态管理 + 保养设置 + 审批 + 导入/导出 + 状态概览（322行）</td></tr>
+<tr><td>新增</td><td><code>server/.../equipment/equipment.routes.ts</code></td><td>路由定义（11个接口）</td></tr>
+<tr><td>新增</td><td><code>server/.../equipmentDowntime/equipmentDowntime.controller.ts</code></td><td>停机记录控制器：CRUD + 审核 + 导出（189行）</td></tr>
+<tr><td>新增</td><td><code>server/.../equipmentDowntime/equipmentDowntime.routes.ts</code></td><td>路由定义（7个接口）</td></tr>
+<tr><td>新增</td><td><code>server/.../equipmentMaintenancePlan/equipmentMaintenancePlan.controller.ts</code></td><td>保养计划控制器：CRUD + 自动生成 + 执行/完成/取消 + 审核 + 导出（262行）</td></tr>
+<tr><td>新增</td><td><code>server/.../equipmentMaintenancePlan/equipmentMaintenancePlan.routes.ts</code></td><td>路由定义（11个接口）</td></tr>
+<tr><td>新增</td><td><code>server/.../equipmentOee/equipmentOee.controller.ts</code></td><td>OEE控制器：CRUD + 看板 + 自动计算（291行）</td></tr>
+<tr><td>新增</td><td><code>server/.../equipmentOee/equipmentOee.routes.ts</code></td><td>路由定义（5个接口）</td></tr>
+<tr><td>新增</td><td><code>server/.../mould/mould.controller.ts</code></td><td>模具台账控制器：CRUD + 冲次/寿命/报废 + 审批 + 导入/导出（293行）</td></tr>
+<tr><td>新增</td><td><code>server/.../mould/mould.routes.ts</code></td><td>路由定义（11个接口）</td></tr>
+<tr><td>新增</td><td><code>server/.../mouldMaintenance/mouldMaintenance.controller.ts</code></td><td>模具维修控制器：CRUD + 导入/导出（187行）</td></tr>
+<tr><td>新增</td><td><code>server/.../mouldMaintenance/mouldMaintenance.routes.ts</code></td><td>路由定义（6个接口）</td></tr>
+<tr><td>新增</td><td><code>client/src/views/equipment/Equipment/List.vue</code></td><td>设备台账列表页（562行）</td></tr>
+<tr><td>新增</td><td><code>client/src/views/equipment/EquipmentDowntime/List.vue</code></td><td>停机记录列表页（383行）</td></tr>
+<tr><td>新增</td><td><code>client/src/views/equipment/EquipmentMaintenancePlan/List.vue</code></td><td>保养计划列表页（479行）</td></tr>
+<tr><td>新增</td><td><code>client/src/views/equipment/EquipmentOee/Dashboard.vue</code></td><td>OEE看板页（ECharts仪表盘+数据表）（380行）</td></tr>
+<tr><td>新增</td><td><code>client/src/views/equipment/Mould/List.vue</code></td><td>模具台账列表页（752行）</td></tr>
+<tr><td>新增</td><td><code>client/src/views/equipment/MouldMaintenance/List.vue</code></td><td>模具维修列表页（394行）</td></tr>
+<tr><td>新增</td><td><code>client/src/api/equipment/equipment.ts</code></td><td>设备台账API</td></tr>
+<tr><td>新增</td><td><code>client/src/api/equipment/equipmentLife.ts</code></td><td>设备生命周期API（状态+停机+保养+OEE，85行）</td></tr>
+<tr><td>新增</td><td><code>client/src/api/equipment/mould.ts</code></td><td>模具台账API</td></tr>
+<tr><td>新增</td><td><code>client/src/api/equipment/mouldMaintenance.ts</code></td><td>模具维修API</td></tr>
+<tr><td>新增</td><td><code>server/src/migrate-equipment-life.ts</code></td><td>设备扩展字段+停机/保养/OEE表迁移（164行）</td></tr>
+<tr><td>新增</td><td><code>server/src/sql/migrations/035_equipment_mould_approval_status.ts</code></td><td>审批状态字段迁移</td></tr>
+<tr><td>新增</td><td><code>server/src/validators/equipment.validator.ts</code></td><td>设备+模具创建/更新校验器</td></tr>
+<tr><td>修改</td><td><code>server/src/modules/equipment/index.ts</code></td><td>注册6个子模块路由</td></tr>
+<tr><td>修改</td><td><code>client/src/router/equipment.ts</code></td><td>新增6条路由 + 权限映射</td></tr>
+<tr><td>修改</td><td><code>client/src/router/index.ts</code></td><td>权限映射新增6项</td></tr>
+<tr><td>修改</td><td>菜单配置（permission表）</td><td>设备管理下新增6个页面菜单项</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 工作量评估 ==================== -->
+<h2>五、开发工作量评估</h2>
+
+<h3>5.1 后端开发</h3>
+<table>
+<tr><th>序号</th><th>任务</th><th>详细内容</th><th>估时</th></tr>
+<tr><td>1.1</td><td>数据库建表</td><td>6张表 + 设备表9个扩展字段 + 8个索引 + 唯一约束 + 2个迁移脚本</td><td>1天</td></tr>
+<tr><td>1.2</td><td>设备台账 Controller</td><td>CRUD + 审批/撤审 + 状态概览统计 + 状态变更(更新状态+记录变更时间) + 保养设置 + Excel导入/导出 + 验证器，11个接口</td><td>2.5天</td></tr>
+<tr><td>1.3</td><td>设备停机 Controller</td><td>CRUD + 审核/撤审 + 停机类型筛选 + 日期范围筛选 + Excel导出，7个接口</td><td>1.5天</td></tr>
+<tr><td>1.4</td><td>保养计划 Controller</td><td>CRUD + 审核/撤审 + 自动生成(按保养周期+上次保养日期) + 执行/完成/取消(状态流转) + 完成时回写设备表next_maintenance_date + Excel导出，11个接口</td><td>2.5天</td></tr>
+<tr><td>1.5</td><td>OEE Controller</td><td>CRUD + 看板数据聚合(按设备/日期汇总可用率/性能率/质量率) + 从生产数据自动计算(取报工记录反算OEE) + 唯一约束校验，5个接口</td><td>2天</td></tr>
+<tr><td>1.6</td><td>模具台账 Controller</td><td>CRUD + 审批/撤审 + 冲次累积更新 + 寿命设置更新 + 报废处理 + 使用中模数统计 + Excel导入/导出 + 验证器，11个接口</td><td>2.5天</td></tr>
+<tr><td>1.7</td><td>模具维修 Controller</td><td>CRUD + Excel导入/导出，6个接口</td><td>1天</td></tr>
+<tr><td>1.8</td><td>验证器 + 路由注册 + 菜单</td><td><code>equipment.validator.ts</code> + 6个子模块路由注册到 <code>equipment/index.ts</code> + permission表菜单 + 缓存版本号</td><td>0.5天</td></tr>
+<tr><td colspan="3" style="text-align:right;font-weight:bold;">后端小计</td><td style="font-weight:bold;">13.5天</td></tr>
+</table>
+
+<h3>5.2 前端开发</h3>
+<table>
+<tr><th>序号</th><th>任务</th><th>详细内容</th><th>估时</th></tr>
+<tr><td>2.1</td><td>API 接口定义</td><td>4个API文件，共约50个接口</td><td>0.5天</td></tr>
+<tr><td>2.2</td><td>设备台账列表页</td><td><code>List.vue</code>：搜索 + 表格 + 弹窗CRUD(25+字段) + 审批 + 状态标签 + 状态概览卡片 + 导出/导入 + 列个性化（562行）</td><td>3天</td></tr>
+<tr><td>2.3</td><td>设备停机列表页</td><td><code>List.vue</code>：设备下拉 + 类型筛选 + 日期范围 + 弹窗CRUD + 审核 + 导出 + 列个性化（383行）</td><td>1.5天</td></tr>
+<tr><td>2.4</td><td>保养计划列表页</td><td><code>List.vue</code>：设备下拉 + 状态/类型筛选 + 弹窗CRUD + 审核 + 自动生成 + 执行/完成/取消操作 + 导出 + 列个性化（479行）</td><td>2.5天</td></tr>
+<tr><td>2.5</td><td>OEE看板页</td><td><code>Dashboard.vue</code>：日期选择 + 设备下拉 + ECharts仪表盘(总OEE+三率环形图+趋势折线+设备排名) + 数据明细表 + 手动录入 + 自动计算按钮（380行）</td><td>3天</td></tr>
+<tr><td>2.6</td><td>模具台账列表页</td><td><code>List.vue</code>：搜索 + 表格 + 弹窗CRUD(30+字段) + 审批 + 冲次更新弹窗 + 寿命设置 + 报废操作 + 使用中模数 + 导出/导入 + 列个性化（752行）</td><td>3天</td></tr>
+<tr><td>2.7</td><td>模具维修列表页</td><td><code>List.vue</code>：模具下拉 + 类型筛选 + 弹窗CRUD + 导出/导入 + 列个性化（394行）</td><td>1.5天</td></tr>
+<tr><td>2.8</td><td>菜单与路由</td><td>设备管理域新增6个页面菜单项 + 路由配置 + 权限映射</td><td>0.5天</td></tr>
+<tr><td colspan="3" style="text-align:right;font-weight:bold;">前端小计</td><td style="font-weight:bold;">15.5天</td></tr>
+</table>
+
+<h3>5.3 联调测试</h3>
+<table>
+<tr><th>序号</th><th>任务</th><th>详细内容</th><th>估时</th></tr>
+<tr><td>3.1</td><td>设备台账+状态管理测试</td><td>CRUD + 审批 + 状态变更 + 保养设置 + 状态概览 + Excel导入/导出</td><td>1天</td></tr>
+<tr><td>3.2</td><td>停机+保养联动测试</td><td>停机记录CRUD + 审核 + 保养计划自动生成 + 执行→完成(回写设备next_maintenance_date) + 取消</td><td>1.5天</td></tr>
+<tr><td>3.3</td><td>OEE看板+计算测试</td><td>手动录入 + 自动计算(从生产数据取值) + 看板图表数据 + 唯一约束</td><td>1天</td></tr>
+<tr><td>3.4</td><td>模具全流程测试</td><td>模具CRUD + 审批 + 冲次累积 + 寿命预警 + 报废 + 维修记录 + Excel导入/导出</td><td>1天</td></tr>
+<tr><td>3.5</td><td>跨模块联动测试</td><td>设备→工作中心关联 + 模具→产品关联 + 保养完成→设备状态变更 + 停机→OEE数据影响</td><td>0.5天</td></tr>
+<tr><td colspan="3" style="text-align:right;font-weight:bold;">联调测试小计</td><td style="font-weight:bold;">5天</td></tr>
+</table>
+
+<h3>5.4 汇总</h3>
+<table class="summary-table">
+<tr><th>模块</th><th>估时</th></tr>
+<tr><td>后端开发</td><td>13.5 天</td></tr>
+<tr><td>前端开发</td><td>15.5 天</td></tr>
+<tr><td>联调测试</td><td>5 天</td></tr>
+<tr class="highlight"><td><strong>总计</strong></td><td><strong>34 天（约 7 周/1人）</strong></td></tr>
+</table>
+
+<p style="text-align:center;margin-top:8px;">
+若 2 人并行（1 人后端 + 1 人前端），可在 <strong>3.5 周内</strong> 完成。
+</p>
+
+<hr>
+
+<!-- ==================== 影响因素分析 ==================== -->
+<h2>六、关键影响因素</h2>
+<table>
+<tr><th>因素</th><th>影响</th><th>说明</th></tr>
+<tr><td><strong>OEE ECharts看板</strong></td><td>⚠️ 增耗时</td><td>OEE看板页需 ECharts 仪表盘（总OEE环形图、可用率/性能率/质量率三率图、趋势折线、设备排名柱状图），前端约 3 天，比纯表格列表多 1.5 天</td></tr>
+<tr><td><strong>保养计划自动生成</strong></td><td>⚠️ 增耗时</td><td>按设备保养周期 + 上次保养日期自动批量生成计划，完成后回写设备表 next_maintenance_date，级联逻辑约 0.5 天</td></tr>
+<tr><td><strong>OEE自动计算</strong></td><td>⚠️ 增耗时</td><td>从生产报工数据自动取值计算可用率/性能率/质量率，需关联 production_task + equipment_downtime，约 1 天</td></tr>
+<tr><td><strong>模具冲次+寿命管理</strong></td><td>⚠️ 增耗时</td><td>冲次累积、寿命预警(冲次/最大冲次比)、报废处理、使用中模数统计，增加后端约 1 天、前端约 1 天</td></tr>
+<tr><td><strong>设备台账字段多</strong></td><td>⚠️ 增耗时</td><td>设备台账 25+ 字段 + 9 个扩展字段，弹窗表单复杂，前端 562 行</td></tr>
+<tr><td><strong>模具台账字段多</strong></td><td>⚠️ 增耗时</td><td>模具台账 30+ 字段 + 冲次/寿命操作弹窗，前端 752 行（最复杂的列表页）</td></tr>
+<tr><td><strong>简单审批而非工作流</strong></td><td>✅ 省时</td><td>设备/停机/保养计划/模具均使用简单审批/撤审，不走工作流引擎，免去审批节点编排约 2-3 天</td></tr>
+<tr><td><strong>复用现有基础设施</strong></td><td>✅ 省时</td><td>复用 <code>useTableList</code>/<code>useColumnPreference</code>/<code>useModalDrag</code> + <code>exportToExcel</code>/<code>exceljs</code>，减少重复编码</td></tr>
+<tr><td><strong>无移动端</strong></td><td>✅ 省时</td><td>设备管理无移动端需求</td></tr>
+</table>
+
+<div class="footer">Seals MES System — 设备管理功能开发工作量评估 &nbsp;|&nbsp; 宁国市睿信信息技术有限责任公司</div>
+</body>
+</html>

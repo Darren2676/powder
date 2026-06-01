@@ -30,6 +30,10 @@ const ItemMasterList = () => import('@/views/master-data/ItemMaster/List.vue');
 const LogisticsCompanyList = () => import('@/views/master-data/LogisticsCompany/List.vue');
 const EngineeringChangeList = () => import('@/views/master-data/EngineeringChange/List.vue');
 const EngineeringChangeDetail = () => import('@/views/master-data/EngineeringChange/Detail.vue');
+const ProcessParameterList = () => import('@/views/master-data/ProcessParameter/List.vue');
+const ProcessParameterDetail = () => import('@/views/master-data/ProcessParameter/Detail.vue');
+const PlasticPowderParameterList = () => import('@/views/master-data/PlasticPowderParameter/List.vue');
+const PlasticProcessCategoryList = () => import('@/views/master-data/PlasticProcessCategory/List.vue');
 
 export const masterDataRoutes: RouteRecordRaw[] = [
   { path: 'customers', name: 'CustomerList', component: CustomerList, meta: {"title":"客户管理"} },
@@ -61,4 +65,8 @@ export const masterDataRoutes: RouteRecordRaw[] = [
   { path: 'logistics-companies', name: 'LogisticsCompanyList', component: LogisticsCompanyList, meta: {"title":"物流公司管理"} },
   { path: 'engineering-changes', name: 'EngineeringChangeList', component: EngineeringChangeList, meta: {"title":"工程更改"} },
   { path: 'engineering-changes/:id', name: 'EngineeringChangeDetail', component: EngineeringChangeDetail, meta: {"title":"工程更改详情"} },
+  { path: 'process-parameters', name: 'ProcessParameterList', component: ProcessParameterList, meta: {"title":"工艺参数"} },
+  { path: 'process-parameters/:id', name: 'ProcessParameterDetail', component: ProcessParameterDetail, meta: {"title":"工艺参数详情"} },
+  { path: 'plastic-powder-parameters', name: 'PlasticPowderParameterList', component: PlasticPowderParameterList, meta: {"title":"塑粉参数"} },
+  { path: 'plastic-process-categories', name: 'PlasticProcessCategoryList', component: PlasticProcessCategoryList, meta: {"title":"工艺分类"} },
 ];
