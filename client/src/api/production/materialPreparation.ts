@@ -46,3 +46,6 @@ export function updatePreparationDetails(prepNumber: string, details: any[]) {
 
 export const updateDetailAutoWeigh = (preparationNumber: string, ids: number[], autoWeigh: string) =>
   request({ url: `/material-preparations/${encodeURIComponent(preparationNumber)}/details-auto-weigh`, method: 'PATCH', data: { ids, auto_weigh: autoWeigh } })
+
+export const getDetailsByOrder = (params?: { production_order_number?: string; auto_weigh?: string; page?: number; limit?: number }) =>
+  request.get('/material-preparations/details-by-order', { params })

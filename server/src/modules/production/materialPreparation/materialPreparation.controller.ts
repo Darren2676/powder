@@ -1051,3 +1051,54 @@ export const updateDetailAutoWeigh = async (req: Request, res: Response, next: N
     res.json(success({ updatedCount: ids.length }, '更新成功'));
   } catch (err) { next(err); }
 };
+
+// ==================== 按生产单号查询备料明细（拆分备料任务用） ====================
+export const getDetailsByOrder = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 100;
+    const production_order_number = (req.query.production_order_number as string) || '';
+    const auto_weigh = (req.query.auto_weigh as string) || '';
+
+    if (!production_order_number) {
+      res.json(success({ items: [], total: 0, page, limit }));
+      return;
+    }
+
+    let whereClause = 'WHERE h.production_order_number = :pon';
+    const replacements: any = { pon: production_order_number };
+
+    if (auto_weigh) {
+      whereClause += ' AND d.auto_weigh = :aw';
+      replacements.aw = auto_weigh;
+    }
+
+    const [countResult]: any = await sequelize.query(
+      `SELECT COUNT(*) as total
+       FROM material_preparation_detail d
+       INNER JOIN material_preparation h ON h.preparation_number = d.preparation_number
+       ${whereClause}`,
+      { replacements }
+    );
+    const total = countResult[0].total;
+
+    const offset = (page - 1) * limit;
+    const [items]: any = await sequelize.query(`
+      SELECT * FROM (
+        SELECT d.id, d.preparation_number, d.line_number, d.material_number, d.material_name,
+               d.material_type, d.unit as material_unit, d.bom_actual_quantity, d.required_quantity,
+               d.issued_quantity, d.step_number, d.standard_process_name,
+               d.work_center_number, d.work_center_name, d.auto_weigh, d.remark,
+               h.production_order_number, h.item_number, h.item_name, h.preparation_status, h.approval_status,
+               ROW_NUMBER() OVER (ORDER BY d.step_number, d.line_number) AS _rn
+        FROM material_preparation_detail d
+        INNER JOIN material_preparation h ON h.preparation_number = d.preparation_number
+        ${whereClause}
+      ) t WHERE _rn > :offset AND _rn <= :offsetEnd
+    `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
+
+    const cleanItems = items.map((item: any) => { const { _rn, ...rest } = item; return rest; });
+
+    res.json(success({ items: cleanItems, total, page, limit }));
+  } catch (err) { next(err); }
+};

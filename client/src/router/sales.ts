@@ -23,6 +23,7 @@ const SampleRequestList = () => import('@/views/sales/sampleRequest/Index.vue');
 const SampleRequestCreate = () => import('@/views/sales/sampleRequest/Create.vue');
 const SampleRequestDetail = () => import('@/views/sales/sampleRequest/Detail.vue');
 const SalesPersonShippingReport = () => import('@/views/sales/SalesPersonShippingReport/Index.vue');
+const SalesReconciliation = () => import('@/views/sales/SalesReconciliation/Index.vue');
 
 export const salesRoutes: RouteRecordRaw[] = [
   { path: 'sales-orders', name: 'SalesOrderList', component: SalesOrderList, meta: {"title":"销售订单"} },
@@ -48,4 +49,5 @@ export const salesRoutes: RouteRecordRaw[] = [
   { path: 'sample-request-create', name: 'SampleRequestCreate', component: SampleRequestCreate, meta: {"title":"样品申请编辑"} },
   { path: 'sample-request/:id', name: 'SampleRequestDetail', component: SampleRequestDetail, meta: {"title":"样品申请详情"} },
   { path: 'sales-person-shipping-report', name: 'SalesPersonShippingReport', component: SalesPersonShippingReport, meta: {"title":"销售员订单发货报表"} },
+  { path: 'sales-reconciliation', name: 'SalesReconciliation', component: SalesReconciliation, meta: {"title":"销售对账"} },
 ];

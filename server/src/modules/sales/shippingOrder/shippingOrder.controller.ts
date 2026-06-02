@@ -220,7 +220,7 @@ export const createShippingOrder = async (req: Request, res: Response, next: Nex
 // ==================== 发货单明细列表（批次级别） ====================
 export const getShippingOrderDetailsPage = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { page = 1, limit = 20, search = '', status = '' } = req.query;
+    const { page = 1, limit = 20, search = '', status = '', reconciliationStatus = '' } = req.query;
     const pageNum = Number(page);
     const pageSize = Number(limit);
     const offset = (pageNum - 1) * pageSize;
@@ -238,6 +238,17 @@ export const getShippingOrderDetailsPage = async (req: Request, res: Response, n
         const placeholders = statusArr.map((_s, i) => `:status${i}`).join(', ');
         whereClause += ` AND h.status IN (${placeholders})`;
         statusArr.forEach((s, i) => { replacements[`status${i}`] = s; });
+      }
+    }
+    if (reconciliationStatus) {
+      const recArr = String(reconciliationStatus).split(',').filter(Boolean);
+      if (recArr.length === 1) {
+        whereClause += ` AND d.reconciliation_status = :recStatus`;
+        replacements.recStatus = recArr[0];
+      } else if (recArr.length > 1) {
+        const placeholders = recArr.map((_s, i) => `:recStatus${i}`).join(', ');
+        whereClause += ` AND d.reconciliation_status IN (${placeholders})`;
+        recArr.forEach((s, i) => { replacements[`recStatus${i}`] = s; });
       }
     }
     if (search) {
@@ -262,8 +273,9 @@ export const getShippingOrderDetailsPage = async (req: Request, res: Response, n
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
         SELECT b.id as batch_id, b.batch_number, b.quantity as batch_quantity,
-               d.line_number, d.request_number, d.sales_order_number,
+               d.id as detail_id, d.line_number, d.request_number, d.sales_order_number,
                d.item_number, d.item_name, d.specifications, d.basic_unit, d.quantity as line_quantity,
+               d.invoice_status, d.reconciliation_status,
                h.shipping_order_number, h.customer_name, h.warehouse_name, h.status as order_status,
                h.shipping_date, h.carrier, h.tracking_number, h.creation_man, h.creation_date as order_creation_date,
                ROW_NUMBER() OVER (ORDER BY h.creation_date DESC, b.shipping_order_number, d.line_number, b.id) AS _row_num
@@ -814,5 +826,167 @@ export const getPrintData = async (req: Request, res: Response, next: NextFuncti
     }));
 
     res.json(success({ header: headerRows[0], details: detailsWithBatches }));
+  } catch (err) { next(err); }
+};
+
+// ==================== 销售对账：对账明细列表（发货单明细行级别） ====================
+export const getReconciliationPage = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { page = 1, limit = 20, search = '', reconciliationStatus = '' } = req.query;
+    const pageNum = Number(page);
+    const pageSize = Number(limit);
+    const offset = (pageNum - 1) * pageSize;
+    const offsetEnd = offset + pageSize;
+
+    let whereClause = `WHERE 1=1`;
+    const replacements: any = { offset, offsetEnd };
+
+    if (reconciliationStatus) {
+      const arr = String(reconciliationStatus).split(',').filter(Boolean);
+      if (arr.length === 1) {
+        whereClause += ` AND d.reconciliation_status = :recStatus`;
+        replacements.recStatus = arr[0];
+      } else if (arr.length > 1) {
+        const placeholders = arr.map((_s, i) => `:recStatus${i}`).join(', ');
+        whereClause += ` AND d.reconciliation_status IN (${placeholders})`;
+        arr.forEach((s, i) => { replacements[`recStatus${i}`] = s; });
+      }
+    }
+    if (search) {
+      whereClause += ` AND (h.shipping_order_number LIKE :search OR d.item_number LIKE :search OR d.item_name LIKE :search OR h.customer_name LIKE :search OR d.sales_order_number LIKE :search OR h.carrier LIKE :search OR h.tracking_number LIKE :search)`;
+      replacements.search = `%${search}%`;
+    }
+
+    // 数据范围过滤
+    const scope = (req as any).dataScope;
+    if (scope?.head_of_sales_id) {
+      whereClause += ` AND h.customer_number IN (SELECT customer_number FROM customer WHERE head_of_sales_id = :dataScopeUserId)`;
+      replacements.dataScopeUserId = scope.head_of_sales_id;
+    }
+
+    const [countResult]: any = await sequelize.query(
+      `SELECT COUNT(*) as total
+       FROM shipping_order_detail d
+       INNER JOIN shipping_order h ON h.shipping_order_number = d.shipping_order_number
+       ${whereClause}`, { replacements }
+    );
+
+    const [items]: any = await sequelize.query(`
+      SELECT * FROM (
+        SELECT d.id as detail_id, d.shipping_order_number, d.line_number,
+               d.request_number, d.sales_order_number,
+               d.item_number, d.item_name, d.specifications, d.basic_unit,
+               d.product_drawing_number, d.quantity as line_quantity,
+               d.invoice_status, d.reconciliation_status,
+               h.customer_name, h.customer_number, h.warehouse_name, h.status as order_status,
+               h.shipping_date, h.carrier, h.tracking_number,
+               h.creation_man, h.creation_date as order_creation_date,
+               ROW_NUMBER() OVER (ORDER BY h.creation_date DESC, d.shipping_order_number, d.line_number) AS _row_num
+        FROM shipping_order_detail d
+        INNER JOIN shipping_order h ON h.shipping_order_number = d.shipping_order_number
+        ${whereClause}
+      ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
+    `, { replacements });
+
+    res.json(success({
+      items,
+      total: countResult[0]?.total || 0,
+      page: pageNum,
+      limit: pageSize
+    }));
+  } catch (err) { next(err); }
+};
+
+// ==================== 销售对账：批量更新对账状态 ====================
+export const updateReconciliationStatus = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { detailIds, reconciliationStatus } = req.body;
+
+    if (!Array.isArray(detailIds) || !detailIds.length) {
+      res.status(400).json({ success: false, message: '请选择要更新的记录' }); return;
+    }
+    if (!['已对账', '未对账'].includes(reconciliationStatus)) {
+      res.status(400).json({ success: false, message: '无效的对账状态' }); return;
+    }
+
+    const replacements: any = { reconciliationStatus };
+    detailIds.forEach((id: number, i: number) => { replacements[`id${i}`] = id; });
+    const placeholders = detailIds.map((_: any, i: number) => `:id${i}`).join(', ');
+
+    // 检查是否存在"已签收+已对账+已开票"的已完成记录，这些记录不能修改对账状态
+    const checkPlaceholders = detailIds.map((_: any, i: number) => `:pid${i}`).join(', ');
+    const checkReplacements: any = {};
+    detailIds.forEach((id: number, i: number) => { checkReplacements[`pid${i}`] = id; });
+    const [lockedRows]: any = await sequelize.query(`
+      SELECT d.id, d.shipping_order_number, d.item_number
+      FROM shipping_order_detail d
+      INNER JOIN shipping_order h ON h.shipping_order_number = d.shipping_order_number
+      WHERE d.id IN (${checkPlaceholders})
+        AND h.status = N'已签收'
+        AND d.reconciliation_status = N'已对账'
+        AND d.invoice_status = N'已开票'
+    `, { replacements: checkReplacements });
+
+    if (lockedRows.length > 0) {
+      const lockedInfo = lockedRows.map((r: any) => `${r.shipping_order_number}/${r.item_number}`).join('、');
+      res.status(400).json({
+        success: false,
+        message: `以下记录已签收、已对账且已开票，不能修改对账状态：${lockedInfo}`
+      }); return;
+    }
+
+    await sequelize.query(
+      `UPDATE shipping_order_detail SET reconciliation_status = :reconciliationStatus WHERE id IN (${placeholders})`,
+      { replacements }
+    );
+
+    res.json(success(null, `已更新 ${detailIds.length} 条记录为"${reconciliationStatus}"`));
+  } catch (err) { next(err); }
+};
+
+// ==================== 销售对账：获取打印数据（选中明细行 + 批次明细） ====================
+export const getReconciliationPrintData = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { detailIds } = req.body;
+
+    if (!Array.isArray(detailIds) || !detailIds.length) {
+      res.status(400).json({ success: false, message: '请选择要打印的记录' }); return;
+    }
+
+    const replacements: any = {};
+    detailIds.forEach((id: number, i: number) => { replacements[`id${i}`] = id; });
+    const placeholders = detailIds.map((_: any, i: number) => `:id${i}`).join(', ');
+
+    // 查询明细行
+    const [details]: any = await sequelize.query(`
+      SELECT d.id as detail_id, d.shipping_order_number, d.line_number,
+             d.request_number, d.sales_order_number,
+             d.item_number, d.item_name, d.specifications, d.basic_unit,
+             d.product_drawing_number, d.quantity as line_quantity,
+             d.invoice_status, d.reconciliation_status,
+             h.customer_name, h.customer_number, h.warehouse_name, h.status as order_status,
+             h.shipping_date, h.carrier, h.tracking_number,
+             h.creation_man, h.creation_date as order_creation_date,
+             h.shipping_address, h.contact_person, h.contact_phone
+      FROM shipping_order_detail d
+      INNER JOIN shipping_order h ON h.shipping_order_number = d.shipping_order_number
+      WHERE d.id IN (${placeholders})
+      ORDER BY h.shipping_order_number, d.line_number
+    `, { replacements });
+
+    // 查询关联的批次明细
+    const [batches]: any = await sequelize.query(`
+      SELECT b.* FROM shipping_order_batch b
+      WHERE b.detail_id IN (${placeholders})
+      ORDER BY b.detail_id, b.id
+    `, { replacements });
+
+    // 将批次挂到对应明细行上
+    const items = details.map((d: any) => ({
+      ...d,
+      batches: batches.filter((b: any) => b.detail_id === d.detail_id)
+    }));
+
+    res.json(success({ items }));
   } catch (err) { next(err); }
 };

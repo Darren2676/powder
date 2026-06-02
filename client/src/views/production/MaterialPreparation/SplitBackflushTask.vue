@@ -2,65 +2,63 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { ReloadOutlined, SearchOutlined, CheckOutlined, CloseOutlined, SettingOutlined } from '@ant-design/icons-vue'
-import { getBackflushTasks, updateAutoWeigh } from '@/api/production/backflushTask'
+import { getDetailsByOrder, updateDetailAutoWeigh } from '@/api/production/materialPreparation'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 
-interface BackflushTaskRow {
+interface PrepDetailRow {
   id: number
-  backflush_task_number: string
-  production_order_number: string
-  item_number: string
-  item_name: string
-  specifications: string
-  basic_unit: string
-  planned_quantity: number
-  bom_number: string
-  step_number: number | null
-  standard_process_name: string
-  work_center_number: string
-  work_center_name: string
+  preparation_number: string
+  line_number: number
   material_number: string
   material_name: string
   material_type: string
   material_unit: string
   bom_actual_quantity: number
   required_quantity: number
-  deducted_quantity: number
-  deduction_status: string
-  warehouse_number: string
-  warehouse_name: string
+  issued_quantity: number
+  step_number: number | null
+  standard_process_name: string
+  work_center_number: string
+  work_center_name: string
   auto_weigh: string
   remark: string
-  creation_date: string
-  creation_man: string
+  production_order_number: string
+  item_number: string
+  item_name: string
+  preparation_status: string
+  approval_status: string
 }
 
 const loading = ref(false)
-const dataSource = ref<BackflushTaskRow[]>([])
+const dataSource = ref<PrepDetailRow[]>([])
 const searchText = ref('')
-const statusFilter = ref<string | undefined>(undefined)
 const autoWeighFilter = ref<string | undefined>(undefined)
 const selectedRowKeys = ref<number[]>([])
 
 const pagination = reactive({
-  current: 1, pageSize: 20, total: 0,
+  current: 1, pageSize: 100, total: 0,
   showSizeChanger: true,
   showTotal: (total: number) => `共 ${total} 条`
 })
 
 const fetchData = async () => {
+  const orderNo = searchText.value.trim()
+  if (!orderNo) {
+    dataSource.value = []
+    pagination.total = 0
+    return
+  }
   loading.value = true
   try {
-    const res: any = await getBackflushTasks({
+    const res: any = await getDetailsByOrder({
+      production_order_number: orderNo,
       page: pagination.current,
-      pageSize: pagination.pageSize,
-      keyword: searchText.value || undefined,
-      deduction_status: statusFilter.value || undefined,
+      limit: pagination.pageSize,
       auto_weigh: autoWeighFilter.value || undefined,
     })
     if (res.success && res.data) {
-      dataSource.value = res.data.rows || []
+      dataSource.value = res.data.items || []
       pagination.total = res.data.total || 0
     }
   } catch { message.error('查询失败') }
@@ -76,10 +74,10 @@ const handleTableChange = (pag: any) => {
 const handleSearch = () => { pagination.current = 1; fetchData() }
 const handleReset = () => {
   searchText.value = ''
-  statusFilter.value = undefined
   autoWeighFilter.value = undefined
   pagination.current = 1
-  fetchData()
+  dataSource.value = []
+  pagination.total = 0
 }
 
 // ==================== 行选择 ====================
@@ -94,37 +92,43 @@ const handleSetAutoWeigh = async (value: 'Y' | 'N') => {
     message.warning('请先选择记录')
     return
   }
+  // 按备料单编号分组，每组分开调用更新接口
+  const selectedRows = dataSource.value.filter(r => selectedRowKeys.value.includes(r.id))
+  const grouped: Record<string, number[]> = {}
+  for (const row of selectedRows) {
+    if (!grouped[row.preparation_number]) grouped[row.preparation_number] = []
+    grouped[row.preparation_number].push(row.id)
+  }
+  let totalUpdated = 0
   try {
-    const res: any = await updateAutoWeigh(selectedRowKeys.value, value)
-    if (res.success) {
-      message.success(`已更新 ${res.data?.updatedCount || selectedRowKeys.value.length} 条记录`)
-      selectedRowKeys.value = []
-      fetchData()
-    } else {
-      message.error(res.message || '更新失败')
+    for (const [prepNumber, ids] of Object.entries(grouped)) {
+      const res: any = await updateDetailAutoWeigh(prepNumber, ids, value)
+      if (res.success) totalUpdated += res.data?.updatedCount || ids.length
+      else { message.error(res.message || '更新失败'); return }
     }
+    message.success(`已更新 ${totalUpdated} 条记录`)
+    selectedRowKeys.value = []
+    fetchData()
   } catch { message.error('更新失败') }
 }
 
 // ==================== 列个性化 ====================
 const defaultDataColumns: any[] = [
-  { title: '任务编号', dataIndex: 'backflush_task_number', key: 'backflush_task_number', width: 170, resizable: true },
-  { title: '生产单号', dataIndex: 'production_order_number', key: 'production_order_number', width: 160, resizable: true },
-  { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 120, resizable: true },
+  { title: '生产单号', dataIndex: 'production_order_number', key: 'production_order_number', width: 150, resizable: true },
+  { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 110, resizable: true },
   { title: '产品名称', dataIndex: 'item_name', key: 'item_name', width: 120, resizable: true },
-  { title: '工序号', dataIndex: 'step_number', key: 'step_number', width: 80, resizable: true },
+  { title: '备料单号', dataIndex: 'preparation_number', key: 'preparation_number', width: 170, resizable: true },
+  { title: '工序号', dataIndex: 'step_number', key: 'step_number', width: 70, resizable: true },
   { title: '工序名称', dataIndex: 'standard_process_name', key: 'standard_process_name', width: 110, resizable: true },
   { title: '物料编号', dataIndex: 'material_number', key: 'material_number', width: 120, resizable: true },
   { title: '物料名称', dataIndex: 'material_name', key: 'material_name', width: 120, resizable: true },
   { title: '物料类型', dataIndex: 'material_type', key: 'material_type', width: 80, resizable: true },
+  { title: '单位', dataIndex: 'material_unit', key: 'material_unit', width: 60, resizable: true },
   { title: 'BOM用量', dataIndex: 'bom_actual_quantity', key: 'bom_actual_quantity', width: 90, resizable: true },
   { title: '需求量', dataIndex: 'required_quantity', key: 'required_quantity', width: 90, resizable: true },
-  { title: '已扣减', dataIndex: 'deducted_quantity', key: 'deducted_quantity', width: 90, resizable: true },
-  { title: '扣减状态', dataIndex: 'deduction_status', key: 'deduction_status', width: 100, resizable: true },
-  { title: '自动称量', dataIndex: 'auto_weigh', key: 'auto_weigh', width: 100, resizable: true },
-  { title: '仓库', dataIndex: 'warehouse_name', key: 'warehouse_name', width: 100, resizable: true },
+  { title: '已发料', dataIndex: 'issued_quantity', key: 'issued_quantity', width: 80, resizable: true },
+  { title: '自动称量', dataIndex: 'auto_weigh', key: 'auto_weigh', width: 90, resizable: true },
   { title: '备注', dataIndex: 'remark', key: 'remark', width: 120, resizable: true, ellipsis: true },
-  { title: '创建时间', dataIndex: 'creation_date', key: 'creation_date', width: 140, resizable: true },
 ]
 
 const {
@@ -137,7 +141,6 @@ const {
 
 onMounted(() => {
   loadColumnPreference()
-  fetchData()
 })
 </script>
 
@@ -146,12 +149,7 @@ onMounted(() => {
     <a-card :bordered="false" size="small">
       <!-- 搜索栏 -->
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;">
-        <a-input-search v-model:value="searchText" placeholder="生产单号/物料编号/名称" style="width:240px" @search="handleSearch" />
-        <a-select v-model:value="statusFilter" placeholder="扣减状态" allowClear style="width:120px" @change="handleSearch">
-          <a-select-option value="待扣减">待扣减</a-select-option>
-          <a-select-option value="部分扣减">部分扣减</a-select-option>
-          <a-select-option value="已完成">已完成</a-select-option>
-        </a-select>
+        <a-input-search v-model:value="searchText" placeholder="请输入生产单号" style="width:240px" @search="handleSearch" />
         <a-select v-model:value="autoWeighFilter" placeholder="自动称量" allowClear style="width:120px" @change="handleSearch">
           <a-select-option value="Y">是</a-select-option>
           <a-select-option value="N">否</a-select-option>
@@ -181,7 +179,7 @@ onMounted(() => {
         :columns="columns"
         :data-source="dataSource"
         :loading="loading"
-        :row-key="(record: BackflushTaskRow) => record.id"
+        :row-key="(record: PrepDetailRow) => record.id"
         :row-selection="rowSelection"
         :pagination="pagination"
         @change="handleTableChange"
@@ -192,10 +190,7 @@ onMounted(() => {
       >
         <template #bodyCell="{ column, text, record, index }">
           <template v-if="column.key === 'rowIndex'">{{ (pagination.current - 1) * pagination.pageSize + index + 1 }}</template>
-          <template v-else-if="column.key === 'deduction_status'">
-            <a-tag :color="text === '已完成' ? 'success' : text === '部分扣减' ? 'processing' : 'warning'">{{ text }}</a-tag>
-          </template>
-          <template v-else-if="column.key === 'auto_weigh'">
+          <template v-if="column.key === 'auto_weigh'">
             <a-tag :color="text === 'Y' ? 'blue' : 'default'">{{ text === 'Y' ? '是' : '否' }}</a-tag>
           </template>
         </template>

@@ -10,7 +10,10 @@ import {
   updateLogistics,
   updateStatus,
   cancelShippingOrder,
-  getPrintData
+  getPrintData,
+  getReconciliationPage,
+  updateReconciliationStatus,
+  getReconciliationPrintData
 } from './shippingOrder.controller';
 import { validateCreateShippingOrder, validateUpdateShippingOrder } from '../../../validators/sales.validator';
 
@@ -20,6 +23,9 @@ router.post('/', authenticate, validateCreateShippingOrder, createShippingOrder)
 router.get('/details-page', authenticate, dataScope, getShippingOrderDetailsPage);
 router.post('/details-page/export-selected', authenticate, dataScope, exportShippingOrderDetailsSelected);
 router.get('/', authenticate, dataScope, getShippingOrders);
+router.get('/reconciliation/page', authenticate, dataScope, getReconciliationPage);
+router.put('/reconciliation/status', authenticate, updateReconciliationStatus);
+router.post('/reconciliation/print', authenticate, getReconciliationPrintData);
 router.get('/:shipping_order_number/print', authenticate, getPrintData);
 router.get('/:shipping_order_number', authenticate, getShippingOrderDetail);
 router.put('/:shipping_order_number/logistics', authenticate, updateLogistics);

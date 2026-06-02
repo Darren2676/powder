@@ -13,6 +13,7 @@ const loading = ref(false)
 const dataSource = ref<any[]>([])
 const searchText = ref('')
 const filterStatus = ref<string[]>([])
+const filterRecStatus = ref('')
 const selectedRowKeys = ref<number[]>([])
 const exportLoading = ref(false)
 
@@ -51,7 +52,8 @@ const defaultDataColumns: any[] = [
   { title: '发货日期', dataIndex: 'shipping_date', key: 'shipping_date', width: 110, resizable: true },
   { title: '创建人', dataIndex: 'creation_man', key: 'creation_man', width: 100, resizable: true },
   { title: '创建时间', dataIndex: 'order_creation_date', key: 'order_creation_date', width: 170, resizable: true },
-  { title: '开票状态', dataIndex: 'invoice_status', key: 'invoice_status', width: 100, resizable: true }
+  { title: '开票状态', dataIndex: 'invoice_status', key: 'invoice_status', width: 100, resizable: true },
+  { title: '对账状态', dataIndex: 'reconciliation_status', key: 'reconciliation_status', width: 100, resizable: true }
 ]
 
 const {
@@ -79,7 +81,8 @@ const fetchData = async () => {
       page: pagination.current,
       limit: pagination.pageSize,
       search: searchText.value,
-      status: filterStatus.value.length ? filterStatus.value.join(',') : ''
+      status: filterStatus.value.length ? filterStatus.value.join(',') : '',
+      reconciliationStatus: filterRecStatus.value
     })
     if (res?.success) {
       dataSource.value = res.data.items || []
@@ -190,6 +193,16 @@ const relatedInvoiceColumns = [
         <a-select-option value="已签收">已签收</a-select-option>
         <a-select-option value="已取消">已取消</a-select-option>
       </a-select>
+      <a-select
+        v-model:value="filterRecStatus"
+        placeholder="对账状态"
+        style="min-width: 120px"
+        allow-clear
+        @change="handleSearch"
+      >
+        <a-select-option value="已对账">已对账</a-select-option>
+        <a-select-option value="未对账">未对账</a-select-option>
+      </a-select>
       <a-button @click="fetchData"><ReloadOutlined /> 刷新</a-button>
       <a-button type="primary" :loading="exportLoading" :disabled="!selectedRowKeys.length" @click="handleExportSelected"><DownloadOutlined /> 导出选中</a-button>
       <a-tooltip title="列设置"><a-button @click="openColumnSetting"><SettingOutlined /></a-button></a-tooltip>
@@ -224,6 +237,11 @@ const relatedInvoiceColumns = [
         <template v-else-if="column.key === 'invoice_status'">
           <a-tag :color="invoiceStatusColors[record.invoice_status] || 'default'" style="cursor: pointer" @click="record.detail_id && handleViewRelatedInvoices(record.detail_id)">
             {{ record.invoice_status || '未开票' }}
+          </a-tag>
+        </template>
+        <template v-else-if="column.key === 'reconciliation_status'">
+          <a-tag :color="record.reconciliation_status === '已对账' ? 'green' : 'orange'">
+            {{ record.reconciliation_status || '未对账' }}
           </a-tag>
         </template>
       </template>

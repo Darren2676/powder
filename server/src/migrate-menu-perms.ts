@@ -97,6 +97,7 @@ async function migrate() {
       { name: '发货单明细', code: 'shipping-order-details', parent_code: 'detail-management', menu_key: 'shipping-order-details', route: '/shipping-order-details', sort: 2 },
       { name: '退货单明细', code: 'return-order-details', parent_code: 'detail-management', menu_key: 'return-order-details', route: '/return-order-details', sort: 3 },
       { name: '销售预测明细', code: 'forecast-details', parent_code: 'detail-management', menu_key: 'forecast-details', route: '/forecast-details', sort: 4 },
+      { name: '销售对账', code: 'sales-reconciliation', parent_code: 'sales', menu_key: 'sales-reconciliation', route: '/sales-reconciliation', sort: 9 },
       { name: '样品申请管理', code: 'sample-requests', parent_code: 'sample-request-menu', menu_key: 'sample-requests', route: '/sample-requests', sort: 1 },
       // 报表统计 (report-statistics)
       { name: '发货预警', code: 'shipping-warning', parent_code: 'report-statistics', menu_key: 'shipping-warning', route: '/shipping-warning', sort: 2 },

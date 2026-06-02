@@ -36,3 +36,17 @@ export function getShippingOrderPrintData(shipping_order_number: string) {
 export function cancelShippingOrder(shipping_order_number: string) {
   return request.post(`/shipping-orders/${shipping_order_number}/cancel`)
 }
+
+// ==================== 销售对账 ====================
+
+export function getReconciliationPage(params?: { page?: number; limit?: number; search?: string; reconciliationStatus?: string }) {
+  return request.get('/shipping-orders/reconciliation/page', { params })
+}
+
+export function updateReconciliationStatus(data: { detailIds: number[]; reconciliationStatus: string }) {
+  return request.put('/shipping-orders/reconciliation/status', data)
+}
+
+export function getReconciliationPrintData(detailIds: number[]) {
+  return request.post('/shipping-orders/reconciliation/print', { detailIds })
+}
