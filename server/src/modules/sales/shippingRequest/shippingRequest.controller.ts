@@ -84,6 +84,7 @@ export const getPendingShipments = async (req: Request, res: Response, next: Nex
                h.sales_order_number as order_number, h.head_of_sales, h.linkman, h.contacts,
                h.order_date, h.order_status, h.[condition], h.remark as header_remark,
                h.creation_date, h.creation_man, h.customer_po_number, h.approval_status,
+               f.factory_name, f.factory_short,
                ISNULL((SELECT SUM(srd.ship_quantity) FROM shipping_request_detail srd
                  INNER JOIN shipping_request sr ON sr.request_number = srd.request_number
                  WHERE srd.sales_detail_id = d.id AND sr.status != N'已取消'), 0) as applied_quantity,
@@ -92,6 +93,7 @@ export const getPendingShipments = async (req: Request, res: Response, next: Nex
                ROW_NUMBER() OVER (ORDER BY h.sales_order_number, d.line_number) AS _row_num
         FROM sales_order_detail d
         INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number
+        LEFT JOIN factory f ON h.factory_id = f.id
         LEFT JOIN customer_material_mapping cm ON cm.customer_number = h.customer_number AND cm.item_number = d.item_number AND cm.approval_status = N'已审核'
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
@@ -247,12 +249,14 @@ export const getPendingRequestDetails = async (req: Request, res: Response, next
                d.order_quantity, d.shipped_quantity, d.ship_quantity, d.delivery_date, d.remark,
                h.customer_number, h.customer_name, h.status as request_status,
                h.request_date, h.creation_man, h.remark as request_remark,
+               f.factory_name, f.factory_short,
                sod.promised_delivery_date,
                COALESCE(NULLIF(d.customer_item_number, ''), sod.customer_item_number) as customer_item_number,
                COALESCE(NULLIF(d.customer_item_description, ''), sod.customer_item_description) as customer_item_description,
                ROW_NUMBER() OVER (ORDER BY h.creation_date DESC, d.request_number, d.line_number) AS _row_num
         FROM shipping_request_detail d
         INNER JOIN shipping_request h ON h.request_number = d.request_number
+        LEFT JOIN factory f ON h.factory_id = f.id
         LEFT JOIN sales_order_detail sod ON sod.id = d.sales_detail_id
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
@@ -277,6 +281,7 @@ export const exportPendingRequestDetailsSelected = async (req: Request, res: Res
     if (ids.length > 1000) {
       res.status(400).json({ success: false, message: '单次导出不能超过1000条' }); return;
     }
+    const _factoryId = getFactoryId(req);
     const replacements: any = {};
     ids.forEach((id: any, i: number) => { replacements[`id${i}`] = id; });
     const placeholders = ids.map((_: any, i: number) => `:id${i}`).join(', ');
@@ -291,8 +296,9 @@ export const exportPendingRequestDetailsSelected = async (req: Request, res: Res
       INNER JOIN shipping_request h ON h.request_number = d.request_number
       LEFT JOIN sales_order_detail sod ON sod.id = d.sales_detail_id
       WHERE d.id IN (${placeholders})
+      ${_factoryId !== null ? ' AND h.factory_id = :_factoryId' : ''}
       ORDER BY d.request_number, d.line_number
-    `, { replacements });
+    `, { replacements: _factoryId !== null ? { ...replacements, _factoryId } : replacements });
 
     const fields = [
       'request_number', 'request_status', 'customer_name', 'line_number', 'sales_order_number',
@@ -350,8 +356,11 @@ export const getShippingRequests = async (req: Request, res: Response, next: Nex
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY creation_date DESC) AS _row_num
-        FROM shipping_request ${whereClause}
+        SELECT sr.*, f.factory_name, f.factory_short,
+               ROW_NUMBER() OVER (ORDER BY sr.creation_date DESC) AS _row_num
+        FROM shipping_request sr
+        LEFT JOIN factory f ON sr.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
 
@@ -368,8 +377,11 @@ export const getShippingRequests = async (req: Request, res: Response, next: Nex
 export const getShippingRequestDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM shipping_request WHERE request_number = :id`, { replacements: { id } }
+      `SELECT * FROM shipping_request WHERE request_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '发货申请不存在' }); return; }
 
@@ -468,9 +480,12 @@ export const updateShippingRequestStatus = async (req: Request, res: Response, n
     if (!validStatuses.includes(status)) {
       res.status(400).json({ success: false, message: '无效的状态值，撤消请使用撤消接口' }); return;
     }
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     await sequelize.query(
-      `UPDATE shipping_request SET status = :status WHERE request_number = :id`,
-      { replacements: { status, id } }
+      `UPDATE shipping_request SET status = :status WHERE request_number = :id${factoryCond}`,
+      { replacements: { status, id, ...factoryReps } }
     );
     res.json(success(null, '状态更新成功'));
   } catch (err) { next(err); }

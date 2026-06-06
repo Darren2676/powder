@@ -84,6 +84,7 @@ export const getSalesOrders = async (req: Request, res: Response, next: NextFunc
       SELECT * FROM (
         SELECT sales_order_number, customer_number, customer_name, head_of_sales, linkman, contacts,
                order_date, delivery_date, order_status, [condition], approval_status, remark, creation_date, creation_man, customer_po_number,
+               f.factory_name, f.factory_short,
                CASE WHEN EXISTS (
                  SELECT 1 FROM sales_order_detail d
                  WHERE d.sales_order_number = sales_order.sales_order_number
@@ -91,7 +92,9 @@ export const getSalesOrders = async (req: Request, res: Response, next: NextFunc
                    AND CONVERT(DATE, d.delivery_date) <> CONVERT(DATE, sales_order.delivery_date)
                ) THEN 1 ELSE 0 END AS has_multi_delivery,
                ROW_NUMBER() OVER (ORDER BY sales_order_number DESC) AS _row_num
-        FROM sales_order ${whereClause}
+        FROM sales_order
+        LEFT JOIN factory f ON sales_order.factory_id = f.id
+        ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
@@ -888,11 +891,13 @@ export const getSalesOrderDetailsPage = async (req: Request, res: Response, next
                h.order_date, h.delivery_date AS order_delivery_date,
                h.order_status, h.approval_status, h.customer_po_number,
                h.[condition], h.creation_date, h.creation_man,
+               f.factory_name, f.factory_short,
                COALESCE(NULLIF(d.customer_item_number, ''), cm.customer_item_number) as customer_item_number,
                COALESCE(NULLIF(d.customer_item_description, ''), cm.customer_item_description) as customer_item_description,
                ROW_NUMBER() OVER (ORDER BY h.sales_order_number, d.line_number) AS _row_num
         FROM sales_order_detail d
         INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number
+        LEFT JOIN factory f ON h.factory_id = f.id
         LEFT JOIN customer_material_mapping cm ON cm.customer_number = h.customer_number AND cm.item_number = d.item_number AND cm.approval_status = N'已审核'
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
@@ -917,6 +922,7 @@ export const exportSalesOrderDetailsSelected = async (req: Request, res: Respons
     if (ids.length > 1000) {
       res.status(400).json({ success: false, message: '单次导出不能超过1000条' }); return;
     }
+    const _factoryId = getFactoryId(req);
     const replacements: any = {};
     ids.forEach((id: any, i: number) => { replacements[`id${i}`] = id; });
     const placeholders = ids.map((_: any, i: number) => `:id${i}`).join(', ');
@@ -931,8 +937,9 @@ export const exportSalesOrderDetailsSelected = async (req: Request, res: Respons
       FROM sales_order_detail d
       INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number
       WHERE d.id IN (${placeholders})
+      ${_factoryId !== null ? ' AND h.factory_id = :_factoryId' : ''}
       ORDER BY d.sales_order_number, d.line_number
-    `, { replacements });
+    `, { replacements: _factoryId !== null ? { ...replacements, _factoryId } : replacements });
 
     const fields = [
       'sales_order_number', 'line_number', 'customer_name', 'item_number', 'item_name',

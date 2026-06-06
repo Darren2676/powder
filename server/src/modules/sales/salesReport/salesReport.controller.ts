@@ -315,9 +315,11 @@ export const getShippingWarning = async (req: Request, res: Response, next: Next
           sod.shipping_status, sod.production_status, sod.status,
           sod.promised_delivery_date,
           DATEDIFF(day, CAST(GETDATE() AS DATE), CAST(sod.promised_delivery_date AS DATE)) as remaining_days,
+          f.factory_name, f.factory_short,
           ROW_NUMBER() OVER (ORDER BY sod.promised_delivery_date ASC, so.sales_order_number, sod.line_number) AS _row_num
         FROM sales_order_detail sod
         INNER JOIN sales_order so ON so.sales_order_number = sod.sales_order_number
+        LEFT JOIN factory f ON so.factory_id = f.id
         WHERE ${baseWhere}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
@@ -390,9 +392,11 @@ export const getOrderSummary = async (req: Request, res: Response, next: NextFun
             WHEN ISNULL(shipped_sub.shipped_qty, 0) = 0 THEN 0
             ELSE CAST(ISNULL(returned_sub.returned_qty, 0) * 100.0 / shipped_sub.shipped_qty AS DECIMAL(10,2))
           END as return_rate,
+          f.factory_name, f.factory_short,
           ROW_NUMBER() OVER (ORDER BY so.order_date DESC, so.sales_order_number, sod.item_number) AS _row_num
         FROM sales_order so
         INNER JOIN sales_order_detail sod ON sod.sales_order_number = so.sales_order_number
+        LEFT JOIN factory f ON so.factory_id = f.id
         OUTER APPLY (
           SELECT SUM(sd.quantity) as shipped_qty
           FROM shipping_order_detail sd

@@ -59,11 +59,14 @@ export const getSalesPriceLists = async (req: Request, res: Response, next: Next
     const offset = (page - 1) * limit;
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT price_list_number, price_list_name, customer_number, customer_name, customer_category,
-               effective_date, expiration_date, price_type, currency, approval_status,
-               remark, creation_date, creation_man,
-               ROW_NUMBER() OVER (ORDER BY creation_date DESC, price_list_number DESC) AS _row_num
-        FROM sales_price_list ${whereClause}
+        SELECT s.price_list_number, s.price_list_name, s.customer_number, s.customer_name, s.customer_category,
+               s.effective_date, s.expiration_date, s.price_type, s.currency, s.approval_status,
+               s.remark, s.creation_date, s.creation_man,
+               f.factory_name, f.factory_short,
+               ROW_NUMBER() OVER (ORDER BY s.creation_date DESC, s.price_list_number DESC) AS _row_num
+        FROM sales_price_list s
+        LEFT JOIN factory f ON s.factory_id = f.id
+        ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
@@ -81,8 +84,11 @@ export const getSalesPriceLists = async (req: Request, res: Response, next: Next
 export const getSalesPriceListDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM sales_price_list WHERE price_list_number = :id`, { replacements: { id } }
+      `SELECT * FROM sales_price_list WHERE price_list_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '销售价目表不存在' }); return; }
     const [details]: any = await sequelize.query(

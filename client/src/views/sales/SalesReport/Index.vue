@@ -60,6 +60,7 @@ const summaryPagination = reactive({
 
 const defaultSummaryColumns: any[] = [
   { title: '销售订单号', dataIndex: 'sales_order_number', key: 'sales_order_number', width: 160, resizable: true },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 140, resizable: true },
   { title: '订单日期', dataIndex: 'order_date', key: 'order_date', width: 110, resizable: true },
   { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 120, resizable: true },

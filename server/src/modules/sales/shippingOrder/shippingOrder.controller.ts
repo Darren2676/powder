@@ -289,10 +289,12 @@ export const getShippingOrderDetailsPage = async (req: Request, res: Response, n
                d.invoice_status, d.reconciliation_status,
                h.shipping_order_number, h.customer_name, h.warehouse_name, h.status as order_status,
                h.shipping_date, h.carrier, h.tracking_number, h.creation_man, h.creation_date as order_creation_date,
+               f.factory_name, f.factory_short,
                ROW_NUMBER() OVER (ORDER BY h.creation_date DESC, b.shipping_order_number, d.line_number, b.id) AS _row_num
         FROM shipping_order_batch b
         INNER JOIN shipping_order_detail d ON d.id = b.detail_id AND d.shipping_order_number = b.shipping_order_number
         INNER JOIN shipping_order h ON h.shipping_order_number = b.shipping_order_number
+        LEFT JOIN factory f ON h.factory_id = f.id
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
@@ -316,6 +318,7 @@ export const exportShippingOrderDetailsSelected = async (req: Request, res: Resp
     if (ids.length > 1000) {
       res.status(400).json({ success: false, message: '单次导出不能超过1000条' }); return;
     }
+    const _factoryId = getFactoryId(req);
     const replacements: any = {};
     ids.forEach((id: any, i: number) => { replacements[`id${i}`] = id; });
     const placeholders = ids.map((_: any, i: number) => `:id${i}`).join(', ');
@@ -330,8 +333,9 @@ export const exportShippingOrderDetailsSelected = async (req: Request, res: Resp
       INNER JOIN shipping_order_detail d ON d.id = b.detail_id AND d.shipping_order_number = b.shipping_order_number
       INNER JOIN shipping_order h ON h.shipping_order_number = b.shipping_order_number
       WHERE b.id IN (${placeholders})
+      ${_factoryId !== null ? ' AND h.factory_id = :_factoryId' : ''}
       ORDER BY h.shipping_order_number, d.line_number, b.id
-    `, { replacements });
+    `, { replacements: _factoryId !== null ? { ...replacements, _factoryId } : replacements });
 
     const fields = [
       'shipping_order_number', 'order_status', 'customer_name', 'line_number', 'batch_number',
@@ -393,8 +397,10 @@ export const getShippingOrders = async (req: Request, res: Response, next: NextF
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT so.*, ROW_NUMBER() OVER (ORDER BY so.creation_date DESC) as rn
+        SELECT so.*, f.factory_name, f.factory_short,
+               ROW_NUMBER() OVER (ORDER BY so.creation_date DESC) as rn
         FROM shipping_order so
+        LEFT JOIN factory f ON so.factory_id = f.id
         ${whereClause}
       ) t WHERE t.rn > :offset AND t.rn <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd } });
@@ -408,10 +414,14 @@ export const getShippingOrderDetail = async (req: Request, res: Response, next: 
   try {
     const { shipping_order_number } = req.params;
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     // 主表
     const [headerRows]: any = await sequelize.query(
-      `SELECT * FROM shipping_order WHERE shipping_order_number = :sn`,
-      { replacements: { sn: shipping_order_number } }
+      `SELECT * FROM shipping_order WHERE shipping_order_number = :sn${factoryCond}`,
+      { replacements: { sn: shipping_order_number, ...factoryReps } }
     );
     if (headerRows.length === 0) {
       res.status(404).json({ success: false, message: '发货单不存在' }); return;
@@ -829,10 +839,14 @@ export const getPrintData = async (req: Request, res: Response, next: NextFuncti
   try {
     const { shipping_order_number } = req.params;
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     // 主表
     const [headerRows]: any = await sequelize.query(
-      `SELECT * FROM shipping_order WHERE shipping_order_number = :sn`,
-      { replacements: { sn: shipping_order_number } }
+      `SELECT * FROM shipping_order WHERE shipping_order_number = :sn${factoryCond}`,
+      { replacements: { sn: shipping_order_number, ...factoryReps } }
     );
     if (headerRows.length === 0) {
       res.status(404).json({ success: false, message: '发货单不存在' }); return;
@@ -917,9 +931,11 @@ export const getReconciliationPage = async (req: Request, res: Response, next: N
                h.customer_name, h.customer_number, h.warehouse_name, h.status as order_status,
                h.shipping_date, h.carrier, h.tracking_number,
                h.creation_man, h.creation_date as order_creation_date,
+               f.factory_name, f.factory_short,
                ROW_NUMBER() OVER (ORDER BY h.creation_date DESC, d.shipping_order_number, d.line_number) AS _row_num
         FROM shipping_order_detail d
         INNER JOIN shipping_order h ON h.shipping_order_number = d.shipping_order_number
+        LEFT JOIN factory f ON h.factory_id = f.id
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
@@ -945,6 +961,8 @@ export const updateReconciliationStatus = async (req: Request, res: Response, ne
       res.status(400).json({ success: false, message: '无效的对账状态' }); return;
     }
 
+    const _factoryId = getFactoryId(req);
+
     const replacements: any = { reconciliationStatus };
     detailIds.forEach((id: number, i: number) => { replacements[`id${i}`] = id; });
     const placeholders = detailIds.map((_: any, i: number) => `:id${i}`).join(', ');
@@ -953,6 +971,8 @@ export const updateReconciliationStatus = async (req: Request, res: Response, ne
     const checkPlaceholders = detailIds.map((_: any, i: number) => `:pid${i}`).join(', ');
     const checkReplacements: any = {};
     detailIds.forEach((id: number, i: number) => { checkReplacements[`pid${i}`] = id; });
+    const factoryCond = _factoryId !== null ? ' AND h.factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [lockedRows]: any = await sequelize.query(`
       SELECT d.id, d.shipping_order_number, d.item_number
       FROM shipping_order_detail d
@@ -961,7 +981,8 @@ export const updateReconciliationStatus = async (req: Request, res: Response, ne
         AND h.status = N'已签收'
         AND d.reconciliation_status = N'已对账'
         AND d.invoice_status = N'已开票'
-    `, { replacements: checkReplacements });
+        ${factoryCond}
+    `, { replacements: { ...checkReplacements, ...factoryReps } });
 
     if (lockedRows.length > 0) {
       const lockedInfo = lockedRows.map((r: any) => `${r.shipping_order_number}/${r.item_number}`).join('、');
@@ -972,8 +993,12 @@ export const updateReconciliationStatus = async (req: Request, res: Response, ne
     }
 
     await sequelize.query(
-      `UPDATE shipping_order_detail SET reconciliation_status = :reconciliationStatus WHERE id IN (${placeholders})`,
-      { replacements }
+      `UPDATE d SET d.reconciliation_status = :reconciliationStatus
+       FROM shipping_order_detail d
+       INNER JOIN shipping_order h ON h.shipping_order_number = d.shipping_order_number
+       WHERE d.id IN (${placeholders})
+       ${factoryCond}`,
+      { replacements: { ...replacements, ...factoryReps } }
     );
 
     res.json(success(null, `已更新 ${detailIds.length} 条记录为"${reconciliationStatus}"`));
@@ -989,7 +1014,11 @@ export const getReconciliationPrintData = async (req: Request, res: Response, ne
       res.status(400).json({ success: false, message: '请选择要打印的记录' }); return;
     }
 
-    const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND h.factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
+    const replacements: any = { ...factoryReps };
     detailIds.forEach((id: number, i: number) => { replacements[`id${i}`] = id; });
     const placeholders = detailIds.map((_: any, i: number) => `:id${i}`).join(', ');
 
@@ -1007,6 +1036,7 @@ export const getReconciliationPrintData = async (req: Request, res: Response, ne
       FROM shipping_order_detail d
       INNER JOIN shipping_order h ON h.shipping_order_number = d.shipping_order_number
       WHERE d.id IN (${placeholders})
+      ${factoryCond}
       ORDER BY h.shipping_order_number, d.line_number
     `, { replacements });
 

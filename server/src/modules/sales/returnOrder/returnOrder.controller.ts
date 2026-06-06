@@ -72,8 +72,10 @@ export const getList = async (req: Request, res: Response, next: NextFunction) =
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT ro.*, ROW_NUMBER() OVER (ORDER BY ro.creation_date DESC) as rn
+        SELECT ro.*, f.factory_name, f.factory_short,
+               ROW_NUMBER() OVER (ORDER BY ro.creation_date DESC) as rn
         FROM return_order ro
+        LEFT JOIN factory f ON ro.factory_id = f.id
         ${whereClause}
       ) t WHERE t.rn > :offset AND t.rn <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd } });
@@ -87,9 +89,13 @@ export const getDetail = async (req: Request, res: Response, next: NextFunction)
   try {
     const { return_order_number } = req.params;
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [headerRows]: any = await sequelize.query(
-      `SELECT * FROM return_order WHERE return_order_number = :rn`,
-      { replacements: { rn: return_order_number } }
+      `SELECT * FROM return_order WHERE return_order_number = :rn${factoryCond}`,
+      { replacements: { rn: return_order_number, ...factoryReps } }
     );
     if (headerRows.length === 0) {
       res.status(404).json({ success: false, message: '退货单不存在' }); return;
@@ -120,10 +126,14 @@ export const getShippingOrderForReturn = async (req: Request, res: Response, nex
   try {
     const { shipping_order_number } = req.params;
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     // 获取发货单主表
     const [headerRows]: any = await sequelize.query(
-      `SELECT * FROM shipping_order WHERE shipping_order_number = :sn`,
-      { replacements: { sn: shipping_order_number } }
+      `SELECT * FROM shipping_order WHERE shipping_order_number = :sn${factoryCond}`,
+      { replacements: { sn: shipping_order_number, ...factoryReps } }
     );
     if (headerRows.length === 0) {
       res.status(404).json({ success: false, message: '发货单不存在' }); return;
@@ -212,8 +222,8 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
 
       // 校验发货单
       const [soRows]: any = await sequelize.query(
-        `SELECT * FROM shipping_order WHERE shipping_order_number = :sn`,
-        { replacements: { sn: b.shipping_order_number }, transaction }
+        `SELECT * FROM shipping_order WHERE shipping_order_number = :sn${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+        { replacements: { sn: b.shipping_order_number, ...(_factoryId !== null ? { _factoryId } : {}) }, transaction }
       );
       if (soRows.length === 0) {
         await transaction.rollback();
@@ -680,10 +690,12 @@ export const getReturnOrderDetailsPage = async (req: Request, res: Response, nex
                h.customer_number, h.customer_name, h.warehouse_name, h.status as order_status,
                h.reason, h.creation_man, h.creation_date as order_creation_date,
                h.confirmed_by, h.confirmed_date, h.confirm_remark,
+               f.factory_name, f.factory_short,
                ROW_NUMBER() OVER (ORDER BY h.creation_date DESC, b.return_order_number, d.line_number, b.id) AS _row_num
         FROM return_order_batch b
         INNER JOIN return_order_detail d ON d.id = b.detail_id AND d.return_order_number = b.return_order_number
         INNER JOIN return_order h ON h.return_order_number = b.return_order_number
+        LEFT JOIN factory f ON h.factory_id = f.id
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd } });
@@ -702,6 +714,7 @@ export const exportReturnOrderDetailsSelected = async (req: Request, res: Respon
     if (ids.length > 1000) {
       res.status(400).json({ success: false, message: '单次导出不能超过1000条' }); return;
     }
+    const _factoryId = getFactoryId(req);
     const replacements: any = {};
     ids.forEach((id: any, i: number) => { replacements[`id${i}`] = id; });
     const placeholders = ids.map((_: any, i: number) => `:id${i}`).join(', ');
@@ -718,8 +731,9 @@ export const exportReturnOrderDetailsSelected = async (req: Request, res: Respon
       INNER JOIN return_order_detail d ON d.id = b.detail_id AND d.return_order_number = b.return_order_number
       INNER JOIN return_order h ON h.return_order_number = b.return_order_number
       WHERE b.id IN (${placeholders})
+      ${_factoryId !== null ? ' AND h.factory_id = :_factoryId' : ''}
       ORDER BY h.return_order_number, d.line_number, b.id
-    `, { replacements });
+    `, { replacements: _factoryId !== null ? { ...replacements, _factoryId } : replacements });
 
     const fields = [
       'return_order_number', 'order_status', 'return_type', 'customer_name',

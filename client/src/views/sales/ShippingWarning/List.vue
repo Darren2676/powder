@@ -42,6 +42,7 @@ const {
 
 const defaultColumns: any[] = [
   { title: '行号', dataIndex: 'line_number', key: 'line_number', width: 70, resizable: true, align: 'center' },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 140, resizable: true },
   { title: '物料编号', dataIndex: 'item_number', key: 'item_number', width: 130, resizable: true },
   { title: '物料名称', dataIndex: 'item_name', key: 'item_name', width: 150, resizable: true },

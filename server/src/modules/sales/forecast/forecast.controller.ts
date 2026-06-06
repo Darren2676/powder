@@ -52,8 +52,11 @@ export const getForecasts = async (req: Request, res: Response, next: NextFuncti
     const offset = (page - 1) * limit;
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY creation_date DESC, forecast_number DESC) AS _row_num
-        FROM sales_forecast ${whereClause}
+        SELECT h.*, f.factory_name, f.factory_short,
+               ROW_NUMBER() OVER (ORDER BY h.creation_date DESC, h.forecast_number DESC) AS _row_num
+        FROM sales_forecast h
+        LEFT JOIN factory f ON h.factory_id = f.id
+        ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
@@ -340,11 +343,13 @@ export const getForecastDetailsPage = async (req: Request, res: Response, next: 
                d.forecast_quantity, d.consumed_quantity, d.remaining_quantity, d.consumption_status, d.remark, d.status,
                h.customer_number, h.customer_name, h.forecast_date, h.approval_status,
                h.[condition], h.remark AS header_remark, h.creation_date, h.creation_man,
+               f.factory_name, f.factory_short,
                COALESCE(NULLIF(d.customer_item_number, ''), cm.customer_item_number) as customer_item_number,
                COALESCE(NULLIF(d.customer_item_description, ''), cm.customer_item_description) as customer_item_description,
                ROW_NUMBER() OVER (ORDER BY h.forecast_number, d.line_number) AS _row_num
         FROM sales_forecast_detail d
         INNER JOIN sales_forecast h ON h.forecast_number = d.forecast_number
+        LEFT JOIN factory f ON h.factory_id = f.id
         LEFT JOIN customer_material_mapping cm ON cm.customer_number = h.customer_number AND cm.item_number = d.item_number AND cm.approval_status = N'已审核'
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
@@ -369,6 +374,7 @@ export const exportForecastDetailsSelected = async (req: Request, res: Response,
     if (ids.length > 1000) {
       res.status(400).json({ success: false, message: '单次导出不能超过1000条' }); return;
     }
+    const _factoryId = getFactoryId(req);
     const replacements: any = {};
     ids.forEach((id: any, i: number) => { replacements[`id${i}`] = id; });
     const placeholders = ids.map((_: any, i: number) => `:id${i}`).join(', ');
@@ -381,8 +387,9 @@ export const exportForecastDetailsSelected = async (req: Request, res: Response,
       FROM sales_forecast_detail d
       INNER JOIN sales_forecast h ON h.forecast_number = d.forecast_number
       WHERE d.id IN (${placeholders})
+      ${_factoryId !== null ? ' AND h.factory_id = :_factoryId' : ''}
       ORDER BY d.forecast_number, d.line_number
-    `, { replacements });
+    `, { replacements: _factoryId !== null ? { ...replacements, _factoryId } : replacements });
 
     const fields = [
       'forecast_number', 'line_number', 'customer_name', 'item_number', 'item_name',
