@@ -5,14 +5,16 @@ import { exportToExcel } from '../../../utils/excel.util';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { returnInbound as returnInboundService } from '@/services/warehouse.service';
 import { syncReturnStatus, syncLineStatus } from '@/services/salesOrderSync.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
-const generateReturnOrderNumber = async (transaction?: any): Promise<string> => {
+const generateReturnOrderNumber = async (factoryCode: string = '', transaction?: any): Promise<string> => {
   const today = new Date();
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `RT-${dateStr}-`;
+  const prefix = `RT${fc}-${dateStr}-`;
 
   const [rows]: any = await sequelize.query(
     `SELECT MAX(return_order_number) as max_num FROM return_order WHERE return_order_number LIKE :prefix`,
@@ -54,6 +56,12 @@ export const getList = async (req: Request, res: Response, next: NextFunction) =
     if (approval_status) {
       whereClause += ` AND ro.approval_status = :approval_status`;
       replacements.approval_status = approval_status;
+    }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND ro.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
     }
 
     const [countResult]: any = await sequelize.query(
@@ -181,6 +189,8 @@ export const getShippingOrderForReturn = async (req: Request, res: Response, nex
 // ==================== 创建退货单 ====================
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.shipping_order_number) {
       res.status(400).json({ success: false, message: '请选择发货单' }); return;
@@ -197,7 +207,8 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
 
     const transaction = await sequelize.transaction();
     try {
-      const returnOrderNumber = await generateReturnOrderNumber(transaction);
+      const factoryCode = await getFactoryCode(req);
+      const returnOrderNumber = await generateReturnOrderNumber(factoryCode, transaction);
 
       // 校验发货单
       const [soRows]: any = await sequelize.query(
@@ -217,10 +228,10 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
       await sequelize.query(`
         INSERT INTO return_order (return_order_number, type, shipping_order_number,
           customer_number, customer_name, warehouse_number, warehouse_name,
-          status, approval_status, reason, remark, creation_man, creation_date, accounting_period)
+          status, approval_status, reason, remark, creation_man, creation_date, accounting_period, factory_id)
         VALUES (:return_order_number, :type, :shipping_order_number,
           :customer_number, :customer_name, :warehouse_number, :warehouse_name,
-          N'待确认', N'草稿', :reason, :remark, :creation_man, GETDATE(), CONVERT(NVARCHAR(7), GETDATE(), 120))
+          N'待确认', N'草稿', :reason, :remark, :creation_man, GETDATE(), CONVERT(NVARCHAR(7), GETDATE(), 120), :factory_id)
       `, {
         replacements: {
           return_order_number: returnOrderNumber,
@@ -232,7 +243,8 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
           warehouse_name: b.warehouse_name,
           reason: b.reason || '',
           remark: b.remark || '',
-          creation_man: (req as any).user?.username || ''
+          creation_man: (req as any).user?.username || '',
+          factory_id: _factoryId
         }, transaction
       });
 
@@ -306,9 +318,13 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
     const { return_order_number } = req.params;
     const b = req.body;
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [existing]: any = await sequelize.query(
-      `SELECT id, approval_status FROM return_order WHERE return_order_number = :rn`,
-      { replacements: { rn: return_order_number } }
+      `SELECT id, approval_status FROM return_order WHERE return_order_number = :rn${factoryCond}`,
+      { replacements: { rn: return_order_number, ...factoryReps } }
     );
     if (existing.length === 0) {
       res.status(404).json({ success: false, message: '退货单不存在' }); return;
@@ -417,9 +433,13 @@ export const remove = async (req: Request, res: Response, next: NextFunction) =>
   try {
     const { return_order_number } = req.params;
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [existing]: any = await sequelize.query(
-      `SELECT id, approval_status FROM return_order WHERE return_order_number = :rn`,
-      { replacements: { rn: return_order_number } }
+      `SELECT id, approval_status FROM return_order WHERE return_order_number = :rn${factoryCond}`,
+      { replacements: { rn: return_order_number, ...factoryReps } }
     );
     if (existing.length === 0) {
       res.status(404).json({ success: false, message: '退货单不存在' }); return;
@@ -439,8 +459,8 @@ export const remove = async (req: Request, res: Response, next: NextFunction) =>
         { replacements: { rn: return_order_number }, transaction }
       );
       await sequelize.query(
-        `DELETE FROM return_order WHERE return_order_number = :rn`,
-        { replacements: { rn: return_order_number }, transaction }
+        `DELETE FROM return_order WHERE return_order_number = :rn${factoryCond}`,
+        { replacements: { rn: return_order_number, ...factoryReps }, transaction }
       );
       await transaction.commit();
       res.json(success(null, '退货单已删除'));
@@ -461,9 +481,13 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
     const transaction = await sequelize.transaction();
     try {
       // 1. 校验退货单状态（加锁）
+      const _factoryId = getFactoryId(req);
+      const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+      const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
       const [headerRows]: any = await sequelize.query(
-        `SELECT * FROM return_order WITH (UPDLOCK) WHERE return_order_number = :rn`,
-        { replacements: { rn }, transaction }
+        `SELECT * FROM return_order WITH (UPDLOCK) WHERE return_order_number = :rn${factoryCond}`,
+        { replacements: { rn, ...factoryReps }, transaction }
       );
       if (headerRows.length === 0) {
         await transaction.rollback();
@@ -629,6 +653,12 @@ export const getReturnOrderDetailsPage = async (req: Request, res: Response, nex
       }
     }
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND h.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
+
     // 计算总数（按批次级别）
     const [countResult]: any = await sequelize.query(`
       SELECT COUNT(*) as total
@@ -720,9 +750,13 @@ export const cancelReturnOrder = async (req: Request, res: Response, next: NextF
     const transaction = await sequelize.transaction();
     try {
       // 1. 校验退货单状态
+      const _factoryId = getFactoryId(req);
+      const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+      const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
       const [headerRows]: any = await sequelize.query(
-        `SELECT * FROM return_order WITH (UPDLOCK) WHERE return_order_number = :rn`,
-        { replacements: { rn: return_order_number }, transaction }
+        `SELECT * FROM return_order WITH (UPDLOCK) WHERE return_order_number = :rn${factoryCond}`,
+        { replacements: { rn: return_order_number, ...factoryReps }, transaction }
       );
       if (headerRows.length === 0) {
         await transaction.rollback();
@@ -876,9 +910,13 @@ export const reject = async (req: Request, res: Response, next: NextFunction) =>
     const { confirm_remark = '' } = req.body;
     const operator = (req as any).user?.username || '';
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [existing]: any = await sequelize.query(
-      `SELECT id, approval_status FROM return_order WHERE return_order_number = :rn`,
-      { replacements: { rn: return_order_number } }
+      `SELECT id, approval_status FROM return_order WHERE return_order_number = :rn${factoryCond}`,
+      { replacements: { rn: return_order_number, ...factoryReps } }
     );
     if (existing.length === 0) {
       res.status(404).json({ success: false, message: '退货单不存在' }); return;
@@ -890,13 +928,15 @@ export const reject = async (req: Request, res: Response, next: NextFunction) =>
     await sequelize.query(`
       UPDATE return_order SET status = N'已驳回',
         confirmed_by = :confirmed_by, confirmed_date = GETDATE(), confirm_remark = :confirm_remark
-      WHERE return_order_number = :rn
+      WHERE return_order_number = :rn${factoryCond}
     `, {
       replacements: {
         rn: return_order_number,
         confirmed_by: operator,
         confirm_remark
-      }
+      ,
+      ...factoryReps
+    }
     });
 
     res.json(success(null, '退货单已驳回'));

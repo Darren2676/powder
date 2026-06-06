@@ -23,11 +23,14 @@ export const manualInboundMaterial = async (
       item_number: string; item_name?: string; item_type?: string;
       specifications?: string; basic_unit?: string; quantity: number;
       supplier_number?: string; supplier_name?: string;
+      production_date?: string;
     }>;
     warehouse_number: string; warehouse_name: string; remark?: string;
     accounting_period?: string;
   },
-  operator: string
+  operator: string,
+  factoryCode: string = '',
+  _factoryId: number | null = null
 ) => {
   const b = params;
   if (!b.items || !Array.isArray(b.items) || b.items.length === 0) {
@@ -49,12 +52,12 @@ export const manualInboundMaterial = async (
       if (inboundQty <= 0) continue;
 
       // 1. 自动生成批次号
-      const batchNo = await generateBatchNumber('MB', transaction);
+      const batchNo = await generateBatchNumber('MB', factoryCode, transaction);
       batchNumbers.push(batchNo);
 
       // 2. 写入批次库存表
       await sequelize.query(
-        "INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, supplier_number, supplier_name, inbound_date, status, creation_date, last_updated) VALUES (:batch_number, :item_number, :item_name, :item_type, :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, :supplier_number, :supplier_name, GETDATE(), N'正常', GETDATE(), GETDATE())",
+        "INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, supplier_number, supplier_name, inbound_date, production_date, status, creation_date, last_updated, factory_id) VALUES (:batch_number, :item_number, :item_name, :item_type, :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, :supplier_number, :supplier_name, GETDATE(), :production_date, N'正常', GETDATE(), GETDATE(), :factory_id)",
         {
           replacements: {
             batch_number: batchNo,
@@ -63,7 +66,9 @@ export const manualInboundMaterial = async (
             specifications: item.specifications || '', basic_unit: item.basic_unit || '',
             warehouse_number: b.warehouse_number, warehouse_name: b.warehouse_name,
             quantity: inboundQty,
-            supplier_number: item.supplier_number || '', supplier_name: item.supplier_name || ''
+            supplier_number: item.supplier_number || '', supplier_name: item.supplier_name || '',
+            production_date: item.production_date || null,
+            factory_id: _factoryId
           }, transaction
         }
       );
@@ -78,7 +83,7 @@ export const manualInboundMaterial = async (
       }, transaction);
 
       // 4. 记录流水
-      const txNum = await generateMaterialTxnNumber(transaction);
+      const txNum = await generateMaterialTxnNumber(factoryCode, transaction);
       transactionNumbers.push(txNum);
 
       await createMaterialTransaction({
@@ -107,11 +112,14 @@ export const productionInboundMaterial = async (
       item_number: string; item_name?: string; specifications?: string; basic_unit?: string;
       inbound_qty: number; production_order_number?: string;
       inbound_quantity?: number; planned_quantity?: number;
+      production_date?: string;
     }>;
     warehouse_number: string; warehouse_name: string; remark?: string;
     accounting_period?: string;
   },
-  operator: string
+  operator: string,
+  factoryCode: string = '',
+  _factoryId: number | null = null
 ) => {
   const b = params;
   if (!b.items || !Array.isArray(b.items) || b.items.length === 0) {
@@ -133,12 +141,12 @@ export const productionInboundMaterial = async (
       if (inboundQty <= 0) continue;
 
       // 1. 自动生成半成品批次号
-      const batchNo = await generateBatchNumber('HB', transaction);
+      const batchNo = await generateBatchNumber('HB', factoryCode, transaction);
       batchNumbers.push(batchNo);
 
       // 2. 写入批次库存表
       await sequelize.query(
-        "INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, production_order_number, inbound_date, status, creation_date, last_updated) VALUES (:batch_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, :production_order_number, GETDATE(), N'正常', GETDATE(), GETDATE())",
+        "INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, production_order_number, inbound_date, production_date, status, creation_date, last_updated, factory_id) VALUES (:batch_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, :production_order_number, GETDATE(), :production_date, N'正常', GETDATE(), GETDATE(), :factory_id)",
         {
           replacements: {
             batch_number: batchNo,
@@ -146,7 +154,9 @@ export const productionInboundMaterial = async (
             specifications: item.specifications || '', basic_unit: item.basic_unit || '',
             warehouse_number: b.warehouse_number, warehouse_name: b.warehouse_name,
             quantity: inboundQty,
-            production_order_number: item.production_order_number || ''
+            production_order_number: item.production_order_number || '',
+            production_date: item.production_date || null,
+            factory_id: _factoryId
           }, transaction
         }
       );
@@ -161,7 +171,7 @@ export const productionInboundMaterial = async (
       }, transaction);
 
       // 4. 记录流水（含批次号）
-      const txNum = await generateMaterialTxnNumber(transaction);
+      const txNum = await generateMaterialTxnNumber(factoryCode, transaction);
       transactionNumbers.push(txNum);
 
       await createMaterialTransaction({
@@ -200,7 +210,7 @@ export const productionInboundMaterial = async (
 
       // 5.5 倒冲扣减：半成品入库时自动扣减倒冲物料库存（扣减失败则阻止入库，保证账务平衡）
       if (item.production_order_number) {
-        await executeBackflushDeduction(item.production_order_number, inboundQty, operator, transaction);
+        await executeBackflushDeduction(item.production_order_number, inboundQty, operator, transaction, factoryCode);
       }
 
       // 6. 写入追溯关联（半成品入库时，反查该生产单的领料批次）
@@ -211,7 +221,7 @@ export const productionInboundMaterial = async (
     }
 
     // ====== 生成半成品生产入库单 ======
-    const inboundOrderNo = await generateSemiProductionInboundOrderNumber(transaction);
+    const inboundOrderNo = await generateSemiProductionInboundOrderNumber(factoryCode, transaction);
     let totalQty = 0;
     let lineNum = 0;
     for (let i = 0; i < b.items.length; i++) {
@@ -222,7 +232,7 @@ export const productionInboundMaterial = async (
       totalQty += inboundQty;
 
       await sequelize.query(
-        "INSERT INTO semi_production_inbound_order_detail (inbound_order_number, line_number, production_order_number, item_number, item_name, item_type, specifications, basic_unit, batch_number, planned_quantity, inbound_quantity, transaction_number, remark, creation_date) VALUES (:inbound_order_number, :line_number, :production_order_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :batch_number, :planned_quantity, :inbound_quantity, :transaction_number, :remark, GETDATE())",
+        "INSERT INTO semi_production_inbound_order_detail (inbound_order_number, line_number, production_order_number, item_number, item_name, item_type, specifications, basic_unit, batch_number, planned_quantity, inbound_quantity, transaction_number, production_date, remark, creation_date) VALUES (:inbound_order_number, :line_number, :production_order_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :batch_number, :planned_quantity, :inbound_quantity, :transaction_number, :production_date, :remark, GETDATE())",
         {
           replacements: {
             inbound_order_number: inboundOrderNo, line_number: lineNum,
@@ -233,6 +243,7 @@ export const productionInboundMaterial = async (
             planned_quantity: Number(item.planned_quantity) || 0,
             inbound_quantity: inboundQty,
             transaction_number: transactionNumbers[i] || '',
+            production_date: item.production_date || null,
             remark: b.remark || ''
           }, transaction
         }
@@ -263,7 +274,8 @@ export const manualOutboundMaterial = async (
     batch_items?: Array<{ batch_number: string; quantity: number }>; remark?: string;
     accounting_period?: string;
   },
-  operator: string
+  operator: string,
+  factoryCode: string = ''
 ) => {
   const b = params;
   if (!b.item_number || !b.warehouse_number) {
@@ -321,7 +333,7 @@ export const manualOutboundMaterial = async (
       );
 
       // 记录流水（每个批次一条）
-      const txNum = await generateMaterialTxnNumber(transaction);
+      const txNum = await generateMaterialTxnNumber(factoryCode, transaction);
       txNumbers.push(txNum);
 
       await createMaterialTransaction({
@@ -355,7 +367,8 @@ export const adjustMaterialInventory = async (
     adjust_quantity: number; remark?: string;
     accounting_period?: string;
   },
-  operator: string
+  operator: string,
+  factoryCode: string = ''
 ) => {
   const b = params;
   if (!b.item_number || !b.warehouse_number || b.adjust_quantity === undefined) {
@@ -403,7 +416,7 @@ export const adjustMaterialInventory = async (
       );
     }
 
-    const txNum = await generateMaterialTxnNumber(transaction);
+    const txNum = await generateMaterialTxnNumber(factoryCode, transaction);
     const txType = adjustQty > 0 ? '入库' : '出库';
 
     await createMaterialTransaction({

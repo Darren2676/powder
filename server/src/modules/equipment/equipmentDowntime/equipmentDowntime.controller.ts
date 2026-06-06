@@ -3,6 +3,7 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import { APPROVAL_STATUS } from '@/shared/constants/statuses';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 const fields = [
   'equipment_number', 'downtime_type', 'start_time', 'end_time',
@@ -49,6 +50,13 @@ export const getEquipmentDowntimes = async (req: Request, res: Response, next: N
       replacements.search = `%${search}%`;
     }
 
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ' AND ed.factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
       `SELECT COUNT(*) as total FROM equipment_downtime ed ${whereClause}`,
       { replacements }
@@ -59,9 +67,10 @@ export const getEquipmentDowntimes = async (req: Request, res: Response, next: N
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT ed.*, e.equipment_name, ROW_NUMBER() OVER (ORDER BY ed.start_time DESC, ed.id DESC) AS _row_num
+        SELECT ed.*, e.equipment_name, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY ed.start_time DESC, ed.id DESC) AS _row_num
         FROM equipment_downtime ed
         LEFT JOIN equipment e ON ed.equipment_number = e.equipment_number
+        LEFT JOIN factory f ON ed.factory_id = f.id
         ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
@@ -83,6 +92,7 @@ export const createEquipmentDowntime = async (req: Request, res: Response, next:
   try {
     const b = req.body;
     const username = (req as any).user?.username || '';
+    const _factoryId = getFactoryId(req);
 
     if (!b.equipment_number) {
       res.status(400).json({ success: false, message: '设备编号不能为空' });
@@ -115,9 +125,9 @@ export const createEquipmentDowntime = async (req: Request, res: Response, next:
       durationMinutes = Math.round((end.getTime() - start.getTime()) / 60000);
     }
 
-    const cols = fields.join(', ') + ', approval_status, created_by';
-    const vals = fields.map(f => ':' + f).join(', ') + ', N\'未审核\', :created_by';
-    const replacements: any = { created_by: username };
+    const cols = fields.join(', ') + ', approval_status, created_by, factory_id';
+    const vals = fields.map(f => ':' + f).join(', ') + ', N\'未审核\', :created_by, :factory_id';
+    const replacements: any = { created_by: username, factory_id: _factoryId };
     for (const f of fields) {
       if (f === 'duration_minutes') {
         replacements[f] = durationMinutes;

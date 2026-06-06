@@ -5,14 +5,15 @@ import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import path from 'path';
 import fs from 'fs';
 import { APPROVAL_STATUS, CONDITION_STATUS } from '@/shared/constants/statuses';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
-const fields = ['supplier_number', 'supplier_name', 'classification', 'country', 'currency_code', 'purchase_tax_rate', 'industry', 'supplier_manager', 'procurement_manager', 'linkman', 'mobile', 'contacts', 'region', 'detail_address', 'zip_code', 'telephone', 'fax', 'email', 'contact_remark', 'bank_account_name', 'bank_name', 'bank_account_number', 'invoice_address', 'invoice_phone', 'invoice_title', 'tax_id', 'payment_terms'];
-const headers = ['供应商编号', '供应商名称', '分类', '国家（地区）', '币种代码', '采购税率', '行业', '供应商负责人', '采购经理', '联系人', '手机', '联系方式', '所在地区', '详细地址', '邮编', '电话', '传真', 'E-mail', '备注', '开户名称', '开户银行', '银行账号', '开票地址', '开票电话', '发票抬头', '纳税人识别码', '付款条件'];
+const fields = ['supplier_number', 'supplier_name', 'classification', 'country', 'currency_code', 'purchase_tax_rate', 'industry', 'supplier_manager', 'procurement_manager', 'linkman', 'mobile', 'contacts', 'region', 'detail_address', 'zip_code', 'telephone', 'fax', 'email', 'contact_remark', 'bank_account_name', 'bank_name', 'bank_account_number', 'invoice_address', 'invoice_phone', 'invoice_title', 'tax_id', 'payment_terms', 'factory_id'];
+const headers = ['供应商编号', '供应商名称', '分类', '国家（地区）', '币种代码', '采购税率', '行业', '供应商负责人', '采购经理', '联系人', '手机', '联系方式', '所在地区', '详细地址', '邮编', '电话', '传真', 'E-mail', '备注', '开户名称', '开户银行', '银行账号', '开票地址', '开票电话', '发票抬头', '纳税人识别码', '付款条件', '所属工厂'];
 
 const uploadDir = path.join(__dirname, '../../uploads/supplier');
 if (!fs.existsSync(uploadDir)) { fs.mkdirSync(uploadDir, { recursive: true }); }
 
-const allFields = 'supplier_number, supplier_name, classification, country, currency_code, purchase_tax_rate, industry, supplier_manager, procurement_manager, linkman, mobile, contacts, region, detail_address, zip_code, telephone, fax, email, contact_remark, bank_account_name, bank_name, bank_account_number, invoice_address, invoice_phone, invoice_title, tax_id, payment_terms, condition, created_by, created_at, updated_at';
+const allFields = 'supplier_number, supplier_name, classification, country, currency_code, purchase_tax_rate, industry, supplier_manager, procurement_manager, linkman, mobile, contacts, region, detail_address, zip_code, telephone, fax, email, contact_remark, bank_account_name, bank_name, bank_account_number, invoice_address, invoice_phone, invoice_title, tax_id, payment_terms, factory_id, condition, created_by, created_at, updated_at';
 
 function buildReplacements(b: any, username?: string) {
   return {
@@ -26,6 +27,7 @@ function buildReplacements(b: any, username?: string) {
     bank_account_name: b.bank_account_name || '', bank_name: b.bank_name || '', bank_account_number: b.bank_account_number || '',
     invoice_address: b.invoice_address || '', invoice_phone: b.invoice_phone || '',
     invoice_title: b.invoice_title || '', tax_id: b.tax_id || '', payment_terms: b.payment_terms || '',
+    factory_id: b.factory_id || null,
     ...(username !== undefined ? { condition: b.condition || CONDITION_STATUS.ENABLED, created_by: username } : {})
   };
 }
@@ -35,17 +37,27 @@ export const getSuppliers = async (req: Request, res: Response, next: NextFuncti
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const search = (req.query.search as string) || '';
-    let whereClause = '';
+    const conditions: string[] = [];
     const replacements: any = {};
     if (search) {
-      whereClause = `WHERE supplier_number LIKE :search OR supplier_name LIKE :search OR linkman LIKE :search`;
+      conditions.push(`(s.supplier_number LIKE :search OR s.supplier_name LIKE :search OR s.linkman LIKE :search)`);
       replacements.search = `%${search}%`;
     }
-    const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM supplier ${whereClause}`, { replacements });
+
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`s.factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
+
+    const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM supplier s ${whereClause}`, { replacements });
     const total = countResult[0].total;
     const offset = (page - 1) * limit;
     const [items]: any = await sequelize.query(
-      `SELECT * FROM (SELECT *, ROW_NUMBER() OVER (ORDER BY supplier_number) AS _row_num FROM supplier ${whereClause}) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd`,
+      `SELECT * FROM (SELECT s.*, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY s.supplier_number) AS _row_num FROM supplier s LEFT JOIN factory f ON s.factory_id = f.id ${whereClause}) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd`,
       { replacements: { ...replacements, offset, offsetEnd: offset + limit } }
     );
     const cleanItems = items.map((item: any) => { const { _row_num, ...rest } = item; return rest; });
@@ -103,7 +115,7 @@ export const createSupplier = async (req: Request, res: Response, next: NextFunc
     const r = buildReplacements(b, username);
     await sequelize.query(`
       INSERT INTO supplier (${allFields})
-      VALUES (:supplier_number, :supplier_name, :classification, :country, :currency_code, :purchase_tax_rate, :industry, :supplier_manager, :procurement_manager, :linkman, :mobile, :contacts, :region, :detail_address, :zip_code, :telephone, :fax, :email, :contact_remark, :bank_account_name, :bank_name, :bank_account_number, :invoice_address, :invoice_phone, :invoice_title, :tax_id, :payment_terms, :condition, :created_by, GETDATE(), GETDATE())
+      VALUES (:supplier_number, :supplier_name, :classification, :country, :currency_code, :purchase_tax_rate, :industry, :supplier_manager, :procurement_manager, :linkman, :mobile, :contacts, :region, :detail_address, :zip_code, :telephone, :fax, :email, :contact_remark, :bank_account_name, :bank_name, :bank_account_number, :invoice_address, :invoice_phone, :invoice_title, :tax_id, :payment_terms, :factory_id, :condition, :created_by, GETDATE(), GETDATE())
     `, { replacements: r });
     if (b.addresses && Array.isArray(b.addresses)) {
       for (const addr of b.addresses) {
@@ -137,6 +149,7 @@ export const updateSupplier = async (req: Request, res: Response, next: NextFunc
         bank_account_name = :bank_account_name, bank_name = :bank_name, bank_account_number = :bank_account_number,
         invoice_address = :invoice_address, invoice_phone = :invoice_phone,
         invoice_title = :invoice_title, tax_id = :tax_id, payment_terms = :payment_terms,
+        factory_id = :factory_id,
         updated_at = GETDATE()
       WHERE supplier_number = :id
     `, { replacements: { ...r, id } });
@@ -157,7 +170,12 @@ export const deleteSupplier = async (req: Request, res: Response, next: NextFunc
     const { id } = req.params;
     await sequelize.query(`DELETE FROM supplier_address WHERE supplier_number = :id`, { replacements: { id } });
     await sequelize.query(`DELETE FROM supplier_attachment WHERE supplier_number = :id`, { replacements: { id } });
-    await sequelize.query(`DELETE FROM supplier WHERE supplier_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      await sequelize.query(`DELETE FROM supplier WHERE supplier_number = :id AND factory_id = :_factoryId`, { replacements: { id, _factoryId } });
+    } else {
+      await sequelize.query(`DELETE FROM supplier WHERE supplier_number = :id`, { replacements: { id } });
+    }
     res.json(success(null, '删除供应商成功'));
   } catch (err) { next(err); }
 };
@@ -183,12 +201,12 @@ export const importSuppliers = async (req: Request, res: Response, next: NextFun
         const r = buildReplacements(item);
         if (existing[0].cnt > 0) {
           await sequelize.query(`
-            UPDATE supplier SET supplier_name = :supplier_name, classification = :classification, country = :country, currency_code = :currency_code, purchase_tax_rate = :purchase_tax_rate, industry = :industry, supplier_manager = :supplier_manager, procurement_manager = :procurement_manager, linkman = :linkman, mobile = :mobile, contacts = :contacts, region = :region, detail_address = :detail_address, zip_code = :zip_code, telephone = :telephone, fax = :fax, email = :email, contact_remark = :contact_remark, bank_account_name = :bank_account_name, bank_name = :bank_name, bank_account_number = :bank_account_number, invoice_address = :invoice_address, invoice_phone = :invoice_phone, invoice_title = :invoice_title, tax_id = :tax_id, payment_terms = :payment_terms, updated_at = GETDATE() WHERE supplier_number = :supplier_number
+            UPDATE supplier SET supplier_name = :supplier_name, classification = :classification, country = :country, currency_code = :currency_code, purchase_tax_rate = :purchase_tax_rate, industry = :industry, supplier_manager = :supplier_manager, procurement_manager = :procurement_manager, linkman = :linkman, mobile = :mobile, contacts = :contacts, region = :region, detail_address = :detail_address, zip_code = :zip_code, telephone = :telephone, fax = :fax, email = :email, contact_remark = :contact_remark, bank_account_name = :bank_account_name, bank_name = :bank_name, bank_account_number = :bank_account_number, invoice_address = :invoice_address, invoice_phone = :invoice_phone, invoice_title = :invoice_title, tax_id = :tax_id, payment_terms = :payment_terms, factory_id = :factory_id, updated_at = GETDATE() WHERE supplier_number = :supplier_number
           `, { replacements: r });
           updated++;
         } else {
           await sequelize.query(`
-            INSERT INTO supplier (${allFields}) VALUES (:supplier_number, :supplier_name, :classification, :country, :currency_code, :purchase_tax_rate, :industry, :supplier_manager, :procurement_manager, :linkman, :mobile, :contacts, :region, :detail_address, :zip_code, :telephone, :fax, :email, :contact_remark, :bank_account_name, :bank_name, :bank_account_number, :invoice_address, :invoice_phone, :invoice_title, :tax_id, :payment_terms, N'启用', :created_by, GETDATE(), GETDATE())
+            INSERT INTO supplier (${allFields}) VALUES (:supplier_number, :supplier_name, :classification, :country, :currency_code, :purchase_tax_rate, :industry, :supplier_manager, :procurement_manager, :linkman, :mobile, :contacts, :region, :detail_address, :zip_code, :telephone, :fax, :email, :contact_remark, :bank_account_name, :bank_name, :bank_account_number, :invoice_address, :invoice_phone, :invoice_title, :tax_id, :payment_terms, :factory_id, N'启用', :created_by, GETDATE(), GETDATE())
           `, { replacements: { ...r, condition: CONDITION_STATUS.ENABLED, created_by: username } });
           imported++;
         }

@@ -1,6 +1,7 @@
 ﻿import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 设计BOM展平汇总 (内部复用) ====================
 
@@ -54,6 +55,7 @@ async function flattenMfgBomForPurchase(bomNumber: string, parentMultiplier: num
 
 export const demandReport = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
     const { mfg_bom_number, planned_quantity } = req.body;
     if (!mfg_bom_number || !planned_quantity) {
       res.status(400).json({ success: false, message: '请提供设计BOM编号和计划产量' });
@@ -102,8 +104,8 @@ export const demandReport = async (req: Request, res: Response, next: NextFuncti
       matNumbers.forEach((m: string, i: number) => { matReplacements[`m${i}`] = m; });
 
       const [invRows]: any = await sequelize.query(
-        `SELECT item_number, SUM(quantity) as on_hand, MAX(safety_stock_quantity) as safety_stock FROM material_inventory WHERE item_number IN (${placeholders}) GROUP BY item_number`,
-        { replacements: matReplacements }
+        `SELECT mi.item_number, SUM(mi.quantity) as on_hand, MAX(mi.quantity) as stock FROM material_inventory mi WHERE mi.item_number IN (${placeholders}) GROUP BY mi.item_number`,
+        { replacements: { ...matReplacements } }
       );
       for (const row of invRows) {
         inventoryMap[row.item_number] = {
@@ -144,6 +146,7 @@ export const demandReport = async (req: Request, res: Response, next: NextFuncti
 
 export const generatePurchaseReq = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
     const { mfg_bom_number, items } = req.body;
     if (!items || !Array.isArray(items) || items.length === 0) {
       res.status(400).json({ success: false, message: '请提供需要采购的物料明细' });
@@ -158,8 +161,8 @@ export const generatePurchaseReq = async (req: Request, res: Response, next: Nex
     const prPrefix = `PR-${dateStr}-`;
 
     const [prRows]: any = await sequelize.query(
-      `SELECT MAX(purchase_req_number) as max_num FROM purchase_req WHERE purchase_req_number LIKE :prefix`,
-      { replacements: { prefix: prPrefix + '%' } }
+      `SELECT MAX(purchase_req_number) as max_num FROM purchase_req WHERE purchase_req_number LIKE :prefix${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+      { replacements: { prefix: prPrefix + '%', ...(_factoryId !== null ? { _factoryId } : {}) } }
     );
 
     let prSeq = 1;
@@ -177,15 +180,16 @@ export const generatePurchaseReq = async (req: Request, res: Response, next: Nex
     try {
       await sequelize.query(`
         INSERT INTO purchase_req (purchase_req_number, request_date, request_department, requester, request_reason,
-          source_number, approval_status, order_status, [condition], remark, creation_date, creation_man)
+          source_number, approval_status, order_status, [condition], remark, factory_id, creation_date, creation_man)
         VALUES (:purchase_req_number, GETDATE(), '', :requester, N'BOM采购需求',
-          :source_number, N'草稿', N'未执行', N'启用', :remark, :creation_date, :creation_man)
+          :source_number, N'草稿', N'未执行', N'启用', :remark, :factory_id, :creation_date, :creation_man)
       `, {
         replacements: {
           purchase_req_number,
           requester: creation_man,
           source_number: mfg_bom_number || '',
           remark: `来源设计BOM: ${mfg_bom_number || ''}`,
+          factory_id: _factoryId,
           creation_date,
           creation_man
         },

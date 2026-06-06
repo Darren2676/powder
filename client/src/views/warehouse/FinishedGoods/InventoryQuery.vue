@@ -33,6 +33,7 @@ const pagination = reactive({
 })
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '物料编号', dataIndex: 'item_number', key: 'item_number', width: 150, resizable: true },
   { title: '物料名称', dataIndex: 'item_name', key: 'item_name', width: 180, resizable: true },
   { title: '库存类型', dataIndex: 'inventory_type', key: 'inventory_type', width: 90, resizable: true },
@@ -187,6 +188,7 @@ const batchColumns = computed(() => {
       { title: '库存数量', dataIndex: 'quantity', key: 'quantity', width: 100 },
       { title: '初始数量', dataIndex: 'initial_quantity', key: 'initial_quantity', width: 100 },
       { title: '供应商', dataIndex: 'supplier_name', key: 'supplier_name', width: 160 },
+      { title: '生产日期', dataIndex: 'production_date', key: 'production_date', width: 120 },
       { title: '入库日期', dataIndex: 'inbound_date', key: 'inbound_date', width: 160 },
       { title: '仓库', dataIndex: 'warehouse_name', key: 'warehouse_name', width: 140 }
     ]
@@ -196,6 +198,7 @@ const batchColumns = computed(() => {
     { title: '库存数量', dataIndex: 'quantity', key: 'quantity', width: 100 },
     { title: '初始数量', dataIndex: 'initial_quantity', key: 'initial_quantity', width: 100 },
     { title: '生产工单', dataIndex: 'production_order_number', key: 'production_order_number', width: 160 },
+    { title: '生产日期', dataIndex: 'production_date', key: 'production_date', width: 120 },
     { title: '入库日期', dataIndex: 'inbound_date', key: 'inbound_date', width: 160 },
     { title: '仓库', dataIndex: 'warehouse_name', key: 'warehouse_name', width: 140 }
   ]
@@ -693,7 +696,10 @@ onMounted(() => {
           :scroll="{ x: 900 }"
         >
           <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'inbound_date'">
+            <template v-if="column.key === 'production_date'">
+              {{ record.production_date ? dayjs(record.production_date).format('YYYY-MM-DD') : '-' }}
+            </template>
+            <template v-else-if="column.key === 'inbound_date'">
               {{ formatDate(record.inbound_date) }}
             </template>
             <template v-else-if="column.key === 'quantity'">

@@ -7,6 +7,7 @@ import { generateBatchNumber, generateMaterialTxnNumber, syncMaterialInventorySu
 import { fifoDeductBatches, upsertMaterialInventory, createMaterialTransaction } from '@/services/warehouse/helpers';
 import { logLinesideMovement } from '@/services/linesideMovement.service';
 import dayjs from 'dayjs';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 export { generateOutsourcingInspectionNumber } from '@/services/documentNumber.service';
 
@@ -26,6 +27,12 @@ export const getOutsourcingInspections = async (req: Request, res: Response, nex
       replacements.search = `%${search}%`;
     }
     if (inspection_result) { conditions.push(`inspection_result = :inspection_result`); replacements.inspection_result = inspection_result; }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
 
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM outsourcing_inspection ${whereClause}`, { replacements });
@@ -56,21 +63,23 @@ export const getOutsourcingInspectionDetail = async (req: Request, res: Response
 // ==================== 创建 ====================
 export const createOutsourcingInspection = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.receipt_number) { res.status(400).json({ success: false, message: '收回单号不能为空' }); return; }
 
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const username = (req as any).user?.username || '';
 
-    const inspectionNumber = await generateOutsourcingInspectionNumber();
+    const inspectionNumber = await generateOutsourcingInspectionNumber(factoryCode);
 
     await sequelize.query(`
       INSERT INTO outsourcing_inspection (
         inspection_number, receipt_number, outsourcing_order_number,
-        inspection_date, inspector, inspection_status, remark, creation_date, creation_man
+        inspection_date, inspector, inspection_status, remark, factory_id, creation_date, creation_man
       ) VALUES (
         :inspectionNumber, :receipt_number, :outsourcing_order_number,
-        :inspection_date, :inspector, N'待检验', :remark, :creation_date, :creation_man
+        :inspection_date, :inspector, N'待检验', :remark, :factory_id, :creation_date, :creation_man
       )
     `, {
       replacements: {
@@ -80,6 +89,7 @@ export const createOutsourcingInspection = async (req: Request, res: Response, n
         inspection_date: b.inspection_date || now.split(' ')[0],
         inspector: b.inspector || '',
         remark: b.remark || '',
+        factory_id: _factoryId,
         creation_date: now,
         creation_man: username
       }
@@ -133,6 +143,7 @@ export const updateInspectionResult = async (req: Request, res: Response, next: 
 // ==================== 完成质检（合格/让步→创建回收入库单→自动确认→更新completed_quantity） ====================
 export const completeInspection = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const { id } = req.params;
 
     const [check]: any = await sequelize.query(`SELECT * FROM outsourcing_inspection WHERE inspection_number = :id`, { replacements: { id } });
@@ -147,6 +158,8 @@ export const completeInspection = async (req: Request, res: Response, next: Next
 
     const transaction = await sequelize.transaction();
     try {
+      const factoryCode = await getFactoryCode(req);
+      const _factoryId = getFactoryId(req);
       const operator = (req as any).user?.username || '';
 
       // 1. 更新质检单状态
@@ -222,7 +235,7 @@ export const completeInspection = async (req: Request, res: Response, next: Next
             }
 
             // 3a. 创建 outsourcing_return_stockin 单
-            const stockinNumber = await generateOutsourcingReturnStockinNumber(transaction);
+            const stockinNumber = await generateOutsourcingReturnStockinNumber(factoryCode, transaction);
             await sequelize.query(`
               INSERT INTO outsourcing_return_stockin (
                 stockin_number, outsourcing_order_number, receipt_number, inspection_number,
@@ -303,7 +316,7 @@ export const completeInspection = async (req: Request, res: Response, next: Next
                 }, transaction);
                 await syncMaterialInventorySummary(itemNumber, warehouseFrom, transaction);
 
-                const txNumOut = await generateMaterialTxnNumber(transaction);
+                const txNumOut = await generateMaterialTxnNumber(factoryCode, transaction);
                 await createMaterialTransaction({
                   transaction_number: txNumOut,
                   transaction_type: '出库',
@@ -327,15 +340,16 @@ export const completeInspection = async (req: Request, res: Response, next: Next
 
               // ---- 下道工序线边仓入库 ----
               if (warehouseTo) {
-                const batchNo = await generateBatchNumber('MB', transaction);
+                const batchNo = await generateBatchNumber('MB', factoryCode, transaction);
                 await sequelize.query(
-                  `INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, production_order_number, inbound_date, status, creation_date, last_updated) VALUES (:batch_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, :production_order_number, GETDATE(), N'正常', GETDATE(), GETDATE())`,
+                  `INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, production_order_number, inbound_date, status, creation_date, last_updated, factory_id) VALUES (:batch_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, :production_order_number, GETDATE(), N'正常', GETDATE(), GETDATE(), :factory_id)`,
                   {
                     replacements: {
                       batch_number: batchNo, item_number: itemNumber, item_name: itemName,
                       specifications, basic_unit: basicUnit,
                       warehouse_number: warehouseTo, warehouse_name: warehouseToName,
-                      quantity: lineQty, production_order_number: productionOrderNumber
+                      quantity: lineQty, production_order_number: productionOrderNumber,
+                      factory_id: _factoryId
                     },
                     transaction
                   }
@@ -347,7 +361,7 @@ export const completeInspection = async (req: Request, res: Response, next: Next
                   deltaQuantity: lineQty,
                 }, transaction);
 
-                const txNumIn = await generateMaterialTxnNumber(transaction);
+                const txNumIn = await generateMaterialTxnNumber(factoryCode, transaction);
                 await createMaterialTransaction({
                   transaction_number: txNumIn,
                   transaction_type: '入库',

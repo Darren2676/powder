@@ -58,6 +58,7 @@ const handlingOptions = computed(() => {
 
 // ==================== Columns ====================
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '行号', key: 'rowIndex', width: 55, fixed: 'left' as const },
   { title: '不合格品单号', dataIndex: 'nonconforming_number', key: 'nonconforming_number', width: 160 },
   { title: '来源类型', key: 'source_type', width: 90 },

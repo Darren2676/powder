@@ -3,10 +3,12 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
 import dayjs from 'dayjs';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 单号生成 ====================
-const generateReworkNumber = async (transaction?: any): Promise<string> => {
+const generateReworkNumber = async (factoryCode: string = '', transaction?: any): Promise<string> => {
   const today = dayjs().format('YYYYMMDD');
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
   const prefix = `RW-${today}-`;
   const opts: any = transaction
     ? { replacements: { prefix: prefix + '%' }, transaction }
@@ -37,8 +39,8 @@ export const createReworkOrder = async (params: {
   rework_step_number: number;
   rework_quantity: number;
   operator: string;
-}, transaction: any): Promise<string> => {
-  const rwNumber = await generateReworkNumber(transaction);
+}, factoryCode: string = '', _factoryId: number | null = null, transaction: any): Promise<string> => {
+  const rwNumber = await generateReworkNumber(factoryCode, transaction);
   const now = dayjs().format('YYYY/MM/DD HH:mm');
 
   await sequelize.query(`
@@ -46,12 +48,12 @@ export const createReworkOrder = async (params: {
       rework_order_number, nonconforming_number, source_inspection_number,
       production_order_number, item_number, item_name, specifications, basic_unit,
       rework_step_number, rework_quantity, rework_status,
-      rework_start_date, operator, creation_date, creation_man
+      rework_start_date, operator, creation_date, creation_man, factory_id
     ) VALUES (
       :rework_order_number, :nonconforming_number, :source_inspection_number,
       :production_order_number, :item_number, :item_name, :specifications, :basic_unit,
       :rework_step_number, :rework_quantity, N'待返修',
-      :rework_start_date, :operator, :creation_date, :creation_man
+      :rework_start_date, :operator, :creation_date, :creation_man, :factory_id
     )
   `, {
     replacements: {
@@ -68,7 +70,8 @@ export const createReworkOrder = async (params: {
       rework_start_date: now,
       operator: params.operator || '',
       creation_date: now,
-      creation_man: params.operator || ''
+      creation_man: params.operator || '',
+      factory_id: _factoryId
     },
     transaction
   });
@@ -98,6 +101,11 @@ export const getReworkOrders = async (req: Request, res: Response, next: NextFun
 
     let whereClause = 'WHERE 1=1';
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       whereClause += ` AND (rework_order_number LIKE :search OR production_order_number LIKE :search OR item_number LIKE :search OR item_name LIKE :search)`;
@@ -145,9 +153,10 @@ export const getReworkOrders = async (req: Request, res: Response, next: NextFun
 export const getReworkOrderDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
     const [rows]: any = await sequelize.query(
-      `SELECT * FROM rework_order WHERE rework_order_number = :id`,
-      { replacements: { id } }
+      `SELECT * FROM rework_order WHERE rework_order_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+      { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } }
     );
     if (!rows.length) { res.status(404).json({ success: false, message: '返修单不存在' }); return; }
     res.json(success(rows[0], '获取返修单详情成功'));
@@ -160,10 +169,13 @@ export const completeRework = async (req: Request, res: Response, next: NextFunc
     const { id } = req.params;
     const b = req.body;
     const operator = (req as any).user?.username || '';
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [records]: any = await sequelize.query(
-      `SELECT * FROM rework_order WHERE rework_order_number = :id`,
-      { replacements: { id } }
+      `SELECT * FROM rework_order WHERE rework_order_number = :id${factoryCond}`,
+      { replacements: { id, ...factoryReps } }
     );
     if (!records.length) { res.status(404).json({ success: false, message: '返修单不存在' }); return; }
 
@@ -182,13 +194,14 @@ export const completeRework = async (req: Request, res: Response, next: NextFunc
           rework_complete_date = :completeDate,
           rework_remark = :remark,
           operator = :operator
-        WHERE rework_order_number = :id
+        WHERE rework_order_number = :id${factoryCond}
       `, {
         replacements: {
           id,
           completeDate: now,
           remark: b.remark || '',
-          operator
+          operator,
+          ...factoryReps
         },
         transaction
       });
@@ -214,10 +227,13 @@ export const reworkReInspect = async (req: Request, res: Response, next: NextFun
     const { id } = req.params;
     const b = req.body;
     const operator = (req as any).user?.username || '';
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [records]: any = await sequelize.query(
-      `SELECT * FROM rework_order WHERE rework_order_number = :id`,
-      { replacements: { id } }
+      `SELECT * FROM rework_order WHERE rework_order_number = :id${factoryCond}`,
+      { replacements: { id, ...factoryReps } }
     );
     if (!records.length) { res.status(404).json({ success: false, message: '返修单不存在' }); return; }
 
@@ -240,12 +256,13 @@ export const reworkReInspect = async (req: Request, res: Response, next: NextFun
         UPDATE rework_order SET
           rework_result = :reworkResult,
           re_inspection_number = :reInspectionNumber
-        WHERE rework_order_number = :id
+        WHERE rework_order_number = :id${factoryCond}
       `, {
         replacements: {
           id,
           reworkResult,
-          reInspectionNumber: b.re_inspection_number || ''
+          reInspectionNumber: b.re_inspection_number || '',
+          ...factoryReps
         },
         transaction
       });
@@ -298,7 +315,10 @@ const exportHeaders = ['返修单号', '不合格品单号', '来源检验单号
 
 export const exportReworkOrders = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [items]: any = await sequelize.query(`SELECT * FROM rework_order ORDER BY creation_date DESC`);
+    const _factoryId = getFactoryId(req);
+    const factoryWhere = _factoryId !== null ? 'WHERE factory_id = :_factoryId' : '';
+    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
+    const [items]: any = await sequelize.query(`SELECT * FROM rework_order ${factoryWhere} ORDER BY creation_date DESC`, { replacements: factoryReps });
     exportToExcel(items, exportFields, exportHeaders, 'rework_orders', res);
   } catch (err) { next(err); }
 };

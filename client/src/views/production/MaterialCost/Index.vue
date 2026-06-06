@@ -188,6 +188,7 @@ const pagination = reactive({
 
 // === 生产单列定义 ===
 const defaultOrderColumns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '生产单编号', dataIndex: 'production_order_number', key: 'production_order_number', width: 160, resizable: true, fixed: 'left' as const },
   { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 120, resizable: true },
   { title: '产品名称', dataIndex: 'item_name', key: 'item_name', width: 160, resizable: true },

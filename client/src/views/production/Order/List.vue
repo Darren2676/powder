@@ -170,6 +170,8 @@ const productSearchLoading = ref(false)
 
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '生产单编号', dataIndex: 'production_order_number', key: 'production_order_number', resizable: true },
   { title: '生产计划编号', dataIndex: 'production_number', key: 'production_number', customFilterDropdown: true, resizable: true },
   { title: '状态', dataIndex: 'plan_status', key: 'plan_status', resizable: true },

@@ -3,6 +3,7 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import { APPROVAL_STATUS } from '@/shared/constants/statuses';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 const mouldOwnFields = [
   'item_number', 'item_name', 'product_item_number', 'product_net_weight',
@@ -37,9 +38,14 @@ export const getMoulds = async (req: Request, res: Response, next: NextFunction)
 
     let whereClause = '';
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause = `WHERE m.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
-      whereClause = `WHERE m.item_number LIKE :search OR m.item_name LIKE :search OR m.product_item_number LIKE :search OR im.item_name LIKE :search OR m.mfg_bom_number LIKE :search`;
+      whereClause = (whereClause ? whereClause + ' AND' : 'WHERE') + ` (m.item_number LIKE :search OR m.item_name LIKE :search OR m.product_item_number LIKE :search OR im.item_name LIKE :search OR m.mfg_bom_number LIKE :search)`;
       replacements.search = `%${search}%`;
     }
 
@@ -92,12 +98,14 @@ export const createMould = async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    const cols = mouldOwnFields.join(', ');
-    const vals = mouldOwnFields.map(f => ':' + f).join(', ');
+    const _factoryId = getFactoryId(req);
+    const cols = mouldOwnFields.join(', ') + ', factory_id';
+    const vals = mouldOwnFields.map(f => ':' + f).join(', ') + ', :factory_id';
     const replacements: any = {};
     for (const f of mouldOwnFields) {
       replacements[f] = body[f] || '';
     }
+    replacements.factory_id = _factoryId;
 
     await sequelize.query(`INSERT INTO mould (${cols}) VALUES (${vals})`, { replacements });
 
@@ -164,8 +172,13 @@ export const exportMoulds = async (req: Request, res: Response, next: NextFuncti
     const search = (req.query.search as string) || '';
     let whereClause = '';
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause = `WHERE m.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
     if (search) {
-      whereClause = `WHERE m.item_number LIKE :search OR m.item_name LIKE :search OR m.product_item_number LIKE :search OR im.item_name LIKE :search OR m.mfg_bom_number LIKE :search`;
+      whereClause = (whereClause ? whereClause + ' AND' : 'WHERE') + ` (m.item_number LIKE :search OR m.item_name LIKE :search OR m.product_item_number LIKE :search OR im.item_name LIKE :search OR m.mfg_bom_number LIKE :search)`;
       replacements.search = `%${search}%`;
     }
     const sql = `SELECT ${selectColumns} ${joinClause} ${whereClause} ORDER BY m.item_number`;
@@ -207,6 +220,7 @@ export const importMoulds = async (req: Request, res: Response, next: NextFuncti
     ];
     const rows = parseExcelFile(req.file.buffer, mouldOwnFields, importHeaders);
     if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件内容为空' }); return; }
+    const _factoryId = getFactoryId(req);
     let imported = 0;
     for (const item of rows) {
       try {
@@ -216,9 +230,9 @@ export const importMoulds = async (req: Request, res: Response, next: NextFuncti
         if (existing[0].cnt > 0) {
           await sequelize.query(`UPDATE mould SET ${setClauses} WHERE item_number = :item_number`, { replacements: item });
         } else {
-          const cols = mouldOwnFields.join(', ');
-          const vals = mouldOwnFields.map(f => ':' + f).join(', ');
-          await sequelize.query(`INSERT INTO mould (${cols}) VALUES (${vals})`, { replacements: item });
+          const cols = mouldOwnFields.join(', ') + ', factory_id';
+          const vals = mouldOwnFields.map(f => ':' + f).join(', ') + ', :factory_id';
+          await sequelize.query(`INSERT INTO mould (${cols}) VALUES (${vals})`, { replacements: { ...item, factory_id: _factoryId } });
         }
         imported++;
       } catch (e) {}

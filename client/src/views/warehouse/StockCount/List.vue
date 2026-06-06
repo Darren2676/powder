@@ -72,6 +72,7 @@ const handleExportSelected = async () => {
 
 
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '盘点单号', dataIndex: 'count_number', key: 'count_number', width: 170 },
   { title: '盘点期间', dataIndex: 'count_period', key: 'count_period', width: 90 },
   { title: '仓库', dataIndex: 'warehouse_name', key: 'warehouse_name', width: 120 },

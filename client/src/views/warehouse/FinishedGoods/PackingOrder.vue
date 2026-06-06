@@ -254,6 +254,7 @@ const handleBoxUnpack = async () => {
 }
 
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '行号', key: 'rowIndex', width: 60 },
   { title: '装箱单号', dataIndex: 'packing_number', key: 'packing_number', width: 160 },
   { title: '仓库', dataIndex: 'warehouse_name', key: 'warehouse_name', width: 120 },

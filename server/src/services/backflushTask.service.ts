@@ -6,6 +6,7 @@
 import sequelize from '@/config/database';
 import { generateBackflushTaskNumber } from './documentNumber.service';
 import { generateMaterialTxnNumber } from './inventory.service';
+import { getFactoryId } from '../utils/factoryWhere.util';
 import { fifoDeductBatches, upsertMaterialInventory, createMaterialTransaction } from './warehouse/helpers';
 import { logLinesideMovement } from './linesideMovement.service';
 import { createLogger } from '@/config/logger';
@@ -22,7 +23,8 @@ export const generateBackflushTasks = async (
     plannedQuantity: number;
   },
   username: string,
-  transaction: any
+  transaction: any,
+  factoryCode: string = ''
 ): Promise<{ tasksGenerated: number; skipReason: string }> => {
   const orderNo = params.orderNumber;
   let tasksGenerated = 0;
@@ -229,7 +231,7 @@ export const generateBackflushTasks = async (
 
     // 批量生成倒冲任务编号并插入
     for (const tl of taskLines) {
-      const taskNumber = await generateBackflushTaskNumber(transaction);
+      const taskNumber = await generateBackflushTaskNumber(factoryCode, transaction);
 
       // 查询仓库名称
       let warehouseName = '';
@@ -294,7 +296,8 @@ export const executeBackflushDeduction = async (
   productionOrderNumber: string,
   inboundQty: number,
   operator: string,
-  transaction: any
+  transaction: any,
+  factoryCode: string = ''
 ): Promise<{ deductedCount: number; failedCount: number }> => {
   let deductedCount = 0;
   const failedItems: string[] = [];
@@ -413,7 +416,7 @@ export const executeBackflushDeduction = async (
     }, transaction);
 
     // 创建物料库存流水
-    const txNum = await generateMaterialTxnNumber(transaction);
+    const txNum = await generateMaterialTxnNumber(factoryCode, transaction);
     await createMaterialTransaction({
       transaction_number: txNum,
       transaction_type: '出库',
@@ -454,7 +457,7 @@ export const executeBackflushDeduction = async (
         direction: 'OUT',
         operator,
         remark: `倒冲出库 ${txNum}`,
-      }, transaction);
+      }, transaction, factoryCode);
     } catch (lsErr) {
       log.error({ lsErr, materialNumber: task.material_number }, '倒冲线边仓记录失败');
     }
@@ -592,6 +595,12 @@ export const getBackflushTasks = async (queryParams: any) => {
     replacements.aw = auto_weigh;
   }
 
+  // 多工厂数据隔离过滤（从controller传入factory_id）
+  if (queryParams._factoryId) {
+    where += ' AND bt.factory_id = :_factoryId';
+    replacements._factoryId = queryParams._factoryId;
+  }
+
   const countQuery = `SELECT COUNT(*) as total FROM backflush_task bt ${where}`;
   const [countRows]: any = await sequelize.query(countQuery, { replacements });
   const total = countRows[0]?.total || 0;
@@ -600,8 +609,8 @@ export const getBackflushTasks = async (queryParams: any) => {
   const limit = Number(page) * Number(pageSize);
   const dataQuery = `
     SELECT * FROM (
-      SELECT bt.*, ROW_NUMBER() OVER (ORDER BY bt.creation_date DESC, bt.id DESC) AS _rn
-      FROM backflush_task bt ${where}
+      SELECT bt.*, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY bt.creation_date DESC, bt.id DESC) AS _rn
+      FROM backflush_task bt LEFT JOIN factory f ON bt.factory_id = f.id ${where}
     ) t WHERE _rn BETWEEN :offset AND :limit
   `;
   replacements.offset = offset;

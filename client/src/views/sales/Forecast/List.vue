@@ -63,6 +63,7 @@ const approvalLogRecordId = ref('')
 // 列设置
 const defaultColumns = [
   { title: '预测编号', dataIndex: 'forecast_number', key: 'forecast_number', width: 170, resizable: true },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 160, resizable: true },
   { title: '预测日期', dataIndex: 'forecast_date', key: 'forecast_date', width: 120, resizable: true },
   { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 100, resizable: true },

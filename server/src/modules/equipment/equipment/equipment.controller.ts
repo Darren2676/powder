@@ -3,6 +3,7 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import { APPROVAL_STATUS } from '@/shared/constants/statuses';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 const fields = ['equipment_number', 'equipment_name', 'record_date', 'equipment_type', 'equipment_model', 'manufacture_date', 'remark'];
 const headers = ['设备编号', '设备名称', '登记日期', '设备类型', '设备型号', '出厂日期', '备注'];
@@ -33,14 +34,22 @@ export const getEquipments = async (req: Request, res: Response, next: NextFunct
       whereClause = 'WHERE ' + conditions.join(' AND ');
     }
 
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      const factoryCondition = `e.factory_id = :_factoryId`;
+      whereClause = whereClause ? whereClause + ` AND ${factoryCondition}` : `WHERE ${factoryCondition}`;
+      replacements._factoryId = _factoryId;
+    }
+
     const countSql = `SELECT COUNT(*) as total FROM equipment e ${whereClause}`;
     const [countResult]: any = await sequelize.query(countSql, { replacements });
     const total = countResult[0].total;
 
     const dataSql = `
       SELECT * FROM (
-        SELECT e.*, ROW_NUMBER() OVER (ORDER BY e.equipment_number) AS _row_num
-        FROM equipment e ${whereClause}
+        SELECT e.*, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY e.equipment_number) AS _row_num
+        FROM equipment e LEFT JOIN factory f ON e.factory_id = f.id ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `;
@@ -90,6 +99,7 @@ export const updateEquipmentStatus = async (req: Request, res: Response, next: N
   try {
     const { id } = req.params;
     const { equipment_status, fault_reason } = req.body;
+    const _factoryId = getFactoryId(req);
 
     if (!equipment_status || !VALID_STATUSES.includes(equipment_status)) {
       res.status(400).json({ success: false, message: '无效的设备状态，可选: 运行/闲置/故障/保养/停用' });
@@ -112,15 +122,16 @@ export const updateEquipmentStatus = async (req: Request, res: Response, next: N
     // 如果从运行/闲置切换到故障/保养/停用，自动创建停机记录
     if ((oldStatus === '运行' || oldStatus === '闲置') && (equipment_status === '故障' || equipment_status === '保养' || equipment_status === '停用')) {
       await sequelize.query(
-        `INSERT INTO equipment_downtime (equipment_number, downtime_type, start_time, fault_reason, approval_status, created_by)
-         VALUES (:equipment_number, :downtime_type, :start_time, :fault_reason, N'未审核', :created_by)`,
+        `INSERT INTO equipment_downtime (equipment_number, downtime_type, start_time, fault_reason, approval_status, created_by, factory_id)
+         VALUES (:equipment_number, :downtime_type, :start_time, :fault_reason, N'未审核', :created_by, :factory_id)`,
         {
           replacements: {
             equipment_number: id,
             downtime_type: equipment_status === '故障' ? '故障' : equipment_status === '保养' ? '保养' : '计划停机',
             start_time: now,
             fault_reason: fault_reason || null,
-            created_by: (req as any).user?.username || ''
+            created_by: (req as any).user?.username || '',
+            factory_id: _factoryId
           }
         }
       );
@@ -212,6 +223,7 @@ export const updateEquipmentMaintenanceSettings = async (req: Request, res: Resp
 export const createEquipment = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const b = req.body;
+    const _factoryId = getFactoryId(req);
 
     if (!b.equipment_number) {
       res.status(400).json({ success: false, message: '设备编号不能为空' });
@@ -228,8 +240,8 @@ export const createEquipment = async (req: Request, res: Response, next: NextFun
     }
 
     await sequelize.query(
-      `INSERT INTO equipment (equipment_number, equipment_name, record_date, equipment_type, equipment_model, manufacture_date, remark)
-       VALUES (:equipment_number, :equipment_name, :record_date, :equipment_type, :equipment_model, :manufacture_date, :remark)`,
+      `INSERT INTO equipment (equipment_number, equipment_name, record_date, equipment_type, equipment_model, manufacture_date, remark, factory_id)
+       VALUES (:equipment_number, :equipment_name, :record_date, :equipment_type, :equipment_model, :manufacture_date, :remark, :factory_id)`,
       {
         replacements: {
           equipment_number: b.equipment_number,
@@ -238,7 +250,8 @@ export const createEquipment = async (req: Request, res: Response, next: NextFun
           equipment_type: b.equipment_type || '',
           equipment_model: b.equipment_model || '',
           manufacture_date: b.manufacture_date || null,
-          remark: b.remark || ''
+          remark: b.remark || '',
+          factory_id: _factoryId
         }
       }
     );
@@ -295,18 +308,21 @@ export const updateEquipment = async (req: Request, res: Response, next: NextFun
 export const deleteEquipment = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM equipment WHERE equipment_number = :id`,
-      { replacements: { id } }
+      `SELECT approval_status FROM equipment WHERE equipment_number = :id${factoryCond}`,
+      { replacements: { id, ...factoryReps } }
     );
     if (chk.length && (chk[0].approval_status || '').trim() === APPROVAL_STATUS.APPROVED) {
       res.status(403).json({ success: false, message: '已审核的记录不允许删除，请先撤消审核' });
       return;
     }
 
-    await sequelize.query(`DELETE FROM equipment WHERE equipment_number = :id`, {
-      replacements: { id }
+    await sequelize.query(`DELETE FROM equipment WHERE equipment_number = :id${factoryCond}`, {
+      replacements: { id, ...factoryReps }
     });
     res.json(success(null, '删除设备成功'));
   } catch (err) {
@@ -331,6 +347,7 @@ export const exportEquipments = async (req: Request, res: Response, next: NextFu
 export const importEquipments = async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!req.file) { res.status(400).json({ success: false, message: '请上传Excel文件' }); return; }
+    const _factoryId = getFactoryId(req);
     const rows = parseExcelFile(req.file.buffer, fields, headers);
     if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件内容为空' }); return; }
     let imported = 0;
@@ -340,7 +357,7 @@ export const importEquipments = async (req: Request, res: Response, next: NextFu
         if (existing[0].cnt > 0) {
           await sequelize.query(`UPDATE equipment SET equipment_name = :equipment_name, record_date = :record_date, equipment_type = :equipment_type, equipment_model = :equipment_model, manufacture_date = :manufacture_date, remark = :remark WHERE equipment_number = :equipment_number`, { replacements: item });
         } else {
-          await sequelize.query(`INSERT INTO equipment (${fields.join(', ')}) VALUES (${fields.map(f => ':' + f).join(', ')})`, { replacements: item });
+          await sequelize.query(`INSERT INTO equipment (${fields.join(', ')}, factory_id) VALUES (${fields.map(f => ':' + f).join(', ')}, :factory_id)`, { replacements: { ...item, factory_id: _factoryId } });
         }
         imported++;
       } catch (e) {}

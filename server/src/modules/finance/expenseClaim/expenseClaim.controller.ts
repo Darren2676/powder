@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 import {
   APPROVAL_STATUS,
   CLAIM_TYPES,
@@ -37,6 +38,11 @@ export const getExpenseClaims = async (req: Request, res: Response, next: NextFu
 
     const conditions: string[] = [];
     const replacements: any = { offset, offsetEnd: offset + limit };
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push('factory_id = :_factoryId');
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       conditions.push('(claim_number LIKE :search OR applicant_name LIKE :search OR purpose LIKE :search)');
@@ -75,10 +81,12 @@ export const getExpenseClaimDetail = async (req: Request, res: Response, next: N
   try {
     const id = req.params.id as string;
     const isNumericId = /^\d+$/.test(id);
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
     const whereClause = isNumericId
-      ? 'SELECT * FROM expense_claim WHERE id = :id'
-      : 'SELECT * FROM expense_claim WHERE claim_number = :id';
-    const [headers]: any = await sequelize.query(whereClause, { replacements: { id } });
+      ? `SELECT * FROM expense_claim WHERE id = :id${factoryCond}`
+      : `SELECT * FROM expense_claim WHERE claim_number = :id${factoryCond}`;
+    const [headers]: any = await sequelize.query(whereClause, { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } });
     if (!headers.length) { res.status(404).json({ success: false, message: '报销单不存在' }); return; }
 
     const cn = headers[0].claim_number;
@@ -142,27 +150,31 @@ export const getExpenseClaimDetail = async (req: Request, res: Response, next: N
 // ==================== 新建 ====================
 export const createExpenseClaim = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body || {};
     const user = (req as any).user;
     const username = user?.username || '';
     const userId = user?.id || null;
+    const _factoryId = getFactoryId(req);
 
     if (!b.claim_type) { res.status(400).json({ success: false, message: '报销类型必填' }); return; }
 
     const transaction = await sequelize.transaction();
     try {
-      const claimNumber = await generateClaimNumber(transaction);
+      const factoryCode = await getFactoryCode(req);
+      const claimNumber = await generateClaimNumber(factoryCode, transaction);
       await sequelize.query(
         `INSERT INTO expense_claim
           (claim_number, claim_date, claim_type, applicant_id, applicant_name, department,
-           purpose, advance_amount, remark, created_by, updated_by)
-         VALUES (:cn, :date, :type, :aid, :aname, :dept, :purpose, :advance, :remark, :cb, :cb)`,
+           purpose, advance_amount, remark, created_by, updated_by, factory_id)
+         VALUES (:cn, :date, :type, :aid, :aname, :dept, :purpose, :advance, :remark, :cb, :cb, :factory_id)`,
         {
           replacements: {
             cn: claimNumber, date: b.claim_date || dayjsDate(), type: b.claim_type,
             aid: userId, aname: username, dept: b.department || null,
             purpose: b.purpose || null, advance: b.advance_amount || 0,
             remark: b.remark || null, cb: username,
+            factory_id: _factoryId
           },
           transaction,
         }

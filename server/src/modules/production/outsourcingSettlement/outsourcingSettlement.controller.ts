@@ -4,6 +4,7 @@ import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
 import { generateOutsourcingSettlementNumber } from '@/services/documentNumber.service';
 import dayjs from 'dayjs';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 export { generateOutsourcingSettlementNumber } from '@/services/documentNumber.service';
 
@@ -24,6 +25,12 @@ export const getOutsourcingSettlements = async (req: Request, res: Response, nex
     }
     if (payment_status) { conditions.push(`payment_status = :payment_status`); replacements.payment_status = payment_status; }
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
+
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM outsourcing_settlement ${whereClause}`, { replacements });
     const total = countResult[0].total;
@@ -43,7 +50,9 @@ export const getOutsourcingSettlements = async (req: Request, res: Response, nex
 export const getOutsourcingSettlementDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [rows]: any = await sequelize.query(`SELECT * FROM outsourcing_settlement WHERE settlement_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const [rows]: any = await sequelize.query(`SELECT * FROM outsourcing_settlement WHERE settlement_number = :id${factoryCond}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } });
     if (!rows.length) { res.status(404).json({ success: false, message: '委外结算单不存在' }); return; }
 
     res.json(success(rows[0], '获取委外结算单详情成功'));
@@ -53,6 +62,7 @@ export const getOutsourcingSettlementDetail = async (req: Request, res: Response
 // ==================== 创建 ====================
 export const createOutsourcingSettlement = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body;
     if (!b.outsourcing_order_number) { res.status(400).json({ success: false, message: '委外订单号不能为空' }); return; }
 
@@ -74,7 +84,9 @@ export const createOutsourcingSettlement = async (req: Request, res: Response, n
 
     const transaction = await sequelize.transaction();
     try {
-      const settlementNumber = await generateOutsourcingSettlementNumber(transaction);
+      const factoryCode = await getFactoryCode(req);
+      const _factoryId = getFactoryId(req);
+      const settlementNumber = await generateOutsourcingSettlementNumber(factoryCode, transaction);
 
       // 自动计算金额
       const settlementQty = parseFloat(b.settlement_quantity) || remainingQty;
@@ -89,12 +101,12 @@ export const createOutsourcingSettlement = async (req: Request, res: Response, n
           settlement_number, outsourcing_order_number, settlement_date,
           settlement_quantity, unit_price, total_amount,
           tax_rate, tax_amount, amount_with_tax,
-          payment_status, status, remark, creation_date, creation_man
+          payment_status, status, remark, factory_id, creation_date, creation_man
         ) VALUES (
           :settlementNumber, :outsourcing_order_number, :settlement_date,
           :settlement_quantity, :unit_price, :total_amount,
           :tax_rate, :tax_amount, :amount_with_tax,
-          N'未付款', N'草稿', :remark, :creation_date, :creation_man
+          N'未付款', N'草稿', :remark, :factory_id, :creation_date, :creation_man
         )
       `, {
         replacements: {
@@ -108,6 +120,7 @@ export const createOutsourcingSettlement = async (req: Request, res: Response, n
           tax_amount: taxAmount,
           amount_with_tax: amountWithTax,
           remark: b.remark || '',
+          factory_id: _factoryId,
           creation_date: now,
           creation_man: username
         },

@@ -66,6 +66,25 @@
         </template>
       </a-table>
 
+      <!-- 关联样件BOM -->
+      <a-divider />
+      <a-card title="关联样件BOM" size="small" style="margin-top:16px">
+        <template #extra>
+          <a-button v-if="header?.approval_status === '已审核'" type="primary" size="small" @click="goCreateSampleBom">创建样件BOM</a-button>
+        </template>
+        <a-table v-if="relatedBoms.length > 0" :columns="bomColumns" :data-source="relatedBoms" :pagination="false" size="small" row-key="id">
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.dataIndex === 'sample_bom_number'">
+              <a-button type="link" size="small" style="padding:0" @click="router.push(`/sample-boms/${record.id}`)">{{ record.sample_bom_number }}</a-button>
+            </template>
+            <template v-if="column.dataIndex === 'status'">
+              <a-tag :color="record.status === '已导入' ? 'green' : record.status === '已确定' ? 'blue' : 'orange'">{{ record.status }}</a-tag>
+            </template>
+          </template>
+        </a-table>
+        <a-empty v-else description="暂无关联样件BOM" />
+      </a-card>
+
       <!-- 下半部分：实验室数据 -->
       <a-divider />
       <a-card title="实验室数据（技术部填写）" size="small" style="background:#fff7e6">
@@ -155,6 +174,7 @@ import { useRouter, useRoute } from 'vue-router';
 import { message, Modal } from 'ant-design-vue';
 import { ExclamationCircleOutlined } from '@ant-design/icons-vue';
 import * as api from '@/api/sales/sampleRequest';
+import { getSampleBomsByRequest } from '@/api/sales/sampleBom';
 
 const router = useRouter();
 const route = useRoute();
@@ -163,6 +183,16 @@ const labSaving = ref(false);
 const header = ref<any>(null);
 const items = ref<any[]>([]);
 const lab = ref<any>(null);
+const relatedBoms = ref<any[]>([]);
+
+const bomColumns = [
+  { title: '样件BOM编号', dataIndex: 'sample_bom_number', width: 160 },
+  { title: 'BOM名称', dataIndex: 'bom_name', width: 140 },
+  { title: '产品编号', dataIndex: 'item_number', width: 110 },
+  { title: '当前版本', dataIndex: 'current_version', width: 80 },
+  { title: '最终版本', dataIndex: 'final_version', width: 80 },
+  { title: '状态', dataIndex: 'status', width: 90 },
+];
 
 const labForm = reactive({
   lab_panel_qty: null as number | null,
@@ -187,6 +217,9 @@ function statusColor(status: string) {
 
 function goBack() { router.push({ name: 'SampleRequestList' }); }
 function handleEdit() { router.push({ name: 'SampleRequestCreate', query: { edit: header.value?.request_number } }); }
+function goCreateSampleBom() {
+  router.push({ name: 'SampleBomList' });
+}
 
 function fillLabForm(labData: any) {
   Object.assign(labForm, {
@@ -209,6 +242,13 @@ async function fetchDetail() {
       items.value = res.data.items || [];
       lab.value = res.data.lab;
       if (res.data.lab) fillLabForm(res.data.lab);
+      // 加载关联样件BOM
+      if (res.data.header?.request_number) {
+        try {
+          const bomRes: any = await getSampleBomsByRequest(res.data.header.request_number);
+          relatedBoms.value = bomRes.data || [];
+        } catch { /* ignore */ }
+      }
     }
   } finally {
     loading.value = false;

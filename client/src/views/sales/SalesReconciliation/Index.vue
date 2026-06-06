@@ -19,6 +19,8 @@ const filterRecStatus = ref<string>('')
 const selectedRowKeys = ref<number[]>([])
 const markLoading = ref(false)
 const printLoading = ref(false)
+const printModalVisible = ref(false)
+const printHtmlContent = ref('')
 
 const isRowLocked = (record: any) =>
   record.order_status === '已签收' &&
@@ -182,10 +184,6 @@ const handlePrintStatement = async () => {
       const items = res.data.items || []
       if (!items.length) { message.warning('无打印数据'); return }
 
-      // 构建打印窗口
-      const printWindow = window.open('', '_blank', 'width=900,height=700')
-      if (!printWindow) { message.error('请允许弹出窗口'); return }
-
       const now = dayjs().format('YYYY-MM-DD HH:mm')
       let rowsHtml = ''
       items.forEach((item: any, idx: number) => {
@@ -208,40 +206,24 @@ const handlePrintStatement = async () => {
           </tr>`
       })
 
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head><meta charset="utf-8"><title>销售对账单</title>
-        <style>
-          body { font-family: SimSun, serif; font-size: 12px; padding: 20px; }
-          h2 { text-align: center; font-size: 18px; margin-bottom: 5px; }
-          .info { text-align: center; font-size: 12px; margin-bottom: 15px; color: #666; }
-          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-          th, td { border: 1px solid #333; padding: 5px 8px; text-align: left; font-size: 11px; }
-          th { background: #f0f0f0; font-weight: bold; }
-          .footer { margin-top: 20px; font-size: 12px; }
-          @media print { body { padding: 10px; } }
-        </style></head>
-        <body>
-          <h2>销 售 对 账 单</h2>
-          <div class="info">打印时间：${now} &nbsp;&nbsp; 共计 ${items.length} 条记录</div>
-          <table>
-            <thead><tr>
-              <th>序号</th><th>发货单号</th><th>销售订单号</th><th>客户</th>
-              <th>产品编号</th><th>产品名称</th><th>规格</th>
-              <th>发货数量</th><th>单位</th><th>发货日期</th>
-              <th>批次信息</th><th>对账状态</th>
-            </tr></thead>
-            <tbody>${rowsHtml}</tbody>
-          </table>
-          <div class="footer" style="display:flex;justify-content:space-between;margin-top:30px">
-            <span>制单人：_____________</span>
-            <span>对账人：_____________</span>
-            <span>日期：_____________</span>
-          </div>
-        </body></html>`)
-      printWindow.document.close()
-      setTimeout(() => printWindow.print(), 500)
+      printHtmlContent.value = `
+        <h2>销 售 对 账 单</h2>
+        <div class="info">打印时间：${now} &nbsp;&nbsp; 共计 ${items.length} 条记录</div>
+        <table>
+          <thead><tr>
+            <th>序号</th><th>发货单号</th><th>销售订单号</th><th>客户</th>
+            <th>产品编号</th><th>产品名称</th><th>规格</th>
+            <th>发货数量</th><th>单位</th><th>发货日期</th>
+            <th>批次信息</th><th>对账状态</th>
+          </tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+        <div class="footer" style="display:flex;justify-content:space-between;margin-top:30px">
+          <span>制单人：_____________</span>
+          <span>对账人：_____________</span>
+          <span>日期：_____________</span>
+        </div>`
+      printModalVisible.value = true
     }
   } catch {
     message.error('获取打印数据失败')
@@ -249,6 +231,8 @@ const handlePrintStatement = async () => {
     printLoading.value = false
   }
 }
+
+const doPrint = () => { window.print() }
 
 onMounted(async () => {
   await loadColumnPreference()
@@ -350,6 +334,22 @@ onMounted(async () => {
       @save="saveColumnSetting"
       @reset="resetColumnSetting"
     />
+
+    <!-- 打印预览模态框 -->
+    <a-modal
+      v-model:open="printModalVisible"
+      title="打印对账单预览"
+      width="960px"
+      :footer="null"
+      :destroyOnClose="true"
+      style="top: 20px"
+    >
+      <div class="print-action-bar" style="display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 10px">
+        <a-button type="primary" @click="doPrint"><PrinterOutlined /> 打印</a-button>
+        <a-button @click="printModalVisible = false">关闭</a-button>
+      </div>
+      <div id="printArea" class="print-content" v-html="printHtmlContent"></div>
+    </a-modal>
   </div>
 </template>
 
@@ -359,5 +359,50 @@ onMounted(async () => {
 }
 .row-locked td {
   color: #aaa !important;
+}
+
+.print-content {
+  font-family: SimSun, serif;
+  font-size: 12px;
+  padding: 10px;
+}
+.print-content h2 {
+  text-align: center;
+  font-size: 18px;
+  margin-bottom: 5px;
+}
+.print-content .info {
+  text-align: center;
+  font-size: 12px;
+  margin-bottom: 15px;
+  color: #666;
+}
+.print-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+.print-content th,
+.print-content td {
+  border: 1px solid #333;
+  padding: 5px 8px;
+  text-align: left;
+  font-size: 11px;
+}
+.print-content th {
+  background: #f0f0f0;
+  font-weight: bold;
+}
+.print-content .footer {
+  margin-top: 20px;
+  font-size: 12px;
+}
+
+@media print {
+  body * { visibility: hidden; }
+  #printArea, #printArea * { visibility: visible; }
+  #printArea { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; }
+  .print-action-bar { display: none !important; }
+  .ant-modal-mask, .ant-modal-wrap { display: none !important; }
 }
 </style>

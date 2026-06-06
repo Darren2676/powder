@@ -7,6 +7,7 @@ import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { generateOutsourcingOrderNumber, generateOutsourcingIssueNumber, generateOutsourcingReceiptNumber } from '@/services/documentNumber.service';
 import { registerApprovalHandler } from '@/services/approval.service';
 import { createLogger } from '@/config/logger';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 const log = createLogger('outsourcingOrder');
 
@@ -32,6 +33,12 @@ export const getOutsourcingOrders = async (req: Request, res: Response, next: Ne
     if (approval_status) { conditions.push(`approval_status = :approval_status`); replacements.approval_status = approval_status; }
     if (order_status) { conditions.push(`order_status = :order_status`); replacements.order_status = order_status; }
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
+
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM outsourcing_order ${whereClause}`, { replacements });
     const total = countResult[0].total;
@@ -51,7 +58,9 @@ export const getOutsourcingOrders = async (req: Request, res: Response, next: Ne
 export const getOutsourcingOrderDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [rows]: any = await sequelize.query(`SELECT * FROM outsourcing_order WHERE outsourcing_order_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const [rows]: any = await sequelize.query(`SELECT * FROM outsourcing_order WHERE outsourcing_order_number = :id${factoryCond}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } });
     if (!rows.length) { res.status(404).json({ success: false, message: '委外订单不存在' }); return; }
     res.json(success(rows[0], '获取委外订单详情成功'));
   } catch (err) { next(err); }
@@ -60,6 +69,7 @@ export const getOutsourcingOrderDetail = async (req: Request, res: Response, nex
 // ==================== 创建 ====================
 export const createOutsourcingOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body;
     if (!b.process_task_number) { res.status(400).json({ success: false, message: '工序任务号不能为空' }); return; }
 
@@ -78,7 +88,7 @@ export const createOutsourcingOrder = async (req: Request, res: Response, next: 
     );
     if (existing[0].cnt > 0) { res.status(400).json({ success: false, message: '该工序任务已存在委外订单' }); return; }
 
-    const orderNumber = await generateOutsourcingOrderNumber();
+    const orderNumber = await generateOutsourcingOrderNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const username = (req as any).user?.username || '';
 
@@ -174,11 +184,14 @@ export const updateOutsourcingOrder = async (req: Request, res: Response, next: 
 export const deleteOutsourcingOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [check]: any = await sequelize.query(`SELECT approval_status FROM outsourcing_order WHERE outsourcing_order_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    const [check]: any = await sequelize.query(`SELECT approval_status FROM outsourcing_order WHERE outsourcing_order_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!check.length) { res.status(404).json({ success: false, message: '委外订单不存在' }); return; }
     if (check[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return; }
 
-    await sequelize.query(`DELETE FROM outsourcing_order WHERE outsourcing_order_number = :id`, { replacements: { id } });
+    await sequelize.query(`DELETE FROM outsourcing_order WHERE outsourcing_order_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     res.json(success(null, '删除委外订单成功'));
   } catch (err) { next(err); }
 };
@@ -275,6 +288,7 @@ export const exportOutsourcingOrders = async (req: Request, res: Response, next:
 // ==================== 委外订单审批回调：自动生成备料出库申请和委外回收申请 ====================
 const onOutsourcingOrderApproved = async (recordId: string): Promise<void> => {
   try {
+    const factoryCode = '';
     const orderNumber = recordId;
     // 查询委外订单
     const [orders]: any = await sequelize.query(
@@ -320,8 +334,9 @@ const onOutsourcingOrderApproved = async (recordId: string): Promise<void> => {
 
     const transaction = await sequelize.transaction();
     try {
+      const factoryCode = '';
       // ====== 自动创建备料出库申请 ======
-      const issueNumber = await generateOutsourcingIssueNumber(transaction);
+      const issueNumber = await generateOutsourcingIssueNumber(factoryCode, transaction);
       const issueWarehouseNumber = task.wc_warehouse_number || '';
       const issueWarehouseName = task.wc_warehouse_name || '';
 
@@ -381,7 +396,7 @@ const onOutsourcingOrderApproved = async (recordId: string): Promise<void> => {
       }
 
       // ====== 自动创建委外回收申请 ======
-      const receiptNumber = await generateOutsourcingReceiptNumber(transaction);
+      const receiptNumber = await generateOutsourcingReceiptNumber(factoryCode, transaction);
 
       await sequelize.query(`
         INSERT INTO outsourcing_receipt (

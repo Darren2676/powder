@@ -99,6 +99,7 @@ const warehouseOptions = ref<any[]>([])
 const pagination = reactive({ current: 1, pageSize: 10, total: 0, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` })
 
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '物料编号', dataIndex: 'item_number', key: 'item_number', width: 130 },
   { title: '物料名称', dataIndex: 'item_name', key: 'item_name', width: 150 },
   { title: '类型', key: 'item_type', width: 80 },

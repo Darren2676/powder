@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/store/auth';
 import { useNotificationStore } from '@/store/notification';
+import { useFactoryStore } from '@/store/factory';
 import { getNotifications, markAsRead, markAllAsRead } from '@/api/system/notification';
 import {
   MenuFoldOutlined,
@@ -12,7 +13,9 @@ import {
   LogoutOutlined,
   SettingOutlined,
   CheckOutlined,
-  DownOutlined
+  DownOutlined,
+  SwapOutlined,
+  ShopOutlined
 } from '@ant-design/icons-vue';
 import { message } from 'ant-design-vue';
 import dayjs from 'dayjs';
@@ -24,6 +27,44 @@ const emit = defineEmits<{
 const router = useRouter();
 const authStore = useAuthStore();
 const notificationStore = useNotificationStore();
+const factoryStore = useFactoryStore();
+
+// ── 工厂切换相关 ──
+const currentFactoryName = computed(() => {
+  if (factoryStore.viewMode === 'all') return '全部工厂';
+  if (!factoryStore.currentFactory) return '未分配';
+  return factoryStore.currentFactory.factory_short || factoryStore.currentFactory.factory_name;
+});
+
+const isHQRole = computed(() => {
+  const role = authStore.user?.role || '';
+  return role.startsWith('headquarters_');
+});
+
+const handleSwitchFactory = async (factoryId: number) => {
+  const success = await factoryStore.switchFactory(factoryId);
+  if (success) {
+    message.success(`已切换至 ${factoryStore.currentFactory?.factory_name}`);
+    // 切换后刷新当前页面数据
+    window.location.reload();
+  } else {
+    message.error('工厂切换失败');
+  }
+};
+
+const handleViewAllFactories = () => {
+  factoryStore.setViewMode('all');
+  message.success('已切换至全部工厂视图');
+  window.location.reload();
+};
+
+const handleFactoryMenuItemClick = async (factoryId: number) => {
+  // 如果当前在全部视图模式，先切换到单工厂模式
+  if (factoryStore.viewMode === 'all') {
+    factoryStore.setViewMode('single');
+  }
+  await handleSwitchFactory(factoryId);
+};
 
 const notificationDrawerVisible = ref(false);
 const unreadNotifications = ref<any[]>([]);
@@ -164,6 +205,42 @@ const handleMarkAllRead = async () => {
           </template>
         </a-button>
       </a-badge>
+
+      <!-- Factory Switcher -->
+      <a-dropdown v-if="factoryStore.factories.length > 0" :trigger="['click']">
+        <a-button type="text" class="factory-btn">
+          <ShopOutlined style="margin-right: 4px;" />
+          <span>{{ currentFactoryName }}</span>
+          <SwapOutlined style="margin-left: 4px; font-size: 12px;" />
+        </a-button>
+        <template #overlay>
+          <a-menu>
+            <!-- 总部角色：全部工厂视图选项 -->
+            <template v-if="isHQRole">
+              <a-menu-item
+                key="view-all"
+                @click="handleViewAllFactories"
+                :style="{ fontWeight: factoryStore.viewMode === 'all' ? 'bold' : 'normal' }"
+              >
+                <ShopOutlined />
+                <span>全部工厂（总部视图）</span>
+                <a-tag v-if="factoryStore.viewMode === 'all'" color="blue" style="margin-left: 8px;">当前</a-tag>
+              </a-menu-item>
+              <a-menu-divider />
+            </template>
+            <!-- 工厂列表 -->
+            <a-menu-item
+              v-for="f in factoryStore.factories"
+              :key="f.id"
+              @click="handleFactoryMenuItemClick(f.id)"
+              :style="{ fontWeight: factoryStore.currentFactory?.id === f.id && factoryStore.viewMode === 'single' ? 'bold' : 'normal' }"
+            >
+              <span>{{ f.factory_short || f.factory_name }} ({{ f.factory_code }})</span>
+              <a-tag v-if="factoryStore.currentFactory?.id === f.id && factoryStore.viewMode === 'single'" color="green" style="margin-left: 8px;">当前</a-tag>
+            </a-menu-item>
+          </a-menu>
+        </template>
+      </a-dropdown>
 
       <!-- User Dropdown -->
       <a-dropdown>

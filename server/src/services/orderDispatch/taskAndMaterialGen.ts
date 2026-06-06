@@ -11,7 +11,7 @@ export const generateProcessTasks = async (params: {
   orderNumber: string; productionNumber: string; itemNumber: string;
   itemName: string; specifications: string; basicUnit: string;
   plannedQuantity: number;
-}, username: string, transaction: any): Promise<{
+}, username: string, transaction: any, factoryCode: string = ''): Promise<{
   tasksGenerated: number; skipReason: string;
   outsourcingReqLines: Array<{
     taskNumber: string; stepNumber: number;
@@ -92,7 +92,7 @@ export const generateProcessTasks = async (params: {
           );
           if (existing[0].cnt > 0) continue;
 
-          const taskNumber = await generateTaskNumber(transaction);
+          const taskNumber = await generateTaskNumber(factoryCode, transaction);
           await sequelize.query(
             `INSERT INTO process_task (
               process_task_number, production_order_number, production_number,
@@ -180,7 +180,7 @@ export const generateProcessTasks = async (params: {
               { replacements: { orderNo }, transaction }
             );
             if (dupReq[0].cnt === 0) {
-              const reqNumber = await generateOutsourcingReqNumber(transaction);
+              const reqNumber = await generateOutsourcingReqNumber(factoryCode, transaction);
               await sequelize.query(`
                 INSERT INTO outsourcing_req (outsourcing_req_number, production_order_number, production_number, item_number, item_name, specifications, basic_unit, planned_quantity, approval_status, order_status, remark, creation_date, creation_man)
                 VALUES (:reqNumber, :pon, :pn, :itemNum, :itemName, :specs, :unit, :qty, N'草稿', N'未执行', N'派发自动生成', :createDate, :createMan)
@@ -224,7 +224,7 @@ export const generateMaterialPreparation = async (params: {
   itemName: string; specifications: string; basicUnit: string;
   plannedQuantity: number; routeMaterialMap: Record<string, any>;
   routeStepNameMap: Record<number, string>; taskMap: Record<number, any>;
-}, username: string, transaction: any): Promise<{
+}, username: string, transaction: any, factoryCode: string = ''): Promise<{
   materialsGenerated: number; skipReason: string;
   prepNumberForCleanup: string;
 }> => {
@@ -274,7 +274,7 @@ export const generateMaterialPreparation = async (params: {
         if (firstLevelDetails.length === 0) {
           prepSkipReason = 'BOM无物料明细';
         } else {
-          const prepNumber = await generatePrepNumber(transaction);
+          const prepNumber = await generatePrepNumber(factoryCode, transaction);
           prepNumberForCleanup = prepNumber;
           const plannedQty = parseFloat(String(params.plannedQuantity)) || 0;
           const multiplier = bomBaseQty > 0 ? plannedQty / bomBaseQty : 0;

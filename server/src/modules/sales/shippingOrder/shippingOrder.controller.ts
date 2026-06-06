@@ -5,10 +5,13 @@ import { exportToExcel } from '../../../utils/excel.util';
 import { generateShippingOrderNumber } from '../../../services/documentNumber.service';
 import { syncLineStatus } from '@/services/salesOrderSync.service';
 import { syncFinishedGoodsSummary } from '@/services/inventory.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 创建发货单（基于发货申请，支持分批） ====================
 export const createShippingOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
 
     // ---- 基础校验 ----
@@ -22,6 +25,7 @@ export const createShippingOrder = async (req: Request, res: Response, next: Nex
     // ---- 事务处理（查询+校验+写入在同一事务内，防止并发竞态） ----
     const transaction = await sequelize.transaction();
     try {
+      const factoryCode = await getFactoryCode(req);
       // 校验发货申请状态（事务内加锁）
       const [reqRows]: any = await sequelize.query(
         `SELECT * FROM shipping_request WITH (UPDLOCK) WHERE request_number = :rn`,
@@ -81,7 +85,7 @@ export const createShippingOrder = async (req: Request, res: Response, next: Nex
         }
       }
 
-      const shipping_order_number = await generateShippingOrderNumber(transaction);
+      const shipping_order_number = await generateShippingOrderNumber(factoryCode, transaction);
 
       // 1. 插入发货单主表 (status = 待发货, 关联发货申请)
       await sequelize.query(`
@@ -90,13 +94,13 @@ export const createShippingOrder = async (req: Request, res: Response, next: Nex
            warehouse_number, warehouse_name, shipping_date, status,
            carrier, tracking_number, freight,
            shipping_address, contact_person, contact_phone,
-           remark, creation_man, creation_date)
+           remark, creation_man, creation_date, factory_id)
         VALUES
           (:shipping_order_number, :request_number, :customer_number, :customer_name,
            :warehouse_number, :warehouse_name, GETDATE(), N'待发货',
            :carrier, :tracking_number, :freight,
            :shipping_address, :contact_person, :contact_phone,
-           :remark, :creation_man, GETDATE())
+           :remark, :creation_man, GETDATE(), :factory_id)
       `, {
         replacements: {
           shipping_order_number,
@@ -112,7 +116,8 @@ export const createShippingOrder = async (req: Request, res: Response, next: Nex
           contact_person: b.contact_person || '',
           contact_phone: b.contact_phone || '',
           remark: b.remark || '',
-          creation_man: (req as any).user?.username || ''
+          creation_man: (req as any).user?.username || '',
+          factory_id: _factoryId
         },
         transaction
       });
@@ -263,6 +268,12 @@ export const getShippingOrderDetailsPage = async (req: Request, res: Response, n
       replacements.dataScopeUserId = scope.head_of_sales_id;
     }
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND h.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
       `SELECT COUNT(*) as total FROM shipping_order_batch b
        INNER JOIN shipping_order_detail d ON d.id = b.detail_id AND d.shipping_order_number = b.shipping_order_number
@@ -368,6 +379,12 @@ export const getShippingOrders = async (req: Request, res: Response, next: NextF
       replacements.dataScopeUserId = scope.head_of_sales_id;
     }
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND so.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
       `SELECT COUNT(*) as total FROM shipping_order so ${whereClause}`,
       { replacements }
@@ -428,9 +445,13 @@ export const updateLogistics = async (req: Request, res: Response, next: NextFun
     const { shipping_order_number } = req.params;
     const { carrier, tracking_number, freight, shipping_address, contact_person, contact_phone } = req.body;
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [existing]: any = await sequelize.query(
-      `SELECT id, status FROM shipping_order WHERE shipping_order_number = :sn`,
-      { replacements: { sn: shipping_order_number } }
+      `SELECT id, status FROM shipping_order WHERE shipping_order_number = :sn${factoryCond}`,
+      { replacements: { sn: shipping_order_number, ...factoryReps } }
     );
     if (existing.length === 0) {
       res.status(404).json({ success: false, message: '发货单不存在' }); return;
@@ -447,7 +468,7 @@ export const updateLogistics = async (req: Request, res: Response, next: NextFun
         shipping_address = :shipping_address,
         contact_person = :contact_person,
         contact_phone = :contact_phone
-      WHERE shipping_order_number = :sn
+      WHERE shipping_order_number = :sn${factoryCond}
     `, {
       replacements: {
         sn: shipping_order_number,
@@ -456,7 +477,8 @@ export const updateLogistics = async (req: Request, res: Response, next: NextFun
         freight: freight || 0,
         shipping_address: shipping_address || '',
         contact_person: contact_person || '',
-        contact_phone: contact_phone || ''
+        contact_phone: contact_phone || '',
+        ...factoryReps
       }
     });
 
@@ -474,9 +496,13 @@ export const updateStatus = async (req: Request, res: Response, next: NextFuncti
       res.status(400).json({ success: false, message: '无效的状态值，撤消请使用撤消接口' }); return;
     }
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [existing]: any = await sequelize.query(
-      `SELECT id, status FROM shipping_order WHERE shipping_order_number = :sn`,
-      { replacements: { sn: shipping_order_number } }
+      `SELECT id, status FROM shipping_order WHERE shipping_order_number = :sn${factoryCond}`,
+      { replacements: { sn: shipping_order_number, ...factoryReps } }
     );
     if (existing.length === 0) {
       res.status(404).json({ success: false, message: '发货单不存在' }); return;
@@ -491,8 +517,8 @@ export const updateStatus = async (req: Request, res: Response, next: NextFuncti
     }
 
     await sequelize.query(
-      `UPDATE shipping_order SET status = :status WHERE shipping_order_number = :sn`,
-      { replacements: { sn: shipping_order_number, status: newStatus } }
+      `UPDATE shipping_order SET status = :status WHERE shipping_order_number = :sn${factoryCond}`,
+      { replacements: { sn: shipping_order_number, status: newStatus, ...factoryReps } }
     );
 
     res.json(success(null, `状态已更新为"${newStatus}"`));
@@ -507,9 +533,13 @@ export const cancelShippingOrder = async (req: Request, res: Response, next: Nex
     const transaction = await sequelize.transaction();
     try {
       // 1. 查询发货单状态（加锁）
+      const _factoryId = getFactoryId(req);
+      const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+      const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
       const [soRows]: any = await sequelize.query(
-        `SELECT * FROM shipping_order WITH (UPDLOCK) WHERE shipping_order_number = :sn`,
-        { replacements: { sn: shipping_order_number }, transaction }
+        `SELECT * FROM shipping_order WITH (UPDLOCK) WHERE shipping_order_number = :sn${factoryCond}`,
+        { replacements: { sn: shipping_order_number, ...factoryReps }, transaction }
       );
       if (soRows.length === 0) {
         await transaction.rollback();
@@ -862,6 +892,12 @@ export const getReconciliationPage = async (req: Request, res: Response, next: N
     if (scope?.head_of_sales_id) {
       whereClause += ` AND h.customer_number IN (SELECT customer_number FROM customer WHERE head_of_sales_id = :dataScopeUserId)`;
       replacements.dataScopeUserId = scope.head_of_sales_id;
+    }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND h.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
     }
 
     const [countResult]: any = await sequelize.query(

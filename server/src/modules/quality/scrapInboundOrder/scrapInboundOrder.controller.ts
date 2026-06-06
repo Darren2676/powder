@@ -8,6 +8,7 @@
 import { Request, Response } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 列表查询 ====================
 export const getScrapInboundOrders = async (req: Request, res: Response) => {
@@ -18,6 +19,11 @@ export const getScrapInboundOrders = async (req: Request, res: Response) => {
 
     let whereClause = `WHERE h.stock_in_type = N'报废入库'`;
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND h.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       whereClause += ` AND (h.stock_in_number LIKE :search OR d.item_number LIKE :search OR d.item_name LIKE :search)`;
@@ -79,10 +85,11 @@ export const getScrapInboundOrders = async (req: Request, res: Response) => {
 export const getScrapInboundOrderDetail = async (req: Request, res: Response) => {
   try {
     const { stock_in_number } = req.params;
+    const _factoryId = getFactoryId(req);
 
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM stock_in WHERE stock_in_number = :number AND stock_in_type = N'报废入库'`,
-      { replacements: { number: stock_in_number } }
+      `SELECT * FROM stock_in WHERE stock_in_number = :number AND stock_in_type = N'报废入库'${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+      { replacements: { number: stock_in_number, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } }
     );
 
     if (!headers.length) {
@@ -114,12 +121,13 @@ export const getScrapInboundOrderDetail = async (req: Request, res: Response) =>
 };
 
 // ==================== 生成入库单号 ====================
-const generateStockInNumber = async (): Promise<string> => {
+const generateStockInNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = new Date();
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `SI-${dateStr}-`;
+  const prefix = `SI${fc}-${dateStr}-`;
 
   const [rows]: any = await sequelize.query(
     `SELECT MAX(stock_in_number) as max_num FROM stock_in WHERE stock_in_number LIKE :prefix`,
@@ -137,6 +145,8 @@ const generateStockInNumber = async (): Promise<string> => {
 // ==================== 新建报废入库单 ====================
 export const createScrapInboundOrder = async (req: Request, res: Response) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const { details, accounting_period, remark } = req.body;
     const username = (req as any).user?.username || '';
 
@@ -167,7 +177,7 @@ export const createScrapInboundOrder = async (req: Request, res: Response) => {
     }
     const scrapWarehouse = scrapWarehouses[0];
 
-    const stockInNumber = await generateStockInNumber();
+    const stockInNumber = await generateStockInNumber(factoryCode);
 
     const transaction = await sequelize.transaction();
     try {
@@ -177,12 +187,12 @@ export const createScrapInboundOrder = async (req: Request, res: Response) => {
           stock_in_number, purchase_order_number, supplier_number, supplier_name,
           warehouse_number, warehouse_name, stock_in_date, stock_in_type,
           approval_status, [condition], operator, remark,
-          creation_date, creation_man, accounting_period
+          creation_date, creation_man, accounting_period, factory_id
         ) VALUES (
           :stock_in_number, N'', N'', N'',
           :warehouse_number, :warehouse_name, CAST(GETDATE() AS DATE), N'报废入库',
           N'草稿', N'启用', :operator, :remark,
-          GETDATE(), :creation_man, :accounting_period
+          GETDATE(), :creation_man, :accounting_period, :factory_id
         )
       `, {
         replacements: {
@@ -192,7 +202,8 @@ export const createScrapInboundOrder = async (req: Request, res: Response) => {
           operator: username,
           remark: remark || '',
           creation_man: username,
-          accounting_period: accounting_period || ''
+          accounting_period: accounting_period || '',
+          factory_id: _factoryId
         },
         transaction
       });
@@ -248,11 +259,14 @@ export const createScrapInboundOrder = async (req: Request, res: Response) => {
 export const deleteScrapInboundOrder = async (req: Request, res: Response) => {
   try {
     const { stock_in_number } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     // 校验状态
     const [existing]: any = await sequelize.query(
-      `SELECT approval_status FROM stock_in WHERE stock_in_number = :number AND stock_in_type = N'报废入库'`,
-      { replacements: { number: stock_in_number } }
+      `SELECT approval_status FROM stock_in WHERE stock_in_number = :number AND stock_in_type = N'报废入库'${factoryCond}`,
+      { replacements: { number: stock_in_number, ...factoryReps } }
     );
 
     if (!existing.length) {
@@ -271,8 +285,8 @@ export const deleteScrapInboundOrder = async (req: Request, res: Response) => {
         { replacements: { number: stock_in_number }, transaction }
       );
       await sequelize.query(
-        `DELETE FROM stock_in WHERE stock_in_number = :number`,
-        { replacements: { number: stock_in_number }, transaction }
+        `DELETE FROM stock_in WHERE stock_in_number = :number${factoryCond}`,
+        { replacements: { number: stock_in_number, ...factoryReps }, transaction }
       );
       await transaction.commit();
       console.log('报废入库单删除成功:', stock_in_number);

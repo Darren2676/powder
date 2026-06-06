@@ -49,8 +49,8 @@ const baseFields = ['item_number', 'item_name', 'item_type', 'item_class_number'
 const baseHeaders = ['物品编号', '物品名称', '物品类型', '分类编号', '分类名称', '物品属性', '基本单位', '规格', '业务范围', '安全库存管理', '安全库存数', '生产提前期(天)', '采购提前期(天)', '备注'];
 
 // 库存基础分区字段
-const inventoryFields = ['batch_management', 'stagnation_days', 'lock_inventory', 'default_warehouse', 'standard_cost', 'actual_cost', 'rounding_method', 'abc_class', 'inventory_unit', 'outbound_method'];
-const inventoryHeaders = ['批次管理', '呆滞日期', '启用锁库', '默认仓库', '标准成本', '实际成本', '取整方式', 'ABC分类', '库存单位', '出库方式'];
+const inventoryFields = ['batch_management', 'stagnation_days', 'lock_inventory', 'default_warehouse', 'standard_cost', 'actual_cost', 'rounding_method', 'abc_class', 'inventory_unit', 'outbound_method', 'enable_shelf_life', 'shelf_life_days'];
+const inventoryHeaders = ['批次管理', '呆滞日期', '启用锁库', '默认仓库', '标准成本', '实际成本', '取整方式', 'ABC分类', '库存单位', '出库方式', '启用有效期', '有效天数'];
 
 // 生产&计划分区字段
 const productionFields = ['daily_capacity', 'default_routing', 'defect_rate', 'conversion_batch_size', 'planning_strategy', 'increment_size', 'planning_batch_size', 'production_unit'];
@@ -207,6 +207,8 @@ export const createItem = async (req: Request, res: Response, next: NextFunction
         abc_class: b.abc_class || '',
         inventory_unit: b.inventory_unit || '',
         outbound_method: b.outbound_method || '无限制',
+                enable_shelf_life: b.enable_shelf_life || 'N',
+                shelf_life_days: b.shelf_life_days || 0,
         // 生产&计划字段
         daily_capacity: b.daily_capacity || 0,
         default_routing: b.default_routing || '',

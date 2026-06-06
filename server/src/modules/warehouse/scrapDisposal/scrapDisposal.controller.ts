@@ -10,6 +10,7 @@ import { success } from '../../../utils/response.util';
 import { generateBatchNumber, generateTransactionNumber, syncFinishedGoodsSummary } from '@/services/inventory.service';
 import { createTransactionBatches, validateAccountingPeriodOpen } from '@/services/warehouse/helpers';
 import { BusinessError } from '@/shared/errors/BusinessError';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 报废仓库存查询 ====================
 export const getScrapInventory = async (req: Request, res: Response, next: NextFunction) => {
@@ -100,6 +101,8 @@ export const getScrapBatchDetail = async (req: Request, res: Response, next: Nex
 // ==================== 创建报废处置申请 ====================
 export const createScrapDisposal = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.details || !Array.isArray(b.details) || b.details.length === 0) {
       res.status(400).json({ success: false, message: '请添加至少一条处置明细' });
@@ -124,7 +127,7 @@ export const createScrapDisposal = async (req: Request, res: Response, next: Nex
     await validateAccountingPeriodOpen(accountingPeriod);
 
     // 生成处置单号
-    const disposalNumber = await generateDisposalNumber();
+    const disposalNumber = await generateDisposalNumber(factoryCode);
 
     const transaction = await sequelize.transaction();
     try {
@@ -133,9 +136,9 @@ export const createScrapDisposal = async (req: Request, res: Response, next: Nex
       // 插入处置单头
       await sequelize.query(`
         INSERT INTO scrap_disposal (disposal_number, warehouse_number, warehouse_name,
-          disposal_reason, remark, status, operator, creation_date, accounting_period)
+          disposal_reason, remark, status, operator, factory_id, creation_date, accounting_period)
         VALUES (:disposal_number, :warehouse_number, :warehouse_name,
-          :disposal_reason, :remark, N'待确认', :operator, GETDATE(), :accounting_period)
+          :disposal_reason, :remark, N'待确认', :operator, :factory_id, GETDATE(), :accounting_period)
       `, {
         replacements: {
           disposal_number: disposalNumber,
@@ -143,6 +146,7 @@ export const createScrapDisposal = async (req: Request, res: Response, next: Nex
           warehouse_name: scrapWh[0].warehouse_name,
           disposal_reason: b.disposal_reason,
           remark: b.remark || '',
+          factory_id: _factoryId,
           accounting_period: accountingPeriod,
           operator
         },
@@ -254,10 +258,13 @@ export const confirmScrapDisposal = async (req: Request, res: Response, next: Ne
   try {
     const { disposal_number } = req.params;
     const { confirm_remark = '' } = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM scrap_disposal WHERE disposal_number = :dn`,
-      { replacements: { dn: disposal_number } }
+      `SELECT * FROM scrap_disposal WHERE disposal_number = :dn${factoryCond}`,
+      { replacements: { dn: disposal_number, ...factoryReps } }
     );
     if (!headers.length) {
       res.status(404).json({ success: false, message: '处置单不存在' });
@@ -291,6 +298,8 @@ export const confirmScrapDisposal = async (req: Request, res: Response, next: Ne
     const operator = (req as any).user?.username || '';
 
     try {
+      const factoryCode = await getFactoryCode(req);
+      const _factoryId = getFactoryId(req);
       for (const d of details) {
         const qty = Number(d.quantity) || 0;
         if (qty <= 0) continue;
@@ -331,18 +340,18 @@ export const confirmScrapDisposal = async (req: Request, res: Response, next: Ne
 
           await syncFinishedGoodsSummary(d.item_number, header.warehouse_number, transaction, '不合格品');
 
-          const txNum = await generateTransactionNumber(transaction);
+          const txNum = await generateTransactionNumber(factoryCode, transaction);
           transactionNumbers.push(txNum);
 
           await sequelize.query(`
             INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number,
               item_number, item_name, specifications, basic_unit, product_drawing_number,
               warehouse_number, warehouse_name, quantity, before_quantity, after_quantity,
-              batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period)
+              batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period, factory_id)
             VALUES (:transaction_number, N'出库', N'报废处置', :source_number,
               :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number,
               :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity,
-              :batch_number, :operator, GETDATE(), :remark, N'不合格品', GETDATE(), :accounting_period)
+              :batch_number, :operator, GETDATE(), :remark, N'不合格品', GETDATE(), :accounting_period, :factory_id)
           `, {
             replacements: {
               transaction_number: txNum,
@@ -358,7 +367,8 @@ export const confirmScrapDisposal = async (req: Request, res: Response, next: Ne
               batch_number: d.batch_number,
               operator,
               remark: header.disposal_reason || '报废处置',
-              accounting_period: accountingPeriod
+              accounting_period: accountingPeriod,
+              factory_id: _factoryId
             },
             transaction
           });
@@ -413,17 +423,17 @@ export const confirmScrapDisposal = async (req: Request, res: Response, next: Ne
           const afterQty = Math.max(0, beforeQty - qty);
 
           // 流水记录
-          const txNum = await generateTransactionNumber(transaction);
+          const txNum = await generateTransactionNumber(factoryCode, transaction);
           transactionNumbers.push(txNum);
           await sequelize.query(`
             INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number,
               item_number, item_name, specifications, basic_unit, product_drawing_number,
               warehouse_number, warehouse_name, quantity, before_quantity, after_quantity,
-              batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period)
+              batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period, factory_id)
             VALUES (:transaction_number, N'出库', N'报废处置', :source_number,
               :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number,
               :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity,
-              :batch_number, :operator, GETDATE(), :remark, N'不合格品', GETDATE(), :accounting_period)
+              :batch_number, :operator, GETDATE(), :remark, N'不合格品', GETDATE(), :accounting_period, :factory_id)
           `, {
             replacements: {
               transaction_number: txNum,
@@ -439,7 +449,8 @@ export const confirmScrapDisposal = async (req: Request, res: Response, next: Ne
               batch_number: usedBatches[0]?.batch_number || '',
               operator,
               remark: header.disposal_reason || '报废处置',
-              accounting_period: accountingPeriod
+              accounting_period: accountingPeriod,
+              factory_id: _factoryId
             },
             transaction
           });
@@ -452,12 +463,13 @@ export const confirmScrapDisposal = async (req: Request, res: Response, next: Ne
       await sequelize.query(`
         UPDATE scrap_disposal SET status = N'已确认',
           confirmed_by = :confirmed_by, confirmed_date = GETDATE(), confirm_remark = :confirm_remark
-        WHERE disposal_number = :dn
+        WHERE disposal_number = :dn${factoryCond}
       `, {
         replacements: {
           dn: disposal_number,
           confirmed_by: operator,
-          confirm_remark
+          confirm_remark,
+          ...factoryReps
         },
         transaction
       });
@@ -476,10 +488,13 @@ export const rejectScrapDisposal = async (req: Request, res: Response, next: Nex
   try {
     const { disposal_number } = req.params;
     const { confirm_remark = '' } = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [existing]: any = await sequelize.query(
-      `SELECT status FROM scrap_disposal WHERE disposal_number = :dn`,
-      { replacements: { dn: disposal_number } }
+      `SELECT status FROM scrap_disposal WHERE disposal_number = :dn${factoryCond}`,
+      { replacements: { dn: disposal_number, ...factoryReps } }
     );
     if (!existing.length) {
       res.status(404).json({ success: false, message: '处置单不存在' });
@@ -493,12 +508,13 @@ export const rejectScrapDisposal = async (req: Request, res: Response, next: Nex
     await sequelize.query(`
       UPDATE scrap_disposal SET status = N'已驳回',
         confirmed_by = :confirmed_by, confirmed_date = GETDATE(), confirm_remark = :confirm_remark
-      WHERE disposal_number = :dn
+      WHERE disposal_number = :dn${factoryCond}
     `, {
       replacements: {
         dn: disposal_number,
         confirmed_by: (req as any).user?.username || '',
-        confirm_remark
+        confirm_remark,
+        ...factoryReps
       }
     });
 
@@ -510,10 +526,13 @@ export const rejectScrapDisposal = async (req: Request, res: Response, next: Nex
 export const deleteScrapDisposal = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { disposal_number } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [existing]: any = await sequelize.query(
-      `SELECT status FROM scrap_disposal WHERE disposal_number = :dn`,
-      { replacements: { dn: disposal_number } }
+      `SELECT status FROM scrap_disposal WHERE disposal_number = :dn${factoryCond}`,
+      { replacements: { dn: disposal_number, ...factoryReps } }
     );
     if (!existing.length) {
       res.status(404).json({ success: false, message: '处置单不存在' });
@@ -531,8 +550,8 @@ export const deleteScrapDisposal = async (req: Request, res: Response, next: Nex
         { replacements: { dn: disposal_number }, transaction }
       );
       await sequelize.query(
-        `DELETE FROM scrap_disposal WHERE disposal_number = :dn`,
-        { replacements: { dn: disposal_number }, transaction }
+        `DELETE FROM scrap_disposal WHERE disposal_number = :dn${factoryCond}`,
+        { replacements: { dn: disposal_number, ...factoryReps }, transaction }
       );
       await transaction.commit();
       res.json(success(null, '删除成功'));
@@ -544,12 +563,13 @@ export const deleteScrapDisposal = async (req: Request, res: Response, next: Nex
 };
 
 // ==================== 处置单号生成 ====================
-const generateDisposalNumber = async (): Promise<string> => {
+const generateDisposalNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = new Date();
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `SD-${dateStr}-`;
+  const prefix = `SD${fc}-${dateStr}-`;
 
   const [rows]: any = await sequelize.query(
     `SELECT MAX(disposal_number) as max_num FROM scrap_disposal WHERE disposal_number LIKE :prefix`,

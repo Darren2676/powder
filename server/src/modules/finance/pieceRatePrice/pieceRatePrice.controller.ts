@@ -4,10 +4,12 @@ import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import dayjs from 'dayjs';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
-const generatePriceListNumber = async (): Promise<string> => {
+const generatePriceListNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = dayjs().format('YYYYMMDD');
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
   const prefix = `PR-${today}-`;
   const [rows]: any = await sequelize.query(
     `SELECT MAX(price_list_number) as max_num FROM piece_rate_price_header WHERE price_list_number LIKE :prefix`,
@@ -31,6 +33,11 @@ export const getPieceRatePrices = async (req: Request, res: Response, next: Next
 
     const conditions: string[] = [];
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`h.factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       conditions.push(`(h.price_list_number LIKE :search OR h.price_list_name LIKE :search)`);
@@ -75,12 +82,13 @@ export const getPieceRatePrices = async (req: Request, res: Response, next: Next
 export const getPieceRatePriceDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
     const [headers]: any = await sequelize.query(
       `SELECT price_list_number, price_list_name,
               CONVERT(VARCHAR(10), effective_date, 23) as effective_date,
               CONVERT(VARCHAR(10), expiration_date, 23) as expiration_date,
               approval_status, remark, creation_date, creation_man
-       FROM piece_rate_price_header WHERE price_list_number = :id`, { replacements: { id } }
+       FROM piece_rate_price_header WHERE price_list_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '计件单价表不存在' }); return; }
     const [details]: any = await sequelize.query(
@@ -94,12 +102,14 @@ export const getPieceRatePriceDetail = async (req: Request, res: Response, next:
 // ==================== 创建 ====================
 export const createPieceRatePrice = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.price_list_name) { res.status(400).json({ success: false, message: '价目表名称不能为空' }); return; }
     if (!b.effective_date) { res.status(400).json({ success: false, message: '生效日期不能为空' }); return; }
     if (!b.expiration_date) { res.status(400).json({ success: false, message: '失效日期不能为空' }); return; }
 
-    const price_list_number = await generatePriceListNumber();
+    const price_list_number = await generatePriceListNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const creation_man = (req as any).user?.username || '';
 
@@ -107,9 +117,9 @@ export const createPieceRatePrice = async (req: Request, res: Response, next: Ne
     try {
       await sequelize.query(`
         INSERT INTO piece_rate_price_header (price_list_number, price_list_name, effective_date, expiration_date,
-          approval_status, remark, creation_date, creation_man)
+          approval_status, remark, creation_date, creation_man, factory_id)
         VALUES (:price_list_number, :price_list_name, :effective_date, :expiration_date,
-          N'草稿', :remark, :creation_date, :creation_man)
+          N'草稿', :remark, :creation_date, :creation_man, :factory_id)
       `, {
         replacements: {
           price_list_number,
@@ -118,7 +128,8 @@ export const createPieceRatePrice = async (req: Request, res: Response, next: Ne
           expiration_date: b.expiration_date || null,
           remark: b.remark || '',
           creation_date: now,
-          creation_man
+          creation_man,
+          factory_id: _factoryId
         },
         transaction
       });
@@ -266,8 +277,11 @@ export const updatePieceRatePrice = async (req: Request, res: Response, next: Ne
 export const deletePieceRatePrice = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM piece_rate_price_header WHERE price_list_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM piece_rate_price_header WHERE price_list_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) {
       res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return;
@@ -275,7 +289,7 @@ export const deletePieceRatePrice = async (req: Request, res: Response, next: Ne
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`DELETE FROM piece_rate_price_detail WHERE price_list_number = :id`, { replacements: { id }, transaction });
-      await sequelize.query(`DELETE FROM piece_rate_price_header WHERE price_list_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM piece_rate_price_header WHERE price_list_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
       await transaction.commit();
       res.json(success(null, '删除计件单价表成功'));
     } catch (e) {
@@ -381,6 +395,8 @@ export const downloadImportTemplate = async (req: Request, res: Response, next: 
 
 export const importPieceRatePrice = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     if (!req.file) { res.status(400).json({ success: false, message: '请上传Excel文件' }); return; }
 
     // 解析Excel：前2行为主表信息，第3行空行，第4行起为明细列头+数据
@@ -411,7 +427,7 @@ export const importPieceRatePrice = async (req: Request, res: Response, next: Ne
     if (!excelEffectiveDate) { res.status(400).json({ success: false, message: '生效日期不能为空，请在Excel第2行第2列填写' }); return; }
     if (!excelExpirationDate) { res.status(400).json({ success: false, message: '失效日期不能为空，请在Excel第2行第3列填写' }); return; }
 
-    const price_list_number = await generatePriceListNumber();
+    const price_list_number = await generatePriceListNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const creation_man = (req as any).user?.username || '';
 
@@ -419,9 +435,9 @@ export const importPieceRatePrice = async (req: Request, res: Response, next: Ne
     try {
       await sequelize.query(`
         INSERT INTO piece_rate_price_header (price_list_number, price_list_name, effective_date, expiration_date,
-          approval_status, remark, creation_date, creation_man)
+          approval_status, remark, creation_date, creation_man, factory_id)
         VALUES (:price_list_number, :price_list_name, :effective_date, :expiration_date,
-          N'草稿', :remark, :creation_date, :creation_man)
+          N'草稿', :remark, :creation_date, :creation_man, :factory_id)
       `, {
         replacements: {
           price_list_number,
@@ -430,7 +446,8 @@ export const importPieceRatePrice = async (req: Request, res: Response, next: Ne
           expiration_date: excelExpirationDate || null,
           remark: excelRemark,
           creation_date: now,
-          creation_man
+          creation_man,
+          factory_id: _factoryId
         },
         transaction
       });

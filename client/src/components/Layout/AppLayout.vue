@@ -4,10 +4,12 @@ import AppSidebar from './AppSidebar.vue';
 import AppHeader from './AppHeader.vue';
 import { useAuthStore } from '@/store/auth';
 import { useMenuStore } from '@/store/menu';
+import { useFactoryStore } from '@/store/factory';
 
 const collapsed = ref(false);
 const authStore = useAuthStore();
 const menuStore = useMenuStore();
+const factoryStore = useFactoryStore();
 
 const toggleCollapsed = () => {
   collapsed.value = !collapsed.value;
@@ -18,6 +20,10 @@ onMounted(async () => {
   if (authStore.isLoggedIn) {
     // 始终从服务器刷新菜单树，避免旧缓存问题
     await menuStore.fetchMenuTree();
+    // 初始化工厂列表（如果尚未加载）
+    if (factoryStore.factories.length === 0) {
+      factoryStore.initFactories();
+    }
   }
 });
 </script>

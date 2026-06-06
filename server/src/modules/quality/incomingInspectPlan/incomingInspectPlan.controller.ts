@@ -3,6 +3,7 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import { APPROVAL_STATUS } from '@/shared/constants/statuses';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 const fields = ['plan_name', 'inspector_id', 'inspector_name', 'inspect_department',
   'inspect_method', 'sampling_method', 'sampling_quantity', 'decimal_handling',
@@ -17,11 +18,16 @@ export const getIncomingInspectPlans = async (req: Request, res: Response, next:
     const limit = parseInt(req.query.limit as string) || 20;
     const search = (req.query.search as string) || '';
 
+    const _factoryId = getFactoryId(req);
     const conditions: string[] = [];
     const replacements: any = {};
     if (search) {
       conditions.push(`(plan_name LIKE :search)`);
       replacements.search = `%${search}%`;
+    }
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
     }
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
@@ -57,14 +63,15 @@ export const getIncomingInspectPlans = async (req: Request, res: Response, next:
 
 export const createIncomingInspectPlan = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.plan_name) { res.status(400).json({ success: false, message: '方案名称不能为空' }); return; }
 
     await sequelize.query(`
       INSERT INTO incoming_inspect_plan (plan_name, inspector_id, inspector_name, inspect_department,
-        inspect_method, sampling_method, sampling_quantity, sampling_ratio, decimal_handling, is_destructive, enable_quality_chars, applied_category)
+        inspect_method, sampling_method, sampling_quantity, sampling_ratio, decimal_handling, is_destructive, enable_quality_chars, applied_category, factory_id)
       VALUES (:plan_name, :inspector_id, :inspector_name, :inspect_department,
-        :inspect_method, :sampling_method, :sampling_quantity, :sampling_ratio, :decimal_handling, :is_destructive, :enable_quality_chars, :applied_category)
+        :inspect_method, :sampling_method, :sampling_quantity, :sampling_ratio, :decimal_handling, :is_destructive, :enable_quality_chars, :applied_category, :factory_id)
     `, {
       replacements: {
         plan_name: b.plan_name,
@@ -78,7 +85,8 @@ export const createIncomingInspectPlan = async (req: Request, res: Response, nex
         decimal_handling: b.decimal_handling || '',
         is_destructive: b.is_destructive || '',
         enable_quality_chars: b.enable_quality_chars || 'N',
-        applied_category: b.applied_category || ''
+        applied_category: b.applied_category || '',
+        factory_id: _factoryId
       }
     });
     res.json(success(null, '创建收料检验方案成功'));
@@ -87,8 +95,11 @@ export const createIncomingInspectPlan = async (req: Request, res: Response, nex
 
 export const updateIncomingInspectPlan = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const { id } = req.params;
-    const [chk]: any = await sequelize.query(`SELECT approval_status FROM incoming_inspect_plan WHERE plan_name = :id`, { replacements: { id } });
+    const [chk]: any = await sequelize.query(`SELECT approval_status FROM incoming_inspect_plan WHERE plan_name = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (chk.length && (chk[0].approval_status || '').trim() === APPROVAL_STATUS.APPROVED) { res.status(403).json({ success: false, message: '已审核的记录不允许编辑，请先撤消审核' }); return; }
     const b = req.body;
 
@@ -99,10 +110,11 @@ export const updateIncomingInspectPlan = async (req: Request, res: Response, nex
         sampling_method = :sampling_method, sampling_quantity = :sampling_quantity,
         sampling_ratio = :sampling_ratio, decimal_handling = :decimal_handling, is_destructive = :is_destructive,
         enable_quality_chars = :enable_quality_chars, applied_category = :applied_category
-      WHERE plan_name = :id
+      WHERE plan_name = :id${factoryCond}
     `, {
       replacements: {
         id,
+        ...factoryReps,
         inspector_id: b.inspector_id || '',
         inspector_name: b.inspector_name || '',
         inspect_department: b.inspect_department || '',
@@ -122,23 +134,30 @@ export const updateIncomingInspectPlan = async (req: Request, res: Response, nex
 
 export const deleteIncomingInspectPlan = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const { id } = req.params;
-    const [chk]: any = await sequelize.query(`SELECT approval_status FROM incoming_inspect_plan WHERE plan_name = :id`, { replacements: { id } });
+    const [chk]: any = await sequelize.query(`SELECT approval_status FROM incoming_inspect_plan WHERE plan_name = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (chk.length && (chk[0].approval_status || '').trim() === APPROVAL_STATUS.APPROVED) { res.status(403).json({ success: false, message: '已审核的记录不允许删除，请先撤消审核' }); return; }
-    await sequelize.query(`DELETE FROM incoming_inspect_plan WHERE plan_name = :id`, { replacements: { id } });
+    await sequelize.query(`DELETE FROM incoming_inspect_plan WHERE plan_name = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     res.json(success(null, '删除收料检验方案成功'));
   } catch (err) { next(err); }
 };
 
 export const exportIncomingInspectPlans = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [items]: any = await sequelize.query(`SELECT * FROM incoming_inspect_plan ORDER BY CASE plan_name WHEN N'C100809-GJ' THEN 0 WHEN N'C100809-TJ' THEN 1 ELSE 99 END, plan_name`);
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? 'WHERE factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    const [items]: any = await sequelize.query(`SELECT * FROM incoming_inspect_plan ${factoryCond} ORDER BY CASE plan_name WHEN N'C100809-GJ' THEN 0 WHEN N'C100809-TJ' THEN 1 ELSE 99 END, plan_name`, { replacements: factoryReps });
     exportToExcel(items, fields, headers, 'incoming_inspect_plans', res);
   } catch (err) { next(err); }
 };
 
 export const importIncomingInspectPlans = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
     if (!req.file) { res.status(400).json({ success: false, message: '请上传Excel文件' }); return; }
     const rows = parseExcelFile(req.file.buffer, fields, headers);
     if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件内容为空' }); return; }
@@ -149,9 +168,9 @@ export const importIncomingInspectPlans = async (req: Request, res: Response, ne
         await sequelize.query(`
           IF NOT EXISTS (SELECT 1 FROM incoming_inspect_plan WHERE plan_name = :plan_name)
           INSERT INTO incoming_inspect_plan (plan_name, inspector_id, inspector_name, inspect_department,
-            inspect_method, sampling_method, sampling_quantity, decimal_handling, is_destructive, applied_category)
+            inspect_method, sampling_method, sampling_quantity, decimal_handling, is_destructive, applied_category, factory_id)
           VALUES (:plan_name, :inspector_id, :inspector_name, :inspect_department,
-            :inspect_method, :sampling_method, :sampling_quantity, :decimal_handling, :is_destructive, :applied_category)
+            :inspect_method, :sampling_method, :sampling_quantity, :decimal_handling, :is_destructive, :applied_category, :factory_id)
         `, {
           replacements: {
             plan_name: item.plan_name || '',
@@ -163,7 +182,8 @@ export const importIncomingInspectPlans = async (req: Request, res: Response, ne
             sampling_quantity: item.sampling_quantity != null && item.sampling_quantity !== '' ? Number(item.sampling_quantity) : 0,
             decimal_handling: item.decimal_handling || '',
             is_destructive: item.is_destructive || '',
-            applied_category: item.applied_category || ''
+            applied_category: item.applied_category || '',
+            factory_id: _factoryId
           }
         });
         imported++;
@@ -175,16 +195,22 @@ export const importIncomingInspectPlans = async (req: Request, res: Response, ne
 
 export const approveIncomingInspectPlan = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const { id } = req.params;
-    await sequelize.query(`UPDATE incoming_inspect_plan SET approval_status = N'已审核' WHERE plan_name = :id`, { replacements: { id } });
+    await sequelize.query(`UPDATE incoming_inspect_plan SET approval_status = N'已审核' WHERE plan_name = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     res.json(success(null, '审核成功'));
   } catch (err) { next(err); }
 };
 
 export const withdrawIncomingInspectPlan = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const { id } = req.params;
-    await sequelize.query(`UPDATE incoming_inspect_plan SET approval_status = N'未审核' WHERE plan_name = :id`, { replacements: { id } });
+    await sequelize.query(`UPDATE incoming_inspect_plan SET approval_status = N'未审核' WHERE plan_name = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     res.json(success(null, '已撤消审核'));
   } catch (err) { next(err); }
 };

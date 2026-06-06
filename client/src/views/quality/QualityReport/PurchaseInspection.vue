@@ -504,6 +504,7 @@ const syncDefectToHeader = () => {
 
 // ==================== 表格列定义 ====================
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '检验单号', dataIndex: 'inspection_number', key: 'inspection_number', width: 180, fixed: 'left' as const },
   { title: '入库单号', dataIndex: 'stock_in_number', key: 'stock_in_number', width: 150 },
   { title: '供应商', dataIndex: 'supplier_name', key: 'supplier_name', width: 150, ellipsis: true },

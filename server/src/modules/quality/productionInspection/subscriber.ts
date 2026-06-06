@@ -22,7 +22,7 @@ const autoCreateInspections = async (
   transaction?: any
 ) => {
   const [taskRows]: any = await sequelize.query(
-    `SELECT process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, inspect_type, inspect_plan_name, inspect_spec_name FROM process_task WHERE process_task_number = :taskNo`,
+    `SELECT process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, inspect_type, inspect_plan_name, inspect_spec_name, factory_id FROM process_task WHERE process_task_number = :taskNo`,
     { replacements: { taskNo }, transaction }
   );
   if (!taskRows.length) return;
@@ -73,7 +73,7 @@ const autoCreateInspections = async (
     inspection_spec_name: t.inspect_spec_name || '',
     total_quantity: inspectQty,
     creation_man: username
-  }, transaction);
+  }, '', t.factory_id || null, transaction);
 
   // 回写工序任务状态
   await sequelize.query(

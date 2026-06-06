@@ -264,6 +264,8 @@ const emptyForm = () => ({
   abc_class: '',
   inventory_unit: '',
   outbound_method: '',
+  enable_shelf_life: 'N',
+  shelf_life_days: 0,
   // 生产计划分区字段
   daily_capacity: 0,
   default_routing: '',
@@ -1032,6 +1034,17 @@ onMounted(() => {
               </a-form-item></a-col>
             </a-row>
             <a-row :gutter="8">
+              <a-col :span="12"><a-form-item label="启用有效期">
+                <a-select v-model:value="createForm.enable_shelf_life">
+                  <a-select-option value="Y">是</a-select-option>
+                  <a-select-option value="N">否</a-select-option>
+                </a-select>
+              </a-form-item></a-col>
+              <a-col :span="12" v-if="createForm.enable_shelf_life === 'Y'"><a-form-item label="有效天数">
+                <a-input-number v-model:value="createForm.shelf_life_days" :min="1" style="width: 100%" />
+              </a-form-item></a-col>
+            </a-row>
+            <a-row :gutter="8">
               <a-col :span="12"><a-form-item label="安全库存管理">
                 <a-select v-model:value="createForm.safety_stock_enabled">
                   <a-select-option value="Y">是</a-select-option>
@@ -1412,6 +1425,17 @@ onMounted(() => {
                       <a-select-option value="后进先出">后进先出</a-select-option>
                       <a-select-option value="加权平均">加权平均</a-select-option>
                     </a-select>
+                  </a-form-item></a-col>
+                </a-row>
+                <a-row :gutter="8">
+                  <a-col :span="12"><a-form-item label="启用有效期">
+                    <a-select v-model:value="editForm.enable_shelf_life">
+                      <a-select-option value="Y">是</a-select-option>
+                      <a-select-option value="N">否</a-select-option>
+                    </a-select>
+                  </a-form-item></a-col>
+                  <a-col :span="12" v-if="editForm.enable_shelf_life === 'Y'"><a-form-item label="有效天数">
+                    <a-input-number v-model:value="editForm.shelf_life_days" :min="1" style="width: 100%" />
                   </a-form-item></a-col>
                 </a-row>
                 <a-row :gutter="8">
@@ -1907,7 +1931,9 @@ onMounted(() => {
           <a-descriptions-item label="ABC分类">{{ detailData.abc_class || '-' }}</a-descriptions-item>
           <a-descriptions-item label="库存单位">{{ detailData.inventory_unit || '-' }}</a-descriptions-item>
           <a-descriptions-item label="出库方法">{{ detailData.outbound_method || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="安全库存管理">{{ detailData.safety_stock_enabled === 'Y' ? '是' : '否' }}</a-descriptions-item>
+          <a-descriptions-item label="启用有效期">{{ detailData.enable_shelf_life === 'Y' ? '是' : '否' }}</a-descriptions-item>
+                    <a-descriptions-item label="有效天数" v-if="detailData.enable_shelf_life === 'Y'">{{ detailData.shelf_life_days || 0 }}</a-descriptions-item>
+                    <a-descriptions-item label="安全库存管理">{{ detailData.safety_stock_enabled === 'Y' ? '是' : '否' }}</a-descriptions-item>
           <a-descriptions-item label="安全库存数">{{ detailData.safety_stock_qty || 0 }}</a-descriptions-item>
         </a-descriptions>
 

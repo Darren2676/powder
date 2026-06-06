@@ -104,6 +104,7 @@ const editShiftsNumber = computed(() => calcShifts(editForm.planned_quantity, ed
 // 默认数据列定义（不含行号和操作）
 const defaultDataColumns: any[] = [
   { title: '生产计划编号', dataIndex: 'production_number', key: 'production_number', sorter: (a: any, b: any) => (a.production_number || '').localeCompare(b.production_number || ''), resizable: true },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '产品编号', dataIndex: 'item_number', key: 'item_number', sorter: (a: any, b: any) => (a.item_number || '').localeCompare(b.item_number || ''), resizable: true },
   { title: '产品名称', dataIndex: 'item_name', key: 'item_name', sorter: (a: any, b: any) => (a.item_name || '').localeCompare(b.item_name || ''), resizable: true },
   { title: '单位', dataIndex: 'basic_unit', key: 'basic_unit', resizable: true },

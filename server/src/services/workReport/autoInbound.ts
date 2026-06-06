@@ -21,11 +21,13 @@ export const autoProductionInbound = async (orderNo: string, transaction?: any):
   const txOpt = transaction ? { transaction } : {};
 
   try {
-    // 1. 获取生产单信息 + 物品类型 + 末道正品数
+    // 1. 获取生产单信息 + 物品类型 + 末道正品数 + factory_id
     const [orderRows]: any = await sequelize.query(
       `SELECT po.production_order_number, po.item_number, po.item_name, po.specifications,
               po.basic_unit, po.product_drawing_number, po.planned_quantity,
               ISNULL(po.inbound_quantity, 0) as current_inbound,
+              po.production_date,
+              po.factory_id,
               im.item_type
        FROM production_order po
        LEFT JOIN item_master im ON po.item_number = im.item_number
@@ -39,6 +41,8 @@ export const autoProductionInbound = async (orderNo: string, transaction?: any):
     const order = orderRows[0];
     const itemType = (order.item_type || '').trim();
     const currentInbound = Number(order.current_inbound) || 0;
+    const factoryId: number | null = order.factory_id ?? null;
+    const factoryCond = factoryId ? ` AND factory_id = ${factoryId}` : '';
 
     // 2. 计算末道正品数（待入库数量）
     const [lastStepRows]: any = await sequelize.query(
@@ -63,7 +67,7 @@ export const autoProductionInbound = async (orderNo: string, transaction?: any):
     if (itemType === '成品') {
       // 成品 → 查成品仓库（优先按名称匹配，其次按类型匹配）
       const [whRows]: any = await sequelize.query(
-        `SELECT TOP 1 warehouse_number, warehouse_name FROM warehouse WHERE (warehouse_type = N'成品仓库' OR warehouse_name LIKE N'%成品%') ORDER BY warehouse_number`,
+        `SELECT TOP 1 warehouse_number, warehouse_name FROM warehouse WHERE (warehouse_type = N'成品仓库' OR warehouse_name LIKE N'%成品%')${factoryCond} ORDER BY warehouse_number`,
         { ...txOpt }
       );
       if (whRows.length > 0) {
@@ -73,7 +77,7 @@ export const autoProductionInbound = async (orderNo: string, transaction?: any):
     } else {
       // 非成品（半成品等） → 查原料仓库（排除成品仓、报废仓、待检仓、线边仓）
       const [whRows]: any = await sequelize.query(
-        `SELECT TOP 1 warehouse_number, warehouse_name FROM warehouse WHERE warehouse_type NOT IN (N'成品仓库', N'报废仓库', N'待检仓库', N'线边仓库') AND warehouse_name NOT LIKE N'%成品%' AND (is_in_balance = N'Y' OR is_in_balance = N'是') ORDER BY warehouse_number`,
+        `SELECT TOP 1 warehouse_number, warehouse_name FROM warehouse WHERE warehouse_type NOT IN (N'成品仓库', N'报废仓库', N'待检仓库', N'线边仓库') AND warehouse_name NOT LIKE N'%成品%' AND (is_in_balance = N'Y' OR is_in_balance = N'是')${factoryCond} ORDER BY warehouse_number`,
         { ...txOpt }
       );
       if (whRows.length > 0) {
@@ -104,6 +108,7 @@ export const autoProductionInbound = async (orderNo: string, transaction?: any):
           production_order_number: orderNo,
           inbound_quantity: currentInbound,
           planned_quantity: Number(order.planned_quantity) || 0,
+          production_date: order.production_date || null,
         }],
         warehouse_number: warehouseNumber,
         warehouse_name: warehouseName,
@@ -120,6 +125,7 @@ export const autoProductionInbound = async (orderNo: string, transaction?: any):
           production_order_number: orderNo,
           inbound_quantity: currentInbound,
           planned_quantity: Number(order.planned_quantity) || 0,
+          production_date: order.production_date || null,
         }],
         warehouse_number: warehouseNumber,
         warehouse_name: warehouseName,

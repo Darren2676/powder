@@ -8,6 +8,7 @@ import dayjs from 'dayjs';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { fifoDeductBatches, upsertMaterialInventory, createMaterialTransaction } from '@/services/warehouse/helpers';
 import { logLinesideMovement } from '@/services/linesideMovement.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // Re-export from service for backward compatibility
 export { generateOutsourcingIssueNumber } from '@/services/documentNumber.service';
@@ -28,6 +29,12 @@ export const getOutsourcingIssues = async (req: Request, res: Response, next: Ne
       replacements.search = `%${search}%`;
     }
     if (status) { conditions.push(`status = :status`); replacements.status = status; }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
 
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM outsourcing_material_issue omi ${whereClause}`, { replacements });
@@ -63,6 +70,7 @@ export const getOutsourcingIssueDetail = async (req: Request, res: Response, nex
 // ==================== 创建 ====================
 export const createOutsourcingIssue = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body;
     if (!b.outsourcing_order_number) { res.status(400).json({ success: false, message: '委外订单号不能为空' }); return; }
 
@@ -79,7 +87,8 @@ export const createOutsourcingIssue = async (req: Request, res: Response, next: 
 
     const transaction = await sequelize.transaction();
     try {
-      const issueNumber = await generateOutsourcingIssueNumber(transaction);
+      const factoryCode = await getFactoryCode(req);
+      const issueNumber = await generateOutsourcingIssueNumber(factoryCode, transaction);
 
       await sequelize.query(`
         INSERT INTO outsourcing_material_issue (
@@ -248,6 +257,7 @@ export const approveIssue = async (req: Request, res: Response, next: NextFuncti
 // ==================== 确认发料（扣减material体系库存+线边仓流水） ====================
 export const confirmIssue = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const { id } = req.params;
     
     const [check]: any = await sequelize.query(`SELECT * FROM outsourcing_material_issue WHERE issue_number = :id`, { replacements: { id } });
@@ -258,6 +268,7 @@ export const confirmIssue = async (req: Request, res: Response, next: NextFuncti
 
     const transaction = await sequelize.transaction();
     try {
+      const factoryCode = await getFactoryCode(req);
       const operator = (req as any).user?.username || '';
       const warehouseNumber = check[0].warehouse_number || '';
       const warehouseName = check[0].warehouse_name || '';
@@ -288,7 +299,7 @@ export const confirmIssue = async (req: Request, res: Response, next: NextFuncti
           { replacements: { item_number: d.item_number, warehouse_number: warehouseNumber }, transaction }
         );
         const mat = matInfo.length > 0 ? matInfo[0] : {};
-        const txNum = await generateMaterialTxnNumber(transaction);
+        const txNum = await generateMaterialTxnNumber(factoryCode, transaction);
         await createMaterialTransaction({
           transaction_number: txNum,
           transaction_type: '出库',
@@ -345,6 +356,7 @@ export const confirmIssue = async (req: Request, res: Response, next: NextFuncti
 // ==================== 追加发料（分批发料：为同一委外订单创建新的出库申请） ====================
 export const appendIssue = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body;
     if (!b.outsourcing_order_number) { res.status(400).json({ success: false, message: '委外订单号不能为空' }); return; }
     if (!b.batch_quantity || parseFloat(b.batch_quantity) <= 0) { res.status(400).json({ success: false, message: '追加发料数量必须大于0' }); return; }
@@ -383,7 +395,8 @@ export const appendIssue = async (req: Request, res: Response, next: NextFunctio
 
     const transaction = await sequelize.transaction();
     try {
-      const issueNumber = await generateOutsourcingIssueNumber(transaction);
+      const factoryCode = await getFactoryCode(req);
+      const issueNumber = await generateOutsourcingIssueNumber(factoryCode, transaction);
 
       // 创建出库申请
       await sequelize.query(`

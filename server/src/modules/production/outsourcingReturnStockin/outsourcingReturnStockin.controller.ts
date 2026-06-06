@@ -7,6 +7,7 @@ import { generateBatchNumber, generateMaterialTxnNumber, syncMaterialInventorySu
 import { fifoDeductBatches, upsertMaterialInventory, createMaterialTransaction } from '@/services/warehouse/helpers';
 import { logLinesideMovement } from '@/services/linesideMovement.service';
 import dayjs from 'dayjs';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 列表 ====================
 export const getReturnStockins = async (req: Request, res: Response, next: NextFunction) => {
@@ -23,6 +24,12 @@ export const getReturnStockins = async (req: Request, res: Response, next: NextF
       replacements.search = `%${search}%`;
     }
     if (status) { conditions.push(`status = :status`); replacements.status = status; }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
 
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM outsourcing_return_stockin ${whereClause}`, { replacements });
@@ -51,6 +58,7 @@ export const getReturnStockinDetail = async (req: Request, res: Response, next: 
 // ==================== 确认入库（待检仓出库+下道工序线边仓入库） ====================
 export const confirmReturnStockin = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const { id } = req.params;
     const [check]: any = await sequelize.query(`SELECT * FROM outsourcing_return_stockin WHERE stockin_number = :id`, { replacements: { id } });
     if (!check.length) { res.status(404).json({ success: false, message: '委外回收入库单不存在' }); return; }
@@ -60,6 +68,8 @@ export const confirmReturnStockin = async (req: Request, res: Response, next: Ne
 
     const transaction = await sequelize.transaction();
     try {
+      const factoryCode = await getFactoryCode(req);
+      const _factoryId = getFactoryId(req);
       const operator = (req as any).user?.username || '';
       const warehouseFrom = check[0].warehouse_from; // 待检仓
       const warehouseTo = check[0].warehouse_to;     // 下道工序线边仓
@@ -96,7 +106,7 @@ export const confirmReturnStockin = async (req: Request, res: Response, next: Ne
           await syncMaterialInventorySummary(d.item_number, warehouseFrom, transaction);
 
           // 记录待检仓出库流水
-          const txNumOut = await generateMaterialTxnNumber(transaction);
+          const txNumOut = await generateMaterialTxnNumber(factoryCode, transaction);
           await createMaterialTransaction({
             transaction_number: txNumOut,
             transaction_type: '出库',
@@ -120,15 +130,16 @@ export const confirmReturnStockin = async (req: Request, res: Response, next: Ne
 
         // ====== 2. 下道工序线边仓入库 ======
         if (warehouseTo) {
-          const batchNo = await generateBatchNumber('MB', transaction);
+          const batchNo = await generateBatchNumber('MB', factoryCode, transaction);
           await sequelize.query(
-            `INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, production_order_number, inbound_date, status, creation_date, last_updated) VALUES (:batch_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, :production_order_number, GETDATE(), N'正常', GETDATE(), GETDATE())`,
+            `INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, production_order_number, inbound_date, status, creation_date, last_updated, factory_id) VALUES (:batch_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, :production_order_number, GETDATE(), N'正常', GETDATE(), GETDATE(), :factory_id)`,
             {
               replacements: {
                 batch_number: batchNo, item_number: d.item_number, item_name: d.item_name || '',
                 specifications: d.specifications || '', basic_unit: d.basic_unit || '',
                 warehouse_number: warehouseTo, warehouse_name: nextWorkCenterName || '',
-                quantity: qualifiedQty, production_order_number: productionOrderNumber
+                quantity: qualifiedQty, production_order_number: productionOrderNumber,
+                factory_id: _factoryId
               },
               transaction
             }
@@ -141,7 +152,7 @@ export const confirmReturnStockin = async (req: Request, res: Response, next: Ne
           }, transaction);
 
           // 记录线边仓入库流水
-          const txNumIn = await generateMaterialTxnNumber(transaction);
+          const txNumIn = await generateMaterialTxnNumber(factoryCode, transaction);
           await createMaterialTransaction({
             transaction_number: txNumIn,
             transaction_type: '入库',

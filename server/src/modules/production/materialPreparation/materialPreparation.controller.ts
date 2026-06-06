@@ -6,6 +6,7 @@ import dayjs from 'dayjs';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 
 import { BusinessError } from '@/shared/errors/BusinessError';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 const headerSelectCols = 'preparation_number, production_order_number, production_number, item_number, item_name, specifications, basic_unit, bom_number, bom_version, planned_quantity, bom_base_quantity, total_material_types, preparation_status, approval_status, remark, creation_date, creation_man';
 
@@ -15,8 +16,9 @@ const exportFields = ['preparation_number', 'production_order_number', 'item_num
 const exportHeaders = ['备料单编号', '生产单编号', '产品编号', '产品名称', '规格', '计划数量', 'BOM编号', 'BOM版本', '物料种类', '备料状态', '审批状态', '创建日期', '创建人', '备注'];
 
 // 自动生成备料单编号: MP-YYYYMMDD-NNN
-const generatePrepNumber = async (): Promise<string> => {
+const generatePrepNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = dayjs().format('YYYYMMDD');
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
   const prefix = `MP-${today}-`;
 
   const [rows]: any = await sequelize.query(
@@ -58,6 +60,12 @@ export const getMaterialPreparations = async (req: Request, res: Response, next:
       replacements.approval_status = approval_status;
     }
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
+
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const [countResult]: any = await sequelize.query(
@@ -86,6 +94,7 @@ export const getMaterialPreparations = async (req: Request, res: Response, next:
 // ==================== 新建备料单（手动） ====================
 export const createMaterialPreparation = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const user = (req as any).user;
     const b = req.body;
 
@@ -94,7 +103,7 @@ export const createMaterialPreparation = async (req: Request, res: Response, nex
       return;
     }
 
-    const preparation_number = await generatePrepNumber();
+    const preparation_number = await generatePrepNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
 
     await sequelize.query(`
@@ -128,7 +137,8 @@ export const createMaterialPreparation = async (req: Request, res: Response, nex
 export const updateMaterialPreparation = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [chk]: any = await sequelize.query(`SELECT approval_status FROM material_preparation WHERE preparation_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const [chk]: any = await sequelize.query(`SELECT approval_status FROM material_preparation WHERE preparation_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } });
     if (!chk.length) { res.status(404).json({ success: false, message: '备料单不存在' }); return; }
     if (chk[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许编辑' }); return; }
 
@@ -172,7 +182,8 @@ export const updateMaterialPreparation = async (req: Request, res: Response, nex
 export const deleteMaterialPreparation = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [chk]: any = await sequelize.query(`SELECT approval_status FROM material_preparation WHERE preparation_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const [chk]: any = await sequelize.query(`SELECT approval_status FROM material_preparation WHERE preparation_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } });
     if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return; }
     // 同时删除明细
     await sequelize.query(`DELETE FROM material_preparation_detail WHERE preparation_number = :id`, { replacements: { id } });
@@ -184,7 +195,8 @@ export const deleteMaterialPreparation = async (req: Request, res: Response, nex
 // ==================== 导出 ====================
 export const exportMaterialPreparations = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [items]: any = await sequelize.query(`SELECT ${exportFields.join(', ')} FROM material_preparation ORDER BY preparation_number DESC`);
+    const _factoryId = getFactoryId(req);
+    const [items]: any = await sequelize.query(`SELECT ${exportFields.join(', ')} FROM material_preparation ${_factoryId !== null ? 'WHERE factory_id = :_factoryId' : ''} ORDER BY preparation_number DESC`, { replacements: _factoryId !== null ? { _factoryId } : {} });
     exportToExcel(items, exportFields, exportHeaders, 'material_preparations', res);
   } catch (err) { next(err); }
 };
@@ -192,6 +204,7 @@ export const exportMaterialPreparations = async (req: Request, res: Response, ne
 // ==================== 导入 ====================
 export const importMaterialPreparations = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     if (!req.file) { res.status(400).json({ success: false, message: '请上传Excel文件' }); return; }
     const rows = parseExcelFile(req.file.buffer, exportFields, exportHeaders);
     if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件内容为空' }); return; }
@@ -199,7 +212,8 @@ export const importMaterialPreparations = async (req: Request, res: Response, ne
     let imported = 0;
     for (const item of rows) {
       try {
-        if (!item.preparation_number) item.preparation_number = await generatePrepNumber();
+        const factoryCode = await getFactoryCode(req);
+        if (!item.preparation_number) item.preparation_number = await generatePrepNumber(factoryCode);
         const [existing]: any = await sequelize.query(
           `SELECT COUNT(*) as cnt FROM material_preparation WHERE preparation_number = :n`,
           { replacements: { n: item.preparation_number } }
@@ -221,9 +235,10 @@ export const getPreparationDetails = async (req: Request, res: Response, next: N
   try {
     const { id } = req.params;
     // 获取主表信息
+    const _factoryId = getFactoryId(req);
     const [headers]: any = await sequelize.query(
-      `SELECT ${headerSelectCols} FROM material_preparation WHERE preparation_number = :id`,
-      { replacements: { id } }
+      `SELECT ${headerSelectCols} FROM material_preparation WHERE preparation_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+      { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '备料单不存在' }); return; }
 
@@ -247,7 +262,8 @@ export const updatePreparationDetails = async (req: Request, res: Response, next
     const { details } = req.body;
 
     // 检查主表状态
-    const [chk]: any = await sequelize.query(`SELECT approval_status FROM material_preparation WHERE preparation_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const [chk]: any = await sequelize.query(`SELECT approval_status FROM material_preparation WHERE preparation_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } });
     if (!chk.length) { res.status(404).json({ success: false, message: '备料单不存在' }); return; }
     if (chk[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许修改明细' }); return; }
 
@@ -318,6 +334,7 @@ export const updatePreparationDetails = async (req: Request, res: Response, next
 // ==================== 核心：从生产单自动生成备料单 ====================
 export const generateFromOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const { production_order_numbers } = req.body;
     const user = (req as any).user;
 
@@ -388,7 +405,7 @@ export const generateFromOrder = async (req: Request, res: Response, next: NextF
       }
 
       // 7. 生成备料单编号
-      const prepNumber = await generatePrepNumber();
+      const prepNumber = await generatePrepNumber(factoryCode);
 
       // 8. 计算倍率和生成明细
       const plannedQty = parseFloat(order.planned_quantity) || 0;
@@ -484,6 +501,7 @@ export const generateFromOrder = async (req: Request, res: Response, next: NextF
 // ==================== 核心：按工序从生产单自动生成备料单 ====================
 export const generateByProcess = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const { production_order_numbers } = req.body;
     const user = (req as any).user;
 
@@ -655,7 +673,7 @@ export const generateByProcess = async (req: Request, res: Response, next: NextF
       if (flatList.length === 0) { results.skipped.push({ orderNo, reason: 'BOM展平后无物料明细' }); results.skippedCount++; continue; }
 
       // 11. 生成备料单
-      const prepNumber = await generatePrepNumber();
+      const prepNumber = await generatePrepNumber(factoryCode);
       const plannedQty = parseFloat(order.planned_quantity) || 0;
       const multiplier = bomBaseQty > 0 ? plannedQty / bomBaseQty : 0;
 
@@ -817,9 +835,10 @@ export const getOrdersForGenerate = async (req: Request, res: Response, next: Ne
 export const getPreparationDetailsGrouped = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
     const [headers]: any = await sequelize.query(
-      `SELECT ${headerSelectCols} FROM material_preparation WHERE preparation_number = :id`,
-      { replacements: { id } }
+      `SELECT ${headerSelectCols} FROM material_preparation WHERE preparation_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+      { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '备料单不存在' }); return; }
 

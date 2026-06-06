@@ -5,6 +5,7 @@ import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import path from 'path';
 import fs from 'fs';
 import { APPROVAL_STATUS } from '@/shared/constants/statuses';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 const fields = ['company_number', 'company_name', 'contact_person', 'mobile', 'telephone', 'remark'];
 const headers = ['编号', '公司名称', '联系人', '手机', '电话', '备注说明'];
@@ -26,8 +27,15 @@ export const getLogisticsCompanies = async (req: Request, res: Response, next: N
       replacements.search = `%${search}%`;
     }
 
+    // 多工厂数据隔离过滤（符合多工厂方案：filter模式下严格隔离，仅显示本工厂记录）
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause = whereClause ? whereClause + ` AND lc.factory_id = :_factoryId` : `WHERE lc.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
-      `SELECT COUNT(*) as total FROM logistics_company ${whereClause}`,
+      `SELECT COUNT(*) as total FROM logistics_company lc ${whereClause}`,
       { replacements }
     );
     const total = countResult[0].total;
@@ -35,7 +43,10 @@ export const getLogisticsCompanies = async (req: Request, res: Response, next: N
 
     const [items]: any = await sequelize.query(
       `SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY id DESC) AS _row_num FROM logistics_company ${whereClause}
+        SELECT lc.*, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY lc.id DESC) AS _row_num
+        FROM logistics_company lc
+        LEFT JOIN factory f ON lc.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd`,
       { replacements: { ...replacements, offset, offsetEnd: offset + limit } }
     );
@@ -88,8 +99,8 @@ export const createLogisticsCompany = async (req: Request, res: Response, next: 
     }
 
     await sequelize.query(
-      `INSERT INTO logistics_company (company_number, company_name, contact_person, mobile, telephone, remark, condition, created_by, created_at, updated_at)
-       VALUES (:company_number, :company_name, :contact_person, :mobile, :telephone, :remark, N'启用', :created_by, GETDATE(), GETDATE())`,
+      `INSERT INTO logistics_company (company_number, company_name, contact_person, mobile, telephone, remark, factory_id, condition, created_by, created_at, updated_at)
+       VALUES (:company_number, :company_name, :contact_person, :mobile, :telephone, :remark, :factory_id, N'启用', :created_by, GETDATE(), GETDATE())`,
       {
         replacements: {
           company_number: newNumber,
@@ -98,6 +109,7 @@ export const createLogisticsCompany = async (req: Request, res: Response, next: 
           mobile: b.mobile || '',
           telephone: b.telephone || '',
           remark: b.remark || '',
+          factory_id: b.factory_id || null,
           created_by: username
         }
       }
@@ -126,6 +138,7 @@ export const updateLogisticsCompany = async (req: Request, res: Response, next: 
         mobile = :mobile,
         telephone = :telephone,
         remark = :remark,
+        factory_id = :factory_id,
         updated_at = GETDATE()
        WHERE company_number = :id`,
       {
@@ -135,7 +148,8 @@ export const updateLogisticsCompany = async (req: Request, res: Response, next: 
           contact_person: b.contact_person || '',
           mobile: b.mobile || '',
           telephone: b.telephone || '',
-          remark: b.remark || ''
+          remark: b.remark || '',
+          factory_id: b.factory_id || null
         }
       }
     );
@@ -329,8 +343,8 @@ export const importLogisticsCompanies = async (req: Request, res: Response, next
           );
         } else {
           await sequelize.query(
-            `INSERT INTO logistics_company (company_number, company_name, contact_person, mobile, telephone, remark, condition, created_by, created_at, updated_at)
-             VALUES (:company_number, :company_name, :contact_person, :mobile, :telephone, :remark, N'启用', :created_by, GETDATE(), GETDATE())`,
+            `INSERT INTO logistics_company (company_number, company_name, contact_person, mobile, telephone, remark, factory_id, condition, created_by, created_at, updated_at)
+             VALUES (:company_number, :company_name, :contact_person, :mobile, :telephone, :remark, :factory_id, N'启用', :created_by, GETDATE(), GETDATE())`,
             {
               replacements: {
                 company_number: row.company_number,
@@ -339,6 +353,7 @@ export const importLogisticsCompanies = async (req: Request, res: Response, next
                 mobile: row.mobile || '',
                 telephone: row.telephone || '',
                 remark: row.remark || '',
+                factory_id: row.factory_id || null,
                 created_by: username
               }
             }
@@ -355,8 +370,8 @@ export const importLogisticsCompanies = async (req: Request, res: Response, next
           newNumber = String(maxNum + 1).padStart(8, '0');
         }
         await sequelize.query(
-          `INSERT INTO logistics_company (company_number, company_name, contact_person, mobile, telephone, remark, condition, created_by, created_at, updated_at)
-           VALUES (:company_number, :company_name, :contact_person, :mobile, :telephone, :remark, N'启用', :created_by, GETDATE(), GETDATE())`,
+          `INSERT INTO logistics_company (company_number, company_name, contact_person, mobile, telephone, remark, factory_id, condition, created_by, created_at, updated_at)
+           VALUES (:company_number, :company_name, :contact_person, :mobile, :telephone, :remark, :factory_id, N'启用', :created_by, GETDATE(), GETDATE())`,
           {
             replacements: {
               company_number: newNumber,
@@ -365,6 +380,7 @@ export const importLogisticsCompanies = async (req: Request, res: Response, next
               mobile: row.mobile || '',
               telephone: row.telephone || '',
               remark: row.remark || '',
+              factory_id: row.factory_id || null,
               created_by: username
             }
           }

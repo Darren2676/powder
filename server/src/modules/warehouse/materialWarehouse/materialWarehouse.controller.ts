@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { BusinessError } from '@/shared/errors/BusinessError';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 import {
   manualInboundMaterial,
   productionInboundMaterial,
@@ -72,7 +73,9 @@ export const getInventoryList = async (req: Request, res: Response, next: NextFu
 // ==================== 原材料手工入库 - Thin Adapter ====================
 export const manualInbound = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await manualInboundMaterial(req.body, (req as any).user?.username || '');
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
+    const result = await manualInboundMaterial(req.body, (req as any).user?.username || '', factoryCode, _factoryId);
     res.json(success(result, '入库成功'));
   } catch (err) {
     if (err instanceof BusinessError) {
@@ -133,7 +136,9 @@ export const getPendingInbound = async (req: Request, res: Response, next: NextF
 // ==================== 半成品生产完工入库 - Thin Adapter ====================
 export const productionInbound = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await productionInboundMaterial(req.body, (req as any).user?.username || '');
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
+    const result = await productionInboundMaterial(req.body, (req as any).user?.username || '', factoryCode, _factoryId);
     res.json(success(result, '半成品入库成功'));
   } catch (err) {
     if (err instanceof BusinessError) {
@@ -147,7 +152,8 @@ export const productionInbound = async (req: Request, res: Response, next: NextF
 // ==================== 手工出库（支持批次FIFO） - Thin Adapter ====================
 export const manualOutbound = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await manualOutboundMaterial(req.body, (req as any).user?.username || '');
+    const factoryCode = await getFactoryCode(req);
+    const result = await manualOutboundMaterial(req.body, (req as any).user?.username || '', factoryCode);
     res.json(success(result, '出库成功'));
   } catch (err) {
     if (err instanceof BusinessError) {
@@ -161,7 +167,8 @@ export const manualOutbound = async (req: Request, res: Response, next: NextFunc
 // ==================== 库存调整 - Thin Adapter ====================
 export const adjustInventory = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await adjustMaterialInventoryService(req.body, (req as any).user?.username || '');
+    const factoryCode = await getFactoryCode(req);
+    const result = await adjustMaterialInventoryService(req.body, (req as any).user?.username || '', factoryCode);
     res.json(success(result, '库存调整成功'));
   } catch (err) {
     if (err instanceof BusinessError) {

@@ -4,6 +4,7 @@ import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { generateProductionNumber } from '@/services/documentNumber.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // Re-export from service for backward compatibility
 export { generateProductionNumber } from '@/services/documentNumber.service';
@@ -49,6 +50,13 @@ export const getPlans = async (req: Request, res: Response, next: NextFunction) 
     } else if (mrp_status === '未分解') {
       conditions.push(`(mrp_status IS NULL OR mrp_status = '')`);
     }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
+
     if (conditions.length) whereClause = 'WHERE ' + conditions.join(' AND ');
 
     const countSql = `SELECT COUNT(*) as total FROM Production_plan ${whereClause}`;
@@ -83,6 +91,7 @@ export const getPlans = async (req: Request, res: Response, next: NextFunction) 
 
 export const createPlan = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body;
 
     if (!b.item_number) {
@@ -90,7 +99,7 @@ export const createPlan = async (req: Request, res: Response, next: NextFunction
       return;
     }
 
-    const production_number = await generateProductionNumber();
+    const production_number = await generateProductionNumber(factoryCode);
 
     const insertSql = `
       INSERT INTO Production_plan (production_number, item_number, item_name, basic_unit, specifications, product_drawing_number, rubber_compound_number, batch_production_quota, planned_quantity, shifts_number, planned_completion_time, plan_status, remark, approval_status, customer_item_number, customer_item_description)
@@ -295,14 +304,16 @@ export const exportPlans = async (req: Request, res: Response, next: NextFunctio
 
 export const importPlans = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     if (!req.file) { res.status(400).json({ success: false, message: '请上传Excel文件' }); return; }
     const rows = parseExcelFile(req.file.buffer, fields, headers);
     if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件内容为空' }); return; }
     let imported = 0;
     for (const item of rows) {
       try {
+        const factoryCode = await getFactoryCode(req);
         if (!item.production_number) {
-          item.production_number = await generateProductionNumber();
+          item.production_number = await generateProductionNumber(factoryCode);
         }
         // 自动计算台班数
         item.shifts_number = calcShiftsNumber(item.planned_quantity, item.batch_production_quota);
@@ -355,6 +366,7 @@ export const getSalesOrdersForImport = async (req: Request, res: Response, next:
 // ==================== 从销售订单导入到生产计划 ====================
 export const importFromSalesOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body;
     if (!b.items || !Array.isArray(b.items) || b.items.length === 0) {
       res.status(400).json({ success: false, message: '请选择至少一条销售订单明细' });
@@ -368,8 +380,9 @@ export const importFromSalesOrder = async (req: Request, res: Response, next: Ne
     const results: any[] = [];
 
     try {
+      const factoryCode = await getFactoryCode(req);
       for (const item of items) {
-        const production_number = await generateProductionNumber(transaction);
+        const production_number = await generateProductionNumber(factoryCode, transaction);
         const planned_quantity = item.planned_quantity || item.order_quantity || 0;
         const shifts_number = calcShiftsNumber(planned_quantity, item.batch_production_quota);
         // 交货日期取自销售订单明细，若明细无日期则取头部日期
@@ -472,6 +485,7 @@ export const getForecastsForImport = async (req: Request, res: Response, next: N
 // ==================== 从销售预测导入到生产计划 ====================
 export const importFromForecast = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body;
     if (!b.items || !Array.isArray(b.items) || b.items.length === 0) {
       res.status(400).json({ success: false, message: '请选择至少一条预测明细' });
@@ -485,8 +499,9 @@ export const importFromForecast = async (req: Request, res: Response, next: Next
     const results: any[] = [];
 
     try {
+      const factoryCode = await getFactoryCode(req);
       for (const item of items) {
-        const production_number = await generateProductionNumber(transaction);
+        const production_number = await generateProductionNumber(factoryCode, transaction);
         const planned_quantity = item.planned_quantity || item.forecast_quantity || 0;
         const shifts_number = calcShiftsNumber(planned_quantity, item.batch_production_quota);
         const planned_completion_time = item.end_date || null;

@@ -5,10 +5,12 @@ import { exportToExcel } from '../../../utils/excel.util';
 import { createReworkOrder } from '../reworkOrder/reworkOrder.controller';
 import { generateReturnNumber } from '../../purchasing/purchaseReturn/purchaseReturn.controller';
 import dayjs from 'dayjs';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 单号生成 ====================
-const generateNCNumber = async (transaction?: any): Promise<string> => {
+const generateNCNumber = async (factoryCode: string = '', transaction?: any): Promise<string> => {
   const today = dayjs().format('YYYYMMDD');
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
   const prefix = `NC-${today}-`;
   const opts: any = transaction
     ? { replacements: { prefix: prefix + '%' }, transaction }
@@ -48,8 +50,8 @@ export const createNonconformingFromInspection = async (params: {
   creation_man?: string;
   inspection_table: string;    // production_inspection | purchase_quality_inspection
   defect_line_id?: number;     // 关联缺陷明细行ID
-}, transaction: any): Promise<string> => {
-  const ncNumber = await generateNCNumber(transaction);
+}, factoryCode: string = '', _factoryId: number | null = null, transaction: any): Promise<string> => {
+  const ncNumber = await generateNCNumber(factoryCode, transaction);
 
   await sequelize.query(`
     INSERT INTO nonconforming_product (
@@ -60,7 +62,7 @@ export const createNonconformingFromInspection = async (params: {
       production_order_number, step_number,
       supplier_number, supplier_name,
       warehouse_number, warehouse_name,
-      creation_man, defect_line_id
+      creation_man, defect_line_id, factory_id
     ) VALUES (
       :nonconforming_number, :source_type, :source_number,
       :item_number, :item_name, :specifications, :basic_unit,
@@ -69,7 +71,7 @@ export const createNonconformingFromInspection = async (params: {
       :production_order_number, :step_number,
       :supplier_number, :supplier_name,
       :warehouse_number, :warehouse_name,
-      :creation_man, :defect_line_id
+      :creation_man, :defect_line_id, :factory_id
     )
   `, {
     replacements: {
@@ -91,7 +93,8 @@ export const createNonconformingFromInspection = async (params: {
       warehouse_number: params.warehouse_number || '',
       warehouse_name: params.warehouse_name || '',
       creation_man: params.creation_man || '',
-      defect_line_id: params.defect_line_id || null
+      defect_line_id: params.defect_line_id || null,
+      factory_id: _factoryId
     },
     transaction
   });
@@ -172,6 +175,11 @@ export const getNonconformingProducts = async (req: Request, res: Response, next
 
     let whereClause = 'WHERE 1=1';
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
 
     if (sourceType) { whereClause += ` AND source_type = :sourceType`; replacements.sourceType = sourceType; }
     if (handlingStatus) { whereClause += ` AND handling_status = :handlingStatus`; replacements.handlingStatus = handlingStatus; }
@@ -216,9 +224,10 @@ export const getNonconformingProductDetail = async (req: Request, res: Response,
   try {
     const { id } = req.params;
     const ncId = String(id);
+    const _factoryId = getFactoryId(req);
     const [rows]: any = await sequelize.query(
-      `SELECT * FROM nonconforming_product WHERE nonconforming_number = :ncId`,
-      { replacements: { ncId } }
+      `SELECT * FROM nonconforming_product WHERE nonconforming_number = :ncId${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+      { replacements: { ncId, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } }
     );
     if (!rows.length) { res.status(404).json({ success: false, message: '不合格品记录不存在' }); return; }
     res.json(success(rows[0], '获取不合格品详情成功'));
@@ -226,8 +235,9 @@ export const getNonconformingProductDetail = async (req: Request, res: Response,
 };
 
 // ==================== 报废入库单号生成 ====================
-const generateStockInNumber = async (transaction: any): Promise<string> => {
+const generateStockInNumber = async (factoryCode: string = '', transaction: any): Promise<string> => {
   const today = dayjs().format('YYYYMMDD');
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
   const siPrefix = `SI-${today}-`;
   const [siRows]: any = await sequelize.query(
     `SELECT MAX(stock_in_number) as max_num FROM stock_in WHERE stock_in_number LIKE :prefix`,
@@ -253,13 +263,17 @@ const getScrapWarehouse = async (transaction: any): Promise<{ warehouse_number: 
 // ==================== 不合格品处理 ====================
 export const handleNonconforming = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const { id } = req.params;
     const ncId = String(id);
     const b = req.body;
 
     const [records]: any = await sequelize.query(
-      `SELECT * FROM nonconforming_product WHERE nonconforming_number = :ncId`,
-      { replacements: { ncId } }
+      `SELECT * FROM nonconforming_product WHERE nonconforming_number = :ncId${factoryCond}`,
+      { replacements: { ncId, ...factoryReps } }
     );
     if (!records.length) { res.status(404).json({ success: false, message: '不合格品记录不存在' }); return; }
 
@@ -336,7 +350,7 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
           rework_step_number: b.rework_step_number,
           rework_quantity: handlingQty,
           operator
-        }, transaction);
+        }, factoryCode, _factoryId, transaction);
 
         // 2. 回退目标工序任务状态
         await sequelize.query(`
@@ -468,8 +482,8 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
         // 4. 更新检验单
         await sequelize.query(`
           UPDATE production_inspection SET defect_handling = N'返修', rework_step_number = :step, rework_order_number = :rwNumber
-          WHERE inspection_number = :sourceNumber
-        `, { replacements: { step: b.rework_step_number, rwNumber, sourceNumber: record.source_number }, transaction });
+          WHERE inspection_number = :sourceNumber${factoryCond}
+        `, { replacements: { step: b.rework_step_number, rwNumber, sourceNumber: record.source_number, ...factoryReps }, transaction });
 
         // 5. 更新NC单
         await sequelize.query(`
@@ -478,8 +492,8 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
             handling_status = N'处理中', rework_step_number = :step,
             rework_order_number = :rwNumber, operator = :operator,
             handling_date = :handlingDate, handling_remark = :remark
-          WHERE nonconforming_number = :ncId
-        `, { replacements: { handlingQty, step: b.rework_step_number, rwNumber, operator, handlingDate: now, remark: b.handling_remark || '', ncId }, transaction });
+          WHERE nonconforming_number = :ncId${factoryCond}
+        `, { replacements: { handlingQty, step: b.rework_step_number, rwNumber, operator, handlingDate: now, remark: b.handling_remark || '', ncId, ...factoryReps }, transaction });
 
         await writeBackDefectLine('返修', transaction);
         await transaction.commit();
@@ -493,19 +507,20 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
         const scrapWarehouse = await getScrapWarehouse(transaction);
         if (!scrapWarehouse) { await transaction.rollback(); res.status(400).json({ success: false, message: '未找到报废仓库，请先在仓库管理中创建类型为"报废仓库"的仓库' }); return; }
 
-        const stockInNumber = await generateStockInNumber(transaction);
+        const stockInNumber = await generateStockInNumber(factoryCode, transaction);
 
         await sequelize.query(`
           INSERT INTO stock_in (stock_in_number, purchase_order_number, supplier_number, supplier_name,
             warehouse_number, warehouse_name, stock_in_date, stock_in_type, approval_status,
-            [condition], operator, remark, creation_date, creation_man)
+            [condition], operator, remark, creation_date, creation_man, factory_id)
           VALUES (:stock_in_number, N'', N'', N'', :warehouse_number, :warehouse_name, :stock_in_date, N'报废入库', N'草稿',
-            N'启用', :operator, :remark, :creation_date, :creation_man)
+            N'启用', :operator, :remark, :creation_date, :creation_man, :factory_id)
         `, {
           replacements: {
             stock_in_number: stockInNumber, warehouse_number: scrapWarehouse.warehouse_number,
             warehouse_name: scrapWarehouse.warehouse_name, stock_in_date: dayjs().format('YYYY/MM/DD'),
-            operator, remark: `报废入库 - 来源不合格品单 ${ncId}`, creation_date: now, creation_man: operator
+            operator, remark: `报废入库 - 来源不合格品单 ${ncId}`, creation_date: now, creation_man: operator,
+            factory_id: _factoryId
           }, transaction
         });
 
@@ -527,8 +542,8 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
         // 更新检验单
         await sequelize.query(`
           UPDATE production_inspection SET defect_handling = N'报废', scrap_type = :scrapType, scrap_quantity = :scrapQty
-          WHERE inspection_number = :sourceNumber
-        `, { replacements: { scrapType: b.scrap_type || '批量', scrapQty, sourceNumber: record.source_number }, transaction });
+          WHERE inspection_number = :sourceNumber${factoryCond}
+        `, { replacements: { scrapType: b.scrap_type || '批量', scrapQty, sourceNumber: record.source_number, ...factoryReps }, transaction });
 
         // 工序标记已处理
         const [taskRows]: any = await sequelize.query(
@@ -549,8 +564,8 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
             handling_status = N'已完成', scrap_type = :scrapType, scrap_quantity = :scrapQty,
             stock_in_number = :stockInNumber, operator = :operator,
             handling_date = :handlingDate, handling_remark = :remark
-          WHERE nonconforming_number = :ncId
-        `, { replacements: { handlingQty: scrapQty, scrapType: b.scrap_type || '批量', scrapQty, stockInNumber, operator, handlingDate: now, remark: b.handling_remark || '', ncId }, transaction });
+          WHERE nonconforming_number = :ncId${factoryCond}
+        `, { replacements: { handlingQty: scrapQty, scrapType: b.scrap_type || '批量', scrapQty, stockInNumber, operator, handlingDate: now, remark: b.handling_remark || '', ncId, ...factoryReps }, transaction });
 
         await writeBackDefectLine('报废', transaction);
         await transaction.commit();
@@ -567,8 +582,8 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
             defect_handling = N'让步接收', concession_quantity = :concessionQty,
             qualified_quantity = qualified_quantity + :concessionQty,
             unqualified_quantity = CASE WHEN unqualified_quantity - :concessionQty < 0 THEN 0 ELSE unqualified_quantity - :concessionQty END
-          WHERE inspection_number = :sourceNumber
-        `, { replacements: { concessionQty, sourceNumber: record.source_number }, transaction });
+          WHERE inspection_number = :sourceNumber${factoryCond}
+        `, { replacements: { concessionQty, sourceNumber: record.source_number, ...factoryReps }, transaction });
 
         // 工序标记已处理
         const [taskRows]: any = await sequelize.query(
@@ -587,8 +602,8 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
             handling_method = N'让步接收', handling_quantity = :handlingQty,
             handling_status = N'已完成', concession_quantity = :concessionQty,
             operator = :operator, handling_date = :handlingDate, handling_remark = :remark
-          WHERE nonconforming_number = :ncId
-        `, { replacements: { handlingQty: concessionQty, concessionQty, operator, handlingDate: now, remark: b.handling_remark || '', ncId }, transaction });
+          WHERE nonconforming_number = :ncId${factoryCond}
+        `, { replacements: { handlingQty: concessionQty, concessionQty, operator, handlingDate: now, remark: b.handling_remark || '', ncId, ...factoryReps }, transaction });
 
         await writeBackDefectLine('让步接收', transaction);
         await transaction.commit();
@@ -608,11 +623,11 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
             unqualified_quantity = :unqualified_quantity,
             inspect_result = CASE WHEN :unqualified_quantity > 0 THEN N'不合格' ELSE N'合格' END,
             handling_quantity = :handlingQty, handling_remark = :handling_remark
-          WHERE inspection_number = :sourceNumber
+          WHERE inspection_number = :sourceNumber${factoryCond}
         `, {
           replacements: {
             qualified_quantity: qualifiedAfter, unqualified_quantity: unqualifiedAfter,
-            handlingQty, handling_remark: b.handling_remark || '', sourceNumber: record.source_number
+            handlingQty, handling_remark: b.handling_remark || '', sourceNumber: record.source_number, ...factoryReps
           }, transaction
         });
 
@@ -641,8 +656,8 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
             handling_status = N'已完成', qualified_quantity_after = :qualifiedAfter,
             unqualified_quantity_after = :unqualifiedAfter,
             operator = :operator, handling_date = :handlingDate, handling_remark = :remark
-          WHERE nonconforming_number = :ncId
-        `, { replacements: { handlingQty, qualifiedAfter, unqualifiedAfter, operator, handlingDate: now, remark: b.handling_remark || '', ncId }, transaction });
+          WHERE nonconforming_number = :ncId${factoryCond}
+        `, { replacements: { handlingQty, qualifiedAfter, unqualifiedAfter, operator, handlingDate: now, remark: b.handling_remark || '', ncId, ...factoryReps }, transaction });
 
         await writeBackDefectLine('挑选', transaction);
         await transaction.commit();
@@ -656,8 +671,8 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
           UPDATE purchase_quality_inspection SET
             defect_handling = N'拒收', handling_quantity = :handlingQty,
             handling_remark = :handling_remark
-          WHERE inspection_number = :sourceNumber
-        `, { replacements: { handlingQty, handling_remark: b.handling_remark || '', sourceNumber: record.source_number }, transaction });
+          WHERE inspection_number = :sourceNumber${factoryCond}
+        `, { replacements: { handlingQty, handling_remark: b.handling_remark || '', sourceNumber: record.source_number, ...factoryReps }, transaction });
 
         // 回写入库单明细
         const [inspRows]: any = await sequelize.query(
@@ -676,8 +691,8 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
             handling_method = N'拒收', handling_quantity = :handlingQty,
             handling_status = N'已完成', operator = :operator,
             handling_date = :handlingDate, handling_remark = :remark
-          WHERE nonconforming_number = :ncId
-        `, { replacements: { handlingQty, operator, handlingDate: now, remark: b.handling_remark || '', ncId }, transaction });
+          WHERE nonconforming_number = :ncId${factoryCond}
+        `, { replacements: { handlingQty, operator, handlingDate: now, remark: b.handling_remark || '', ncId, ...factoryReps }, transaction });
 
         await writeBackDefectLine('拒收', transaction);
         await transaction.commit();
@@ -691,19 +706,20 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
         const scrapWarehouse = await getScrapWarehouse(transaction);
         if (!scrapWarehouse) { await transaction.rollback(); res.status(400).json({ success: false, message: '未找到报废仓库，请先在仓库管理中创建类型为"报废仓库"的仓库' }); return; }
 
-        const stockInNumber = await generateStockInNumber(transaction);
+        const stockInNumber = await generateStockInNumber(factoryCode, transaction);
 
         await sequelize.query(`
           INSERT INTO stock_in (stock_in_number, purchase_order_number, supplier_number, supplier_name,
             warehouse_number, warehouse_name, stock_in_date, stock_in_type, approval_status,
-            [condition], operator, remark, creation_date, creation_man)
+            [condition], operator, remark, creation_date, creation_man, factory_id)
           VALUES (:stock_in_number, N'', N'', N'', :warehouse_number, :warehouse_name, :stock_in_date, N'报废入库', N'草稿',
-            N'启用', :operator, :remark, :creation_date, :creation_man)
+            N'启用', :operator, :remark, :creation_date, :creation_man, :factory_id)
         `, {
           replacements: {
             stock_in_number: stockInNumber, warehouse_number: scrapWarehouse.warehouse_number,
             warehouse_name: scrapWarehouse.warehouse_name, stock_in_date: dayjs().format('YYYY/MM/DD'),
-            operator, remark: `报废入库 - 来源不合格品单 ${ncId}`, creation_date: now, creation_man: operator
+            operator, remark: `报废入库 - 来源不合格品单 ${ncId}`, creation_date: now, creation_man: operator,
+            factory_id: _factoryId
           }, transaction
         });
 
@@ -726,8 +742,8 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
         await sequelize.query(`
           UPDATE purchase_quality_inspection SET defect_handling = N'报废', handling_quantity = :handlingQty,
             handling_remark = :handling_remark
-          WHERE inspection_number = :sourceNumber
-        `, { replacements: { handlingQty: scrapQty, handling_remark: b.handling_remark || '', sourceNumber: record.source_number }, transaction });
+          WHERE inspection_number = :sourceNumber${factoryCond}
+        `, { replacements: { handlingQty: scrapQty, handling_remark: b.handling_remark || '', sourceNumber: record.source_number, ...factoryReps }, transaction });
 
         // 回写入库单明细
         const [inspRows]: any = await sequelize.query(
@@ -747,8 +763,8 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
             handling_status = N'已完成', scrap_type = :scrapType, scrap_quantity = :scrapQty,
             stock_in_number = :stockInNumber, operator = :operator,
             handling_date = :handlingDate, handling_remark = :remark
-          WHERE nonconforming_number = :ncId
-        `, { replacements: { handlingQty: scrapQty, scrapType: b.scrap_type || '批量', scrapQty, stockInNumber, operator, handlingDate: now, remark: b.handling_remark || '', ncId }, transaction });
+          WHERE nonconforming_number = :ncId${factoryCond}
+        `, { replacements: { handlingQty: scrapQty, scrapType: b.scrap_type || '批量', scrapQty, stockInNumber, operator, handlingDate: now, remark: b.handling_remark || '', ncId, ...factoryReps }, transaction });
 
         await writeBackDefectLine('报废', transaction);
         await transaction.commit();
@@ -772,18 +788,19 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
         }
 
         // 创建特采入库单
-        const stockInNumber = await generateStockInNumber(transaction);
+        const stockInNumber = await generateStockInNumber(factoryCode, transaction);
         await sequelize.query(`
           INSERT INTO stock_in (stock_in_number, purchase_order_number, supplier_number, supplier_name,
             warehouse_number, warehouse_name, stock_in_date, stock_in_type, approval_status,
-            [condition], operator, remark, creation_date, creation_man)
+            [condition], operator, remark, creation_date, creation_man, factory_id)
           VALUES (:stock_in_number, N'', N'', N'', :warehouse_number, :warehouse_name, :stock_in_date, N'特采入库', N'草稿',
-            N'启用', :operator, :remark, :creation_date, :creation_man)
+            N'启用', :operator, :remark, :creation_date, :creation_man, :factory_id)
         `, {
           replacements: {
             stock_in_number: stockInNumber, warehouse_number: specialWarehouse,
             warehouse_name: specialWhName, stock_in_date: dayjs().format('YYYY/MM/DD'),
-            operator, remark: `特采入库 - 来源不合格品单 ${ncId}`, creation_date: now, creation_man: operator
+            operator, remark: `特采入库 - 来源不合格品单 ${ncId}`, creation_date: now, creation_man: operator,
+            factory_id: _factoryId
           }, transaction
         });
 
@@ -810,11 +827,11 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
             unqualified_quantity = CASE WHEN unqualified_quantity - :specialQty < 0 THEN 0 ELSE unqualified_quantity - :specialQty END,
             inspect_result = N'让步接收', handling_quantity = :specialQty,
             handling_remark = :handling_remark, special_warehouse = :special_warehouse
-          WHERE inspection_number = :sourceNumber
+          WHERE inspection_number = :sourceNumber${factoryCond}
         `, {
           replacements: {
             specialQty, handling_remark: b.handling_remark || '',
-            special_warehouse: specialWarehouse, sourceNumber: record.source_number
+            special_warehouse: specialWarehouse, sourceNumber: record.source_number, ...factoryReps
           }, transaction
         });
 
@@ -844,8 +861,8 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
             handling_status = N'已完成', special_warehouse = :special_warehouse,
             stock_in_number = :stockInNumber, operator = :operator,
             handling_date = :handlingDate, handling_remark = :remark
-          WHERE nonconforming_number = :ncId
-        `, { replacements: { handlingQty: specialQty, special_warehouse: specialWarehouse, stockInNumber, operator, handlingDate: now, remark: b.handling_remark || '', ncId }, transaction });
+          WHERE nonconforming_number = :ncId${factoryCond}
+        `, { replacements: { handlingQty: specialQty, special_warehouse: specialWarehouse, stockInNumber, operator, handlingDate: now, remark: b.handling_remark || '', ncId, ...factoryReps }, transaction });
 
         await writeBackDefectLine('特采', transaction);
         await transaction.commit();
@@ -878,7 +895,7 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
         }
 
         // 3. 生成采购退货单号并创建主表
-        const returnNumber = await generateReturnNumber(transaction);
+        const returnNumber = await generateReturnNumber(factoryCode, transaction);
         const returnType = b.return_type || '退货退款';
         const retQty = handlingQty;
         const retAmt = retQty * unitPrice;
@@ -897,11 +914,11 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
           INSERT INTO purchase_return (return_number, purchase_order_number, supplier_number, supplier_name,
             return_type, return_reason, warehouse_number, warehouse_name,
             approval_status, return_status, exchange_status, total_return_quantity, total_return_amount,
-            remark, creation_date, creation_man)
+            remark, factory_id, creation_date, creation_man)
           VALUES (:return_number, :purchase_order_number, :supplier_number, :supplier_name,
             :return_type, :return_reason, :warehouse_number, :warehouse_name,
             N'草稿', N'待退货', :exchange_status, :total_return_quantity, :total_return_amount,
-            :remark, :creation_date, :creation_man)
+            :remark, :factory_id, :creation_date, :creation_man)
         `, {
           replacements: {
             return_number: returnNumber,
@@ -916,6 +933,7 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
             total_return_quantity: retQty,
             total_return_amount: retAmt,
             remark: b.handling_remark || '',
+            factory_id: _factoryId,
             creation_date: nowDate,
             creation_man: creationMan
           },
@@ -956,11 +974,11 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
           UPDATE purchase_quality_inspection SET
             defect_handling = N'退货', handling_quantity = :handlingQty,
             handling_remark = :handling_remark, return_order_number = :return_order_number
-          WHERE inspection_number = :sourceNumber
+          WHERE inspection_number = :sourceNumber${factoryCond}
         `, {
           replacements: {
             handlingQty, handling_remark: b.handling_remark || '',
-            return_order_number: returnNumber, sourceNumber: record.source_number
+            return_order_number: returnNumber, sourceNumber: record.source_number, ...factoryReps
           }, transaction
         });
 
@@ -978,8 +996,8 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
             handling_method = N'退货', handling_quantity = :handlingQty,
             handling_status = N'已完成', return_order_number = :returnOrderNumber,
             operator = :operator, handling_date = :handlingDate, handling_remark = :remark
-          WHERE nonconforming_number = :ncId
-        `, { replacements: { handlingQty, returnOrderNumber: returnNumber, operator, handlingDate: now, remark: b.handling_remark || '', ncId }, transaction });
+          WHERE nonconforming_number = :ncId${factoryCond}
+        `, { replacements: { handlingQty, returnOrderNumber: returnNumber, operator, handlingDate: now, remark: b.handling_remark || '', ncId, ...factoryReps }, transaction });
 
         await writeBackDefectLine('退货', transaction);
         await transaction.commit();
@@ -1002,10 +1020,13 @@ export const cancelHandleNonconforming = async (req: Request, res: Response, nex
   try {
     const { id } = req.params;
     const ncId = String(id);
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [records]: any = await sequelize.query(
-      `SELECT * FROM nonconforming_product WHERE nonconforming_number = :ncId`,
-      { replacements: { ncId } }
+      `SELECT * FROM nonconforming_product WHERE nonconforming_number = :ncId${factoryCond}`,
+      { replacements: { ncId, ...factoryReps } }
     );
     if (!records.length) { res.status(404).json({ success: false, message: '不合格品记录不存在' }); return; }
 
@@ -1033,8 +1054,8 @@ export const cancelHandleNonconforming = async (req: Request, res: Response, nex
           return_order_number = N'', special_warehouse = N'',
           rework_step_number = NULL, rework_order_number = N'',
           stock_in_number = N''
-        WHERE nonconforming_number = :ncId
-      `, { replacements: { ncId }, transaction });
+        WHERE nonconforming_number = :ncId${factoryCond}
+      `, { replacements: { ncId, ...factoryReps }, transaction });
 
       // 2. 删除关联的入库单（报废/特采，仅草稿状态）
       if (record.stock_in_number) {
@@ -1045,8 +1066,8 @@ export const cancelHandleNonconforming = async (req: Request, res: Response, nex
         if (siRows.length && siRows[0].approval_status === '草稿') {
           await sequelize.query(`DELETE FROM stock_in_detail WHERE stock_in_number = :siNum`,
             { replacements: { siNum: record.stock_in_number }, transaction });
-          await sequelize.query(`DELETE FROM stock_in WHERE stock_in_number = :siNum`,
-            { replacements: { siNum: record.stock_in_number }, transaction });
+          await sequelize.query(`DELETE FROM stock_in WHERE stock_in_number = :siNum${factoryCond}`,
+            { replacements: { siNum: record.stock_in_number, ...factoryReps }, transaction });
         } else if (siRows.length && siRows[0].approval_status !== '草稿') {
           await transaction.rollback();
           res.status(400).json({ success: false, message: `入库单 ${record.stock_in_number} 已确认/审批，无法撤销，请先撤回入库单` });
@@ -1068,8 +1089,8 @@ export const cancelHandleNonconforming = async (req: Request, res: Response, nex
           }
           await sequelize.query(`DELETE FROM purchase_return_detail WHERE return_number = :rn`,
             { replacements: { rn: record.return_order_number }, transaction });
-          await sequelize.query(`DELETE FROM purchase_return WHERE return_number = :rn`,
-            { replacements: { rn: record.return_order_number }, transaction });
+          await sequelize.query(`DELETE FROM purchase_return WHERE return_number = :rn${factoryCond}`,
+            { replacements: { rn: record.return_order_number, ...factoryReps }, transaction });
         }
       }
 
@@ -1103,11 +1124,11 @@ export const cancelHandleNonconforming = async (req: Request, res: Response, nex
               inspect_result = CASE WHEN :unqualifiedQty > 0 THEN N'不合格' ELSE N'合格' END,
               handling_quantity = 0, handling_remark = N'',
               return_order_number = N'', special_warehouse = N''
-            WHERE inspection_number = :srcNum
+            WHERE inspection_number = :srcNum${factoryCond}
           `, {
             replacements: {
               qualifiedQty: restoreQualified, unqualifiedQty: restoreUnqualified,
-              srcNum: record.source_number
+              srcNum: record.source_number, ...factoryReps
             }, transaction
           });
 
@@ -1133,8 +1154,8 @@ export const cancelHandleNonconforming = async (req: Request, res: Response, nex
             defect_handling = N'待处理',
             concession_quantity = 0, scrap_type = N'', scrap_quantity = 0,
             rework_step_number = NULL, rework_order_number = N''
-          WHERE inspection_number = :srcNum
-        `, { replacements: { srcNum: record.source_number }, transaction });
+          WHERE inspection_number = :srcNum${factoryCond}
+        `, { replacements: { srcNum: record.source_number, ...factoryReps }, transaction });
 
         // 让步接收需恢复合格/不合格数量
         if (handlingMethod === '让步接收') {
@@ -1143,8 +1164,8 @@ export const cancelHandleNonconforming = async (req: Request, res: Response, nex
             UPDATE production_inspection SET
               qualified_quantity = CASE WHEN qualified_quantity - :concessionQty < 0 THEN 0 ELSE qualified_quantity - :concessionQty END,
               unqualified_quantity = unqualified_quantity + :concessionQty
-            WHERE inspection_number = :srcNum
-          `, { replacements: { concessionQty, srcNum: record.source_number }, transaction });
+            WHERE inspection_number = :srcNum${factoryCond}
+          `, { replacements: { concessionQty, srcNum: record.source_number, ...factoryReps }, transaction });
         }
 
         // 恢复工序状态
@@ -1161,8 +1182,8 @@ export const cancelHandleNonconforming = async (req: Request, res: Response, nex
 
         // 返修撤销：删除返修单，恢复工序数量
         if (handlingMethod === '返修' && record.rework_order_number) {
-          await sequelize.query(`DELETE FROM rework_order WHERE rework_order_number = :rwNum`,
-            { replacements: { rwNum: record.rework_order_number }, transaction });
+          await sequelize.query(`DELETE FROM rework_order WHERE rework_order_number = :rwNum${factoryCond}`,
+            { replacements: { rwNum: record.rework_order_number, ...factoryReps }, transaction });
 
           if (record.rework_step_number && record.production_order_number) {
             const step = parseInt(record.rework_step_number) || 0;

@@ -15,10 +15,12 @@ import { generateMaterialTxnNumber, syncMaterialInventorySummary } from '@/servi
 import { createMaterialTransaction } from '@/services/warehouse/helpers';
 import { logLinesideMovement } from '@/services/linesideMovement.service';
 import { writeReturnSnapshot, deleteCostSnapshotBySource, ReturnSnapshotItem } from '@/services/materialCostSnapshot.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 生成退料单编号 ====================
-const generateReturnNumber = async (tx: any): Promise<string> => {
+const generateReturnNumber = async (factoryCode: string = '', tx: any): Promise<string> => {
   const today = dayjs().format('YYYYMMDD');
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
   const prefix = `MR-${today}-`;
 
   const [rows]: any = await sequelize.query(
@@ -39,6 +41,7 @@ const generateReturnNumber = async (tx: any): Promise<string> => {
 export const createMaterialReturn = async (req: Request, res: Response, next: NextFunction) => {
   const transaction = await sequelize.transaction();
   try {
+    const factoryCode = await getFactoryCode(req);
     const user = (req as any).user;
     const { issue_number, items, remark } = req.body;
 
@@ -133,7 +136,7 @@ export const createMaterialReturn = async (req: Request, res: Response, next: Ne
     }
 
     // E. 生成退料单编号 + 插入主表
-    const returnNumber = await generateReturnNumber(transaction);
+    const returnNumber = await generateReturnNumber(factoryCode, transaction);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
 
     await sequelize.query(`
@@ -221,7 +224,7 @@ export const createMaterialReturn = async (req: Request, res: Response, next: Ne
           );
           await syncMaterialInventorySummary(item.material_number, targetWh, transaction);
 
-          const mtNum = await generateMaterialTxnNumber(transaction);
+          const mtNum = await generateMaterialTxnNumber(factoryCode, transaction);
           await createMaterialTransaction({
             transaction_number: mtNum,
             transaction_type: '入库',
@@ -260,7 +263,7 @@ export const createMaterialReturn = async (req: Request, res: Response, next: Ne
             { replacements: { qty: afterQty, iid: invRows[0].id }, transaction }
           );
 
-          const mtNum = await generateMaterialTxnNumber(transaction);
+          const mtNum = await generateMaterialTxnNumber(factoryCode, transaction);
           await createMaterialTransaction({
             transaction_number: mtNum,
             transaction_type: '入库',
@@ -420,6 +423,7 @@ export const createMaterialReturn = async (req: Request, res: Response, next: Ne
 export const deleteMaterialReturn = async (req: Request, res: Response, next: NextFunction) => {
   const transaction = await sequelize.transaction();
   try {
+    const factoryCode = await getFactoryCode(req);
     const user = (req as any).user;
     const { id } = req.params;
 
@@ -486,7 +490,7 @@ export const deleteMaterialReturn = async (req: Request, res: Response, next: Ne
           { replacements: { qty: afterQty, iid: invRows[0].id }, transaction }
         );
 
-        const mtNum = await generateMaterialTxnNumber(transaction);
+        const mtNum = await generateMaterialTxnNumber(factoryCode, transaction);
         await createMaterialTransaction({
           transaction_number: mtNum,
           transaction_type: '出库',
@@ -642,6 +646,12 @@ export const getMaterialReturns = async (req: Request, res: Response, next: Next
     let whereClause = 'WHERE 1=1';
     const replacements: any = {};
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ' AND r.factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
+    }
+
     if (search) {
       whereClause += ` AND (r.return_number LIKE :search OR r.production_order_number LIKE :search OR r.issue_number LIKE :search)`;
       replacements.search = `%${search}%`;
@@ -679,10 +689,11 @@ export const getMaterialReturns = async (req: Request, res: Response, next: Next
 export const getMaterialReturnDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
 
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM material_return WHERE return_number = :id`,
-      { replacements: { id } }
+      `SELECT * FROM material_return WHERE return_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+      { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } }
     );
     if (!headers.length) {
       res.status(404).json({ success: false, message: '退料单不存在' });

@@ -107,6 +107,7 @@ const limit = ref(20)
 const total = ref(0)
 
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '发料单号', dataIndex: 'issue_number', key: 'issue_number', width: 150 },
   { title: '委外订单号', dataIndex: 'outsourcing_order_number', key: 'outsourcing_order_number', width: 150 },
   { title: '发料日期', dataIndex: 'issue_date', key: 'issue_date', width: 120 },

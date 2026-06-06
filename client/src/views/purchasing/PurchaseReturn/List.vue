@@ -29,6 +29,7 @@ const detailRows = ref<any[]>([])
 const { loading, searchText, pagination, handleTableChange, handleSearch } = useTableList(getPurchaseReturns)
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '退货单号', dataIndex: 'return_number', key: 'return_number', width: 170, resizable: true },
   { title: '采购订单号', dataIndex: 'purchase_order_number', key: 'purchase_order_number', width: 170, resizable: true },
   { title: '供应商名称', dataIndex: 'supplier_name', key: 'supplier_name', width: 140, resizable: true },

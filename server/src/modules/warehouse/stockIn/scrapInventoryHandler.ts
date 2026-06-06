@@ -22,7 +22,7 @@ const log = createLogger('scrapInventoryHandler');
  * 4. 更新 finished_goods_inventory 汇总库存
  * 5. 记录 inventory_transaction 流水（source_type='报废入库'）
  */
-export const onStockInApproved = async (stockInNumber: string): Promise<void> => {
+export const onStockInApproved = async (stockInNumber: string, factoryCode: string = '', _factoryId: number | null = null): Promise<void> => {
   // 1. 获取入库单头
   const [headers]: any = await sequelize.query(
     `SELECT * FROM stock_in WHERE stock_in_number = :number`,
@@ -33,6 +33,11 @@ export const onStockInApproved = async (stockInNumber: string): Promise<void> =>
     return;
   }
   const header = headers[0];
+
+  // 如果未传factory_id，从入库单记录中获取
+  if (_factoryId === null && header.factory_id) {
+    _factoryId = header.factory_id;
+  }
 
   // 2. 只处理报废入库类型
   if (header.stock_in_type !== '报废入库') {
@@ -71,16 +76,16 @@ export const onStockInApproved = async (stockInNumber: string): Promise<void> =>
       if (qty <= 0) continue;
 
       // 生成报废批次号
-      const batchNo = await generateBatchNumber('FB', transaction);
+      const batchNo = await generateBatchNumber('FB', factoryCode, transaction);
 
       // 写入成品批次库存
       await sequelize.query(`
         INSERT INTO finished_batch_inventory (batch_number, item_number, item_name, specifications, basic_unit,
           product_drawing_number, warehouse_number, warehouse_name, quantity, initial_quantity,
-          production_order_number, inbound_date, status, quality_status, creation_date, last_updated)
+          production_order_number, inbound_date, status, quality_status, creation_date, last_updated, factory_id)
         VALUES (:batch_number, :item_number, :item_name, :specifications, :basic_unit,
           :product_drawing_number, :warehouse_number, :warehouse_name, :quantity, :quantity,
-          N'', GETDATE(), N'正常', N'不合格品', GETDATE(), GETDATE())
+          N'', GETDATE(), N'正常', N'不合格品', GETDATE(), GETDATE(), :factory_id)
       `, {
         replacements: {
           batch_number: batchNo,
@@ -91,7 +96,8 @@ export const onStockInApproved = async (stockInNumber: string): Promise<void> =>
           product_drawing_number: d.product_drawing_number || '',
           warehouse_number: header.warehouse_number,
           warehouse_name: header.warehouse_name,
-          quantity: qty
+          quantity: qty,
+          factory_id: _factoryId
         },
         transaction
       });
@@ -114,9 +120,9 @@ export const onStockInApproved = async (stockInNumber: string): Promise<void> =>
       } else {
         await sequelize.query(`
           INSERT INTO finished_goods_inventory (item_number, item_name, specifications, basic_unit,
-            product_drawing_number, warehouse_number, warehouse_name, quantity, quality_status, last_updated, creation_date)
+            product_drawing_number, warehouse_number, warehouse_name, quantity, quality_status, last_updated, creation_date, factory_id)
           VALUES (:item_number, :item_name, :specifications, :basic_unit,
-            :product_drawing_number, :warehouse_number, :warehouse_name, :quantity, N'不合格品', GETDATE(), GETDATE())
+            :product_drawing_number, :warehouse_number, :warehouse_name, :quantity, N'不合格品', GETDATE(), GETDATE(), :factory_id)
         `, {
           replacements: {
             item_number: d.item_number || '',
@@ -126,23 +132,24 @@ export const onStockInApproved = async (stockInNumber: string): Promise<void> =>
             product_drawing_number: d.product_drawing_number || '',
             warehouse_number: header.warehouse_number,
             warehouse_name: header.warehouse_name,
-            quantity: afterQty
+            quantity: afterQty,
+            factory_id: _factoryId
           },
           transaction
         });
       }
 
       // 记录库存流水
-      const txNum = await generateTransactionNumber(transaction);
+      const txNum = await generateTransactionNumber(factoryCode, transaction);
       await sequelize.query(`
         INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number,
           item_number, item_name, specifications, basic_unit, product_drawing_number,
           warehouse_number, warehouse_name, quantity, before_quantity, after_quantity,
-          batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period)
+          batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period, factory_id)
         VALUES (:transaction_number, N'入库', N'报废入库', :source_number,
           :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number,
           :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity,
-          :batch_number, :operator, GETDATE(), :remark, N'不合格品', GETDATE(), :accounting_period)
+          :batch_number, :operator, GETDATE(), :remark, N'不合格品', GETDATE(), :accounting_period, :factory_id)
       `, {
         replacements: {
           transaction_number: txNum,
@@ -160,7 +167,8 @@ export const onStockInApproved = async (stockInNumber: string): Promise<void> =>
           batch_number: batchNo,
           operator: header.creation_man || '',
           remark: `报废入库 - 入库单 ${stockInNumber}`,
-          accounting_period: accountingPeriod
+          accounting_period: accountingPeriod,
+          factory_id: _factoryId
         },
         transaction
       });

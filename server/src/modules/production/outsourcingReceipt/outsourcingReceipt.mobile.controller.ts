@@ -4,6 +4,7 @@ import { generateOutsourcingInspectionNumber, generateOutsourcingReturnStockinNu
 import { generateBatchNumber, generateMaterialTxnNumber, syncMaterialInventorySummary } from '@/services/inventory.service';
 import { upsertMaterialInventory, createMaterialTransaction } from '@/services/warehouse/helpers';
 import { logLinesideMovement } from '@/services/linesideMovement.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 /**
  * 获取委外收回订单详情（移动端）
@@ -114,6 +115,8 @@ export const submitReceipt = async (req: Request, res: Response) => {
   const transaction = await sequelize.transaction();
 
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const { order_number, items, remark, receipt_number } = req.body;
 
     if (!order_number) {
@@ -187,9 +190,9 @@ export const submitReceipt = async (req: Request, res: Response) => {
         if (recvQty <= 0) continue;
 
         // 1. 生成批次号，写入 material_batch_inventory（待检仓）
-        const batchNo = await generateBatchNumber('MB', transaction);
+        const batchNo = await generateBatchNumber('MB', factoryCode, transaction);
         await sequelize.query(
-          `INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, inbound_date, status, creation_date, last_updated) VALUES (:batch_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, GETDATE(), N'正常', GETDATE(), GETDATE())`,
+          `INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, inbound_date, status, creation_date, last_updated, factory_id) VALUES (:batch_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, GETDATE(), N'正常', GETDATE(), GETDATE(), :factory_id)`,
           {
             replacements: {
               batch_number: batchNo,
@@ -200,6 +203,7 @@ export const submitReceipt = async (req: Request, res: Response) => {
               warehouse_number: inspWhNumber,
               warehouse_name: inspWhName,
               quantity: recvQty,
+              factory_id: _factoryId
             },
             transaction
           }
@@ -218,7 +222,7 @@ export const submitReceipt = async (req: Request, res: Response) => {
         }, transaction);
 
         // 3. 记录 material_inventory_transaction 入库流水
-        const txNum = await generateMaterialTxnNumber(transaction);
+        const txNum = await generateMaterialTxnNumber(factoryCode, transaction);
         await createMaterialTransaction({
           transaction_number: txNum,
           transaction_type: '入库',
@@ -242,7 +246,7 @@ export const submitReceipt = async (req: Request, res: Response) => {
       }
 
       // 创建委外质检单（仅包含需检验物料）
-      inspectionNumber = await generateOutsourcingInspectionNumber(transaction);
+      inspectionNumber = await generateOutsourcingInspectionNumber(factoryCode, transaction);
       await sequelize.query(`
         INSERT INTO outsourcing_inspection (
           inspection_number, receipt_number, outsourcing_order_number,
@@ -292,7 +296,7 @@ export const submitReceipt = async (req: Request, res: Response) => {
       const productionOrderNumber = order?.production_order_number || '';
 
       // 创建回收入库单
-      stockinNumber = await generateOutsourcingReturnStockinNumber(transaction);
+      stockinNumber = await generateOutsourcingReturnStockinNumber(factoryCode, transaction);
       await sequelize.query(`
         INSERT INTO outsourcing_return_stockin (
           stockin_number, outsourcing_order_number, receipt_number, inspection_number,
@@ -358,15 +362,16 @@ export const submitReceipt = async (req: Request, res: Response) => {
 
         // 直接入库到下道工序线边仓
         if (nextWhNumber) {
-          const batchNo = await generateBatchNumber('MB', transaction);
+          const batchNo = await generateBatchNumber('MB', factoryCode, transaction);
           await sequelize.query(
-            `INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, production_order_number, inbound_date, status, creation_date, last_updated) VALUES (:batch_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, :production_order_number, GETDATE(), N'正常', GETDATE(), GETDATE())`,
+            `INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, production_order_number, inbound_date, status, creation_date, last_updated, factory_id) VALUES (:batch_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, :production_order_number, GETDATE(), N'正常', GETDATE(), GETDATE(), :factory_id)`,
             {
               replacements: {
                 batch_number: batchNo, item_number: itemNumber, item_name: itemName,
                 specifications, basic_unit: basicUnit,
                 warehouse_number: nextWhNumber, warehouse_name: nextWhName,
-                quantity: recvQty, production_order_number: productionOrderNumber
+                quantity: recvQty, production_order_number: productionOrderNumber,
+                factory_id: _factoryId
               },
               transaction
             }
@@ -378,7 +383,7 @@ export const submitReceipt = async (req: Request, res: Response) => {
             deltaQuantity: recvQty,
           }, transaction);
 
-          const txNumIn = await generateMaterialTxnNumber(transaction);
+          const txNumIn = await generateMaterialTxnNumber(factoryCode, transaction);
           await createMaterialTransaction({
             transaction_number: txNumIn,
             transaction_type: '入库',

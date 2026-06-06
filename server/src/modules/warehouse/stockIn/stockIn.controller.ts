@@ -6,15 +6,17 @@ import { generateBatchNumber, generateMaterialTxnNumber, syncMaterialInventorySu
 import { ORDER_STATUS, PURCHASE_STATUS } from '@/shared/constants/statuses';
 import { checkAndAutoComplete } from '@/services/documentAutoComplete.service';
 import { createInspectionForStockIn } from '../../../modules/purchasing/purchaseInspection/purchaseInspection.controller';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
 
-const generateStockInNumber = async (): Promise<string> => {
+const generateStockInNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = new Date();
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `SI-${dateStr}-`;
+  const prefix = `SI${fc}-${dateStr}-`;
 
   const [rows]: any = await sequelize.query(
     `SELECT MAX(stock_in_number) as max_num FROM stock_in WHERE stock_in_number LIKE :prefix`,
@@ -98,11 +100,13 @@ export const getStockInDetail = async (req: Request, res: Response, next: NextFu
 
 export const createStockIn = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.purchase_order_number) { res.status(400).json({ success: false, message: '采购订单号不能为空' }); return; }
     if (!b.warehouse_number) { res.status(400).json({ success: false, message: '仓库不能为空' }); return; }
 
-    const stock_in_number = await generateStockInNumber();
+    const stock_in_number = await generateStockInNumber(factoryCode);
     const now = new Date();
     const creation_date = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const creation_man = (req as any).user?.username || '';
@@ -118,10 +122,10 @@ export const createStockIn = async (req: Request, res: Response, next: NextFunct
       await sequelize.query(`
         INSERT INTO stock_in (stock_in_number, purchase_order_number, supplier_number, supplier_name,
           warehouse_number, warehouse_name, stock_in_date, stock_in_type, approval_status,
-          [condition], operator, remark, creation_date, creation_man)
+          [condition], operator, remark, factory_id, creation_date, creation_man)
         VALUES (:stock_in_number, :purchase_order_number, :supplier_number, :supplier_name,
           :warehouse_number, :warehouse_name, :stock_in_date, :stock_in_type, N'草稿',
-          N'启用', :operator, :remark, :creation_date, :creation_man)
+          N'启用', :operator, :remark, :factory_id, :creation_date, :creation_man)
       `, {
         replacements: {
           stock_in_number,
@@ -134,6 +138,7 @@ export const createStockIn = async (req: Request, res: Response, next: NextFunct
           stock_in_type: b.stock_in_type || '采购入库',
           operator: creation_man,
           remark: b.remark || '',
+          factory_id: _factoryId,
           creation_date,
           creation_man
         },
@@ -193,7 +198,7 @@ export const createStockIn = async (req: Request, res: Response, next: NextFunct
                 received_quantity: d.stock_in_quantity || d.received_quantity || 0,
                 batch_number: '',
                 creation_man
-              }, transaction);
+              }, factoryCode, _factoryId, transaction);
               autoInspections.push(inspNo);
               // 回写检验单号到入库明细行，同时将合格数量置0（等待检验结果）
               await sequelize.query(
@@ -217,8 +222,11 @@ export const createStockIn = async (req: Request, res: Response, next: NextFunct
 export const deleteStockIn = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM stock_in WHERE stock_in_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM stock_in WHERE stock_in_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) {
       res.status(403).json({ success: false, message: '已入库的记录不允许删除' }); return;
@@ -227,7 +235,7 @@ export const deleteStockIn = async (req: Request, res: Response, next: NextFunct
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`DELETE FROM stock_in_detail WHERE stock_in_number = :id`, { replacements: { id }, transaction });
-      await sequelize.query(`DELETE FROM stock_in WHERE stock_in_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM stock_in WHERE stock_in_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
       await transaction.commit();
       res.json(success(null, '删除入库单成功'));
     } catch (e) {
@@ -241,12 +249,16 @@ export const deleteStockIn = async (req: Request, res: Response, next: NextFunct
 
 export const confirmStockIn = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const { id } = req.params;
     const operator = (req as any).user?.username || '';
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     // 获取入库单信息
     const [siHeader]: any = await sequelize.query(
-      `SELECT * FROM stock_in WHERE stock_in_number = :id`, { replacements: { id } }
+      `SELECT * FROM stock_in WHERE stock_in_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!siHeader.length) { res.status(404).json({ success: false, message: '入库单不存在' }); return; }
     if (siHeader[0].approval_status !== ORDER_STATUS.DRAFT) {
@@ -264,10 +276,10 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
 
     const transaction = await sequelize.transaction();
     try {
-      // 预查询待检仓信息（来料检验用）
+      // 预查询待检仓信息（来料检验用，按当前工厂过滤）
       const [inspWhRows]: any = await sequelize.query(
-        `SELECT TOP 1 warehouse_number, warehouse_name FROM warehouse WHERE warehouse_name = N'待检仓' OR warehouse_type = N'待检仓'`,
-        { transaction }
+        `SELECT TOP 1 warehouse_number, warehouse_name FROM warehouse WHERE (warehouse_name = N'待检仓' OR warehouse_type = N'待检仓')${factoryCond}`,
+        { replacements: { ...factoryReps }, transaction }
       );
       const inspWhNumber = inspWhRows.length > 0 ? inspWhRows[0].warehouse_number : header.warehouse_number;
       const inspWhName = inspWhRows.length > 0 ? inspWhRows[0].warehouse_name : (header.warehouse_name + '(待检)');
@@ -298,16 +310,16 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
         const inspectStatus = needsInspection ? '待检验' : '免检';
 
         // 1. 生成批次号
-        const batchNo = await generateBatchNumber('MB', transaction);
+        const batchNo = await generateBatchNumber('MB', factoryCode, transaction);
 
         // 2. 写入批次库存
         await sequelize.query(`
           INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications,
             basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity,
-            supplier_number, supplier_name, production_order_number, inbound_date, status, creation_date, last_updated)
+            supplier_number, supplier_name, production_order_number, inbound_date, status, creation_date, last_updated, factory_id)
           VALUES (:batchNo, :item_number, :item_name, N'原材料', :specifications,
             :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity,
-            :supplier_number, :supplier_name, '', GETDATE(), N'正常', GETDATE(), GETDATE())
+            :supplier_number, :supplier_name, '', GETDATE(), N'正常', GETDATE(), GETDATE(), :factory_id)
         `, {
           replacements: {
             batchNo,
@@ -319,7 +331,8 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
             warehouse_name: whName,
             quantity: entryQty,
             supplier_number: header.supplier_number || '',
-            supplier_name: header.supplier_name || ''
+            supplier_name: header.supplier_name || '',
+            factory_id: _factoryId
           },
           transaction
         });
@@ -337,7 +350,7 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
         const afterQty = invRows.length ? parseFloat(invRows[0].quantity) : entryQty;
         const beforeQty = afterQty - entryQty;
 
-        const txnNo = await generateMaterialTxnNumber(transaction);
+        const txnNo = await generateMaterialTxnNumber(factoryCode, transaction);
         await sequelize.query(`
           INSERT INTO material_inventory_transaction (transaction_number, transaction_type, source_type, source_number,
             item_number, item_name, item_type, specifications, basic_unit,
@@ -417,8 +430,8 @@ export const confirmStockIn = async (req: Request, res: Response, next: NextFunc
 
       // 8. 更新入库单状态
       await sequelize.query(
-        `UPDATE stock_in SET approval_status = N'已入库' WHERE stock_in_number = :id`,
-        { replacements: { id }, transaction }
+        `UPDATE stock_in SET approval_status = N'已入库' WHERE stock_in_number = :id${factoryCond}`,
+        { replacements: { id, ...factoryReps }, transaction }
       );
 
       await transaction.commit();
@@ -436,10 +449,13 @@ export const withdrawStockIn = async (req: Request, res: Response, next: NextFun
   try {
     const { id } = req.params;
     const operator = (req as any).user?.username || '';
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     // 1. 校验入库单存在且状态为"已入库"
     const [siHeader]: any = await sequelize.query(
-      `SELECT * FROM stock_in WHERE stock_in_number = :id`, { replacements: { id } }
+      `SELECT * FROM stock_in WHERE stock_in_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!siHeader.length) { res.status(404).json({ success: false, message: '入库单不存在' }); return; }
     const header = siHeader[0];
@@ -467,7 +483,8 @@ export const withdrawStockIn = async (req: Request, res: Response, next: NextFun
       let whNumber = header.warehouse_number;
       if (needsInspection) {
         const [inspWhRows]: any = await sequelize.query(
-          `SELECT TOP 1 warehouse_number FROM warehouse WHERE warehouse_name = N'待检仓' OR warehouse_type = N'待检仓'`
+          `SELECT TOP 1 warehouse_number FROM warehouse WHERE (warehouse_name = N'待检仓' OR warehouse_type = N'待检仓')${factoryCond}`,
+          { replacements: { ...factoryReps } }
         );
         if (inspWhRows.length > 0) whNumber = inspWhRows[0].warehouse_number;
       }
@@ -528,8 +545,8 @@ export const withdrawStockIn = async (req: Request, res: Response, next: NextFun
         let whNumber = header.warehouse_number;
         if (needsInspection) {
           const [inspWhRows]: any = await sequelize.query(
-            `SELECT TOP 1 warehouse_number FROM warehouse WHERE warehouse_name = N'待检仓' OR warehouse_type = N'待检仓'`,
-            { transaction }
+            `SELECT TOP 1 warehouse_number FROM warehouse WHERE (warehouse_name = N'待检仓' OR warehouse_type = N'待检仓')${factoryCond}`,
+            { replacements: { ...factoryReps }, transaction }
           );
           if (inspWhRows.length > 0) whNumber = inspWhRows[0].warehouse_number;
         }
@@ -627,8 +644,8 @@ export const withdrawStockIn = async (req: Request, res: Response, next: NextFun
 
       // 10. 更新入库单状态为"已撤回"
       await sequelize.query(
-        `UPDATE stock_in SET approval_status = N'已撤回' WHERE stock_in_number = :id`,
-        { replacements: { id }, transaction }
+        `UPDATE stock_in SET approval_status = N'已撤回' WHERE stock_in_number = :id${factoryCond}`,
+        { replacements: { id, ...factoryReps }, transaction }
       );
 
       await transaction.commit();
@@ -669,5 +686,124 @@ export const exportStockIns = async (req: Request, res: Response, next: NextFunc
       '行号', '物料编码', '物料名称', '规格', '单位', '入库数量', '合格数量', '不合格数量', '批次号'];
 
     exportToExcel(rows, fields, headers, 'stock_ins', res);
+  } catch (err) { next(err); }
+};
+
+// ==================== 采购对账：分页查询 ====================
+export const getPurchaseReconciliationPage = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { page = 1, limit = 20, search = '', reconciliationStatus = '' } = req.query;
+    const pageNum = Number(page);
+    const pageSize = Number(limit);
+    const offset = (pageNum - 1) * pageSize;
+    const offsetEnd = offset + pageSize;
+
+    let whereClause = `WHERE 1=1`;
+    const replacements: any = { offset, offsetEnd };
+
+    if (reconciliationStatus) {
+      const arr = String(reconciliationStatus).split(',').filter(Boolean);
+      if (arr.length === 1) {
+        whereClause += ` AND d.reconciliation_status = :recStatus`;
+        replacements.recStatus = arr[0];
+      } else if (arr.length > 1) {
+        const placeholders = arr.map((_s: any, i: number) => `:recStatus${i}`).join(', ');
+        whereClause += ` AND d.reconciliation_status IN (${placeholders})`;
+        arr.forEach((s: string, i: number) => { replacements[`recStatus${i}`] = s; });
+      }
+    }
+    if (search) {
+      whereClause += ` AND (h.stock_in_number LIKE :search OR d.item_number LIKE :search OR d.item_name LIKE :search OR h.supplier_name LIKE :search OR h.purchase_order_number LIKE :search)`;
+      replacements.search = `%${search}%`;
+    }
+
+    const [countResult]: any = await sequelize.query(
+      `SELECT COUNT(*) as total
+       FROM stock_in_detail d
+       INNER JOIN stock_in h ON h.stock_in_number = d.stock_in_number
+       ${whereClause}`, { replacements }
+    );
+
+    const [items]: any = await sequelize.query(`
+      SELECT * FROM (
+        SELECT d.id as detail_id, d.stock_in_number, d.line_number,
+               d.purchase_order_number, d.item_number, d.item_name,
+               d.specifications, d.basic_unit,
+               d.stock_in_quantity, d.qualified_quantity, d.unqualified_quantity,
+               d.batch_number, d.reconciliation_status,
+               h.supplier_name, h.supplier_number, h.warehouse_name,
+               h.stock_in_date, h.stock_in_type, h.approval_status,
+               h.creation_man, h.creation_date as order_creation_date,
+               ROW_NUMBER() OVER (ORDER BY h.creation_date DESC, d.stock_in_number, d.line_number) AS _row_num
+        FROM stock_in_detail d
+        INNER JOIN stock_in h ON h.stock_in_number = d.stock_in_number
+        ${whereClause}
+      ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
+    `, { replacements });
+
+    res.json(success({
+      items,
+      total: countResult[0]?.total || 0,
+      page: pageNum,
+      limit: pageSize
+    }));
+  } catch (err) { next(err); }
+};
+
+// ==================== 采购对账：批量更新对账状态 ====================
+export const updatePurchaseReconciliationStatus = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { detailIds, reconciliationStatus } = req.body;
+
+    if (!Array.isArray(detailIds) || !detailIds.length) {
+      res.status(400).json({ success: false, message: '请选择要更新的记录' }); return;
+    }
+    if (!['已对账', '未对账'].includes(reconciliationStatus)) {
+      res.status(400).json({ success: false, message: '无效的对账状态' }); return;
+    }
+
+    const replacements: any = { reconciliationStatus };
+    detailIds.forEach((id: number, i: number) => { replacements[`id${i}`] = id; });
+    const placeholders = detailIds.map((_: any, i: number) => `:id${i}`).join(', ');
+
+    await sequelize.query(
+      `UPDATE stock_in_detail SET reconciliation_status = :reconciliationStatus WHERE id IN (${placeholders})`,
+      { replacements }
+    );
+
+    res.json(success(null, `已更新 ${detailIds.length} 条记录为"${reconciliationStatus}"`));
+  } catch (err) { next(err); }
+};
+
+// ==================== 采购对账：获取打印数据 ====================
+export const getPurchaseReconciliationPrintData = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { detailIds } = req.body;
+
+    if (!Array.isArray(detailIds) || !detailIds.length) {
+      res.status(400).json({ success: false, message: '请选择要打印的记录' }); return;
+    }
+
+    const replacements: any = {};
+    detailIds.forEach((id: number, i: number) => { replacements[`id${i}`] = id; });
+    const placeholders = detailIds.map((_: any, i: number) => `:id${i}`).join(', ');
+
+    const [details]: any = await sequelize.query(`
+      SELECT d.id as detail_id, d.stock_in_number, d.line_number,
+             d.purchase_order_number, d.item_number, d.item_name,
+             d.specifications, d.basic_unit,
+             d.stock_in_quantity, d.qualified_quantity, d.unqualified_quantity,
+             d.batch_number, d.reconciliation_status,
+             h.supplier_name, h.supplier_number, h.warehouse_name,
+             h.stock_in_date, h.stock_in_type, h.approval_status,
+             h.creation_man, h.creation_date as order_creation_date,
+             h.remark
+      FROM stock_in_detail d
+      INNER JOIN stock_in h ON h.stock_in_number = d.stock_in_number
+      WHERE d.id IN (${placeholders})
+      ORDER BY h.stock_in_number, d.line_number
+    `, { replacements });
+
+    res.json(success({ items: details }));
   } catch (err) { next(err); }
 };

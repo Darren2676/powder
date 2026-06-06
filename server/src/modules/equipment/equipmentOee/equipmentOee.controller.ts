@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 // 计算OEE各项指标
 function calcOEE(plannedTime: number, downtime: number, actualRun: number, idealOutput: number, actualOutput: number, goodOutput: number) {
@@ -31,6 +32,11 @@ export const getEquipmentOees = async (req: Request, res: Response, next: NextFu
 
     let whereClause = 'WHERE 1=1';
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ' AND o.factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
+    }
 
     if (equipmentNumber) {
       whereClause += ' AND o.equipment_number = :equipmentNumber';
@@ -79,6 +85,7 @@ export const getEquipmentOees = async (req: Request, res: Response, next: NextFu
 export const saveEquipmentOee = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const b = req.body;
+    const _factoryId = getFactoryId(req);
 
     if (!b.equipment_number) {
       res.status(400).json({ success: false, message: '设备编号不能为空' });
@@ -136,8 +143,8 @@ export const saveEquipmentOee = async (req: Request, res: Response, next: NextFu
       res.json(success(null, '更新OEE记录成功'));
     } else {
       await sequelize.query(
-        `INSERT INTO equipment_oee (equipment_number, record_date, shift_id, planned_time_minutes, downtime_minutes, actual_run_minutes, ideal_output, actual_output, good_output, availability_rate, performance_rate, quality_rate, oee_rate, data_source, remark)
-         VALUES (:equipment_number, :record_date, :shift_id, :planned_time_minutes, :downtime_minutes, :actual_run_minutes, :ideal_output, :actual_output, :good_output, :availability_rate, :performance_rate, :quality_rate, :oee_rate, :data_source, :remark)`,
+        `INSERT INTO equipment_oee (equipment_number, record_date, shift_id, planned_time_minutes, downtime_minutes, actual_run_minutes, ideal_output, actual_output, good_output, availability_rate, performance_rate, quality_rate, oee_rate, data_source, remark, factory_id)
+         VALUES (:equipment_number, :record_date, :shift_id, :planned_time_minutes, :downtime_minutes, :actual_run_minutes, :ideal_output, :actual_output, :good_output, :availability_rate, :performance_rate, :quality_rate, :oee_rate, :data_source, :remark, :factory_id)`,
         {
           replacements: {
             equipment_number: b.equipment_number,
@@ -151,7 +158,8 @@ export const saveEquipmentOee = async (req: Request, res: Response, next: NextFu
             good_output: goodOutput,
             data_source: b.data_source || '手动',
             remark: b.remark || null,
-            ...rates
+            ...rates,
+            factory_id: _factoryId
           }
         }
       );
@@ -178,6 +186,11 @@ export const getOeeDashboard = async (req: Request, res: Response, next: NextFun
 
     let whereClause = 'WHERE 1=1';
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ' AND o.factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
+    }
     if (dateFrom) { whereClause += ' AND o.record_date >= :dateFrom'; replacements.dateFrom = dateFrom; }
     if (dateTo) { whereClause += ' AND o.record_date <= :dateTo'; replacements.dateTo = dateTo; }
     if (equipmentNumber) { whereClause += ' AND o.equipment_number = :equipmentNumber'; replacements.equipmentNumber = equipmentNumber; }
@@ -242,6 +255,7 @@ export const getOeeDashboard = async (req: Request, res: Response, next: NextFun
 export const calculateOeeFromProduction = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { date, equipment_number } = req.body;
+    const _factoryId = getFactoryId(req);
     if (!date) {
       res.status(400).json({ success: false, message: '日期不能为空' });
       return;
@@ -312,9 +326,9 @@ export const calculateOeeFromProduction = async (req: Request, res: Response, ne
         );
       } else {
         await sequelize.query(
-          `INSERT INTO equipment_oee (equipment_number, record_date, planned_time_minutes, downtime_minutes, actual_run_minutes, availability_rate, performance_rate, quality_rate, oee_rate, data_source)
-           VALUES (:equipment_number, :record_date, :planned_time_minutes, :downtime_minutes, :actual_run_minutes, :availability_rate, :performance_rate, :quality_rate, :oee_rate, :data_source)`,
-          { replacements: oeeRecord }
+          `INSERT INTO equipment_oee (equipment_number, record_date, planned_time_minutes, downtime_minutes, actual_run_minutes, availability_rate, performance_rate, quality_rate, oee_rate, data_source, factory_id)
+           VALUES (:equipment_number, :record_date, :planned_time_minutes, :downtime_minutes, :actual_run_minutes, :availability_rate, :performance_rate, :quality_rate, :oee_rate, :data_source, :factory_id)`,
+          { replacements: { ...oeeRecord, factory_id: _factoryId } }
         );
       }
       generated++;

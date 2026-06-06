@@ -101,6 +101,7 @@ const handleMouldSelect = async (val: string, form: any) => {
 }
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '维修日期', dataIndex: 'maintenance_date', key: 'maintenance_date', width: 110, sorter: (a: any, b: any) => (a.maintenance_date || '').localeCompare(b.maintenance_date || ''), resizable: true },
   { title: '模具编号', dataIndex: 'mould_number', key: 'mould_number', width: 120, resizable: true },
   { title: '模具名称', dataIndex: 'mould_name', key: 'mould_name', width: 120, resizable: true },

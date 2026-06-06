@@ -5,6 +5,7 @@ import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { generateForecastNumber } from '@/services/documentNumber.service';
 import { consumeForecastOnOrderApproval, recoverForecastOnOrderReversal } from '@/services/forecast.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // Re-export from service for backward compatibility
 export { consumeForecastOnOrderApproval, recoverForecastOnOrderReversal } from '@/services/forecast.service';
@@ -32,6 +33,12 @@ export const getForecasts = async (req: Request, res: Response, next: NextFuncti
     if (customer_number) {
       conditions.push(`customer_number = :customer_number`);
       replacements.customer_number = customer_number;
+    }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
     }
 
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -94,20 +101,22 @@ export const getForecastDetail = async (req: Request, res: Response, next: NextF
 // ==================== 新建 ====================
 export const createForecast = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.customer_number) { res.status(400).json({ success: false, message: '客户不能为空' }); return; }
     if (!b.details || !Array.isArray(b.details) || b.details.length === 0) {
       res.status(400).json({ success: false, message: '预测明细不能为空' }); return;
     }
 
-    const forecast_number = await generateForecastNumber();
+    const forecast_number = await generateForecastNumber(factoryCode);
     const creation_man = (req as any).user?.real_name || (req as any).user?.username || '';
 
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`
-        INSERT INTO sales_forecast (forecast_number, customer_number, customer_name, forecast_date, approval_status, [condition], remark, creation_date, creation_man)
-        VALUES (:forecast_number, :customer_number, :customer_name, :forecast_date, N'草稿', N'启用', :remark, GETDATE(), :creation_man)
+        INSERT INTO sales_forecast (forecast_number, customer_number, customer_name, forecast_date, approval_status, [condition], remark, creation_date, creation_man, factory_id)
+        VALUES (:forecast_number, :customer_number, :customer_name, :forecast_date, N'草稿', N'启用', :remark, GETDATE(), :creation_man, :factory_id)
       `, {
         replacements: {
           forecast_number,
@@ -115,7 +124,8 @@ export const createForecast = async (req: Request, res: Response, next: NextFunc
           customer_name: b.customer_name || '',
           forecast_date: b.forecast_date || null,
           remark: b.remark || '',
-          creation_man
+          creation_man,
+          factory_id: _factoryId
         }, transaction
       });
 
@@ -157,9 +167,13 @@ export const updateForecast = async (req: Request, res: Response, next: NextFunc
     const { id } = req.params;
     const b = req.body;
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM sales_forecast WHERE forecast_number = :id`,
-      { replacements: { id } }
+      `SELECT approval_status FROM sales_forecast WHERE forecast_number = :id${factoryCond}`,
+      { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '预测单不存在' }); return; }
     if (chk[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '只有草稿状态可以编辑' }); return; }
@@ -235,9 +249,13 @@ export const deleteForecast = async (req: Request, res: Response, next: NextFunc
   try {
     const { id } = req.params;
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM sales_forecast WHERE forecast_number = :id`,
-      { replacements: { id } }
+      `SELECT approval_status FROM sales_forecast WHERE forecast_number = :id${factoryCond}`,
+      { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '预测单不存在' }); return; }
     if (chk[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '只有草稿状态可以删除' }); return; }
@@ -245,7 +263,7 @@ export const deleteForecast = async (req: Request, res: Response, next: NextFunc
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`DELETE FROM sales_forecast_detail WHERE forecast_number = :id`, { replacements: { id }, transaction });
-      await sequelize.query(`DELETE FROM sales_forecast WHERE forecast_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM sales_forecast WHERE forecast_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
       await transaction.commit();
       res.json(success(null, '删除销售预测成功'));
     } catch (e) { await transaction.rollback(); throw e; }
@@ -301,6 +319,12 @@ export const getForecastDetailsPage = async (req: Request, res: Response, next: 
         whereClause += ` AND d.consumption_status IN (${placeholders})`;
         statusArr.forEach((s: string, i: number) => { replacements[`cs${i}`] = s; });
       }
+    }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND h.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
     }
 
     const [countResult]: any = await sequelize.query(
@@ -505,6 +529,10 @@ const forecastExportHeaders = [
 
 export const exportForecasts = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' WHERE h.factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [items]: any = await sequelize.query(`
       SELECT h.forecast_number, h.customer_number, h.customer_name, h.forecast_date, h.approval_status,
              d.line_number, d.item_number, d.item_name, d.specifications, d.basic_unit,
@@ -512,8 +540,9 @@ export const exportForecasts = async (req: Request, res: Response, next: NextFun
              d.consumed_quantity, d.remaining_quantity, d.remark
       FROM sales_forecast h
       LEFT JOIN sales_forecast_detail d ON h.forecast_number = d.forecast_number
+      ${factoryCond}
       ORDER BY h.forecast_number DESC, d.line_number
-    `);
+    `, { replacements: factoryReps });
     exportToExcel(items, forecastExportFields, forecastExportHeaders, 'sales_forecasts', res);
   } catch (err) { next(err); }
 };
@@ -525,6 +554,7 @@ export const importForecasts = async (req: Request, res: Response, next: NextFun
     if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件内容为空' }); return; }
 
     const creation_man = (req as any).user?.username || '';
+    const _factoryId = getFactoryId(req);
 
     // 按 forecast_number 分组
     const grouped: Record<string, any[]> = {};
@@ -553,8 +583,8 @@ export const importForecasts = async (req: Request, res: Response, next: NextFun
         if (existing.length > 0) continue; // 已存在则跳过
 
         await sequelize.query(`
-          INSERT INTO sales_forecast (forecast_number, customer_number, customer_name, forecast_date, approval_status, [condition], remark, creation_date, creation_man)
-          VALUES (:forecast_number, :customer_number, :customer_name, :forecast_date, N'草稿', N'启用', :remark, GETDATE(), :creation_man)
+          INSERT INTO sales_forecast (forecast_number, customer_number, customer_name, forecast_date, approval_status, [condition], remark, creation_date, creation_man, factory_id)
+          VALUES (:forecast_number, :customer_number, :customer_name, :forecast_date, N'草稿', N'启用', :remark, GETDATE(), :creation_man, :factory_id)
         `, {
           replacements: {
             forecast_number: forecastNumber,
@@ -562,7 +592,8 @@ export const importForecasts = async (req: Request, res: Response, next: NextFun
             customer_name: first.customer_name || '',
             forecast_date: first.forecast_date || null,
             remark: first.remark || '',
-            creation_man
+            creation_man,
+            factory_id: _factoryId
           }, transaction
         });
         headerCount++;

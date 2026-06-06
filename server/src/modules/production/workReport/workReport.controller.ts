@@ -6,6 +6,7 @@ import { generateWRNumber } from '@/services/documentNumber.service';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { BusinessError } from '@/shared/errors/BusinessError';
 import * as workReportService from '@/services/workReport.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 const selectCols = 'work_report_number, process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, basic_unit, work_center_number, work_center_name, planned_quantity, qualified_quantity, unqualified_quantity, total_quantity, cumulative_quantity, report_date, schedules_id, schedules_name, team_number, team_name, operator_number, operator_name, actual_start_time, actual_end_time, actual_hours, unqualified_reason, defect_class_number, defect_class_name, defect_number, defect_name, approval_status, remark, creation_date, creation_man';
 
@@ -31,6 +32,12 @@ export const getWorkReports = async (req: Request, res: Response, next: NextFunc
     if (approval_status) { conditions.push(`approval_status = :approval_status`); replacements.approval_status = approval_status; }
     if (process_task_number) { conditions.push(`process_task_number = :process_task_number`); replacements.process_task_number = process_task_number; }
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
+
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM work_report ${whereClause}`, { replacements });
@@ -54,7 +61,9 @@ export const getWorkReports = async (req: Request, res: Response, next: NextFunc
 export const createWorkReport = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const user = (req as any).user;
-    const result = await workReportService.createWorkReport(req.body, user);
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
+    const result = await workReportService.createWorkReport(req.body, user, factoryCode, _factoryId);
     res.json(success({ work_report_number: result.workReportNumber }, '创建报工单成功'));
   } catch (err) {
     if (err instanceof BusinessError) {
@@ -69,7 +78,9 @@ export const createWorkReport = async (req: Request, res: Response, next: NextFu
 export const quickReport = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const user = (req as any).user;
-    const result = await workReportService.quickReport(req.body, user);
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
+    const result = await workReportService.quickReport(req.body, user, factoryCode, _factoryId);
     res.json(success({ work_report_number: result.workReportNumber }, '快速报工成功'));
   } catch (err) {
     if (err instanceof BusinessError) {
@@ -84,8 +95,10 @@ export const quickReport = async (req: Request, res: Response, next: NextFunctio
 export const updateWorkReport = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const user = (req as any).user;
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const id = req.params.id as string;
-    await workReportService.updateWorkReport(id, req.body, user);
+    await workReportService.updateWorkReport(id, req.body, user, factoryCode, _factoryId);
     res.json(success(null, '更新报工单成功'));
   } catch (err) {
     if (err instanceof BusinessError) {
@@ -115,7 +128,10 @@ export const deleteWorkReport = async (req: Request, res: Response, next: NextFu
 // ==================== 导出 ====================
 export const exportWorkReports = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [items]: any = await sequelize.query(`SELECT ${exportFields.join(', ')} FROM work_report ORDER BY work_report_number DESC`);
+    const _factoryId = getFactoryId(req);
+    const factoryWhere = _factoryId !== null ? 'WHERE factory_id = :_factoryId' : '';
+    const factoryReplacements: any = _factoryId !== null ? { _factoryId } : {};
+    const [items]: any = await sequelize.query(`SELECT ${exportFields.join(', ')} FROM work_report ${factoryWhere} ORDER BY work_report_number DESC`, { replacements: factoryReplacements });
     exportToExcel(items, exportFields, exportHeaders, 'work_reports', res);
   } catch (err) { next(err); }
 };
@@ -123,19 +139,22 @@ export const exportWorkReports = async (req: Request, res: Response, next: NextF
 // ==================== 导入 ====================
 export const importWorkReports = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     if (!req.file) { res.status(400).json({ success: false, message: '请上传Excel文件' }); return; }
     const rows = parseExcelFile(req.file.buffer, exportFields, exportHeaders);
     if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件内容为空' }); return; }
     let imported = 0;
     for (const item of rows) {
       try {
-        if (!item.work_report_number) item.work_report_number = await generateWRNumber();
+        const factoryCode = await getFactoryCode(req);
+        if (!item.work_report_number) item.work_report_number = await generateWRNumber(factoryCode);
         const [existing]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM work_report WHERE work_report_number = :n`, { replacements: { n: item.work_report_number } });
         if (existing[0].cnt > 0) continue;
         await sequelize.query(`
-          INSERT INTO work_report (work_report_number, process_task_number, production_order_number, step_number, standard_process_name, item_name, qualified_quantity, unqualified_quantity, total_quantity, cumulative_quantity, report_date, schedules_name, operator_name, work_center_name, approval_status, creation_date, creation_man, remark)
-          VALUES (:work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_name, :qualified_quantity, :unqualified_quantity, :total_quantity, :cumulative_quantity, :report_date, :schedules_name, :operator_name, :work_center_name, :approval_status, :creation_date, :creation_man, :remark)
-        `, { replacements: { ...item, qualified_quantity: item.qualified_quantity || 0, unqualified_quantity: item.unqualified_quantity || 0, total_quantity: item.total_quantity || 0, cumulative_quantity: item.cumulative_quantity || 0, approval_status: item.approval_status || ORDER_STATUS.DRAFT } });
+          INSERT INTO work_report (work_report_number, process_task_number, production_order_number, step_number, standard_process_name, item_name, qualified_quantity, unqualified_quantity, total_quantity, cumulative_quantity, report_date, schedules_name, operator_name, work_center_name, approval_status, creation_date, creation_man, remark, factory_id)
+          VALUES (:work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_name, :qualified_quantity, :unqualified_quantity, :total_quantity, :cumulative_quantity, :report_date, :schedules_name, :operator_name, :work_center_name, :approval_status, :creation_date, :creation_man, :remark, :factory_id)
+        `, { replacements: { ...item, qualified_quantity: item.qualified_quantity || 0, unqualified_quantity: item.unqualified_quantity || 0, total_quantity: item.total_quantity || 0, cumulative_quantity: item.cumulative_quantity || 0, approval_status: item.approval_status || ORDER_STATUS.DRAFT, factory_id: _factoryId } });
         imported++;
       } catch (e) {}
     }
@@ -152,6 +171,12 @@ export const getTasksForReport = async (req: Request, res: Response, next: NextF
 
     let whereClause = `WHERE approval_status = N'已审批' AND task_status IN (N'未开始', N'进行中')`;
     const replacements: any = {};
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ' AND factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       whereClause += ` AND (process_task_number LIKE :search OR production_order_number LIKE :search OR item_number LIKE :search OR item_name LIKE :search OR standard_process_name LIKE :search)`;
@@ -205,7 +230,9 @@ export const getTasksForReport = async (req: Request, res: Response, next: NextF
 export const completeOrderReport = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const user = (req as any).user;
-    const result = await workReportService.completeOrderReport(req.body, user);
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
+    const result = await workReportService.completeOrderReport(req.body, user, factoryCode, _factoryId);
     res.json(success({
       work_report_number: result.workReportNumber,
       completed_tasks: result.completedTasks

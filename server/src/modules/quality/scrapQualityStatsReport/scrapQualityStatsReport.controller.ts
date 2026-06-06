@@ -1,11 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 function buildWhere(req: Request, dateField = 'handling_date') {
   const { start_date, end_date, search } = req.query;
   let where = 'WHERE 1=1';
   const reps: any = {};
+  const _factoryId = getFactoryId(req);
+  if (_factoryId !== null) { where += ` AND np.factory_id = :_factoryId`; reps._factoryId = _factoryId; }
   if (start_date) { where += ` AND np.${dateField} >= :start_date`; reps.start_date = start_date; }
   if (end_date) { where += ` AND np.${dateField} <= :end_date`; reps.end_date = end_date; }
   if (search) {

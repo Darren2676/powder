@@ -59,9 +59,10 @@ export const getApprovedCostMap = async (): Promise<{
 };
 
 // ==================== 生成快照编号 ====================
-const generateSnapshotNumber = async (tx: any): Promise<string> => {
+const generateSnapshotNumber = async (factoryCode: string = '', tx?: any): Promise<string> => {
   const today = dayjs().format('YYYYMMDD');
-  const prefix = `MCS-${today}-`;
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
+  const prefix = `MCS${fc}-${today}-`;
 
   const [rows]: any = await sequelize.query(
     `SELECT MAX(snapshot_number) as max_num FROM production_material_cost_snapshot WHERE snapshot_number LIKE :prefix`,

@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Molding Powder MOM — 多工厂数据隔离方案执行情况检查报告</title>
+<style>
+  body { font-family: "Microsoft YaHei","SimHei","PingFang SC",sans-serif; font-size:13px; line-height:1.9; color:#1a1a1a; max-width:1024px; margin:0 auto; padding:20px; }
+  h1 { font-size:22px; text-align:center; margin:0 0 8px 0; padding-bottom:10px; border-bottom:2px solid #1890ff; color:#0d1a26; }
+  h2 { font-size:16px; margin:28px 0 10px 0; padding:6px 0 6px 12px; border-left:4px solid #1890ff; background:#f0f5ff; color:#0d1a26; }
+  h3 { font-size:14px; margin:18px 0 8px 0; color:#1a3a5c; }
+  table { width:100%; border-collapse:collapse; margin:8px 0; font-size:12px; }
+  th { background:#1890ff; color:#fff; padding:6px 8px; text-align:left; font-weight:600; }
+  td { padding:5px 8px; border:1px solid #d9d9d9; vertical-align:top; }
+  tr:nth-child(even) td { background:#fafafa; }
+  .tag-done { display:inline-block; padding:1px 8px; border-radius:3px; font-size:11px; font-weight:600; background:#f6ffed; color:#52c41a; }
+  .tag-partial { display:inline-block; padding:1px 8px; border-radius:3px; font-size:11px; font-weight:600; background:#fff7e6; color:#fa8c16; }
+  .tag-todo { display:inline-block; padding:1px 8px; border-radius:3px; font-size:11px; font-weight:600; background:#fff1f0; color:#f5222d; }
+  .note { background:#fff7e6; border:1px solid #ffd591; border-radius:4px; padding:10px 14px; margin:10px 0; font-size:12px; }
+  .note strong { color:#d46b08; }
+  .info { background:#e6f7ff; border:1px solid #91d5ff; border-radius:4px; padding:10px 14px; margin:10px 0; font-size:12px; }
+  .info strong { color:#1890ff; }
+  .warning { background:#fff1f0; border:1px solid #ffa39e; border-radius:4px; padding:10px 14px; margin:10px 0; font-size:12px; }
+  .warning strong { color:#f5222d; }
+  .success { background:#f6ffed; border:1px solid #b7eb8f; border-radius:4px; padding:10px 14px; margin:10px 0; font-size:12px; }
+  .success strong { color:#52c41a; }
+  ul, ol { margin:4px 0; padding-left:22px; }
+  li { margin:3px 0; }
+  code { font-family:Consolas,"Courier New",monospace; font-size:11px; background:#f0f0f0; padding:1px 4px; border-radius:2px; }
+  .footer { text-align:center; font-size:10px; color:#999; margin-top:30px; padding-top:8px; border-top:1px solid #e0e0e0; }
+  .progress-bar { background:#f0f0f0; border-radius:4px; height:18px; overflow:hidden; margin:2px 0; }
+  .progress-fill { height:100%; border-radius:4px; text-align:center; color:#fff; font-size:10px; line-height:18px; font-weight:600; }
+</style>
+</head>
+<body>
+
+<h1>Molding Powder MOM — 多工厂数据隔离方案执行情况检查报告</h1>
+<p style="text-align:center;color:#666;">宁国市睿信信息技术有限责任公司 &nbsp;|&nbsp; 2026年6月 &nbsp;|&nbsp; 检查日期：2026-06-06</p>
+
+<hr>
+
+<!-- ==================== 一、总体进度 ==================== -->
+<h2>一、总体进度概览</h2>
+
+<table>
+<tr><th>阶段</th><th>状态</th><th>完成度</th><th>进度</th></tr>
+<tr><td><strong>Phase 1</strong> 基础设施</td><td><span class="tag-done">已完成</span></td><td style="text-align:center;">100%</td><td><div class="progress-bar"><div class="progress-fill" style="width:100%;background:#52c41a;">100%</div></div></td></tr>
+<tr><td><strong>Phase 2</strong> 核心业务改造</td><td><span class="tag-partial">部分完成</span></td><td style="text-align:center;">~65%</td><td><div class="progress-bar"><div class="progress-fill" style="width:65%;background:#fa8c16;">65%</div></div></td></tr>
+<tr><td><strong>Phase 3</strong> 仓库质量财务改造</td><td><span class="tag-partial">大部分完成</span></td><td style="text-align:center;">~80%</td><td><div class="progress-bar"><div class="progress-fill" style="width:80%;background:#fa8c16;">80%</div></div></td></tr>
+<tr><td><strong>Phase 4</strong> 总部报表</td><td><span class="tag-done">已完成</span></td><td style="text-align:center;">100%</td><td><div class="progress-bar"><div class="progress-fill" style="width:100%;background:#52c41a;">100%</div></div></td></tr>
+<tr><td><strong>Phase 5</strong> 测试与上线</td><td><span class="tag-partial">部分完成</span></td><td style="text-align:center;">~40%</td><td><div class="progress-bar"><div class="progress-fill" style="width:40%;background:#fa8c16;">40%</div></div></td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 二、Phase 1 ==================== -->
+<h2>二、Phase 1：基础设施 — <span class="tag-done">已完成 100%</span></h2>
+
+<table>
+<tr><th style="width:5%;">序号</th><th style="width:55%;">任务</th><th style="width:10%;">状态</th><th style="width:30%;">说明</th></tr>
+<tr><td>①</td><td>创建 factory 表 + 初始数据</td><td><span class="tag-done">已完成</span></td><td>factory 表含宁国工厂(N)种子数据，models/index.ts 自动迁移</td></tr>
+<tr><td>②</td><td>创建 user_factory_access 关联表</td><td><span class="tag-done">已完成</span></td><td>含 user_id + factory_id + access_level，UNIQUE 约束</td></tr>
+<tr><td>③</td><td>ALTER 所有业务表添加 factory_id 字段</td><td><span class="tag-done">已完成</span></td><td>97 张表已处理，含索引 IX_xxx_factory_id</td></tr>
+<tr><td>④</td><td>已有数据统一赋值宁国工厂</td><td><span class="tag-done">已完成</span></td><td>32 张核心表含 DEFAULT 约束(DF_xxx_factory_id=1)</td></tr>
+<tr><td>⑤</td><td>编写 factoryScope 中间件</td><td><span class="tag-done">已完成</span></td><td>三种模式(all/single/默认)，auth.middleware 中调用 applyFactoryScope</td></tr>
+<tr><td>⑥</td><td>编写 factoryWhere 辅助函数</td><td><span class="tag-done">已完成</span></td><td>getFactoryId() + getFactoryCode() + factoryWhere() + insertFactoryField()</td></tr>
+<tr><td>⑦</td><td>前端新增工厂选择器组件</td><td><span class="tag-done">已完成</span></td><td>AppHeader.vue 工厂下拉切换，request.ts 自动注入 x-factory-id / x-view-mode</td></tr>
+<tr><td>⑧</td><td>auth.middleware 自动注入 factory_id</td><td><span class="tag-done">已完成</span></td><td>POST/PUT/PATCH 自动注入 req.body.factory_id，前端不可覆盖</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 三、Phase 2 ==================== -->
+<h2>三、Phase 2：核心业务Controller改造 — <span class="tag-partial">部分完成 ~65%</span></h2>
+
+<h3>3.1 各模块改造状态</h3>
+<table>
+<tr><th>模块</th><th>Controller文件数</th><th>已改造</th><th>未改造</th><th>完成度</th></tr>
+<tr><td><strong>计划管理</strong></td><td style="text-align:center;">4</td><td style="text-align:center;color:#52c41a;font-weight:600;">4</td><td style="text-align:center;">0</td><td><span class="tag-done">100%</span></td></tr>
+<tr><td><strong>生产管理</strong></td><td style="text-align:center;">21</td><td style="text-align:center;color:#52c41a;font-weight:600;">19</td><td style="text-align:center;">2(移动端)</td><td><span class="tag-partial">90%</span></td></tr>
+<tr><td><strong>采购管理</strong></td><td style="text-align:center;">8</td><td style="text-align:center;color:#52c41a;font-weight:600;">7</td><td style="text-align:center;">1(purchaseCalc)</td><td><span class="tag-partial">88%</span></td></tr>
+<tr><td><strong>销售管理</strong></td><td style="text-align:center;">12</td><td style="text-align:center;color:#f5222d;font-weight:600;">0</td><td style="text-align:center;color:#f5222d;font-weight:600;">12</td><td><span class="tag-todo">0%</span></td></tr>
+</table>
+
+<h3>3.2 关键遗漏 — 销售模块（12个Controller全部未改造）</h3>
+<div class="warning">
+<strong>⚠ 数据隔离漏洞：</strong>销售模块是当前最大的数据安全风险。宁国工厂用户可看到所有工厂数据（销售订单、发货单、退货单、销售发票等全部暴露）。
+</div>
+
+<table>
+<tr><th>Controller 文件</th><th>功能</th><th>改造状态</th></tr>
+<tr><td><code>salesOrder.controller.ts</code></td><td>销售订单</td><td><span class="tag-todo">未改造</span></td></tr>
+<tr><td><code>forecast.controller.ts</code></td><td>销售预测</td><td><span class="tag-todo">未改造</span></td></tr>
+<tr><td><code>shippingOrder.controller.ts</code></td><td>发货单</td><td><span class="tag-todo">未改造</span></td></tr>
+<tr><td><code>shippingRequest.controller.ts</code></td><td>发货申请</td><td><span class="tag-todo">未改造</span></td></tr>
+<tr><td><code>returnOrder.controller.ts</code></td><td>退货单</td><td><span class="tag-todo">未改造</span></td></tr>
+<tr><td><code>salesInvoice.controller.ts</code></td><td>销售发票</td><td><span class="tag-todo">未改造</span></td></tr>
+<tr><td><code>salesPrice.controller.ts</code></td><td>销售价目表</td><td><span class="tag-todo">未改造</span></td></tr>
+<tr><td><code>salesReport.controller.ts</code></td><td>销售报表</td><td><span class="tag-todo">未改造</span></td></tr>
+<tr><td><code>salesPersonShippingReport.controller.ts</code></td><td>人员发货报表</td><td><span class="tag-todo">未改造</span></td></tr>
+<tr><td><code>sampleRequest.controller.ts</code></td><td>样品申请</td><td><span class="tag-todo">未改造</span></td></tr>
+<tr><td><code>sampleBom.controller.ts</code></td><td>样品BOM</td><td><span class="tag-todo">未改造</span></td></tr>
+<tr><td><code>inspectionReport.controller.ts</code></td><td>检测报告</td><td><span class="tag-todo">未改造</span></td></tr>
+</table>
+
+<h3>3.3 生产模块未改造（2个移动端Controller）</h3>
+<table>
+<tr><th>Controller 文件</th><th>功能</th><th>改造状态</th></tr>
+<tr><td><code>outsourcingInspection.mobile.controller.ts</code></td><td>委外检验(移动端)</td><td><span class="tag-todo">未改造</span></td></tr>
+<tr><td><code>outsourcingIssue.mobile.controller.ts</code></td><td>委外发料(移动端)</td><td><span class="tag-todo">未改造</span></td></tr>
+</table>
+
+<h3>3.4 采购模块未改造（1个）</h3>
+<table>
+<tr><th>Controller 文件</th><th>功能</th><th>改造状态</th></tr>
+<tr><td><code>purchaseCalc.controller.ts</code></td><td>采购计算</td><td><span class="tag-todo">未改造</span></td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 四、Phase 3 ==================== -->
+<h2>四、Phase 3：仓库质量财务改造 — <span class="tag-partial">大部分完成 ~80%</span></h2>
+
+<h3>4.1 各模块改造状态</h3>
+<table>
+<tr><th>模块</th><th>Controller文件数</th><th>已改造</th><th>未改造</th><th>完成度</th></tr>
+<tr><td><strong>仓储管理</strong></td><td style="text-align:center;">11</td><td style="text-align:center;color:#52c41a;font-weight:600;">11</td><td style="text-align:center;">0</td><td><span class="tag-done">100%</span></td></tr>
+<tr><td><strong>质量管理</strong></td><td style="text-align:center;">14</td><td style="text-align:center;color:#52c41a;font-weight:600;">9</td><td style="text-align:center;">5</td><td><span class="tag-partial">64%</span></td></tr>
+<tr><td><strong>财务管理</strong></td><td style="text-align:center;">4</td><td style="text-align:center;color:#52c41a;font-weight:600;">3</td><td style="text-align:center;">1</td><td><span class="tag-partial">75%</span></td></tr>
+<tr><td><strong>设备管理</strong></td><td style="text-align:center;">6</td><td style="text-align:center;color:#52c41a;font-weight:600;">6</td><td style="text-align:center;">0</td><td><span class="tag-done">100%</span></td></tr>
+</table>
+
+<h3>4.2 质量模块未改造（5个基础数据Controller）</h3>
+<div class="note">
+<strong>⚠ 待确认：</strong>以下质量基础数据 Controller 是否需要按工厂隔离，需业务确认。若缺陷定义/分类/原因、质量特性、检验规范属于<strong>全集团共享</strong>（类似物料/BOM），则不需要改造。
+</div>
+
+<table>
+<tr><th>Controller 文件</th><th>功能</th><th>改造状态</th><th>是否需要隔离</th></tr>
+<tr><td><code>defect.controller.ts</code></td><td>缺陷定义</td><td><span class="tag-todo">未改造</span></td><td style="color:#d46b08;">待确认（可能共享）</td></tr>
+<tr><td><code>defectClass.controller.ts</code></td><td>缺陷分类</td><td><span class="tag-todo">未改造</span></td><td style="color:#d46b08;">待确认（可能共享）</td></tr>
+<tr><td><code>defectReason.controller.ts</code></td><td>缺陷原因</td><td><span class="tag-todo">未改造</span></td><td style="color:#d46b08;">待确认（可能共享）</td></tr>
+<tr><td><code>qualityCharacteristic.controller.ts</code></td><td>质量特性</td><td><span class="tag-todo">未改造</span></td><td style="color:#d46b08;">待确认（可能共享）</td></tr>
+<tr><td><code>inspectionPlan.controller.ts</code></td><td>检验计划</td><td><span class="tag-todo">未改造</span></td><td style="color:#d46b08;">待确认（可能共享）</td></tr>
+<tr><td><code>inspectionSpec.controller.ts</code></td><td>检验规范</td><td><span class="tag-todo">未改造</span></td><td style="color:#d46b08;">待确认（可能共享）</td></tr>
+<tr><td><code>incomingInspectPlan.controller.ts</code></td><td>来料检验计划</td><td><span class="tag-todo">未改造</span></td><td style="color:#d46b08;">待确认（可能共享）</td></tr>
+<tr><td><code>incomingInspectSpec.controller.ts</code></td><td>来料检验规范</td><td><span class="tag-todo">未改造</span></td><td style="color:#d46b08;">待确认（可能共享）</td></tr>
+</table>
+
+<h3>4.3 财务模块未改造（1个）</h3>
+<table>
+<tr><th>Controller 文件</th><th>功能</th><th>改造状态</th></tr>
+<tr><td><code>accountingPeriod.controller.ts</code></td><td>会计期间</td><td><span class="tag-todo">未改造</span></td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 五、Phase 4 ==================== -->
+<h2>五、Phase 4：总部报表 — <span class="tag-done">已完成 100%</span></h2>
+
+<table>
+<tr><th style="width:5%;">序号</th><th style="width:55%;">任务</th><th style="width:10%;">状态</th><th style="width:30%;">说明</th></tr>
+<tr><td>①</td><td>后端 API（7个报表 + overview）</td><td><span class="tag-done">已完成</span></td><td>headquarters.routes.ts，全部跨工厂 GROUP BY 查询</td></tr>
+<tr><td>②</td><td>前端页面（7个Vue页面）</td><td><span class="tag-done">已完成</span></td><td>SalesSummary / ProductionSummary / PurchaseSummary / InventorySummary / FinanceSummary / QualitySummary / InventoryFlow</td></tr>
+<tr><td>③</td><td>前端路由 + 菜单映射</td><td><span class="tag-done">已完成</span></td><td>router/group.ts + AppSidebar.vue 路由映射</td></tr>
+<tr><td>④</td><td>HQ角色（5个）</td><td><span class="tag-done">已完成</span></td><td>headquarters_admin / manager / finance / quality / sales</td></tr>
+<tr><td>⑤</td><td>菜单权限配置</td><td><span class="tag-done">已完成</span></td><td>集团管理(一级) → 总部汇总报表(二级) → 7个page(三级)</td></tr>
+<tr><td>⑥</td><td>hqScopeGuard 数据范围控制</td><td><span class="tag-done">已完成</span></td><td>按职能角色限定可访问的报表接口（如总部财务仅可访问财务/库存/出入库）</td></tr>
+<tr><td>⑦</td><td>集团管理菜单显示修复</td><td><span class="tag-done">已修复</span></td><td>permission_type 从 'domain' 改为 'menu'，菜单缓存版本更新</td></tr>
+</table>
+
+<h3>5.1 总部报表权限矩阵</h3>
+<table>
+<tr><th>报表</th><th>headquarters_admin</th><th>headquarters_manager</th><th>headquarters_finance</th><th>headquarters_quality</th><th>headquarters_sales</th></tr>
+<tr><td>集团销售汇总表</td><td style="background:#f6ffed;">✓</td><td style="background:#f6ffed;">✓</td><td style="background:#fff1f0;">✗</td><td style="background:#fff1f0;">✗</td><td style="background:#f6ffed;">✓</td></tr>
+<tr><td>集团生产汇总表</td><td style="background:#f6ffed;">✓</td><td style="background:#f6ffed;">✓</td><td style="background:#fff1f0;">✗</td><td style="background:#f6ffed;">✓</td><td style="background:#fff1f0;">✗</td></tr>
+<tr><td>集团采购汇总表</td><td style="background:#f6ffed;">✓</td><td style="background:#f6ffed;">✓</td><td style="background:#fff1f0;">✗</td><td style="background:#fff1f0;">✗</td><td style="background:#f6ffed;">✓</td></tr>
+<tr><td>集团库存汇总表</td><td style="background:#f6ffed;">✓</td><td style="background:#f6ffed;">✓</td><td style="background:#f6ffed;">✓</td><td style="background:#f6ffed;">✓</td><td style="background:#f6ffed;">✓</td></tr>
+<tr><td>集团财务汇总表</td><td style="background:#f6ffed;">✓</td><td style="background:#f6ffed;">✓</td><td style="background:#f6ffed;">✓</td><td style="background:#fff1f0;">✗</td><td style="background:#fff1f0;">✗</td></tr>
+<tr><td>集团质量汇总表</td><td style="background:#f6ffed;">✓</td><td style="background:#f6ffed;">✓</td><td style="background:#fff1f0;">✗</td><td style="background:#f6ffed;">✓</td><td style="background:#fff1f0;">✗</td></tr>
+<tr><td>集团出入库流水总表</td><td style="background:#f6ffed;">✓</td><td style="background:#f6ffed;">✓</td><td style="background:#f6ffed;">✓</td><td style="background:#fff1f0;">✗</td><td style="background:#f6ffed;">✓</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 六、Phase 5 ==================== -->
+<h2>六、Phase 5：测试与上线 — <span class="tag-partial">部分完成 ~40%</span></h2>
+
+<table>
+<tr><th style="width:5%;">序号</th><th style="width:55%;">任务</th><th style="width:10%;">状态</th><th style="width:30%;">说明</th></tr>
+<tr><td>①</td><td>TypeScript 编译检查</td><td><span class="tag-done">基本通过</span></td><td>业务代码 0 错误，仅 migrate-menu-perms.ts 有解析问题</td></tr>
+<tr><td>②</td><td>数据库迁移验证</td><td><span class="tag-done">已完成</span></td><td>后端启动时 97 张表 factory_id 已处理</td></tr>
+<tr><td>③</td><td>单元测试 + 集成测试</td><td><span class="tag-todo">未执行</span></td><td>—</td></tr>
+<tr><td>④</td><td>双工厂并行运行验证</td><td><span class="tag-todo">未执行</span></td><td>广州工厂种子数据已准备但未启用</td></tr>
+<tr><td>⑤</td><td>性能测试（含跨工厂联合查询）</td><td><span class="tag-todo">未执行</span></td><td>—</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 七、方案外已完成项 ==================== -->
+<h2>七、方案外的超额完成项</h2>
+
+<div class="success">
+<strong>超额完成：</strong>以下项目不在原始路线图中，但已实现。
+</div>
+
+<table>
+<tr><th>项目</th><th>说明</th></tr>
+<tr><td>主数据部分改造</td><td>customer / supplier / employee / warehouse 已加 getFactoryId（原路线图中未涉及主数据）</td></tr>
+<tr><td>单据编号前缀</td><td>getFactoryCode() 已实现并在销售订单、采购订单等编号中使用工厂前缀</td></tr>
+<tr><td>对账功能</td><td>采购对账 + 销售对账的 6 个 export 函数已实现（reconciliation_status 字段）</td></tr>
+<tr><td>采购发票改造</td><td>purchaseInvoice.controller.ts 已改造（含 factory_id）</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 八、Controller改造完整清单 ==================== -->
+<h2>八、Controller改造完整清单（按模块）</h2>
+
+<h3>8.1 已改造 Controller（44个）</h3>
+<table>
+<tr><th>模块</th><th>Controller 文件</th></tr>
+<tr><td rowspan="4"><strong>计划管理</strong></td><td>plan.controller.ts</td></tr>
+<tr><td>mrp.controller.ts</td></tr>
+<tr><td>mps.controller.ts</td></tr>
+<tr><td>planMaterialCost.controller.ts</td></tr>
+<tr><td rowspan="19"><strong>生产管理</strong></td><td>order.controller.ts</td></tr>
+<tr><td>processTask.controller.ts</td></tr>
+<tr><td>workReport.controller.ts</td></tr>
+<tr><td>materialPreparation.controller.ts</td></tr>
+<tr><td>materialIssue.controller.ts</td></tr>
+<tr><td>materialReturn.controller.ts</td></tr>
+<tr><td>backflushTask.controller.ts</td></tr>
+<tr><td>materialCost.controller.ts</td></tr>
+<tr><td>pieceRateWage.controller.ts</td></tr>
+<tr><td>processKanban.controller.ts</td></tr>
+<tr><td>progressDashboard.controller.ts</td></tr>
+<tr><td>wipReport.controller.ts</td></tr>
+<tr><td>outsourcingOrder / Req / Issue / Receipt / ReturnStockin / Settlement / Price / Inspection (8个)</td></tr>
+<tr><td>outsourcingReceipt.mobile.controller.ts</td></tr>
+<tr><td rowspan="7"><strong>采购管理</strong></td><td>purchaseOrder.controller.ts</td></tr>
+<tr><td>purchaseReq.controller.ts</td></tr>
+<tr><td>purchasePrice.controller.ts</td></tr>
+<tr><td>purchaseReturn.controller.ts</td></tr>
+<tr><td>purchaseInvoice.controller.ts</td></tr>
+<tr><td>purchaseInspection.controller.ts</td></tr>
+<tr><td>receivingNotice.controller.ts</td></tr>
+<tr><td rowspan="11"><strong>仓储管理</strong></td><td>stockIn.controller.ts</td></tr>
+<tr><td>stockCount.controller.ts</td></tr>
+<tr><td>abnormalIO.controller.ts</td></tr>
+<tr><td>packingOrder.controller.ts</td></tr>
+<tr><td>scrapDisposal.controller.ts</td></tr>
+<tr><td>finishedGoods.controller.ts</td></tr>
+<tr><td>materialWarehouse.controller.ts</td></tr>
+<tr><td>materialMonthlyReport.controller.ts</td></tr>
+<tr><td>scrapMonthlyReport.controller.ts / scrapTransaction.controller.ts / shelfLifeReport.controller.ts</td></tr>
+<tr><td rowspan="9"><strong>质量管理</strong></td><td>scrapInboundOrder.controller.ts</td></tr>
+<tr><td>reworkOrder.controller.ts</td></tr>
+<tr><td>nonconformingProduct.controller.ts</td></tr>
+<tr><td>productionInspection.controller.ts</td></tr>
+<tr><td>qualityReport.controller.ts</td></tr>
+<tr><td>scrapDisposalReport / scrapInventoryReport / scrapOrderReport / scrapQualityStatsReport (4个)</td></tr>
+<tr><td rowspan="3"><strong>财务管理</strong></td><td>expenseClaim.controller.ts</td></tr>
+<tr><td>standardCost.controller.ts</td></tr>
+<tr><td>pieceRatePrice.controller.ts</td></tr>
+<tr><td rowspan="6"><strong>设备管理</strong></td><td>equipment.controller.ts</td></tr>
+<tr><td>equipmentDowntime.controller.ts</td></tr>
+<tr><td>equipmentMaintenancePlan.controller.ts</td></tr>
+<tr><td>equipmentOee.controller.ts</td></tr>
+<tr><td>mould.controller.ts</td></tr>
+<tr><td>mouldMaintenance.controller.ts</td></tr>
+<tr><td><strong>主数据</strong></td><td>customer / supplier / employee / warehouse (4个)</td></tr>
+</table>
+
+<h3>8.2 未改造 Controller（22个，不含系统模块）</h3>
+<table>
+<tr><th>模块</th><th>Controller 文件</th><th>功能</th><th>优先级</th></tr>
+<tr><td rowspan="12"><strong>销售管理</strong></td><td>salesOrder.controller.ts</td><td>销售订单</td><td style="color:#f5222d;font-weight:600;">紧急</td></tr>
+<tr><td>forecast.controller.ts</td><td>销售预测</td><td style="color:#f5222d;font-weight:600;">紧急</td></tr>
+<tr><td>shippingOrder.controller.ts</td><td>发货单</td><td style="color:#f5222d;font-weight:600;">紧急</td></tr>
+<tr><td>shippingRequest.controller.ts</td><td>发货申请</td><td style="color:#f5222d;font-weight:600;">紧急</td></tr>
+<tr><td>returnOrder.controller.ts</td><td>退货单</td><td style="color:#f5222d;font-weight:600;">紧急</td></tr>
+<tr><td>salesInvoice.controller.ts</td><td>销售发票</td><td style="color:#f5222d;font-weight:600;">紧急</td></tr>
+<tr><td>salesPrice.controller.ts</td><td>销售价目表</td><td style="color:#fa8c16;">重要</td></tr>
+<tr><td>salesReport.controller.ts</td><td>销售报表</td><td style="color:#fa8c16;">重要</td></tr>
+<tr><td>salesPersonShippingReport.controller.ts</td><td>人员发货报表</td><td style="color:#fa8c16;">重要</td></tr>
+<tr><td>sampleRequest.controller.ts</td><td>样品申请</td><td style="color:#fa8c16;">重要</td></tr>
+<tr><td>sampleBom.controller.ts</td><td>样品BOM</td><td style="color:#fa8c16;">重要</td></tr>
+<tr><td>inspectionReport.controller.ts</td><td>检测报告</td><td style="color:#fa8c16;">重要</td></tr>
+<tr><td><strong>采购</strong></td><td>purchaseCalc.controller.ts</td><td>采购计算</td><td style="color:#fa8c16;">重要</td></tr>
+<tr><td><strong>财务</strong></td><td>accountingPeriod.controller.ts</td><td>会计期间</td><td>一般</td></tr>
+<tr><td rowspan="2"><strong>生产(移动端)</strong></td><td>outsourcingInspection.mobile.controller.ts</td><td>委外检验</td><td>一般</td></tr>
+<tr><td>outsourcingIssue.mobile.controller.ts</td><td>委外发料</td><td>一般</td></tr>
+<tr><td rowspan="8"><strong>质量(基础数据)</strong></td><td>defect.controller.ts</td><td>缺陷定义</td><td style="color:#d46b08;">待确认</td></tr>
+<tr><td>defectClass.controller.ts</td><td>缺陷分类</td><td style="color:#d46b08;">待确认</td></tr>
+<tr><td>defectReason.controller.ts</td><td>缺陷原因</td><td style="color:#d46b08;">待确认</td></tr>
+<tr><td>qualityCharacteristic.controller.ts</td><td>质量特性</td><td style="color:#d46b08;">待确认</td></tr>
+<tr><td>inspectionPlan.controller.ts</td><td>检验计划</td><td style="color:#d46b08;">待确认</td></tr>
+<tr><td>inspectionSpec.controller.ts</td><td>检验规范</td><td style="color:#d46b08;">待确认</td></tr>
+<tr><td>incomingInspectPlan.controller.ts</td><td>来料检验计划</td><td style="color:#d46b08;">待确认</td></tr>
+<tr><td>incomingInspectSpec.controller.ts</td><td>来料检验规范</td><td style="color:#d46b08;">待确认</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 九、风险项 ==================== -->
+<h2>九、风险项与优先建议</h2>
+
+<h3>9.1 风险清单</h3>
+<table>
+<tr><th style="width:5%;">级别</th><th style="width:55%;">风险</th><th>影响</th></tr>
+<tr><td style="color:#f5222d;font-weight:600;">高</td><td>销售模块完全未隔离</td><td>宁国工厂用户可看到所有工厂数据，核心业务数据泄露</td></tr>
+<tr><td style="color:#fa8c16;font-weight:600;">中</td><td>质量基础数据改造待确认</td><td>若需隔离但未做，则缺陷/特性/检验规范数据跨工厂混用</td></tr>
+<tr><td style="color:#fa8c16;font-weight:600;">中</td><td>采购计算(purchaseCalc)未改造</td><td>成本核算可能跨工厂混用</td></tr>
+<tr><td>低</td><td>移动端Controller未改造</td><td>委外检验/发料移动端不受工厂隔离保护</td></tr>
+</table>
+
+<h3>9.2 优先建议</h3>
+<ol>
+<li><strong style="color:#f5222d;">紧急</strong>：完成销售模块 12 个 Controller 的 factory_id 改造（当前最大数据隔离漏洞）</li>
+<li><strong style="color:#fa8c16;">重要</strong>：确认质量基础数据(缺陷/特性/检验规范)是否需要隔离</li>
+<li><strong>一般</strong>：补全 purchaseCalc、accountingPeriod、移动端 Controller</li>
+<li><strong>一般</strong>：制定单元测试/集成测试计划</li>
+</ol>
+
+<div class="footer">
+Molding Powder MOM — 多工厂数据隔离方案执行情况检查报告 &nbsp;|&nbsp; 自动生成于 2026-06-06
+</div>
+
+</body>
+</html>

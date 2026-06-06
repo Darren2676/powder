@@ -6,6 +6,7 @@ import {
   DownloadOutlined, UploadOutlined, PlusOutlined, EyeOutlined, UserAddOutlined, MinusCircleOutlined, DownOutlined
 } from '@ant-design/icons-vue'
 import { getWarehouses, getWarehouseDetail, createWarehouse, updateWarehouse, deleteWarehouse, exportWarehouses, importWarehouses, addWarehouseManager, removeWarehouseManager, approveWarehouse, withdrawWarehouse } from '@/api/master-data/warehouse'
+import { getFactories } from '@/api/system/factory'
 import { useTableList } from '@/composables/useTableList'
 import { useModalDrag } from '@/composables/useModalDrag'
 import dayjs from 'dayjs'
@@ -36,6 +37,7 @@ interface Warehouse {
   creation_man: string
   last_updater: string
   last_updated_at: string
+  factory_id?: number | null
   managers?: Manager[]
 }
 
@@ -55,6 +57,7 @@ const emptyForm = (): Warehouse => ({
   creation_man: '',
   last_updater: '',
   last_updated_at: '',
+  factory_id: null,
   managers: []
 })
 
@@ -74,12 +77,21 @@ const fileInputRef = ref<HTMLInputElement>()
 // 新建仓库时的负责人列表
 const createManagers = ref<{ manager_name: string }[]>([])
 const editManagers = ref<Manager[]>([])
+
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 // 添加负责人弹窗
 const addManagerVisible = ref(false)
 const addManagerName = ref('')
 const addManagerWarehouse = ref('')
 
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '行号', key: 'rowIndex', width: 60 },
   { title: '仓库编号', dataIndex: 'warehouse_number', key: 'warehouse_number', width: 100 },
   { title: '仓库名称', dataIndex: 'warehouse_name', key: 'warehouse_name', width: 120 },
@@ -158,10 +170,15 @@ const handleEditOk = async () => {
 }
 
 const handleCreateOk = async () => {
-  if (!createForm.warehouse_number) { message.warning('仓库编号不能为空'); return }
   try {
-    await createWarehouse({ ...createForm, managers: createManagers.value })
-    message.success('创建成功'); createModalVisible.value = false
+    const res: any = await createWarehouse({ ...createForm, managers: createManagers.value })
+    // 后端自动生成编号时，返回生成的编号
+    if (res.data?.warehouse_number && !createForm.warehouse_number) {
+      message.success(`创建成功，编号: ${res.data.warehouse_number}`)
+    } else {
+      message.success('创建成功')
+    }
+    createModalVisible.value = false
     Object.assign(createForm, emptyForm()); createManagers.value = []; fetchData()
   } catch { message.error('创建失败') }
 }
@@ -249,7 +266,7 @@ const handleWithdraw = async (record: any) => {
   })
 }
 
-onMounted(() => { fetchData() })
+onMounted(() => { fetchData(); loadFactories() })
 </script>
 
 <template>
@@ -382,10 +399,14 @@ onMounted(() => { fetchData() })
           <a-col :span="12">
             <a-form-item label="仓库类型">
               <a-select v-model:value="editForm.warehouse_type" allow-clear placeholder="请选择">
-                <a-select-option value="普通仓库">普通仓库</a-select-option>
+                <a-select-option value="原材料仓库">原材料仓库</a-select-option>
+                <a-select-option value="成品仓库">成品仓库</a-select-option>
+                <a-select-option value="半成品">半成品/成型件</a-select-option>
                 <a-select-option value="线边仓库">线边仓库</a-select-option>
+                <a-select-option value="待检仓">待检仓</a-select-option>
                 <a-select-option value="报废仓库">报废仓库</a-select-option>
-                <a-select-option value="待检仓库">待检仓库</a-select-option>
+                <a-select-option value="通用仓库">通用仓库</a-select-option>
+                <a-select-option value="普通仓库">普通仓库</a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
@@ -428,6 +449,15 @@ onMounted(() => { fetchData() })
             </a-form-item>
           </a-col>
         </a-row>
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="所属工厂">
+              <a-select v-model:value="editForm.factory_id" placeholder="请选择" allow-clear>
+                <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+        </a-row>
         <a-form-item label="备注" :label-col="{ span: 3 }" :wrapper-col="{ span: 20 }"><a-textarea v-model:value="editForm.remark" :rows="2" /></a-form-item>
         <a-divider orientation="left" style="font-size: 13px;">仓库负责人</a-divider>
         <div v-for="(m, idx) in editManagers" :key="idx" style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center; padding-left: 40px;">
@@ -445,7 +475,7 @@ onMounted(() => { fetchData() })
       <a-form :label-col="{ span: 6 }" :wrapper-col="{ span: 16 }">
         <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item label="仓库编号" required><a-input v-model:value="createForm.warehouse_number" placeholder="请输入仓库编号" /></a-form-item>
+            <a-form-item label="仓库编号"><a-input v-model:value="createForm.warehouse_number" placeholder="留空则自动生成（如 RM-N-01）" /></a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="仓库名称"><a-input v-model:value="createForm.warehouse_name" /></a-form-item>
@@ -455,10 +485,14 @@ onMounted(() => { fetchData() })
           <a-col :span="12">
             <a-form-item label="仓库类型">
               <a-select v-model:value="createForm.warehouse_type" allow-clear placeholder="请选择">
-                <a-select-option value="普通仓库">普通仓库</a-select-option>
+                <a-select-option value="原材料仓库">原材料仓库</a-select-option>
+                <a-select-option value="成品仓库">成品仓库</a-select-option>
+                <a-select-option value="半成品">半成品/成型件</a-select-option>
                 <a-select-option value="线边仓库">线边仓库</a-select-option>
+                <a-select-option value="待检仓">待检仓</a-select-option>
                 <a-select-option value="报废仓库">报废仓库</a-select-option>
-                <a-select-option value="待检仓库">待检仓库</a-select-option>
+                <a-select-option value="通用仓库">通用仓库</a-select-option>
+                <a-select-option value="普通仓库">普通仓库</a-select-option>
               </a-select>
             </a-form-item>
           </a-col>
@@ -498,6 +532,15 @@ onMounted(() => { fetchData() })
           <a-col :span="12">
             <a-form-item label="参与结存">
               <a-select v-model:value="createForm.is_in_balance"><a-select-option value="是">是</a-select-option><a-select-option value="否">否</a-select-option></a-select>
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="所属工厂">
+              <a-select v-model:value="createForm.factory_id" placeholder="请选择" allow-clear>
+                <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+              </a-select>
             </a-form-item>
           </a-col>
         </a-row>

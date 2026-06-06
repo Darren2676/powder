@@ -5,9 +5,10 @@ import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import path from 'path';
 import fs from 'fs';
 import { APPROVAL_STATUS, CONDITION_STATUS } from '@/shared/constants/statuses';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
-const fields = ['customer_number', 'customer_name', 'classification', 'country_code', 'country', 'currency_code', 'industry', 'head_of_sales', 'sales_tax_rate', 'region', 'region2', 'region3', 'region4', 'detail_address', 'zip_code', 'telephone', 'fax', 'linkman', 'area_code', 'contacts', 'email', 'contact_remark', 'bank_account_name', 'bank_name', 'bank_account_number', 'invoice_address', 'invoice_phone', 'invoice_title', 'tax_id', 'payment_terms'];
-const headers = ['客户编号', '客户名称', '分类', '国家（地区）代码', '国家（地区）名称', '币种代码', '行业', '销售负责人', '销售税率', '所在地区1', '所在地区2', '所在地区3', '所在地区4', '详细地址', '邮编', '电话', '传真', '联系人姓名', '区号（+86/+49）', '手机', 'E-mail', '联系人备注', '开户名称', '开户银行', '银行账号', '开票地址', '开票电话', '发票抬头', '纳税人识别码', '付款条件'];
+const fields = ['customer_number', 'customer_name', 'classification', 'country_code', 'country', 'currency_code', 'industry', 'head_of_sales', 'sales_tax_rate', 'region', 'region2', 'region3', 'region4', 'detail_address', 'zip_code', 'telephone', 'fax', 'linkman', 'area_code', 'contacts', 'email', 'contact_remark', 'bank_account_name', 'bank_name', 'bank_account_number', 'invoice_address', 'invoice_phone', 'invoice_title', 'tax_id', 'payment_terms', 'factory_id'];
+const headers = ['客户编号', '客户名称', '分类', '国家（地区）代码', '国家（地区）名称', '币种代码', '行业', '销售负责人', '销售税率', '所在地区1', '所在地区2', '所在地区3', '所在地区4', '详细地址', '邮编', '电话', '传真', '联系人姓名', '区号（+86/+49）', '手机', 'E-mail', '联系人备注', '开户名称', '开户银行', '银行账号', '开票地址', '开票电话', '发票抬头', '纳税人识别码', '付款条件', '所属工厂'];
 
 // 确保上传目录存在
 const uploadDir = path.join(__dirname, '../../uploads/customer');
@@ -34,16 +35,25 @@ export const getCustomers = async (req: Request, res: Response, next: NextFuncti
       replacements.dataScopeUserId = scope.head_of_sales_id;
     }
 
-    const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    // 多工厂数据隔离过滤（符合多工厂方案：filter模式下严格隔离，仅显示本工厂记录）
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`c.factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
 
-    const countSql = `SELECT COUNT(*) as total FROM customer ${whereClause}`;
+    let whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    const countSql = `SELECT COUNT(*) as total FROM customer c ${whereClause}`;
     const [countResult]: any = await sequelize.query(countSql, { replacements });
     const total = countResult[0].total;
 
     const dataSql = `
       SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY customer_number) AS _row_num
-        FROM customer ${whereClause}
+        SELECT c.*, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY c.customer_number) AS _row_num
+        FROM customer c
+        LEFT JOIN factory f ON c.factory_id = f.id
+        ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `;
@@ -132,12 +142,12 @@ export const createCustomer = async (req: Request, res: Response, next: NextFunc
         region, region2, region3, region4, detail_address, zip_code, telephone, fax,
         linkman, area_code, contacts, email, contact_remark,
         bank_account_name, bank_name, bank_account_number, invoice_address, invoice_phone, invoice_title, tax_id, payment_terms,
-        condition, created_by, created_at, updated_at)
+        factory_id, condition, created_by, created_at, updated_at)
       VALUES (:customer_number, :customer_name, :classification, :country_code, :country, :currency_code, :industry, :head_of_sales, :sales_tax_rate, :head_of_sales_id,
         :region, :region2, :region3, :region4, :detail_address, :zip_code, :telephone, :fax,
         :linkman, :area_code, :contacts, :email, :contact_remark,
         :bank_account_name, :bank_name, :bank_account_number, :invoice_address, :invoice_phone, :invoice_title, :tax_id, :payment_terms,
-        :condition, :created_by, GETDATE(), GETDATE())
+        :factory_id, :condition, :created_by, GETDATE(), GETDATE())
     `;
 
     await sequelize.query(insertSql, {
@@ -154,6 +164,7 @@ export const createCustomer = async (req: Request, res: Response, next: NextFunc
         bank_account_name: b.bank_account_name || '', bank_name: b.bank_name || '', bank_account_number: b.bank_account_number || '',
         invoice_address: b.invoice_address || '', invoice_phone: b.invoice_phone || '',
         invoice_title: b.invoice_title || '', tax_id: b.tax_id || '', payment_terms: b.payment_terms || '',
+        factory_id: b.factory_id || null,
         condition: b.condition || CONDITION_STATUS.ENABLED, created_by: username
       }
     });
@@ -205,6 +216,7 @@ export const updateCustomer = async (req: Request, res: Response, next: NextFunc
         bank_account_name = :bank_account_name, bank_name = :bank_name, bank_account_number = :bank_account_number,
         invoice_address = :invoice_address, invoice_phone = :invoice_phone,
         invoice_title = :invoice_title, tax_id = :tax_id, payment_terms = :payment_terms,
+        factory_id = :factory_id,
         updated_at = GETDATE()
       WHERE customer_number = :id
     `;
@@ -222,7 +234,8 @@ export const updateCustomer = async (req: Request, res: Response, next: NextFunc
         email: b.email, contact_remark: b.contact_remark,
         bank_account_name: b.bank_account_name, bank_name: b.bank_name, bank_account_number: b.bank_account_number,
         invoice_address: b.invoice_address, invoice_phone: b.invoice_phone,
-        invoice_title: b.invoice_title, tax_id: b.tax_id, payment_terms: b.payment_terms
+        invoice_title: b.invoice_title, tax_id: b.tax_id, payment_terms: b.payment_terms,
+        factory_id: b.factory_id || null
       }
     });
 
@@ -305,6 +318,7 @@ export const importCustomers = async (req: Request, res: Response, next: NextFun
               bank_account_name = :bank_account_name, bank_name = :bank_name, bank_account_number = :bank_account_number,
               invoice_address = :invoice_address, invoice_phone = :invoice_phone,
               invoice_title = :invoice_title, tax_id = :tax_id, payment_terms = :payment_terms,
+              factory_id = :factory_id,
               updated_at = GETDATE()
             WHERE customer_number = :customer_number
           `, {
@@ -319,7 +333,8 @@ export const importCustomers = async (req: Request, res: Response, next: NextFun
               email: item.email || '', contact_remark: item.contact_remark || '',
               bank_account_name: item.bank_account_name || '', bank_name: item.bank_name || '', bank_account_number: item.bank_account_number || '',
               invoice_address: item.invoice_address || '', invoice_phone: item.invoice_phone || '',
-              invoice_title: item.invoice_title || '', tax_id: item.tax_id || '', payment_terms: item.payment_terms || ''
+              invoice_title: item.invoice_title || '', tax_id: item.tax_id || '', payment_terms: item.payment_terms || '',
+              factory_id: item.factory_id || null
             }
           });
           updated++;
@@ -329,12 +344,12 @@ export const importCustomers = async (req: Request, res: Response, next: NextFun
               region, region2, region3, region4, detail_address, zip_code, telephone, fax,
               linkman, area_code, contacts, email, contact_remark,
               bank_account_name, bank_name, bank_account_number, invoice_address, invoice_phone, invoice_title, tax_id, payment_terms,
-              condition, created_by, created_at, updated_at)
+              factory_id, condition, created_by, created_at, updated_at)
             VALUES (:customer_number, :customer_name, :classification, :country_code, :country, :currency_code, :industry, :head_of_sales, :sales_tax_rate,
               :region, :region2, :region3, :region4, :detail_address, :zip_code, :telephone, :fax,
               :linkman, :area_code, :contacts, :email, :contact_remark,
               :bank_account_name, :bank_name, :bank_account_number, :invoice_address, :invoice_phone, :invoice_title, :tax_id, :payment_terms,
-              N'启用', :created_by, GETDATE(), GETDATE())
+              :factory_id, N'启用', :created_by, GETDATE(), GETDATE())
           `, {
             replacements: {
               customer_number: item.customer_number, customer_name: item.customer_name || '',
@@ -348,6 +363,7 @@ export const importCustomers = async (req: Request, res: Response, next: NextFun
               bank_account_name: item.bank_account_name || '', bank_name: item.bank_name || '', bank_account_number: item.bank_account_number || '',
               invoice_address: item.invoice_address || '', invoice_phone: item.invoice_phone || '',
               invoice_title: item.invoice_title || '', tax_id: item.tax_id || '', payment_terms: item.payment_terms || '',
+              factory_id: item.factory_id || null,
               created_by: username
             }
           });

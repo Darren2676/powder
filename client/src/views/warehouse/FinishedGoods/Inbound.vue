@@ -106,7 +106,8 @@ const handleInbound = () => {
   const selected = dataSource.value.filter(d => selectedRowKeys.value.includes(d.production_order_number))
   inboundItems.value = selected.map(d => ({
     ...d,
-    inbound_qty: Number(d.pending_inbound_qty) || (Number(d.last_step_qualified || d.planned_quantity) - (Number(d.inbound_quantity) || 0))
+    inbound_qty: Number(d.pending_inbound_qty) || (Number(d.last_step_qualified || d.planned_quantity) - (Number(d.inbound_quantity) || 0)),
+    production_date: d.production_date ? d.production_date.substring(0, 10) : null
   }))
   inboundWarehouse.warehouse_number = ''
   inboundWarehouse.warehouse_name = ''
@@ -135,6 +136,7 @@ const inboundColumns = [
   { title: '单位', dataIndex: 'basic_unit', width: 60 },
   { title: '计划数量', dataIndex: 'planned_quantity', width: 100 },
   { title: '已入库', dataIndex: 'inbound_qty_old', key: 'inbound_qty_old', width: 90 },
+  { title: '生产日期', key: 'production_date', width: 130 },
   { title: '本次入库', key: 'inbound_qty', width: 120 }
 ]
 
@@ -163,7 +165,8 @@ const handleInboundSubmit = async () => {
         product_drawing_number: d.product_drawing_number,
         planned_quantity: d.planned_quantity,
         inbound_quantity: Number(d.inbound_quantity) || 0,
-        inbound_qty: d.inbound_qty
+        inbound_qty: d.inbound_qty,
+        production_date: d.production_date
       }))
     })
     if (res?.success) {
@@ -309,6 +312,9 @@ onMounted(() => {
           </template>
           <template v-else-if="column.key === 'inbound_qty_old'">
             {{ Number(record.inbound_quantity) || 0 }}
+          </template>
+          <template v-else-if="column.key === 'production_date'">
+            <a-date-picker v-model:value="record.production_date" size="small" style="width: 100%" value-format="YYYY-MM-DD" placeholder="生产日期" />
           </template>
         </template>
       </a-table>

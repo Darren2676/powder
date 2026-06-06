@@ -113,6 +113,7 @@ const soImportColumns = [
   { title: '来源类型', dataIndex: 'source_type_name', key: 'source_type_name', width: 90, fixed: 'left' as const },
   { title: '源单号', dataIndex: 'source_number', key: 'source_number', width: 160, fixed: 'left' as const },
   { title: '行号', dataIndex: 'line_number', width: 60 },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '客户名称', dataIndex: 'customer_name', width: 130 },
   { title: '产品编号', dataIndex: 'item_number', width: 120 },
   { title: '产品名称', dataIndex: 'item_name', width: 140, ellipsis: true },

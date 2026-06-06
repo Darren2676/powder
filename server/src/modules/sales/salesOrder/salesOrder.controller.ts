@@ -3,16 +3,18 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import { CONDITION_STATUS, ORDER_STATUS } from '@/shared/constants/statuses';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
 
 // 自动生成销售订单编号: SO-YYYYMMDD-001
-const generateSalesOrderNumber = async (): Promise<string> => {
+const generateSalesOrderNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = new Date();
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `SO-${dateStr}-`;
+  const prefix = `SO${fc}-${dateStr}-`;
 
   const [rows]: any = await sequelize.query(
     `SELECT MAX(sales_order_number) as max_num FROM sales_order WHERE sales_order_number LIKE :prefix`,
@@ -61,6 +63,13 @@ export const getSalesOrders = async (req: Request, res: Response, next: NextFunc
     if (scope?.head_of_sales_id) {
       conditions.push(`head_of_sales_id = :dataScopeUserId`);
       replacements.dataScopeUserId = scope.head_of_sales_id;
+    }
+
+    // 工厂隔离
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
     }
 
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -122,10 +131,12 @@ export const getSalesOrderDetail = async (req: Request, res: Response, next: Nex
 
 export const createSalesOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.customer_number) { res.status(400).json({ success: false, message: '客户编号不能为空' }); return; }
 
-    const sales_order_number = await generateSalesOrderNumber();
+    const sales_order_number = await generateSalesOrderNumber(factoryCode);
     const now = new Date();
     const creation_date = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const creation_man = (req as any).user?.username || '';
@@ -146,9 +157,9 @@ export const createSalesOrder = async (req: Request, res: Response, next: NextFu
     try {
       await sequelize.query(`
         INSERT INTO sales_order (sales_order_number, customer_number, customer_name, head_of_sales, head_of_sales_id, linkman, contacts,
-          order_date, delivery_date, order_status, [condition], approval_status, remark, creation_date, creation_man, customer_po_number)
+          order_date, delivery_date, order_status, [condition], approval_status, remark, creation_date, creation_man, customer_po_number, factory_id)
         VALUES (:sales_order_number, :customer_number, :customer_name, :head_of_sales, :head_of_sales_id, :linkman, :contacts,
-          :order_date, :delivery_date, :order_status, :condition, N'草稿', :remark, :creation_date, :creation_man, :customer_po_number)
+          :order_date, :delivery_date, :order_status, :condition, N'草稿', :remark, :creation_date, :creation_man, :customer_po_number, :factory_id)
       `, {
         replacements: {
           sales_order_number,
@@ -165,7 +176,8 @@ export const createSalesOrder = async (req: Request, res: Response, next: NextFu
           remark: b.remark || '',
           creation_date,
           creation_man,
-          customer_po_number: b.customer_po_number || ''
+          customer_po_number: b.customer_po_number || '',
+          factory_id: _factoryId
         },
         transaction
       });
@@ -221,10 +233,13 @@ export const updateSalesOrder = async (req: Request, res: Response, next: NextFu
   try {
     const { id } = req.params;
     const b = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     // 审批状态校验
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM sales_order WHERE sales_order_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM sales_order WHERE sales_order_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     const currentStatus = chk.length ? chk[0].approval_status : '';
     if (currentStatus !== ORDER_STATUS.DRAFT && currentStatus !== '已审批') {
@@ -347,8 +362,11 @@ export const updateSalesOrder = async (req: Request, res: Response, next: NextFu
 export const deleteSalesOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM sales_order WHERE sales_order_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM sales_order WHERE sales_order_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) {
       res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return;
@@ -357,7 +375,7 @@ export const deleteSalesOrder = async (req: Request, res: Response, next: NextFu
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`DELETE FROM sales_order_detail WHERE sales_order_number = :id`, { replacements: { id }, transaction });
-      await sequelize.query(`DELETE FROM sales_order WHERE sales_order_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM sales_order WHERE sales_order_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
       await transaction.commit();
       res.json(success(null, '删除销售订单成功'));
     } catch (e) {
@@ -562,6 +580,9 @@ const exportHeaders = [
 
 export const exportSalesOrders = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND h.factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [items]: any = await sequelize.query(`
       SELECT h.sales_order_number, h.customer_number, h.customer_name, h.head_of_sales, h.linkman, h.contacts,
              h.order_date, h.delivery_date, h.order_status, h.[condition], h.remark,
@@ -570,8 +591,9 @@ export const exportSalesOrders = async (req: Request, res: Response, next: NextF
              d.delivery_date as detail_delivery_date, d.remark as detail_remark
       FROM sales_order h
       LEFT JOIN sales_order_detail d ON h.sales_order_number = d.sales_order_number
+      WHERE 1=1${factoryCond}
       ORDER BY h.sales_order_number DESC, d.line_number
-    `);
+    `, { replacements: factoryReps });
     exportToExcel(items, exportFields, exportHeaders, 'sales_orders', res);
   } catch (err) { next(err); }
 };
@@ -583,6 +605,7 @@ export const importSalesOrders = async (req: Request, res: Response, next: NextF
     if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件内容为空' }); return; }
 
     const creation_man = (req as any).user?.username || '';
+    const _factoryId = getFactoryId(req);
     const now = new Date();
     const creation_date = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
@@ -608,9 +631,9 @@ export const importSalesOrders = async (req: Request, res: Response, next: NextF
         if (!existing.length) {
           await sequelize.query(`
             INSERT INTO sales_order (sales_order_number, customer_number, customer_name, head_of_sales, linkman, contacts,
-              order_date, delivery_date, order_status, [condition], approval_status, remark, creation_date, creation_man)
+              order_date, delivery_date, order_status, [condition], approval_status, remark, creation_date, creation_man, factory_id)
             VALUES (:sales_order_number, :customer_number, :customer_name, :head_of_sales, :linkman, :contacts,
-              :order_date, :delivery_date, :order_status, :condition, N'草稿', :remark, :creation_date, :creation_man)
+              :order_date, :delivery_date, :order_status, :condition, N'草稿', :remark, :creation_date, :creation_man, :factory_id)
           `, {
             replacements: {
               sales_order_number: orderNum,
@@ -625,7 +648,8 @@ export const importSalesOrders = async (req: Request, res: Response, next: NextF
               condition: first.condition || CONDITION_STATUS.ENABLED,
               remark: first.remark || '',
               creation_date,
-              creation_man
+              creation_man,
+              factory_id: _factoryId
             }, transaction
           });
           headerCount++;
@@ -670,14 +694,17 @@ export const importSalesOrders = async (req: Request, res: Response, next: NextF
 
 export const getSalesOrderStats = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ` AND factory_id = ${_factoryId}` : '';
+    const factoryCondH = _factoryId !== null ? ` AND h.factory_id = ${_factoryId}` : '';
     const scope = (req as any).dataScope;
     const scopeCondition = scope?.head_of_sales_id ? ` AND head_of_sales_id = ${scope.head_of_sales_id}` : '';
-    const [totalRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE 1=1${scopeCondition}`);
-    const [draftRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE approval_status = N'草稿'${scopeCondition}`);
-    const [pendingRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE approval_status = N'待审批'${scopeCondition}`);
-    const [approvedRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE approval_status = N'已审批'${scopeCondition}`);
-    const [amountRow]: any = await sequelize.query(`SELECT ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as total FROM sales_order_detail d INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number WHERE 1=1${scopeCondition.replace('head_of_sales_id', 'h.head_of_sales_id')}`);
-    const [approvedAmountRow]: any = await sequelize.query(`SELECT ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as total FROM sales_order_detail d INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number WHERE h.approval_status = N'已审批'${scopeCondition.replace('head_of_sales_id', 'h.head_of_sales_id')}`);
+    const [totalRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE 1=1${scopeCondition}${factoryCond}`);
+    const [draftRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE approval_status = N'草稿'${scopeCondition}${factoryCond}`);
+    const [pendingRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE approval_status = N'待审批'${scopeCondition}${factoryCond}`);
+    const [approvedRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE approval_status = N'已审批'${scopeCondition}${factoryCond}`);
+    const [amountRow]: any = await sequelize.query(`SELECT ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as total FROM sales_order_detail d INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number WHERE 1=1${scopeCondition.replace('head_of_sales_id', 'h.head_of_sales_id')}${factoryCondH}`);
+    const [approvedAmountRow]: any = await sequelize.query(`SELECT ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as total FROM sales_order_detail d INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number WHERE h.approval_status = N'已审批'${scopeCondition.replace('head_of_sales_id', 'h.head_of_sales_id')}${factoryCondH}`);
 
     res.json(success({
       total: totalRow[0].cnt,
@@ -692,7 +719,9 @@ export const getSalesOrderStats = async (req: Request, res: Response, next: Next
 
 export const getSalesOrderStatusDistribution = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [rows]: any = await sequelize.query(`SELECT approval_status, COUNT(*) as cnt FROM sales_order GROUP BY approval_status`);
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ` AND factory_id = ${_factoryId}` : '';
+    const [rows]: any = await sequelize.query(`SELECT approval_status, COUNT(*) as cnt FROM sales_order WHERE 1=1${factoryCond} GROUP BY approval_status`);
     const result: Record<string, number> = {};
     rows.forEach((r: any) => { result[r.approval_status || '未知'] = r.cnt; });
     res.json(success(result));
@@ -701,13 +730,15 @@ export const getSalesOrderStatusDistribution = async (req: Request, res: Respons
 
 export const getSalesOrderCustomerRanking = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ` AND h.factory_id = ${_factoryId}` : '';
     const [rows]: any = await sequelize.query(`
       SELECT TOP 10 h.customer_name,
              COUNT(DISTINCT h.sales_order_number) as order_count,
              ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as total_amount
       FROM sales_order h
       LEFT JOIN sales_order_detail d ON h.sales_order_number = d.sales_order_number
-      WHERE h.customer_name IS NOT NULL AND h.customer_name <> ''
+      WHERE h.customer_name IS NOT NULL AND h.customer_name <> ''${factoryCond}
       GROUP BY h.customer_name
       ORDER BY total_amount DESC
     `);
@@ -717,6 +748,8 @@ export const getSalesOrderCustomerRanking = async (req: Request, res: Response, 
 
 export const getSalesOrderMonthlyTrend = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ` AND so.factory_id = ${_factoryId}` : '';
     const [rows]: any = await sequelize.query(`
       SELECT m.month, ISNULL(t.order_count, 0) as order_count, ISNULL(t.amount, 0) as amount
       FROM (
@@ -733,7 +766,7 @@ export const getSalesOrderMonthlyTrend = async (req: Request, res: Response, nex
           SELECT ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as detail_amount
           FROM sales_order_detail d WHERE d.sales_order_number = so.sales_order_number
         ) sub
-        WHERE CAST(order_date AS date) >= DATEADD(MONTH, -12, GETDATE())
+        WHERE CAST(order_date AS date) >= DATEADD(MONTH, -12, GETDATE())${factoryCond}
         GROUP BY CONVERT(varchar(7), CAST(order_date AS date), 120)
       ) t ON m.month = t.month
       ORDER BY m.month
@@ -744,10 +777,13 @@ export const getSalesOrderMonthlyTrend = async (req: Request, res: Response, nex
 
 export const getSalesOrderRecentList = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ` AND h.factory_id = ${_factoryId}` : '';
     const [rows]: any = await sequelize.query(`
       SELECT TOP 10 h.sales_order_number, h.customer_name, h.order_date, h.approval_status, h.order_status,
              ISNULL((SELECT SUM(CAST(total_amount AS decimal(18,2))) FROM sales_order_detail WHERE sales_order_number = h.sales_order_number), 0) as total_amount
       FROM sales_order h
+      WHERE 1=1${factoryCond}
       ORDER BY h.creation_date DESC
     `);
     res.json(success(rows));
@@ -756,6 +792,8 @@ export const getSalesOrderRecentList = async (req: Request, res: Response, next:
 
 export const getSalesOrderDeliveryTrend = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ` AND h.factory_id = ${_factoryId}` : '';
     const [rows]: any = await sequelize.query(`
       SELECT w.week_label, ISNULL(t.order_count, 0) as order_count, ISNULL(t.quantity, 0) as quantity
       FROM (
@@ -772,7 +810,7 @@ export const getSalesOrderDeliveryTrend = async (req: Request, res: Response, ne
         FROM sales_order_detail d
         INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number
         WHERE CAST(d.delivery_date AS date) >= CAST(GETDATE() AS date)
-          AND CAST(d.delivery_date AS date) < DATEADD(WEEK, 8, CAST(GETDATE() AS date))
+          AND CAST(d.delivery_date AS date) < DATEADD(WEEK, 8, CAST(GETDATE() AS date))${factoryCond}
         GROUP BY CONVERT(varchar(10), DATEADD(WEEK, DATEDIFF(WEEK, CAST(GETDATE() AS date), CAST(d.delivery_date AS date)),
                  CAST(GETDATE() AS date)), 120)
       ) t ON w.week_start = t.week_start
@@ -793,6 +831,13 @@ export const getSalesOrderDetailsPage = async (req: Request, res: Response, next
 
     let whereClause = 'WHERE 1=1';
     const replacements: any = { offset, offsetEnd };
+
+    // 工厂隔离
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND h.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       whereClause += ` AND (h.sales_order_number LIKE :search OR d.item_number LIKE :search OR d.item_name LIKE :search OR h.customer_name LIKE :search)`;

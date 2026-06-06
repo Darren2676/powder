@@ -7,12 +7,13 @@ import { Transaction } from 'sequelize'
 
 // ==================== 批次号生成 ====================
 
-export const generateBatchNumber = async (type: 'MB' | 'HB' | 'FB', transaction?: any): Promise<string> => {
+export const generateBatchNumber = async (type: 'MB' | 'HB' | 'FB', factoryCode: string = '', transaction?: any): Promise<string> => {
   const today = new Date();
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `${type}-${dateStr}-`;
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
+  const prefix = `${type}${fc}-${dateStr}-`;
 
   const txOpt = transaction ? { transaction } : {};
 
@@ -40,12 +41,13 @@ export const generateBatchNumber = async (type: 'MB' | 'HB' | 'FB', transaction?
 
 // ==================== 库存事务号生成 ====================
 
-export const generateTransactionNumber = async (transaction?: any): Promise<string> => {
+export const generateTransactionNumber = async (factoryCode: string = '', transaction?: any): Promise<string> => {
   const today = new Date();
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `IT-${dateStr}-`;
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
+  const prefix = `IT${fc}-${dateStr}-`;
 
   const [rows]: any = await sequelize.query(
     `SELECT MAX(transaction_number) as max_num FROM inventory_transaction WHERE transaction_number LIKE :prefix`,
@@ -60,12 +62,13 @@ export const generateTransactionNumber = async (transaction?: any): Promise<stri
   return prefix + String(seq).padStart(3, '0');
 };
 
-export const generateMaterialTxnNumber = async (transaction?: Transaction): Promise<string> => {
+export const generateMaterialTxnNumber = async (factoryCode: string = '', transaction?: Transaction): Promise<string> => {
   const today = new Date();
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `MT-${dateStr}-`;
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
+  const prefix = `MT${fc}-${dateStr}-`;
 
   const opts: any = transaction ? { replacements: { prefix: prefix + '%' }, transaction } : { replacements: { prefix: prefix + '%' } };
   const [rows]: any = await sequelize.query(

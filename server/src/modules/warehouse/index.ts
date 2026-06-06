@@ -8,6 +8,7 @@ import abnormalIORoutes from './abnormalIO/abnormalIO.routes';
 import packingOrderRoutes from './packingOrder/packingOrder.routes';
 import scrapDisposalRoutes from './scrapDisposal/scrapDisposal.routes';
 import scrapTransactionRoutes from './scrapTransaction/scrapTransaction.routes';
+import shelfLifeReportRoutes from './shelfLifeReport/shelfLifeReport.routes';
 
 const router = Router();
 
@@ -19,5 +20,6 @@ router.use('/abnormal-io', abnormalIORoutes);
 router.use('/packing-orders', packingOrderRoutes);
 router.use('/scrap-disposal', scrapDisposalRoutes);
 router.use('/scrap-transactions', scrapTransactionRoutes);
+router.use('/shelf-life-report', shelfLifeReportRoutes);
 
 export default router;

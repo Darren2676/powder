@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 生产进度仪表板：汇总数据 ====================
 export const getProgressSummary = async (req: Request, res: Response, next: NextFunction) => {
@@ -20,6 +21,12 @@ export const getProgressSummary = async (req: Request, res: Response, next: Next
     if (dateFrom) replacements.dateFrom = dateFrom;
     if (dateTo) replacements.dateTo = dateTo;
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      replacements._factoryId = _factoryId;
+    }
+    const factoryCond = _factoryId !== null ? 'AND po.factory_id = :_factoryId' : '';
+
     // 1. KPI卡片
     const [kpiResult]: any = await sequelize.query(`
       SELECT
@@ -28,7 +35,7 @@ export const getProgressSummary = async (req: Request, res: Response, next: Next
         SUM(CASE WHEN po.plan_status = N'已完成' THEN 1 ELSE 0 END) as completed,
         SUM(CASE WHEN po.inbound_status IN (N'部分入库', N'全部入库') THEN 1 ELSE 0 END) as inbound
       FROM production_order po
-      WHERE po.approval_status = N'已审批' ${dateCondition}
+      WHERE po.approval_status = N'已审批' ${dateCondition} ${factoryCond}
     `, { replacements });
 
     const kpi = kpiResult[0];
@@ -42,7 +49,7 @@ export const getProgressSummary = async (req: Request, res: Response, next: Next
     const [stageResult]: any = await sequelize.query(`
       SELECT plan_status as stage, COUNT(*) as cnt
       FROM production_order po
-      WHERE po.approval_status = N'已审批' ${dateCondition}
+      WHERE po.approval_status = N'已审批' ${dateCondition} ${factoryCond}
       GROUP BY plan_status
     `, { replacements });
 
@@ -64,7 +71,7 @@ export const getProgressSummary = async (req: Request, res: Response, next: Next
              COUNT(*) as total_tasks
       FROM process_task pt
       INNER JOIN production_order po ON pt.production_order_number = po.production_order_number
-      WHERE po.approval_status = N'已审批' ${dateCondition}
+      WHERE po.approval_status = N'已审批' ${dateCondition} ${factoryCond}
       GROUP BY pt.work_center_name
       ORDER BY order_count DESC
     `, { replacements });
@@ -87,7 +94,7 @@ export const getProgressSummary = async (req: Request, res: Response, next: Next
                COUNT(*) OVER (PARTITION BY pt.production_order_number) as total_steps
         FROM process_task pt
         INNER JOIN production_order po ON pt.production_order_number = po.production_order_number
-        WHERE po.approval_status = N'已审批' ${dateCondition}
+        WHERE po.approval_status = N'已审批' ${dateCondition} ${factoryCond}
       )
       SELECT
         SUM(CASE WHEN rn_asc = 1 THEN completed_quantity ELSE 0 END) as first_completed,
@@ -119,7 +126,7 @@ export const getProgressSummary = async (req: Request, res: Response, next: Next
       INNER JOIN production_order po ON wr.production_order_number = po.production_order_number
       WHERE wr.approval_status != N'草稿'
         AND wr.creation_date >= DATEADD(day, -30, GETDATE())
-        ${dateCondition ? dateCondition.replace('po.', 'po.') : ''}
+        ${dateCondition ? dateCondition.replace('po.', 'po.') : ''} ${factoryCond}
       GROUP BY CONVERT(VARCHAR(10), wr.creation_date, 120)
       ORDER BY dt
     `, { replacements });

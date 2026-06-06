@@ -1,3 +1,4 @@
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
@@ -19,6 +20,11 @@ export const getSampleRequests = async (req: Request, res: Response, next: NextF
 
     const conditions: string[] = [];
     const replacements: any = { offset, offsetEnd: offset + limit };
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push('factory_id = :_factoryId');
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       conditions.push('(request_number LIKE :search OR customer_name LIKE :search OR applicant LIKE :search)');
@@ -85,8 +91,10 @@ export const getSampleRequestDetail = async (req: Request, res: Response, next: 
 // ==================== 新建 ====================
 export const createSampleRequest = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
-    const request_number = await generateSampleRequestNumber();
+    const request_number = await generateSampleRequestNumber(factoryCode);
     const username = (req as any).user?.username || '';
 
     const transaction = await sequelize.transaction();
@@ -96,12 +104,12 @@ export const createSampleRequest = async (req: Request, res: Response, next: Nex
           customer_name, market, competitor, estimated_price, potential_usage, has_order,
           coating_workpiece, substrate, pretreatment, spray_gun_type, recovery_system, oven_type,
           color_spec, product_type, film_thickness, gloss_range, curing_condition, other_requirements,
-          status, approval_status, created_by, created_at, updated_at)
+          status, approval_status, factory_id, created_by, created_at, updated_at)
         VALUES (:request_number, :request_date, :deadline_date, :applicant, :urgency,
           :customer_name, :market, :competitor, :estimated_price, :potential_usage, :has_order,
           :coating_workpiece, :substrate, :pretreatment, :spray_gun_type, :recovery_system, :oven_type,
           :color_spec, :product_type, :film_thickness, :gloss_range, :curing_condition, :other_requirements,
-          N'草稿', N'草稿', :created_by, GETDATE(), GETDATE())
+          N'草稿', N'草稿', :factory_id, :created_by, GETDATE(), GETDATE())
       `, {
         replacements: {
           request_number,
@@ -128,6 +136,7 @@ export const createSampleRequest = async (req: Request, res: Response, next: Nex
           curing_condition: b.curing_condition || '',
           other_requirements: b.other_requirements || '',
           created_by: username,
+          factory_id: _factoryId,
         },
         transaction
       });
@@ -165,9 +174,12 @@ export const updateSampleRequest = async (req: Request, res: Response, next: Nex
   try {
     const { id } = req.params;
     const b = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [chk]: any = await sequelize.query(
-      'SELECT status FROM sample_request WHERE request_number = :id', { replacements: { id } }
+      'SELECT status FROM sample_request WHERE request_number = :id' + factoryCond, { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '样品申请不存在' }); return; }
     const currentStatus = chk[0].status;
@@ -187,10 +199,11 @@ export const updateSampleRequest = async (req: Request, res: Response, next: Nex
           oven_type = :oven_type, color_spec = :color_spec, product_type = :product_type,
           film_thickness = :film_thickness, gloss_range = :gloss_range, curing_condition = :curing_condition,
           other_requirements = :other_requirements, updated_at = GETDATE()
-        WHERE request_number = :id
+        WHERE request_number = :id${factoryCond}
       `, {
         replacements: {
           id,
+          ...factoryReps,
           request_date: b.request_date || null,
           deadline_date: b.deadline_date || null,
           applicant: b.applicant || '',
@@ -254,8 +267,11 @@ export const updateSampleRequest = async (req: Request, res: Response, next: Nex
 export const deleteSampleRequest = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      'SELECT status FROM sample_request WHERE request_number = :id', { replacements: { id } }
+      'SELECT status FROM sample_request WHERE request_number = :id' + factoryCond, { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '样品申请不存在' }); return; }
     if (chk[0].status !== REQUEST_STATUS.DRAFT) {
@@ -263,7 +279,7 @@ export const deleteSampleRequest = async (req: Request, res: Response, next: Nex
     }
 
     // CASCADE 自动删除子表
-    await sequelize.query('DELETE FROM sample_request WHERE request_number = :id', { replacements: { id } });
+    await sequelize.query('DELETE FROM sample_request WHERE request_number = :id' + factoryCond, { replacements: { id, ...factoryReps } });
     res.json(success(null, '删除成功'));
   } catch (err) { next(err); }
 };
@@ -272,8 +288,11 @@ export const deleteSampleRequest = async (req: Request, res: Response, next: Nex
 export const submitSampleRequest = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      'SELECT status FROM sample_request WHERE request_number = :id', { replacements: { id } }
+      'SELECT status FROM sample_request WHERE request_number = :id' + factoryCond, { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '样品申请不存在' }); return; }
     if (!validateStatusTransition(chk[0].status, REQUEST_STATUS.PENDING_RD)) {
@@ -282,8 +301,8 @@ export const submitSampleRequest = async (req: Request, res: Response, next: Nex
 
     await sequelize.query(`
       UPDATE sample_request SET status = N'待研发', approval_status = N'待研发', updated_at = GETDATE()
-      WHERE request_number = :id
-    `, { replacements: { id } });
+      WHERE request_number = :id${factoryCond}
+    `, { replacements: { id, ...factoryReps } });
     res.json(success(null, '提交成功，已通知技术部'));
   } catch (err) { next(err); }
 };
@@ -292,8 +311,11 @@ export const submitSampleRequest = async (req: Request, res: Response, next: Nex
 export const withdrawSampleRequest = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      'SELECT status FROM sample_request WHERE request_number = :id', { replacements: { id } }
+      'SELECT status FROM sample_request WHERE request_number = :id' + factoryCond, { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '样品申请不存在' }); return; }
     if (!validateStatusTransition(chk[0].status, REQUEST_STATUS.DRAFT)) {
@@ -302,8 +324,8 @@ export const withdrawSampleRequest = async (req: Request, res: Response, next: N
 
     await sequelize.query(`
       UPDATE sample_request SET status = N'草稿', approval_status = N'草稿', updated_at = GETDATE()
-      WHERE request_number = :id
-    `, { replacements: { id } });
+      WHERE request_number = :id${factoryCond}
+    `, { replacements: { id, ...factoryReps } });
     res.json(success(null, '撤回成功'));
   } catch (err) { next(err); }
 };
@@ -313,8 +335,11 @@ export const receiveSampleRequest = async (req: Request, res: Response, next: Ne
   try {
     const { id } = req.params;
     const username = (req as any).user?.username || '';
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      'SELECT status FROM sample_request WHERE request_number = :id', { replacements: { id } }
+      'SELECT status FROM sample_request WHERE request_number = :id' + factoryCond, { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '样品申请不存在' }); return; }
     if (!validateStatusTransition(chk[0].status, REQUEST_STATUS.IN_RD)) {
@@ -325,8 +350,8 @@ export const receiveSampleRequest = async (req: Request, res: Response, next: Ne
     try {
       await sequelize.query(`
         UPDATE sample_request SET status = N'研发中', approval_status = N'研发中', updated_at = GETDATE()
-        WHERE request_number = :id
-      `, { replacements: { id }, transaction });
+        WHERE request_number = :id${factoryCond}
+      `, { replacements: { id, ...factoryReps }, transaction });
 
       // 创建/更新实验室记录（接收人）
       const [labExist]: any = await sequelize.query(
@@ -359,8 +384,11 @@ export const updateLabData = async (req: Request, res: Response, next: NextFunct
   try {
     const { id } = req.params;
     const b = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      'SELECT status FROM sample_request WHERE request_number = :id', { replacements: { id } }
+      'SELECT status FROM sample_request WHERE request_number = :id' + factoryCond, { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '样品申请不存在' }); return; }
     if (chk[0].status !== REQUEST_STATUS.IN_RD) {
@@ -418,8 +446,11 @@ export const completeSampleRequest = async (req: Request, res: Response, next: N
     const { id } = req.params;
     const b = req.body;
     const username = (req as any).user?.username || '';
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      'SELECT status FROM sample_request WHERE request_number = :id', { replacements: { id } }
+      'SELECT status FROM sample_request WHERE request_number = :id' + factoryCond, { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '样品申请不存在' }); return; }
     if (!validateStatusTransition(chk[0].status, REQUEST_STATUS.COMPLETED)) {
@@ -430,8 +461,8 @@ export const completeSampleRequest = async (req: Request, res: Response, next: N
     try {
       await sequelize.query(`
         UPDATE sample_request SET status = N'已完成', approval_status = N'已完成', updated_at = GETDATE()
-        WHERE request_number = :id
-      `, { replacements: { id }, transaction });
+        WHERE request_number = :id${factoryCond}
+      `, { replacements: { id, ...factoryReps }, transaction });
 
       // 更新实验室数据
       await sequelize.query(`

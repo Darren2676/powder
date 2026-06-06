@@ -250,11 +250,29 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
     const token = generateToken({
       id: user.id,
       username: user.username,
-      role: user.role
+      role: user.role,
+      factory_id: (user as any).default_factory_id || null
     });
 
     // 获取权限信息
     const permInfo = await getUserPermissions(user.id);
+
+    // 获取用户可访问的工厂列表
+    let accessibleFactories: any[] = [];
+    try {
+      const { getAccessibleFactories } = require('../../../middleware/factoryScope.middleware');
+      const factoryIds = await getAccessibleFactories(user.id);
+      if (factoryIds.length > 0) {
+        const sequelize = require('../../../config/database').default;
+        const { QueryTypes } = require('sequelize');
+        accessibleFactories = await sequelize.query(
+          'SELECT id, factory_code, factory_name, factory_short FROM factory WHERE id IN (:ids) ORDER BY id',
+          { replacements: { ids: factoryIds }, type: QueryTypes.SELECT }
+        );
+      }
+    } catch (e) {
+      // 工厂模块可能不可用
+    }
 
     res.json(success({
       token,
@@ -267,7 +285,9 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
         department: user.department,
         phone: user.phone,
         avatar: user.avatar,
-        status: user.status
+        status: user.status,
+        default_factory_id: (user as any).default_factory_id || null,
+        accessibleFactories
       },
       permissions: permInfo
     }, '登录成功'));
@@ -400,11 +420,29 @@ export const refreshToken = async (req: Request, res: Response, next: NextFuncti
     const newToken = generateToken({
       id: user.id,
       username: user.username,
-      role: user.role
+      role: user.role,
+      factory_id: (user as any).default_factory_id || null
     });
 
     // 获取最新权限信息
     const permInfo = await getUserPermissions(user.id);
+
+    // 获取用户可访问的工厂列表
+    let accessibleFactories: any[] = [];
+    try {
+      const { getAccessibleFactories } = require('../../../middleware/factoryScope.middleware');
+      const factoryIds = await getAccessibleFactories(user.id);
+      if (factoryIds.length > 0) {
+        const sequelize = require('../../../config/database').default;
+        const { QueryTypes } = require('sequelize');
+        accessibleFactories = await sequelize.query(
+          'SELECT id, factory_code, factory_name, factory_short FROM factory WHERE id IN (:ids) ORDER BY id',
+          { replacements: { ids: factoryIds }, type: QueryTypes.SELECT }
+        );
+      }
+    } catch (e) {
+      // 工厂模块可能不可用
+    }
 
     res.json(success({
       token: newToken,
@@ -417,7 +455,9 @@ export const refreshToken = async (req: Request, res: Response, next: NextFuncti
         department: user.department,
         phone: user.phone,
         avatar: user.avatar,
-        status: user.status
+        status: user.status,
+        default_factory_id: (user as any).default_factory_id || null,
+        accessibleFactories
       },
       permissions: permInfo
     }, '令牌刷新成功'));

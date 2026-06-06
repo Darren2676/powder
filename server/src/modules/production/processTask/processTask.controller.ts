@@ -7,6 +7,7 @@ import { generateTaskNumber } from '@/services/documentNumber.service';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { BusinessError } from '@/shared/errors/BusinessError';
 import { generateFromOrderCore } from '@/services/orderDispatch.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 const selectCols = 'process_task_number, production_order_number, production_number, process_route_number, step_number, item_number, item_name, specifications, basic_unit, planned_quantity, completed_quantity, standard_process_number, standard_process_name, work_center_number, work_center_name, process_material_input_number, process_material_input_quantity, process_material_input_unit, material_wastage_rate, excess_reporting_ratio, ingredient_addition_method, planned_start_time, planned_end_time, actual_start_time, actual_end_time, task_status, inspect_status, inspect_type, inspect_plan_name, inspect_spec_name, inspector_number, inspector_name, attachment_info, technical_requirement, approval_status, remark, creation_date, creation_man';
 
@@ -43,6 +44,12 @@ export const getProcessTasks = async (req: Request, res: Response, next: NextFun
       replacements.production_order_number = production_order_number;
     }
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
+
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const [countResult]: any = await sequelize.query(
@@ -71,6 +78,8 @@ export const getProcessTasks = async (req: Request, res: Response, next: NextFun
 // 新建
 export const createProcessTask = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const user = (req as any).user;
     const b = req.body;
 
@@ -79,12 +88,12 @@ export const createProcessTask = async (req: Request, res: Response, next: NextF
       return;
     }
 
-    const process_task_number = await generateTaskNumber();
+    const process_task_number = await generateTaskNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
 
     await sequelize.query(`
-      INSERT INTO process_task (process_task_number, production_order_number, production_number, process_route_number, step_number, item_number, item_name, specifications, basic_unit, planned_quantity, completed_quantity, standard_process_number, standard_process_name, work_center_number, work_center_name, process_material_input_number, process_material_input_quantity, process_material_input_unit, material_wastage_rate, excess_reporting_ratio, ingredient_addition_method, planned_start_time, planned_end_time, inspector_number, inspector_name, attachment_info, technical_requirement, task_status, approval_status, remark, creation_date, creation_man, operator)
-      VALUES (:process_task_number, :production_order_number, :production_number, :process_route_number, :step_number, :item_number, :item_name, :specifications, :basic_unit, :planned_quantity, 0, :standard_process_number, :standard_process_name, :work_center_number, :work_center_name, :process_material_input_number, :process_material_input_quantity, :process_material_input_unit, :material_wastage_rate, :excess_reporting_ratio, :ingredient_addition_method, :planned_start_time, :planned_end_time, :inspector_number, :inspector_name, :attachment_info, :technical_requirement, N'未开始', N'草稿', :remark, :creation_date, :creation_man, :operator)
+      INSERT INTO process_task (process_task_number, production_order_number, production_number, process_route_number, step_number, item_number, item_name, specifications, basic_unit, planned_quantity, completed_quantity, standard_process_number, standard_process_name, work_center_number, work_center_name, process_material_input_number, process_material_input_quantity, process_material_input_unit, material_wastage_rate, excess_reporting_ratio, ingredient_addition_method, planned_start_time, planned_end_time, inspector_number, inspector_name, attachment_info, technical_requirement, task_status, approval_status, remark, factory_id, creation_date, creation_man, operator)
+      VALUES (:process_task_number, :production_order_number, :production_number, :process_route_number, :step_number, :item_number, :item_name, :specifications, :basic_unit, :planned_quantity, 0, :standard_process_number, :standard_process_name, :work_center_number, :work_center_name, :process_material_input_number, :process_material_input_quantity, :process_material_input_unit, :material_wastage_rate, :excess_reporting_ratio, :ingredient_addition_method, :planned_start_time, :planned_end_time, :inspector_number, :inspector_name, :attachment_info, :technical_requirement, N'未开始', N'草稿', :remark, :factory_id, :creation_date, :creation_man, :operator)
     `, {
       replacements: {
         process_task_number,
@@ -114,6 +123,7 @@ export const createProcessTask = async (req: Request, res: Response, next: NextF
         attachment_info: b.attachment_info || '',
         technical_requirement: b.technical_requirement || '',
         remark: b.remark || '',
+        factory_id: _factoryId,
         creation_date: now,
         creation_man: user?.username || '',
         operator: b.operator || user?.username || ''
@@ -257,6 +267,8 @@ export const exportProcessTasks = async (req: Request, res: Response, next: Next
 // 导入
 export const importProcessTasks = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     if (!req.file) { res.status(400).json({ success: false, message: '请上传Excel文件' }); return; }
     const rows = parseExcelFile(req.file.buffer, exportFields, exportHeaders);
     if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件内容为空' }); return; }
@@ -264,16 +276,17 @@ export const importProcessTasks = async (req: Request, res: Response, next: Next
     let imported = 0;
     for (const item of rows) {
       try {
-        if (!item.process_task_number) item.process_task_number = await generateTaskNumber();
+        const factoryCode = await getFactoryCode(req);
+        if (!item.process_task_number) item.process_task_number = await generateTaskNumber(factoryCode);
         const [existing]: any = await sequelize.query(
           `SELECT COUNT(*) as cnt FROM process_task WHERE process_task_number = :n`,
           { replacements: { n: item.process_task_number } }
         );
         if (existing[0].cnt > 0) continue; // skip duplicates
         await sequelize.query(`
-          INSERT INTO process_task (process_task_number, production_order_number, production_number, step_number, standard_process_number, standard_process_name, item_number, item_name, specifications, basic_unit, planned_quantity, completed_quantity, work_center_number, work_center_name, inspector_number, inspector_name, attachment_info, technical_requirement, task_status, approval_status, remark, operator)
-          VALUES (:process_task_number, :production_order_number, :production_number, :step_number, :standard_process_number, :standard_process_name, :item_number, :item_name, :specifications, :basic_unit, :planned_quantity, 0, :work_center_number, :work_center_name, :inspector_number, :inspector_name, :attachment_info, :technical_requirement, :task_status, :approval_status, :remark, :operator)
-        `, { replacements: { ...item, planned_quantity: item.planned_quantity || 0, task_status: item.task_status || '未开始', approval_status: item.approval_status || ORDER_STATUS.DRAFT, operator: item.operator || '' } });
+          INSERT INTO process_task (process_task_number, production_order_number, production_number, step_number, standard_process_number, standard_process_name, item_number, item_name, specifications, basic_unit, planned_quantity, completed_quantity, work_center_number, work_center_name, inspector_number, inspector_name, attachment_info, technical_requirement, task_status, approval_status, remark, factory_id, operator)
+          VALUES (:process_task_number, :production_order_number, :production_number, :step_number, :standard_process_number, :standard_process_name, :item_number, :item_name, :specifications, :basic_unit, :planned_quantity, 0, :work_center_number, :work_center_name, :inspector_number, :inspector_name, :attachment_info, :technical_requirement, :task_status, :approval_status, :remark, :factory_id, :operator)
+        `, { replacements: { ...item, planned_quantity: item.planned_quantity || 0, task_status: item.task_status || '未开始', approval_status: item.approval_status || ORDER_STATUS.DRAFT, operator: item.operator || '', factory_id: _factoryId } });
         imported++;
       } catch (e) {}
     }

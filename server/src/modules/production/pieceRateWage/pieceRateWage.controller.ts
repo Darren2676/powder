@@ -4,10 +4,12 @@ import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
 import dayjs from 'dayjs';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
-const generateWageNumber = async (): Promise<string> => {
+const generateWageNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = dayjs().format('YYYYMMDD');
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
   const prefix = `WG-${today}-`;
   const [rows]: any = await sequelize.query(
     `SELECT MAX(wage_number) as max_num FROM piece_rate_wage_header WHERE wage_number LIKE :prefix`,
@@ -46,6 +48,12 @@ export const getPieceRateWages = async (req: Request, res: Response, next: NextF
       replacements.period_type = period_type;
     }
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`h.factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
+
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
     const [countResult]: any = await sequelize.query(
@@ -81,6 +89,9 @@ export const getPieceRateWages = async (req: Request, res: Response, next: NextF
 export const getPieceRateWageDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReplacements: any = { id, ...(_factoryId !== null ? { _factoryId } : {}) };
     const [headers]: any = await sequelize.query(
       `SELECT wage_number, wage_name, period_type,
               CONVERT(VARCHAR(10), period_start, 23) as period_start,
@@ -88,7 +99,7 @@ export const getPieceRateWageDetail = async (req: Request, res: Response, next: 
               total_qualified_wage, total_defective_wage, total_wage,
               detail_count, calculation_status, approval_status,
               remark, creation_date, creation_man
-       FROM piece_rate_wage_header WHERE wage_number = :id`, { replacements: { id } }
+       FROM piece_rate_wage_header WHERE wage_number = :id${factoryCond}`, { replacements: factoryReplacements }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '计件工资表不存在' }); return; }
     const [details]: any = await sequelize.query(
@@ -123,22 +134,24 @@ export const getPieceRateWageSummary = async (req: Request, res: Response, next:
 // ==================== 创建 ====================
 export const createPieceRateWage = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.wage_name) { res.status(400).json({ success: false, message: '工资表名称不能为空' }); return; }
     if (!b.period_type) { res.status(400).json({ success: false, message: '周期类型不能为空' }); return; }
     if (!b.period_start) { res.status(400).json({ success: false, message: '周期开始日期不能为空' }); return; }
     if (!b.period_end) { res.status(400).json({ success: false, message: '周期结束日期不能为空' }); return; }
 
-    const wage_number = await generateWageNumber();
+    const wage_number = await generateWageNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const creation_man = (req as any).user?.username || '';
 
     await sequelize.query(`
       INSERT INTO piece_rate_wage_header (wage_number, wage_name, period_type, period_start, period_end,
         total_qualified_wage, total_defective_wage, total_wage, detail_count,
-        calculation_status, approval_status, remark, creation_date, creation_man)
+        calculation_status, approval_status, remark, factory_id, creation_date, creation_man)
       VALUES (:wage_number, :wage_name, :period_type, :period_start, :period_end,
-        0, 0, 0, 0, N'未计算', N'草稿', :remark, :creation_date, :creation_man)
+        0, 0, 0, 0, N'未计算', N'草稿', :remark, :factory_id, :creation_date, :creation_man)
     `, {
       replacements: {
         wage_number,
@@ -147,6 +160,7 @@ export const createPieceRateWage = async (req: Request, res: Response, next: Nex
         period_start: b.period_start || null,
         period_end: b.period_end || null,
         remark: b.remark || '',
+        factory_id: _factoryId,
         creation_date: now,
         creation_man
       }
@@ -160,10 +174,11 @@ export const createPieceRateWage = async (req: Request, res: Response, next: Nex
 export const updatePieceRateWage = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
     const b = req.body;
 
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM piece_rate_wage_header WHERE wage_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM piece_rate_wage_header WHERE wage_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '计件工资表不存在' }); return; }
     if (chk[0].approval_status !== ORDER_STATUS.DRAFT) {
@@ -195,8 +210,9 @@ export const updatePieceRateWage = async (req: Request, res: Response, next: Nex
 export const deletePieceRateWage = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM piece_rate_wage_header WHERE wage_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM piece_rate_wage_header WHERE wage_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } }
     );
     if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) {
       res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return;
@@ -218,11 +234,12 @@ export const deletePieceRateWage = async (req: Request, res: Response, next: Nex
 export const calculatePieceRateWage = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
 
     // 检查工资表状态
     const [chk]: any = await sequelize.query(
-      `SELECT wage_number, approval_status, period_start, period_end FROM piece_rate_wage_header WHERE wage_number = :id`,
-      { replacements: { id } }
+      `SELECT wage_number, approval_status, period_start, period_end FROM piece_rate_wage_header WHERE wage_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+      { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '计件工资表不存在' }); return; }
     if (chk[0].approval_status !== ORDER_STATUS.DRAFT) {

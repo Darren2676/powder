@@ -3,15 +3,17 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
 import { CONDITION_STATUS, ORDER_STATUS } from '@/shared/constants/statuses';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
 
-const generatePurchaseReqNumber = async (): Promise<string> => {
+const generatePurchaseReqNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = new Date();
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `PR-${dateStr}-`;
+  const prefix = `PR${fc}-${dateStr}-`;
 
   const [rows]: any = await sequelize.query(
     `SELECT MAX(purchase_req_number) as max_num FROM purchase_req WHERE purchase_req_number LIKE :prefix`,
@@ -53,6 +55,12 @@ export const getPurchaseReqs = async (req: Request, res: Response, next: NextFun
       replacements.order_status = order_status;
     }
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
+
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
     const [countResult]: any = await sequelize.query(
@@ -86,8 +94,10 @@ export const getPurchaseReqs = async (req: Request, res: Response, next: NextFun
 export const getPurchaseReqDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM purchase_req WHERE purchase_req_number = :id`, { replacements: { id } }
+      `SELECT * FROM purchase_req WHERE purchase_req_number = :id${factoryCond}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '采购申请单不存在' }); return; }
     const [details]: any = await sequelize.query(
@@ -99,8 +109,10 @@ export const getPurchaseReqDetail = async (req: Request, res: Response, next: Ne
 
 export const createPurchaseReq = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
-    const purchase_req_number = await generatePurchaseReqNumber();
+    const purchase_req_number = await generatePurchaseReqNumber(factoryCode);
     const now = new Date();
     const creation_date = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     const creation_man = (req as any).user?.username || '';
@@ -109,9 +121,9 @@ export const createPurchaseReq = async (req: Request, res: Response, next: NextF
     try {
       await sequelize.query(`
         INSERT INTO purchase_req (purchase_req_number, request_date, request_department, requester, request_reason,
-          source_number, production_number, approval_status, order_status, [condition], remark, creation_date, creation_man)
+          source_number, production_number, approval_status, order_status, [condition], remark, creation_date, creation_man, factory_id)
         VALUES (:purchase_req_number, :request_date, :request_department, :requester, :request_reason,
-          :source_number, :production_number, N'草稿', N'未执行', :condition, :remark, :creation_date, :creation_man)
+          :source_number, :production_number, N'草稿', N'未执行', :condition, :remark, :creation_date, :creation_man, :factory_id)
       `, {
         replacements: {
           purchase_req_number,
@@ -124,7 +136,8 @@ export const createPurchaseReq = async (req: Request, res: Response, next: NextF
           condition: b.condition || CONDITION_STATUS.ENABLED,
           remark: b.remark || '',
           creation_date,
-          creation_man
+          creation_man,
+          factory_id: req.body.factory_id || _factoryId
         },
         transaction
       });
@@ -170,8 +183,10 @@ export const updatePurchaseReq = async (req: Request, res: Response, next: NextF
     const { id } = req.params;
     const b = req.body;
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM purchase_req WHERE purchase_req_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM purchase_req WHERE purchase_req_number = :id${factoryCond}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } }
     );
     if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) {
       res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许编辑' }); return;
@@ -183,7 +198,7 @@ export const updatePurchaseReq = async (req: Request, res: Response, next: NextF
         UPDATE purchase_req SET
           request_date = :request_date, request_department = :request_department, requester = :requester,
           request_reason = :request_reason, source_number = :source_number, production_number = :production_number, [condition] = :condition, remark = :remark
-        WHERE purchase_req_number = :id
+        WHERE purchase_req_number = :id${factoryCond}
       `, {
         replacements: {
           id,
@@ -194,7 +209,8 @@ export const updatePurchaseReq = async (req: Request, res: Response, next: NextF
           source_number: b.source_number || '',
           production_number: b.production_number || '',
           condition: b.condition || CONDITION_STATUS.ENABLED,
-          remark: b.remark || ''
+          remark: b.remark || '',
+          ...(_factoryId !== null ? { _factoryId } : {})
         },
         transaction
       });
@@ -244,8 +260,11 @@ export const updatePurchaseReq = async (req: Request, res: Response, next: NextF
 export const deletePurchaseReq = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReplacements: any = { id, ...(_factoryId !== null ? { _factoryId } : {}) };
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status, production_number FROM purchase_req WHERE purchase_req_number = :id`, { replacements: { id } }
+      `SELECT approval_status, production_number FROM purchase_req WHERE purchase_req_number = :id${factoryCond}`, { replacements: factoryReplacements }
     );
     if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) {
       res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return;
@@ -256,7 +275,7 @@ export const deletePurchaseReq = async (req: Request, res: Response, next: NextF
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`DELETE FROM purchase_req_detail WHERE purchase_req_number = :id`, { replacements: { id }, transaction });
-      await sequelize.query(`DELETE FROM purchase_req WHERE purchase_req_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM purchase_req WHERE purchase_req_number = :id${factoryCond}`, { replacements: factoryReplacements, transaction });
 
       // 检查每个关联的生产计划是否需要回退状态
       for (const productionNumber of productionNumbers) {
@@ -379,6 +398,7 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
   try {
     const { id } = req.params;
     const b = req.body;
+    const _factoryId = getFactoryId(req);
     if (!b.supplier_number) { res.status(400).json({ success: false, message: '供应商不能为空' }); return; }
     if (!b.detail_ids || !b.detail_ids.length) { res.status(400).json({ success: false, message: '请选择要转单的明细行' }); return; }
 
@@ -498,10 +518,10 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
       await sequelize.query(`
         INSERT INTO purchase_order (purchase_order_number, supplier_number, supplier_name, procurement_manager,
           linkman, contacts, order_date, delivery_date, approval_status, order_status, total_amount,
-          [condition], source_req_number, remark, creation_date, creation_man)
+          [condition], source_req_number, remark, factory_id, creation_date, creation_man)
         VALUES (:purchase_order_number, :supplier_number, :supplier_name, :procurement_manager,
           :linkman, :contacts, :order_date, :delivery_date, N'草稿', N'待执行', :total_amount,
-          N'启用', :source_req_number, :remark, :creation_date, :creation_man)
+          N'启用', :source_req_number, :remark, :factory_id, :creation_date, :creation_man)
       `, {
         replacements: {
           purchase_order_number,
@@ -515,6 +535,7 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
           total_amount: totalAmount,
           source_req_number: id,
           remark: b.remark || '',
+          factory_id: _factoryId,
           creation_date,
           creation_man
         },
@@ -661,6 +682,11 @@ export const exportPurchaseReqs = async (req: Request, res: Response, next: Next
       whereClause = `WHERE (h.purchase_req_number LIKE :search OR h.requester LIKE :search)`;
       replacements.search = `%${search}%`;
     }
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += `${whereClause ? ' AND' : ' WHERE'} h.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
     const [rows]: any = await sequelize.query(
       `SELECT h.purchase_req_number, h.request_date, h.request_department, h.requester, h.request_reason,
               h.source_number, h.production_number, h.approval_status, h.order_status, h.remark,
@@ -709,6 +735,12 @@ export const getPurchaseReqDetailsPage = async (req: Request, res: Response, nex
         whereClause += `${whereClause ? ' AND' : ' WHERE'} d.status IN (${placeholders})`;
         statusArr.forEach((s: string, i: number) => { replacements[`status${i}`] = s; });
       }
+    }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += `${whereClause ? ' AND' : ' WHERE'} h.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
     }
 
     const [countResult]: any = await sequelize.query(

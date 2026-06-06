@@ -14,11 +14,13 @@ import sequelize from '@/config/database';
 import { success } from '../../../utils/response.util';
 import { BusinessError } from '@/shared/errors/BusinessError';
 import { withTransaction } from '@/shared/db/withTransaction';
+import { getFactoryId, getFactoryCode } from '../../../utils/factoryWhere.util';
 
 // ==================== 列表查询 ====================
 export const list = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await getBackflushTasks(req.query);
+    const _factoryId = getFactoryId(req);
+    const result = await getBackflushTasks({ ...req.query, _factoryId: _factoryId ?? undefined });
     res.json(success(result));
   } catch (err) { next(err); }
 };
@@ -62,6 +64,7 @@ export const generate = async (req: Request, res: Response, next: NextFunction) 
       throw new BusinessError(400, '请选择至少一个生产单');
     }
     const username = (req as any).user?.username || '';
+    const factoryCode = await getFactoryCode(req);
     const results: any[] = [];
 
     await withTransaction(async (transaction) => {
@@ -81,7 +84,7 @@ export const generate = async (req: Request, res: Response, next: NextFunction) 
           specifications: order.specifications,
           basicUnit: order.basic_unit,
           plannedQuantity: order.planned_quantity,
-        }, username, transaction);
+        }, username, transaction, factoryCode);
         results.push({ orderNo, ...result });
       }
     });

@@ -27,6 +27,7 @@ import {
   exportLogisticsCompanies,
   importLogisticsCompanies
 } from '@/api/master-data/logisticsCompany'
+import { getFactories } from '@/api/system/factory'
 import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -35,7 +36,19 @@ import { generateExportFilename } from '@/utils/exportFilename'
 
 const { loading, dataSource, searchText, selectedRowKeys, pagination, rowSelection, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getLogisticsCompanies)
 
+// 工厂列表
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) {
+      factoryList.value = res.data.items || []
+    }
+  } catch (e) { /* ignore */ }
+}
+
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '编号', dataIndex: 'company_number', key: 'company_number', width: 120, resizable: true },
   { title: '公司名称', dataIndex: 'company_name', key: 'company_name', width: 200, resizable: true },
   { title: '联系人', dataIndex: 'contact_person', key: 'contact_person', width: 120, resizable: true },
@@ -66,6 +79,7 @@ const form = reactive({
   mobile: '',
   telephone: '',
   remark: '',
+  factory_id: null as number | null,
   attachments: [] as any[]
 })
 const editingNumber = ref('')
@@ -77,6 +91,7 @@ const resetForm = () => {
   form.mobile = ''
   form.telephone = ''
   form.remark = ''
+  form.factory_id = null
   form.attachments = []
 }
 
@@ -109,6 +124,7 @@ const handleEdit = async (record: any) => {
         mobile: d.mobile?.trim() || '',
         telephone: d.telephone?.trim() || '',
         remark: d.remark?.trim() || '',
+        factory_id: d.factory_id || null,
         attachments: d.attachments || []
       })
       editingNumber.value = d.company_number?.trim()
@@ -129,7 +145,8 @@ const handleSave = async () => {
       contact_person: form.contact_person,
       mobile: form.mobile,
       telephone: form.telephone,
-      remark: form.remark
+      remark: form.remark,
+      factory_id: form.factory_id
     }
     if (isEdit.value) {
       const res: any = await updateLogisticsCompany(editingNumber.value, payload)
@@ -325,6 +342,7 @@ const handleFileChange = async (e: Event) => {
 onMounted(() => {
   loadColumnPreference()
   fetchData()
+  loadFactories()
 })
 </script>
 
@@ -457,12 +475,19 @@ onMounted(() => {
             </a-form-item>
           </a-col>
           <a-col :span="8">
-            <a-form-item label="联系人">
-              <a-input v-model:value="form.contact_person" placeholder="请输入" />
+            <a-form-item label="所属工厂">
+              <a-select v-model:value="form.factory_id" placeholder="请选择" allow-clear>
+                <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+              </a-select>
             </a-form-item>
           </a-col>
         </a-row>
         <a-row :gutter="12">
+          <a-col :span="8">
+            <a-form-item label="联系人">
+              <a-input v-model:value="form.contact_person" placeholder="请输入" />
+            </a-form-item>
+          </a-col>
           <a-col :span="8">
             <a-form-item label="手机">
               <a-input v-model:value="form.mobile" placeholder="请输入" />

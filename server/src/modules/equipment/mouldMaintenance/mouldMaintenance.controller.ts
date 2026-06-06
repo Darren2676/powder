@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 const fields = [
   'mould_number', 'maintenance_type', 'maintenance_date', 'description',
@@ -53,9 +54,16 @@ export const getMouldMaintenances = async (req: Request, res: Response, next: Ne
     }
     if (search) {
       whereClause += ' AND (mm.description LIKE :search OR mm.fault_reason LIKE :search OR mm.remark LIKE :search)';
-      replacements.search = `%${search}%`;
+      replacements.search = `%${search}%`; 
     }
-
+    
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ' AND mm.factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
+    }
+    
     const [countResult]: any = await sequelize.query(
       `SELECT COUNT(*) as total FROM mould_maintenance mm ${whereClause}`,
       { replacements }
@@ -66,9 +74,10 @@ export const getMouldMaintenances = async (req: Request, res: Response, next: Ne
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT mm.*, m.item_name AS mould_name, ROW_NUMBER() OVER (ORDER BY mm.maintenance_date DESC, mm.id DESC) AS _row_num
+        SELECT mm.*, m.item_name AS mould_name, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY mm.maintenance_date DESC, mm.id DESC) AS _row_num
         FROM mould_maintenance mm
         LEFT JOIN mould m ON mm.mould_number = m.item_number
+        LEFT JOIN factory f ON mm.factory_id = f.id
         ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
@@ -90,6 +99,7 @@ export const createMouldMaintenance = async (req: Request, res: Response, next: 
   try {
     const b = req.body;
     const username = (req as any).user?.username || '';
+    const _factoryId = getFactoryId(req);
 
     if (!b.mould_number) {
       res.status(400).json({ success: false, message: '模具编号不能为空' });
@@ -116,9 +126,9 @@ export const createMouldMaintenance = async (req: Request, res: Response, next: 
 
     const currentStrokes = mouldRows[0].total_strokes || 0;
 
-    const cols = fields.join(', ') + ', strokes_at_maintenance, created_by';
-    const vals = fields.map(f => ':' + f).join(', ') + ', :strokes_at_maintenance, :created_by';
-    const replacements: any = { created_by: username, strokes_at_maintenance: currentStrokes };
+    const cols = fields.join(', ') + ', strokes_at_maintenance, created_by, factory_id';
+    const vals = fields.map(f => ':' + f).join(', ') + ', :strokes_at_maintenance, :created_by, :factory_id';
+    const replacements: any = { created_by: username, strokes_at_maintenance: currentStrokes, factory_id: _factoryId };
     for (const f of fields) {
       replacements[f] = b[f] !== undefined ? b[f] : (f === 'cost' ? 0 : '');
     }
@@ -198,13 +208,14 @@ export const importMouldMaintenances = async (req: Request, res: Response, next:
     if (!req.file) { res.status(400).json({ success: false, message: '请上传Excel文件' }); return; }
     const rows = parseExcelFile(req.file.buffer, fields, headers);
     if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件内容为空' }); return; }
+    const _factoryId = getFactoryId(req);
     let imported = 0;
     for (const item of rows) {
       if (!item.mould_number || !item.maintenance_type || !item.maintenance_date) continue;
       try {
-        const cols = fields.join(', ');
-        const vals = fields.map(f => ':' + f).join(', ');
-        await sequelize.query(`INSERT INTO mould_maintenance (${cols}) VALUES (${vals})`, { replacements: item });
+        const cols = fields.join(', ') + ', factory_id';
+        const vals = fields.map(f => ':' + f).join(', ') + ', :factory_id';
+        await sequelize.query(`INSERT INTO mould_maintenance (${cols}) VALUES (${vals})`, { replacements: { ...item, factory_id: _factoryId } });
         imported++;
       } catch (e) {}
     }

@@ -19,9 +19,10 @@ export const CLAIM_TYPES = ['差旅费', '日常报销', '招待费', '其他'];
 export const EXPENSE_CATEGORIES = ['交通费', '住宿费', '出差补贴', '餐饮费', '其他'];
 
 // ==================== 编号生成 ====================
-export const generateClaimNumber = async (transaction?: Transaction): Promise<string> => {
+export const generateClaimNumber = async (factoryCode: string = '', transaction?: Transaction): Promise<string> => {
   const today = dayjs().format('YYYYMMDD');
-  const prefix = `RE-${today}-`;
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
+  const prefix = `RE${fc}-${today}-`;
   const [rows]: any = await sequelize.query(
     `SELECT MAX(claim_number) as max_num FROM expense_claim WHERE claim_number LIKE :prefix`,
     { replacements: { prefix: `${prefix}%` }, ...(transaction ? { transaction } : {}) }

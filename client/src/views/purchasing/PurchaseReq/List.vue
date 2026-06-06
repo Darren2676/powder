@@ -59,6 +59,7 @@ const toOrderForm = reactive({ supplier_number: '', supplier_name: '', delivery_
 const { loading, dataSource, searchText, pagination, selectedRowKeys, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getPurchaseReqs)
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '采购申请号', dataIndex: 'purchase_req_number', key: 'purchase_req_number', width: 180, sorter: (a: any, b: any) => (a.purchase_req_number || '').localeCompare(b.purchase_req_number || ''), resizable: true },
   { title: '申请日期', dataIndex: 'request_date', key: 'request_date', width: 110, customRender: ({ text }: any) => text ? dayjs(text).format('YYYY-MM-DD') : '', resizable: true },
   { title: '申请人', dataIndex: 'requester', key: 'requester', width: 100, resizable: true },

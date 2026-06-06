@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 列表查询（按生产计划维度汇总） ====================
 export const getPlanMaterialCost = async (req: Request, res: Response, next: NextFunction) => {
@@ -13,6 +14,11 @@ export const getPlanMaterialCost = async (req: Request, res: Response, next: Nex
 
     const conditions: string[] = [];
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`pp.factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       conditions.push(`(pp.production_number LIKE :search OR pp.item_number LIKE :search OR pp.item_name LIKE :search)`);
@@ -142,8 +148,11 @@ export const getPlanMaterialCost = async (req: Request, res: Response, next: Nex
 };
 
 // ==================== 汇总统计 ====================
-export const getPlanMaterialCostSummary = async (_req: Request, res: Response, next: NextFunction) => {
+export const getPlanMaterialCostSummary = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryWhere = _factoryId !== null ? 'WHERE pp.factory_id = :_factoryId' : '';
+    const factoryReplacements: any = _factoryId !== null ? { _factoryId } : {};
     const [summaryRows]: any = await sequelize.query(`
       SELECT
         COUNT(DISTINCT pp.production_number) as total_plans,
@@ -154,7 +163,8 @@ export const getPlanMaterialCostSummary = async (_req: Request, res: Response, n
       FROM Production_plan pp
       INNER JOIN production_order po ON po.production_number = pp.production_number
       INNER JOIN production_material_cost_snapshot s ON s.production_order_number = po.production_order_number
-    `);
+      ${factoryWhere}
+    `, { replacements: factoryReplacements });
 
     const row = summaryRows[0] || {};
     const totalPlans = parseInt(row.total_plans) || 0;
@@ -183,6 +193,11 @@ export const exportPlanMaterialCost = async (req: Request, res: Response, next: 
 
     const conditions: string[] = [];
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`pp.factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       conditions.push(`(pp.production_number LIKE :search OR pp.item_number LIKE :search OR pp.item_name LIKE :search)`);

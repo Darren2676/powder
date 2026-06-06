@@ -27,6 +27,7 @@ const ScrapDisposalList = () => import('@/views/warehouse/ScrapDisposal/List.vue
 const ScrapInboundOrderList = () => import('@/views/quality/ScrapInboundOrder/List.vue');
 const ScrapInventoryList = () => import('@/views/warehouse/ScrapInventory/List.vue');
 const ScrapTransactionList = () => import('@/views/warehouse/ScrapTransaction/List.vue');
+const ShelfLifeReport = () => import('@/views/warehouse/ShelfLifeReport/Index.vue');
 
 export const warehouseRoutes: RouteRecordRaw[] = [
   { path: 'mw-inventory', name: 'MaterialWarehouseInventory', component: MaterialWarehouseInventory, meta: {"title":"物料库存总览"} },
@@ -55,4 +56,5 @@ export const warehouseRoutes: RouteRecordRaw[] = [
   { path: 'scrap-inbound-orders', name: 'ScrapInboundOrderList', component: ScrapInboundOrderList, meta: {"title":"报废入库单"} },
   { path: 'scrap-inventory', name: 'ScrapInventoryList', component: ScrapInventoryList, meta: {"title":"报废仓库存"} },
   { path: 'scrap-transactions', name: 'ScrapTransactionList', component: ScrapTransactionList, meta: {"title":"库存流水记录"} },
+  { path: 'shelf-life-report', name: 'ShelfLifeReport', component: ShelfLifeReport, meta: {"title":"有效期管理报告"} },
 ];

@@ -101,6 +101,7 @@ const handleStatusChange = () => {
 }
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '工序任务编号', dataIndex: 'process_task_number', key: 'process_task_number', width: 160, resizable: true },
   { title: '生产单编号', dataIndex: 'production_order_number', key: 'production_order_number', width: 140, resizable: true },
   { title: '工序序号', dataIndex: 'step_number', key: 'step_number', width: 80, resizable: true },

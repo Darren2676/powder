@@ -14,6 +14,7 @@ import {
 } from '@/api/master-data/customerMaterialMapping'
 import { getCustomers } from '@/api/master-data/customer'
 import { getItems } from '@/api/master-data/itemMaster'
+import { getFactories } from '@/api/system/factory'
 import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -31,7 +32,8 @@ const defaultDataColumns: any[] = [
   { title: '客户物料号', dataIndex: 'customer_item_number', key: 'customer_item_number', width: 150, resizable: true },
   { title: '客户物料描述', dataIndex: 'customer_item_description', key: 'customer_item_description', width: 200, resizable: true },
   { title: '备注', dataIndex: 'remark', key: 'remark', width: 150, resizable: true },
-  { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 100, resizable: true }
+  { title: '审核状态', dataIndex: 'approval_status', key: 'approval_status', width: 100, resizable: true },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' }
 ]
 
 const {
@@ -105,7 +107,8 @@ const form = reactive({
   specifications: '',
   customer_item_number: '',
   customer_item_description: '',
-  remark: ''
+  remark: '',
+  factory_id: null as number | null
 })
 
 const resetForm = () => {
@@ -117,6 +120,7 @@ const resetForm = () => {
   form.customer_item_number = ''
   form.customer_item_description = ''
   form.remark = ''
+  form.factory_id = null
 }
 
 const handleAdd = () => {
@@ -141,6 +145,7 @@ const handleEdit = (record: any) => {
   form.customer_item_number = record.customer_item_number
   form.customer_item_description = record.customer_item_description
   form.remark = record.remark
+  form.factory_id = record.factory_id ?? null
   modalVisible.value = true
 }
 
@@ -264,9 +269,18 @@ const handleItemSelect = (_val: string, option: any) => {
   form.specifications = option.specifications || ''
 }
 
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
+
 onMounted(() => {
   loadColumnPreference()
   fetchData()
+  loadFactories()
 })
 </script>
 
@@ -402,6 +416,11 @@ onMounted(() => {
         </a-form-item>
         <a-form-item label="备注">
           <a-textarea v-model:value="form.remark" :rows="2" placeholder="请输入备注" />
+        </a-form-item>
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="form.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
         </a-form-item>
       </a-form>
     </a-modal>

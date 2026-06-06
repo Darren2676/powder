@@ -17,6 +17,8 @@ import manualCloseRoutes from './manualClose/manualClose.routes';
 import apiKeyRoutes from './apiKey/apiKey.routes';
 import autoStockCountRoutes from './autoStockCount/autoStockCount.routes';
 import cockpitRoutes from './cockpit/cockpit.routes';
+import factoryRoutes from './factory/factory.routes';
+import headquartersRoutes from './headquarters/headquarters.routes';
 
 const router = Router();
 
@@ -37,5 +39,7 @@ router.use('/manual-close', manualCloseRoutes);
 router.use('/api-keys', apiKeyRoutes);
 router.use('/auto-stock-count', autoStockCountRoutes);
 router.use('/cockpit', cockpitRoutes);
+router.use('/factories', factoryRoutes);
+router.use('/headquarters', headquartersRoutes);
 
 export default router;

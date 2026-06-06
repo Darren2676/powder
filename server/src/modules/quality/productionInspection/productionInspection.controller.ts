@@ -4,10 +4,12 @@ import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
 import { createNonconformingFromInspection } from '../nonconformingProduct/nonconformingProduct.controller';
 import dayjs from 'dayjs';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
-const generateInspectionNumber = async (transaction?: any): Promise<string> => {
+const generateInspectionNumber = async (factoryCode: string = '', transaction?: any): Promise<string> => {
   const today = dayjs().format('YYYYMMDD');
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
   const prefix = `QI-${today}-`;
   const txOpt = transaction ? { transaction } : {};
   const [rows]: any = await sequelize.query(
@@ -34,6 +36,11 @@ export const getProductionInspections = async (req: Request, res: Response, next
 
     const conditions: string[] = [];
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
     if (search) {
       conditions.push(`(inspection_number LIKE :search OR production_order_number LIKE :search OR process_task_number LIKE :search OR item_number LIKE :search OR item_name LIKE :search)`);
       replacements.search = `%${search}%`;
@@ -62,7 +69,8 @@ export const getProductionInspections = async (req: Request, res: Response, next
 export const getProductionInspectionDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [records]: any = await sequelize.query(`SELECT * FROM production_inspection WHERE inspection_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const [records]: any = await sequelize.query(`SELECT * FROM production_inspection WHERE inspection_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } });
     if (!records.length) { res.status(404).json({ success: false, message: '检验记录不存在' }); return; }
     const [items]: any = await sequelize.query(`SELECT * FROM production_inspection_item WHERE inspection_number = :id ORDER BY sort_order`, { replacements: { id } });
 
@@ -89,9 +97,10 @@ export const getProductionInspectionDetail = async (req: Request, res: Response,
 export const getInspectionsByOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { orderNo } = req.params;
+    const _factoryId = getFactoryId(req);
     const [items]: any = await sequelize.query(
-      `SELECT * FROM production_inspection WHERE production_order_number = :orderNo ORDER BY step_number, inspect_type`,
-      { replacements: { orderNo } }
+      `SELECT * FROM production_inspection WHERE production_order_number = :orderNo${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''} ORDER BY step_number, inspect_type`,
+      { replacements: { orderNo, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } }
     );
     res.json(success(items, '获取生产单检验记录成功'));
   } catch (err) { next(err); }
@@ -104,7 +113,10 @@ export const updateProductionInspection = async (req: Request, res: Response, ne
     const b = req.body;
 
     // 检查状态
-    const [chk]: any = await sequelize.query(`SELECT status FROM production_inspection WHERE inspection_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    const [chk]: any = await sequelize.query(`SELECT status FROM production_inspection WHERE inspection_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!chk.length) { res.status(404).json({ success: false, message: '检验记录不存在' }); return; }
     if (chk[0].status === '已完成') { res.status(403).json({ success: false, message: '已完成的检验记录不允许修改' }); return; }
 
@@ -120,7 +132,7 @@ export const updateProductionInspection = async (req: Request, res: Response, ne
           inspection_date = :inspection_date,
           status = N'检验中',
           remark = :remark
-        WHERE inspection_number = :id
+        WHERE inspection_number = :id${factoryCond}
       `, {
         replacements: {
           id,
@@ -129,7 +141,8 @@ export const updateProductionInspection = async (req: Request, res: Response, ne
           inspector_number: b.inspector_number || '',
           inspector_name: b.inspector_name || '',
           inspection_date: b.inspection_date || dayjs().format('YYYY/MM/DD HH:mm'),
-          remark: b.remark || ''
+          remark: b.remark || '',
+          ...factoryReps
         },
         transaction
       });
@@ -199,7 +212,10 @@ export const completeInspection = async (req: Request, res: Response, next: Next
   try {
     const { id } = req.params;
     const b = req.body;
-    const [records]: any = await sequelize.query(`SELECT * FROM production_inspection WHERE inspection_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    const [records]: any = await sequelize.query(`SELECT * FROM production_inspection WHERE inspection_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!records.length) { res.status(404).json({ success: false, message: '检验记录不存在' }); return; }
     const record = records[0];
     if (record.status === '已完成') { res.status(403).json({ success: false, message: '该检验记录已完成' }); return; }
@@ -220,14 +236,15 @@ export const completeInspection = async (req: Request, res: Response, next: Next
           unqualified_quantity = :unqualified_quantity,
           status = N'已完成',
           inspection_date = :inspection_date
-        WHERE inspection_number = :id
+        WHERE inspection_number = :id${factoryCond}
       `, {
         replacements: {
           id,
           result,
           qualified_quantity: qualifiedQty,
           unqualified_quantity: unqualifiedQty,
-          inspection_date: dayjs().format('YYYY/MM/DD HH:mm')
+          inspection_date: dayjs().format('YYYY/MM/DD HH:mm'),
+          ...factoryReps
         },
         transaction
       });
@@ -281,10 +298,12 @@ export const completeInspection = async (req: Request, res: Response, next: Next
 // ==================== 不合格品处理 ====================
 export const defectHandling = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const { id } = req.params;
     const inspectionNumber = String(id);
+    const _factoryId = getFactoryId(req);
 
-    const [records]: any = await sequelize.query(`SELECT * FROM production_inspection WHERE inspection_number = :id`, { replacements: { id } });
+    const [records]: any = await sequelize.query(`SELECT * FROM production_inspection WHERE inspection_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } });
     if (!records.length) { res.status(404).json({ success: false, message: '检验记录不存在' }); return; }
     const record = records[0];
     if (record.inspection_result !== '不合格') { res.status(400).json({ success: false, message: '仅不合格的检验记录可进行不合格品处理' }); return; }
@@ -307,7 +326,7 @@ export const defectHandling = async (req: Request, res: Response, next: NextFunc
         step_number: record.step_number || 0,
         creation_man: (req as any).user?.username || '',
         inspection_table: 'production_inspection'
-      }, transaction);
+      }, factoryCode, _factoryId, transaction);
 
       // 标记检验单缺陷处理为"待处理"
       await sequelize.query(`
@@ -329,7 +348,10 @@ const exportHeaders = ['检验单号', '报工单号', '工序任务号', '生�
 
 export const exportProductionInspections = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [items]: any = await sequelize.query(`SELECT * FROM production_inspection ORDER BY creation_date DESC`);
+    const _factoryId = getFactoryId(req);
+    const factoryWhere = _factoryId !== null ? 'WHERE factory_id = :_factoryId' : '';
+    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
+    const [items]: any = await sequelize.query(`SELECT * FROM production_inspection ${factoryWhere} ORDER BY creation_date DESC`, { replacements: factoryReps });
     exportToExcel(items, exportFields, exportHeaders, 'production_inspections', res);
   } catch (err) { next(err); }
 };
@@ -337,12 +359,14 @@ export const exportProductionInspections = async (req: Request, res: Response, n
 // ==================== 删除检验记录 ====================
 export const deleteProductionInspection = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const { id } = req.params;
     const inspectionNumber = String(id);
+    const _factoryId = getFactoryId(req);
 
     const [records]: any = await sequelize.query(
-      `SELECT * FROM production_inspection WHERE inspection_number = :id`,
-      { replacements: { id: inspectionNumber } }
+      `SELECT * FROM production_inspection WHERE inspection_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+      { replacements: { id: inspectionNumber, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } }
     );
     if (!records.length) {
       res.status(404).json({ success: false, message: '检验记录不存在' });
@@ -398,8 +422,8 @@ export const deleteProductionInspection = async (req: Request, res: Response, ne
 
       // 删除检验主记录
       await sequelize.query(
-        `DELETE FROM production_inspection WHERE inspection_number = :id`,
-        { replacements: { id: inspectionNumber }, transaction }
+        `DELETE FROM production_inspection WHERE inspection_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+        { replacements: { id: inspectionNumber, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) }, transaction }
       );
 
       // 清除关联工序任务的 inspect_status
@@ -434,9 +458,9 @@ export const createInspectionFromWorkReport = async (params: {
   inspection_spec_name: string;
   total_quantity: number;
   creation_man: string;
-}, transaction?: any): Promise<string> => {
+}, factoryCode: string = '', _factoryId: number | null = null, transaction?: any): Promise<string> => {
   const txOpt = transaction ? { transaction } : {};
-  const inspectionNumber = await generateInspectionNumber(transaction);
+  const inspectionNumber = await generateInspectionNumber(factoryCode, transaction);
   const now = dayjs().format('YYYY/MM/DD HH:mm');
 
   // 查询物料主数据的 enable_prod_quality_chars
@@ -478,8 +502,8 @@ export const createInspectionFromWorkReport = async (params: {
   const enable_quality_chars = itemEnableChars || planEnableChars || specEnableChars || 'N';
 
   await sequelize.query(`
-    INSERT INTO production_inspection (inspection_number, work_report_number, process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, inspect_type, inspection_plan_name, inspection_spec_name, total_quantity, qualified_quantity, unqualified_quantity, inspection_result, status, creation_date, creation_man, enable_quality_chars, defect_categories)
-    VALUES (:inspection_number, :work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_number, :item_name, :specifications, :inspect_type, :inspection_plan_name, :inspection_spec_name, :total_quantity, 0, 0, N'待检', N'待检', :creation_date, :creation_man, :enable_quality_chars, :defect_categories)
+    INSERT INTO production_inspection (inspection_number, work_report_number, process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, inspect_type, inspection_plan_name, inspection_spec_name, total_quantity, qualified_quantity, unqualified_quantity, inspection_result, status, creation_date, creation_man, enable_quality_chars, defect_categories, factory_id)
+    VALUES (:inspection_number, :work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_number, :item_name, :specifications, :inspect_type, :inspection_plan_name, :inspection_spec_name, :total_quantity, 0, 0, N'待检', N'待检', :creation_date, :creation_man, :enable_quality_chars, :defect_categories, :factory_id)
   `, {
     replacements: {
       inspection_number: inspectionNumber,
@@ -498,7 +522,8 @@ export const createInspectionFromWorkReport = async (params: {
       creation_date: now,
       creation_man: params.creation_man,
       enable_quality_chars,
-      defect_categories
+      defect_categories,
+      factory_id: _factoryId
     },
     ...txOpt
   });

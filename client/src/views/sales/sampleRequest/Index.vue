@@ -38,6 +38,9 @@
           <template v-if="column.dataIndex === 'status'">
             <a-tag :color="statusColor(text)">{{ text }}</a-tag>
           </template>
+          <template v-else-if="column.dataIndex === 'approval_status'">
+            <a-tag :color="approvalColor(text)">{{ text }}</a-tag>
+          </template>
           <template v-else-if="column.key === 'action'">
             <a-space :size="4">
               <a-button type="link" size="small" @click="handleView(record)">查看</a-button>
@@ -53,11 +56,18 @@
                       <a-menu-item @click="handleDelete(record)"><span style="color: #ff4d4f">删除</span></a-menu-item>
                     </template>
                     <template v-else-if="(record.status || '').trim() === '待研发'">
+                      <a-menu-item @click="handleEdit(record)">修改</a-menu-item>
                       <a-menu-item @click="handleWithdraw(record)">撤回</a-menu-item>
                       <a-menu-item @click="handleReceive(record)">接收</a-menu-item>
                     </template>
                     <template v-else-if="(record.status || '').trim() === '研发中'">
+                      <a-menu-item @click="handleEdit(record)">修改</a-menu-item>
+                      <a-menu-item @click="handleWithdraw(record)">撤回</a-menu-item>
                       <a-menu-item @click="handleComplete(record)">完成研发</a-menu-item>
+                    </template>
+                    <template v-else-if="(record.status || '').trim() === '已完成'">
+                      <a-menu-item @click="handleEdit(record)">修改</a-menu-item>
+                      <a-menu-item @click="handleView(record)">查看详情</a-menu-item>
                     </template>
                   </a-menu>
                 </template>
@@ -128,12 +138,18 @@ const columns = [
   { title: '申请人', dataIndex: 'applicant', width: 100 },
   { title: '紧急程度', dataIndex: 'urgency', width: 90 },
   { title: '流程状态', dataIndex: 'status', width: 90 },
+  { title: '审批状态', dataIndex: 'approval_status', width: 90 },
   { title: '需完成日期', dataIndex: 'deadline_date', width: 110 },
   { title: '操作', key: 'action', width: 120, fixed: 'right' as const },
 ];
 
 function statusColor(status: string) {
   const map: Record<string, string> = { '草稿': 'default', '待研发': 'orange', '研发中': 'processing', '已完成': 'success' };
+  return map[status] || 'default';
+}
+
+function approvalColor(status: string) {
+  const map: Record<string, string> = { '草稿': 'default', '待审批': 'orange', '已审核': 'green', '已审批': 'green' };
   return map[status] || 'default';
 }
 

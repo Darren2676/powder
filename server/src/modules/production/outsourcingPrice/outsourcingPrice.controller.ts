@@ -4,10 +4,12 @@ import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import dayjs from 'dayjs';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
-const generatePriceListNumber = async (): Promise<string> => {
+const generatePriceListNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = dayjs().format('YYYYMMDD');
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
   const prefix = `OP-${today}-`;
   const [rows]: any = await sequelize.query(
     `SELECT MAX(price_list_number) as max_num FROM outsourcing_price_list WHERE price_list_number LIKE :prefix`,
@@ -39,6 +41,12 @@ export const getOutsourcingPriceLists = async (req: Request, res: Response, next
     if (approval_status) {
       conditions.push(`approval_status = :approval_status`);
       replacements.approval_status = approval_status;
+    }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
     }
 
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -73,8 +81,10 @@ export const getOutsourcingPriceLists = async (req: Request, res: Response, next
 export const getOutsourcingPriceListDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM outsourcing_price_list WHERE price_list_number = :id`, { replacements: { id } }
+      `SELECT * FROM outsourcing_price_list WHERE price_list_number = :id${factoryCond}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '委外价目表不存在' }); return; }
     const [details]: any = await sequelize.query(
@@ -88,10 +98,11 @@ export const getOutsourcingPriceListDetail = async (req: Request, res: Response,
 // ==================== 创建 ====================
 export const createOutsourcingPriceList = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body;
     if (!b.price_list_name) { res.status(400).json({ success: false, message: '价目表名称不能为空' }); return; }
 
-    const price_list_number = await generatePriceListNumber();
+    const price_list_number = await generatePriceListNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const creation_man = (req as any).user?.username || '';
 
@@ -295,11 +306,12 @@ const importDetailHeaders = ['物料编号', '物料名称', '物料分类', '�
 
 export const importOutsourcingPriceList = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     if (!req.file) { res.status(400).json({ success: false, message: '请上传Excel文件' }); return; }
     const rows = parseExcelFile(req.file.buffer, importDetailFields, importDetailHeaders);
     if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件内容为空' }); return; }
 
-    const price_list_number = await generatePriceListNumber();
+    const price_list_number = await generatePriceListNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const creation_man = (req as any).user?.username || '';
     const b = req.body;

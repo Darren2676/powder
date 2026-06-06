@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 列表查询（从快照表） ====================
 export const getProductionMaterialCost = async (req: Request, res: Response, next: NextFunction) => {
@@ -24,6 +25,13 @@ export const getProductionMaterialCost = async (req: Request, res: Response, nex
       replacements.plan_status = plan_status;
     }
 
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      orderConditions.push(`po.factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
+
     const orderWhere = orderConditions.length > 0 ? 'AND ' + orderConditions.join(' AND ') : '';
 
     // 总数
@@ -31,6 +39,7 @@ export const getProductionMaterialCost = async (req: Request, res: Response, nex
       SELECT COUNT(DISTINCT po.production_order_number) as total
       FROM production_order po
       INNER JOIN production_material_cost_snapshot s ON s.production_order_number = po.production_order_number
+      LEFT JOIN factory f ON po.factory_id = f.id
       WHERE 1=1 ${orderWhere}
     `, { replacements });
 
@@ -43,6 +52,7 @@ export const getProductionMaterialCost = async (req: Request, res: Response, nex
         SELECT po.production_order_number, po.item_number, po.item_name,
                po.specifications, po.basic_unit, po.planned_quantity,
                po.plan_status, po.production_number,
+               po.factory_id, f.factory_name, f.factory_short,
                SUM(s.material_cost) as material_cost_total,
                SUM(s.issued_quantity) as total_issued_qty,
                COUNT(*) as material_count,
@@ -51,10 +61,12 @@ export const getProductionMaterialCost = async (req: Request, res: Response, nex
                ROW_NUMBER() OVER (ORDER BY po.production_order_number DESC) AS _row_num
         FROM production_order po
         INNER JOIN production_material_cost_snapshot s ON s.production_order_number = po.production_order_number
+        LEFT JOIN factory f ON po.factory_id = f.id
         WHERE 1=1 ${orderWhere}
         GROUP BY po.production_order_number, po.item_number, po.item_name,
                  po.specifications, po.basic_unit, po.planned_quantity,
-                 po.plan_status, po.production_number
+                 po.plan_status, po.production_number,
+                 po.factory_id, f.factory_name, f.factory_short
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });

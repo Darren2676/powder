@@ -1,5 +1,7 @@
 import sequelize from '../config/database';
 import User from './User';
+import Factory from './Factory';
+import UserFactoryAccess from './UserFactoryAccess';
 
 // User <-> Notification (保留通知功能)
 import Notification from './Notification';
@@ -366,6 +368,232 @@ export const initDatabase = async () => {
       console.warn('[手动迁移] 开票状态重算跳过:', (e as any).message);
     }
 
+    // ===== [多工厂] factory 工厂定义表 =====
+    try {
+      await sequelize.query(`
+        IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'factory')
+        CREATE TABLE factory (
+          id INT IDENTITY(1,1) PRIMARY KEY,
+          factory_code NVARCHAR(10) NOT NULL,
+          factory_name NVARCHAR(100) NOT NULL,
+          factory_short NVARCHAR(20) DEFAULT '',
+          address NVARCHAR(200) DEFAULT '',
+          contact_name NVARCHAR(50) DEFAULT '',
+          contact_phone NVARCHAR(30) DEFAULT '',
+          is_headquarters BIT DEFAULT 0,
+          status NVARCHAR(10) DEFAULT N'启用',
+          created_at DATETIME DEFAULT GETDATE(),
+          updated_at DATETIME DEFAULT GETDATE(),
+          CONSTRAINT UQ_factory_code UNIQUE (factory_code)
+        )
+      `);
+      console.log('[多工厂迁移] factory 表检查完成');
+    } catch (e) {
+      console.warn('[多工厂迁移] factory 表跳过:', (e as any).message);
+    }
+
+    // 种子数据：两个工厂（N=宁国工厂, G=广州工厂）
+    try {
+      await sequelize.query(`
+        IF NOT EXISTS (SELECT 1 FROM factory WHERE factory_code = 'N')
+        INSERT INTO factory (factory_code, factory_name, factory_short, is_headquarters, status, created_at, updated_at) VALUES ('N', N'宁国工厂', N'宁国', 1, N'启用', GETDATE(), GETDATE());
+      `);
+      await sequelize.query(`
+        IF NOT EXISTS (SELECT 1 FROM factory WHERE factory_code = 'G')
+        INSERT INTO factory (factory_code, factory_name, factory_short, is_headquarters, status, created_at, updated_at) VALUES ('G', N'广州工厂', N'广州', 0, N'启用', GETDATE(), GETDATE());
+      `);
+      console.log('[多工厂迁移] 工厂种子数据检查完成');
+    } catch (e) {
+      console.warn('[多工厂迁移] 工厂种子数据跳过:', (e as any).message);
+    }
+
+    // ===== [多工厂] users.default_factory_id =====
+    try {
+      await sequelize.query(`
+        IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'users' AND COLUMN_NAME = 'default_factory_id')
+        BEGIN
+          ALTER TABLE users ADD default_factory_id INT NULL;
+          PRINT 'users.default_factory_id 字段已添加';
+        END
+      `);
+      // 已有用户归入宁国工厂（factory_id=1）
+      await sequelize.query(`
+        IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'users' AND COLUMN_NAME = 'default_factory_id')
+        UPDATE users SET default_factory_id = (SELECT id FROM factory WHERE factory_code = 'N') WHERE default_factory_id IS NULL;
+      `);
+      console.log('[多工厂迁移] users.default_factory_id 检查完成');
+    } catch (e) {
+      console.warn('[多工厂迁移] users.default_factory_id 跳过:', (e as any).message);
+    }
+
+    // ===== [多工厂] user_factory_access 表 =====
+    try {
+      await sequelize.query(`
+        IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'user_factory_access')
+        CREATE TABLE user_factory_access (
+          id INT IDENTITY(1,1) PRIMARY KEY,
+          user_id INT NOT NULL,
+          factory_id INT NOT NULL,
+          access_level NVARCHAR(20) DEFAULT 'read',
+          is_default BIT DEFAULT 0,
+          created_by INT NULL,
+          created_at DATETIME DEFAULT GETDATE(),
+          CONSTRAINT UQ_user_factory UNIQUE (user_id, factory_id)
+        )
+      `);
+      console.log('[多工厂迁移] user_factory_access 表检查完成');
+    } catch (e) {
+      console.warn('[多工厂迁移] user_factory_access 表跳过:', (e as any).message);
+    }
+
+    // ===== [多工厂] 业务表 factory_id 字段批量迁移 =====
+    // 决策3: 物料/BOM 不隔离（item_master, bom_*, routing_* 等不加 factory_id）
+    try {
+      const transactionalTables = [
+        // ── 销售域 ──
+        'sales_order', 'sales_order_detail',
+        'sales_forecast', 'sales_forecast_detail',
+        'shipping_order', 'shipping_order_detail', 'shipping_order_batch',
+        'shipping_request', 'shipping_request_detail',
+        'sales_invoice', 'sales_invoice_line',
+        'return_order', 'return_order_detail', 'return_order_batch',
+        'sales_price_list', 'sales_price_list_detail',
+        // ── 计划域 ──
+        'production_plan', 'forecast_consumption', 'plan_status',
+        // ── 生产域 ──
+        'production_order',
+        'production_inbound_order', 'production_inbound_order_detail',
+        'semi_production_inbound_order', 'semi_production_inbound_order_detail',
+        'process_task', 'work_report',
+        'backflush_task', 'backflush_deduction_log',
+        'rework_order',
+        'piece_rate_wage_header', 'piece_rate_wage_detail',
+        'production_material_cost_snapshot',
+        // ── 采购域 ──
+        'purchase_order', 'purchase_order_detail',
+        'purchase_req', 'purchase_req_detail',
+        'purchase_invoice', 'purchase_invoice_line',
+        'purchase_receiving_notice', 'purchase_receiving_notice_detail',
+        'purchase_return', 'purchase_return_detail',
+        'purchase_price_list', 'purchase_price_list_detail',
+        // ── 仓储域 ──
+        'stock_in', 'stock_in_detail',
+        'material_batch_inventory',
+        'finished_goods_inventory', 'finished_batch_inventory',
+        'packing_box_inventory', 'packing_order',
+        'stock_count', 'stock_count_detail',
+        'batch_traceability',
+        'scrap_disposal', 'scrap_disposal_detail',
+        // ── 质量域 ──
+        'purchase_quality_inspection', 'purchase_quality_inspection_detail', 'purchase_inspection_defect',
+        'production_inspection', 'production_inspection_defect', 'production_inspection_item',
+        'incoming_inspect_plan', 'inspection_plan', 'inspection_spec',
+        'nonconforming_product',
+        'sample_request', 'sample_request_item', 'sample_request_lab',
+        'sample_inspection_report', 'sample_inspection_report_item',
+        // ── 外包域 ──
+        'outsourcing_order',
+        'outsourcing_req', 'outsourcing_req_detail',
+        'outsourcing_material_issue', 'outsourcing_material_issue_detail',
+        'outsourcing_receipt', 'outsourcing_receipt_detail',
+        'outsourcing_return_stockin', 'outsourcing_return_stockin_detail',
+        'outsourcing_settlement',
+        'outsourcing_inspection', 'outsourcing_inspection_detail',
+        'outsourcing_price_list', 'outsourcing_price_list_detail',
+        // ── 财务域 ──
+        'expense_claim', 'expense_claim_item',
+        // ── 设备域 ──
+        'equipment_downtime', 'equipment_maintenance_plan', 'equipment_oee',
+        // ── 工程变更域 ──
+        'engineering_change_lifecycle', 'engineering_change_log',
+        // ── 鑫合韵集成 ──
+        'xhy_inspect_line', 'xhy_inspect_record',
+        'xhy_inventory_transaction', 'xhy_inventory_transaction_detail',
+        // ── 其他 ──
+        'abnormal_io_request', 'abnormal_io_request_detail',
+      ];
+
+      let addedCount = 0;
+      let skippedCount = 0;
+
+      for (const tableName of transactionalTables) {
+        try {
+          // 检查表是否存在
+          const tableCheck: any = await sequelize.query(
+            `SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = :tn`,
+            { replacements: { tn: tableName }, type: 'SELECT' }
+          );
+          if (tableCheck.length === 0) continue; // 表不存在则跳过
+
+          // 添加 factory_id 字段
+          await sequelize.query(`
+            IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '${tableName}' AND COLUMN_NAME = 'factory_id')
+            BEGIN
+              ALTER TABLE [${tableName}] ADD factory_id INT NULL;
+              PRINT '${tableName}.factory_id 已添加';
+            END
+          `);
+
+          // 尝试创建索引（加速按工厂过滤）
+          try {
+            await sequelize.query(`
+              IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_${tableName}_factory_id' AND OBJECT_NAME(object_id) = '${tableName}')
+              CREATE INDEX IX_${tableName}_factory_id ON [${tableName}](factory_id);
+            `);
+          } catch { /* 索引可能已存在 */ }
+
+          addedCount++;
+        } catch (e: any) {
+          skippedCount++;
+        }
+      }
+
+      console.log(`[多工厂迁移] 业务表 factory_id: ${addedCount} 张表已处理, ${skippedCount} 张跳过`);
+    } catch (e) {
+      console.warn('[多工厂迁移] 业务表 factory_id 批量迁移跳过:', (e as any).message);
+    }
+
+    // ===== [多工厂] factory_id DEFAULT 约束（安全网：未注入时默认宁国工厂=1） =====
+    try {
+      const defaultTables = [
+        'sales_order', 'purchase_order', 'production_order', 'process_task',
+        'stock_in', 'material_batch_inventory', 'finished_goods_inventory',
+        'shipping_order', 'purchase_quality_inspection', 'production_inspection',
+        'work_report', 'expense_claim', 'purchase_req', 'sales_forecast',
+        'production_plan', 'return_order', 'scrap_disposal', 'stock_count',
+        'outsourcing_order', 'outsourcing_req', 'outsourcing_receipt',
+        'inspection_plan', 'inspection_spec', 'incoming_inspect_plan', 'nonconforming_product', 'backflush_task',
+        'rework_order', 'batch_traceability', 'packing_order',
+        'purchase_receiving_notice', 'purchase_return', 'equipment_downtime',
+        'engineering_change_lifecycle', 'abnormal_io_request'
+      ];
+
+      let defaultCount = 0;
+      for (const tableName of defaultTables) {
+        try {
+          // 检查表和列是否都存在
+          const colCheck: any = await sequelize.query(
+            `SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '${tableName}' AND COLUMN_NAME = 'factory_id'`,
+            { type: 'SELECT' }
+          );
+          if (colCheck.length === 0) continue;
+
+          // 添加 DEFAULT 约束（如果不存在）
+          const constraintName = `DF_${tableName}_factory_id`;
+          await sequelize.query(`
+            IF NOT EXISTS (SELECT 1 FROM sys.default_constraints WHERE name = '${constraintName}')
+            BEGIN
+              ALTER TABLE [${tableName}] ADD CONSTRAINT ${constraintName} DEFAULT 1 FOR factory_id;
+            END
+          `);
+          defaultCount++;
+        } catch { /* 约束可能已存在 */ }
+      }
+      console.log(`[多工厂迁移] factory_id DEFAULT 约束: ${defaultCount} 张表已处理`);
+    } catch (e) {
+      console.warn('[多工厂迁移] factory_id DEFAULT 约束跳过:', (e as any).message);
+    }
+
     // 暂时禁用 umzug 迁移（迁移脚本中有 process.exit() 会导致服务器退出）
     // TODO: 修复所有迁移脚本中的 process.exit() 调用后重新启用
     console.log('[迁移] 跳过 umzug 迁移（已修复 process.exit 问题后启用）');
@@ -384,5 +612,7 @@ export const initDatabase = async () => {
 export {
   sequelize,
   User,
-  Notification
+  Notification,
+  Factory,
+  UserFactoryAccess
 };

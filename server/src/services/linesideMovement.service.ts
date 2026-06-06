@@ -26,10 +26,10 @@ export const logLinesideMovement = async (params: {
   direction: string;         // 'IN' / 'OUT'
   operator: string;
   remark?: string;
-}, transaction?: any): Promise<void> => {
+}, transaction?: any, factoryCode: string = ''): Promise<void> => {
   if (params.quantity <= 0) return;
 
-  const txnNumber = await generateLinesideTxnNumber(transaction);
+  const txnNumber = await generateLinesideTxnNumber(factoryCode, transaction);
 
   await sequelize.query(`
     INSERT INTO lineside_inventory_transaction
@@ -72,7 +72,8 @@ export const logWorkReportLinesideMovement = async (
   qualifiedQty: number,
   workReportNumber: string,
   operator: string,
-  transaction?: any
+  transaction?: any,
+  factoryCode: string = ''
 ): Promise<void> => {
   if (qualifiedQty <= 0) return;
 
@@ -120,9 +121,7 @@ export const logWorkReportLinesideMovement = async (
       quantity: qualifiedQty,
       direction: 'OUT',
       remark: `工序${task.standard_process_name || task.step_number}报工转出`
-    }, transaction);
-
-    // 如果存在下道工序，记录 IN
+    }, transaction, factoryCode);
     if (currentIdx < allSteps.length - 1) {
       const nextStep = allSteps[currentIdx + 1];
       await logLinesideMovement({
@@ -135,7 +134,7 @@ export const logWorkReportLinesideMovement = async (
         quantity: qualifiedQty,
         direction: 'IN',
         remark: `从工序${task.standard_process_name || task.step_number}转入`
-      }, transaction);
+      }, transaction, factoryCode);
     }
   } catch (err) {
     log.error({ err }, 'logWorkReportLinesideMovement error');
@@ -149,7 +148,8 @@ export const logWorkReportReverseLinesideMovement = async (
   qualifiedQty: number,
   workReportNumber: string,
   operator: string,
-  transaction?: any
+  transaction?: any,
+  factoryCode: string = ''
 ): Promise<void> => {
   if (qualifiedQty <= 0) return;
 
@@ -197,9 +197,7 @@ export const logWorkReportReverseLinesideMovement = async (
       quantity: qualifiedQty,
       direction: 'IN',
       remark: `冲销：工序${task.standard_process_name || task.step_number}报工回退`
-    }, transaction);
-
-    // 反向：下道工序 OUT（冲销之前的 IN）
+    }, transaction, factoryCode);
     if (currentIdx < allSteps.length - 1) {
       const nextStep = allSteps[currentIdx + 1];
       await logLinesideMovement({
@@ -212,7 +210,7 @@ export const logWorkReportReverseLinesideMovement = async (
         quantity: qualifiedQty,
         direction: 'OUT',
         remark: `冲销：从工序${task.standard_process_name || task.step_number}回退`
-      }, transaction);
+      }, transaction, factoryCode);
     }
   } catch (err) {
     log.error({ err }, 'logWorkReportReverseLinesideMovement error');

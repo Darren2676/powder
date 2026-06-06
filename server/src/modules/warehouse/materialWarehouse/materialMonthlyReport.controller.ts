@@ -7,15 +7,19 @@
 import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 获取已完成的物料仓库盘点单 ====================
 export const getCompletedMaterialStockCounts = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ` AND w.factory_id = ${_factoryId}` : '';
     const [items]: any = await sequelize.query(`
       SELECT sc.count_number, sc.count_period, sc.warehouse_number, sc.warehouse_name, sc.confirmed_date
       FROM stock_count sc
       INNER JOIN warehouse w ON sc.warehouse_number = w.warehouse_number
-      WHERE sc.status = N'已完成' AND w.warehouse_type NOT IN (N'成品仓库', N'报废仓库', N'待检仓')
+      WHERE sc.status = N'已完成' AND w.warehouse_type NOT IN (N'成品仓库', N'报废仓库', N'待检仓')${factoryCond}
       ORDER BY sc.count_period DESC, sc.confirmed_date DESC
     `);
     res.json(success(items));

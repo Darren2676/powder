@@ -3,6 +3,7 @@
  */
 import { Request, Response } from 'express';
 import { sequelize } from '../../../models';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 /**
  * 获取任务单详情（移动端质检用）
@@ -11,6 +12,7 @@ import { sequelize } from '../../../models';
 export const getInspectionTask = async (req: Request, res: Response) => {
   try {
     const { task_number } = req.params;
+    const _factoryId = getFactoryId(req);
 
     // 查询工序任务
     const [tasks]: any = await sequelize.query(`
@@ -27,9 +29,9 @@ export const getInspectionTask = async (req: Request, res: Response) => {
       FROM process_task pt
       LEFT JOIN production_order po ON pt.production_order_number = po.production_order_number
       LEFT JOIN item_master im ON po.item_number = im.item_number
-      WHERE pt.task_number = :task_number
+      WHERE pt.task_number = :task_number ${_factoryId !== null ? 'AND po.factory_id = :_factoryId' : ''}
     `, {
-      replacements: { task_number }
+      replacements: { task_number, ...(_factoryId !== null ? { _factoryId } : {}) }
     });
 
     if (!tasks || tasks.length === 0) {
@@ -60,6 +62,7 @@ export const getInspectionTask = async (req: Request, res: Response) => {
 export const submitInspection = async (req: Request, res: Response) => {
   const transaction = await sequelize.transaction();
   try {
+    const _factoryId = getFactoryId(req);
     const {
       task_number,
       production_order_number,
@@ -83,10 +86,10 @@ export const submitInspection = async (req: Request, res: Response) => {
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const [maxResult]: any = await sequelize.query(
       `SELECT TOP 1 inspection_number FROM production_inspection 
-       WHERE inspection_number LIKE :prefix 
+       WHERE inspection_number LIKE :prefix ${_factoryId !== null ? 'AND factory_id = :_factoryId' : ''}
        ORDER BY inspection_number DESC`,
       {
-        replacements: { prefix: `QI${dateStr}%` },
+        replacements: { prefix: `QI${dateStr}%`, ...(_factoryId !== null ? { _factoryId } : {}) },
         transaction
       }
     );
@@ -115,6 +118,7 @@ export const submitInspection = async (req: Request, res: Response) => {
         remark,
         inspection_date,
         inspector,
+        factory_id,
         creation_date
       ) VALUES (
         :inspection_number,
@@ -130,6 +134,7 @@ export const submitInspection = async (req: Request, res: Response) => {
         :remark,
         GETDATE(),
         N'移动端质检',
+        :factory_id,
         GETDATE()
       )
     `, {
@@ -144,6 +149,7 @@ export const submitInspection = async (req: Request, res: Response) => {
         defect_description: defect_description || '',
         judgment: judgment || '合格',
         remark: remark || '',
+        factory_id: _factoryId,
       },
       transaction
     });

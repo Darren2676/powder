@@ -37,6 +37,9 @@
           <template v-if="column.key === 'batch_number'">
             <a-input v-model:value="record.batch_number" size="small" placeholder="批次号" />
           </template>
+          <template v-if="column.key === 'production_date'">
+            <a-date-picker v-model:value="record.production_date" size="small" style="width:100%;" value-format="YYYY-MM-DD" placeholder="生产日期" />
+          </template>
           <template v-if="column.key === 'supplier'">
             <a-input v-model:value="record.supplier_name" size="small" placeholder="供应商" />
           </template>
@@ -73,12 +76,13 @@ const manualColumns = [
   { title: '单位', dataIndex: 'basic_unit', width: 60 },
   { title: '数量', key: 'quantity', width: 100 },
   { title: '批次号', key: 'batch_number', width: 130 },
+  { title: '生产日期', key: 'production_date', width: 130 },
   { title: '供应商', key: 'supplier', width: 140 },
   { title: '操作', key: 'action', width: 60 }
 ]
 
 const addManualRow = () => {
-  manualItems.value.push({ _key: ++manualSeq, item_number: '', item_name: '', item_type: '原材料', specifications: '', basic_unit: '', quantity: null, batch_number: '', supplier_number: '', supplier_name: '', item_keyword: '', _options: [] })
+  manualItems.value.push({ _key: ++manualSeq, item_number: '', item_name: '', item_type: '原材料', specifications: '', basic_unit: '', quantity: null, batch_number: '', supplier_number: '', supplier_name: '', item_keyword: '', _options: [], production_date: null })
 }
 
 const onItemSearch = async (val: string, index: number) => {

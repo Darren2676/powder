@@ -3,6 +3,7 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
 import { syncFinishedGoodsSummary, generateTransactionNumber, syncMaterialInventorySummary } from '@/services/inventory.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // 格式化日期为 SQL Server 可识别的字符串 (YYYY-MM-DD HH:mm:ss)
 function formatDateForSQL(date: any): string | null {
@@ -18,12 +19,13 @@ function formatDateForSQL(date: any): string | null {
 }
 
 // ==================== 盘点单号生成 ====================
-const generateCountNumber = async (): Promise<string> => {
+const generateCountNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = new Date();
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `IC-${dateStr}-`;
+  const prefix = `IC${fc}-${dateStr}-`;
 
   const [rows]: any = await sequelize.query(
     `SELECT MAX(count_number) as max_num FROM stock_count WHERE count_number LIKE :prefix`,
@@ -187,6 +189,8 @@ export const snapshotPreview = async (req: Request, res: Response, next: NextFun
 // ==================== 创建盘点单 ====================
 export const create = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     const operator = (req as any).user?.username || '';
 
@@ -196,7 +200,8 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
 
     const transaction = await sequelize.transaction();
     try {
-      const count_number = await generateCountNumber();
+      const factoryCode = await getFactoryCode(req);
+      const count_number = await generateCountNumber(factoryCode);
 
       // 查询仓库类型，判断是成品仓库还是物料仓库
       const [whRows]: any = await sequelize.query(
@@ -355,9 +360,9 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
       // 写入主表
       await sequelize.query(`
         INSERT INTO stock_count (count_number, count_period, warehouse_number, warehouse_name, count_type,
-          status, total_items, total_batches, count_man, count_date, remark, created_time, creation_date, last_updated)
+          status, total_items, total_batches, count_man, count_date, remark, created_time, creation_date, last_updated, factory_id)
         VALUES (:count_number, :count_period, :warehouse_number, :warehouse_name, :count_type,
-          N'盘点中', :total_items, :total_batches, :count_man, GETDATE(), :remark, GETDATE(), GETDATE(), GETDATE())
+          N'盘点中', :total_items, :total_batches, :count_man, GETDATE(), :remark, GETDATE(), GETDATE(), GETDATE(), :factory_id)
       `, {
         replacements: {
           count_number, count_period: b.count_period, warehouse_number: b.warehouse_number,
@@ -366,7 +371,8 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
           total_items: itemSet.size,
           total_batches: allDetails.length,
           count_man: operator,
-          remark: b.remark || ''
+          remark: b.remark || '',
+          factory_id: _factoryId
         }, transaction
       });
 
@@ -449,10 +455,13 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
 export const remove = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { count_number } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [headers]: any = await sequelize.query(
-      `SELECT status FROM stock_count WHERE count_number = :count_number`,
-      { replacements: { count_number } }
+      `SELECT status FROM stock_count WHERE count_number = :count_number${factoryCond}`,
+      { replacements: { count_number, ...factoryReps } }
     );
     if (!headers.length) {
       return res.status(404).json({ success: false, message: '盘点单不存在' });
@@ -464,7 +473,7 @@ export const remove = async (req: Request, res: Response, next: NextFunction) =>
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`DELETE FROM stock_count_detail WHERE count_number = :count_number`, { replacements: { count_number }, transaction });
-      await sequelize.query(`DELETE FROM stock_count WHERE count_number = :count_number`, { replacements: { count_number }, transaction });
+      await sequelize.query(`DELETE FROM stock_count WHERE count_number = :count_number${factoryCond}`, { replacements: { count_number, ...factoryReps }, transaction });
       await transaction.commit();
       res.json(success(null, '盘点单已删除'));
     } catch (e) {
@@ -479,10 +488,13 @@ export const submitReview = async (req: Request, res: Response, next: NextFuncti
   try {
     const { count_number } = req.params;
     const operator = (req as any).user?.username || '';
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [headers]: any = await sequelize.query(
-      `SELECT status, count_man FROM stock_count WHERE count_number = :count_number`,
-      { replacements: { count_number } }
+      `SELECT status, count_man FROM stock_count WHERE count_number = :count_number${factoryCond}`,
+      { replacements: { count_number, ...factoryReps } }
     );
     if (!headers.length) {
       return res.status(404).json({ success: false, message: '盘点单不存在' });
@@ -501,8 +513,8 @@ export const submitReview = async (req: Request, res: Response, next: NextFuncti
     }
 
     await sequelize.query(
-      `UPDATE stock_count SET status = N'待复核', last_updated = GETDATE() WHERE count_number = :count_number`,
-      { replacements: { count_number } }
+      `UPDATE stock_count SET status = N'待复核', last_updated = GETDATE() WHERE count_number = :count_number${factoryCond}`,
+      { replacements: { count_number, ...factoryReps } }
     );
 
     res.json(success(null, '已提交复核'));
@@ -515,10 +527,13 @@ export const review = async (req: Request, res: Response, next: NextFunction) =>
     const { count_number } = req.params;
     const b = req.body;
     const operator = (req as any).user?.username || '';
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [headers]: any = await sequelize.query(
-      `SELECT status, count_man FROM stock_count WHERE count_number = :count_number`,
-      { replacements: { count_number } }
+      `SELECT status, count_man FROM stock_count WHERE count_number = :count_number${factoryCond}`,
+      { replacements: { count_number, ...factoryReps } }
     );
     if (!headers.length) {
       return res.status(404).json({ success: false, message: '盘点单不存在' });
@@ -531,15 +546,15 @@ export const review = async (req: Request, res: Response, next: NextFunction) =>
       await sequelize.query(`
         UPDATE stock_count SET status = N'待确认', reviewer = :reviewer, review_date = GETDATE(),
           review_remark = :review_remark, last_updated = GETDATE()
-        WHERE count_number = :count_number
-      `, { replacements: { reviewer: operator, review_remark: b.review_remark || '', count_number } });
+        WHERE count_number = :count_number${factoryCond}
+      `, { replacements: { reviewer: operator, review_remark: b.review_remark || '', count_number, ...factoryReps } });
       res.json(success(null, '复核通过，等待确认执行'));
     } else if (b.action === 'reject') {
       await sequelize.query(`
         UPDATE stock_count SET status = N'盘点中', reviewer = :reviewer, review_date = GETDATE(),
           review_remark = :review_remark, last_updated = GETDATE()
-        WHERE count_number = :count_number
-      `, { replacements: { reviewer: operator, review_remark: b.review_remark || '', count_number } });
+        WHERE count_number = :count_number${factoryCond}
+      `, { replacements: { reviewer: operator, review_remark: b.review_remark || '', count_number, ...factoryReps } });
       res.json(success(null, '已驳回，退回盘点人修改'));
     } else {
       return res.status(400).json({ success: false, message: 'action 必须为 approve 或 reject' });
@@ -550,13 +565,17 @@ export const review = async (req: Request, res: Response, next: NextFunction) =>
 // ==================== 确认执行（库存调整） ====================
 export const confirm = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const { count_number } = req.params;
     const b = req.body;
     const operator = (req as any).user?.username || '';
 
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM stock_count WHERE count_number = :count_number`,
-      { replacements: { count_number } }
+      `SELECT * FROM stock_count WHERE count_number = :count_number${factoryCond}`,
+      { replacements: { count_number, ...factoryReps } }
     );
     if (!headers.length) {
       return res.status(404).json({ success: false, message: '盘点单不存在' });
@@ -576,6 +595,7 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
 
     const transaction = await sequelize.transaction();
     try {
+      const factoryCode = await getFactoryCode(req);
       const transactionNumbers: string[] = [];
       const adjustedItems = new Set<string>();
 
@@ -616,18 +636,18 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
             );
             adjustedItems.add(`${d.item_number}|${header.warehouse_number}|合格品`);
 
-            const txNum = await generateTransactionNumber(transaction);
+            const txNum = await generateTransactionNumber(factoryCode, transaction);
             transactionNumbers.push(txNum);
             const afterQty = beforeQty + diff;
             await sequelize.query(`
               INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number,
                 item_number, item_name, specifications, basic_unit, product_drawing_number,
                 warehouse_number, warehouse_name, quantity, before_quantity, after_quantity,
-                batch_number, operator, operation_date, remark, quality_status, creation_date)
+                batch_number, operator, operation_date, remark, quality_status, creation_date, factory_id)
               VALUES (:transaction_number, N'入库', N'月末盘盈(箱)', :source_number,
                 :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number,
                 :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity,
-                :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE())
+                :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE(), :factory_id)
             `, {
               replacements: {
                 transaction_number: txNum, source_number: count_number,
@@ -637,7 +657,8 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
                 warehouse_number: header.warehouse_number, warehouse_name: header.warehouse_name,
                 quantity: diff, before_quantity: beforeQty, after_quantity: afterQty,
                 batch_number: batchNumber, operator,
-                remark: `箱装盘盈 ${batchNumber}`, quality_status: '合格品'
+                remark: `箱装盘盈 ${batchNumber}`, quality_status: '合格品',
+                factory_id: _factoryId
               }, transaction
             });
           } else {
@@ -654,18 +675,18 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
             );
             adjustedItems.add(`${d.item_number}|${header.warehouse_number}|合格品`);
 
-            const txNum = await generateTransactionNumber(transaction);
+            const txNum = await generateTransactionNumber(factoryCode, transaction);
             transactionNumbers.push(txNum);
             const afterQty = beforeQty - absDiff;
             await sequelize.query(`
               INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number,
                 item_number, item_name, specifications, basic_unit, product_drawing_number,
                 warehouse_number, warehouse_name, quantity, before_quantity, after_quantity,
-                batch_number, operator, operation_date, remark, quality_status, creation_date)
+                batch_number, operator, operation_date, remark, quality_status, creation_date, factory_id)
               VALUES (:transaction_number, N'出库', N'月末盘亏(箱)', :source_number,
                 :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number,
                 :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity,
-                :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE())
+                :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE(), :factory_id)
             `, {
               replacements: {
                 transaction_number: txNum, source_number: count_number,
@@ -675,7 +696,8 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
                 warehouse_number: header.warehouse_number, warehouse_name: header.warehouse_name,
                 quantity: absDiff, before_quantity: beforeQty, after_quantity: afterQty,
                 batch_number: batchNumber, operator,
-                remark: `箱装盘亏 ${batchNumber}`, quality_status: '合格品'
+                remark: `箱装盘亏 ${batchNumber}`, quality_status: '合格品',
+                factory_id: _factoryId
               }, transaction
             });
           }
@@ -713,7 +735,7 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
             );
             adjustedItems.add(`${d.item_number}|${header.warehouse_number}|material`);
 
-            const txNum = await generateTransactionNumber(transaction);
+            const txNum = await generateTransactionNumber(factoryCode, transaction);
             transactionNumbers.push(txNum);
             const afterQty = beforeQty + diff;
             await sequelize.query(`
@@ -750,7 +772,7 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
             );
             adjustedItems.add(`${d.item_number}|${header.warehouse_number}|material`);
 
-            const txNum = await generateTransactionNumber(transaction);
+            const txNum = await generateTransactionNumber(factoryCode, transaction);
             transactionNumbers.push(txNum);
             const afterQty = beforeQty - absDiff;
             await sequelize.query(`
@@ -808,18 +830,18 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
           adjustedItems.add(`${d.item_number}|${header.warehouse_number}|${qualityStatus}`);
 
           // 生成流水
-          const txNum = await generateTransactionNumber(transaction);
+          const txNum = await generateTransactionNumber(factoryCode, transaction);
           transactionNumbers.push(txNum);
           const afterQty = beforeQty + diff;
           await sequelize.query(`
             INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number,
               item_number, item_name, specifications, basic_unit, product_drawing_number,
               warehouse_number, warehouse_name, quantity, before_quantity, after_quantity,
-              batch_number, operator, operation_date, remark, quality_status, creation_date)
+              batch_number, operator, operation_date, remark, quality_status, creation_date, factory_id)
             VALUES (:transaction_number, N'入库', N'月末盘盈', :source_number,
               :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number,
               :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity,
-              :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE())
+              :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE(), :factory_id)
           `, {
             replacements: {
               transaction_number: txNum,
@@ -830,7 +852,8 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
               warehouse_number: header.warehouse_number, warehouse_name: header.warehouse_name,
               quantity: diff, before_quantity: beforeQty, after_quantity: afterQty,
               batch_number: batchNumber, operator,
-              remark: '月末盘点盘盈', quality_status: qualityStatus
+              remark: '月末盘点盘盈', quality_status: qualityStatus,
+              factory_id: _factoryId
             }, transaction
           });
 
@@ -851,18 +874,18 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
           adjustedItems.add(`${d.item_number}|${header.warehouse_number}|${qualityStatus}`);
 
           // 生成流水
-          const txNum = await generateTransactionNumber(transaction);
+          const txNum = await generateTransactionNumber(factoryCode, transaction);
           transactionNumbers.push(txNum);
           const afterQty = beforeQty - absDiff;
           await sequelize.query(`
             INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number,
               item_number, item_name, specifications, basic_unit, product_drawing_number,
               warehouse_number, warehouse_name, quantity, before_quantity, after_quantity,
-              batch_number, operator, operation_date, remark, quality_status, creation_date)
+              batch_number, operator, operation_date, remark, quality_status, creation_date, factory_id)
             VALUES (:transaction_number, N'出库', N'月末盘亏', :source_number,
               :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number,
               :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity,
-              :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE())
+              :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE(), :factory_id)
           `, {
             replacements: {
               transaction_number: txNum,
@@ -873,7 +896,8 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
               warehouse_number: header.warehouse_number, warehouse_name: header.warehouse_name,
               quantity: absDiff, before_quantity: beforeQty, after_quantity: afterQty,
               batch_number: batchNumber, operator,
-              remark: '月末盘点盘亏', quality_status: qualityStatus
+              remark: '月末盘点盘亏', quality_status: qualityStatus,
+              factory_id: _factoryId
             }, transaction
           });
         }
@@ -899,8 +923,8 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
       await sequelize.query(`
         UPDATE stock_count SET status = N'已完成', confirmed_by = :confirmed_by, confirmed_date = GETDATE(),
           confirm_remark = :confirm_remark, completed_time = GETDATE(), last_updated = GETDATE()
-        WHERE count_number = :count_number
-      `, { replacements: { confirmed_by: operator, confirm_remark: b.confirm_remark || '', count_number }, transaction });
+        WHERE count_number = :count_number${factoryCond}
+      `, { replacements: { confirmed_by: operator, confirm_remark: b.confirm_remark || '', count_number, ...factoryReps }, transaction });
 
       await transaction.commit();
       res.json(success({ transactionNumbers }, '盘点确认完成，库存已调整'));
@@ -917,10 +941,13 @@ export const cancel = async (req: Request, res: Response, next: NextFunction) =>
     const { count_number } = req.params;
     const b = req.body;
     const operator = (req as any).user?.username || '';
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [headers]: any = await sequelize.query(
-      `SELECT status, count_man FROM stock_count WHERE count_number = :count_number`,
-      { replacements: { count_number } }
+      `SELECT status, count_man FROM stock_count WHERE count_number = :count_number${factoryCond}`,
+      { replacements: { count_number, ...factoryReps } }
     );
     if (!headers.length) {
       return res.status(404).json({ success: false, message: '盘点单不存在' });
@@ -932,8 +959,8 @@ export const cancel = async (req: Request, res: Response, next: NextFunction) =>
     await sequelize.query(`
       UPDATE stock_count SET status = N'已作废', confirmed_by = :confirmed_by, confirmed_date = GETDATE(),
         confirm_remark = :confirm_remark, last_updated = GETDATE()
-      WHERE count_number = :count_number
-    `, { replacements: { confirmed_by: operator, confirm_remark: b.confirm_remark || '', count_number } });
+      WHERE count_number = :count_number${factoryCond}
+    `, { replacements: { confirmed_by: operator, confirm_remark: b.confirm_remark || '', count_number, ...factoryReps } });
 
     res.json(success(null, '盘点单已作废'));
   } catch (err) { next(err); }

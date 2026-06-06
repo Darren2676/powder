@@ -37,6 +37,9 @@ interface SalesOrderHeader {
   creation_date: string
   creation_man: string
   customer_po_number: string
+  factory_id?: number | null
+  factory_name?: string
+  factory_short?: string
 }
 
 interface SalesOrderDetail {
@@ -188,6 +191,7 @@ const dvEditPromisedDeliveryDate = ref<any>(null)
 // ==================== 表格列定义 ====================
 const defaultDataColumns: any[] = [
   { title: '销售订单编号', dataIndex: 'sales_order_number', key: 'sales_order_number', width: 130, resizable: true },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '客户编号', dataIndex: 'customer_number', key: 'customer_number', width: 120, resizable: true },
   { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 160, resizable: true },
   { title: '销售负责人', dataIndex: 'head_of_sales', key: 'head_of_sales', width: 110, resizable: true },
@@ -1359,6 +1363,7 @@ const handleBatchAction = (action: string) => {
               </a-descriptions-item>
               <a-descriptions-item label="客户编号">{{ detailViewRecord.customer_number }}</a-descriptions-item>
               <a-descriptions-item label="客户名称">{{ detailViewRecord.customer_name }}</a-descriptions-item>
+              <a-descriptions-item label="所属工厂">{{ detailViewRecord.factory_short || detailViewRecord.factory_name || '-' }}</a-descriptions-item>
               <a-descriptions-item label="销售负责人">{{ detailViewRecord.head_of_sales || '-' }}</a-descriptions-item>
               <a-descriptions-item label="联系人">{{ detailViewRecord.linkman || '-' }}</a-descriptions-item>
               <a-descriptions-item label="联系方式">{{ detailViewRecord.contacts || '-' }}</a-descriptions-item>

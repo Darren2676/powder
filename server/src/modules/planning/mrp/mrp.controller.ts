@@ -1,15 +1,17 @@
 import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
 
-const generateMrpRunNumber = async (transaction?: any): Promise<string> => {
+const generateMrpRunNumber = async (factoryCode: string = '', transaction?: any): Promise<string> => {
   const today = new Date();
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `MRP-${dateStr}-`;
+  const prefix = `MRP${fc}-${dateStr}-`;
 
   const opts: any = { replacements: { prefix: prefix + '%' } };
   if (transaction) opts.transaction = transaction;
@@ -26,9 +28,10 @@ const generateMrpRunNumber = async (transaction?: any): Promise<string> => {
   return prefix + String(seq).padStart(3, '0');
 };
 
-const generateOrderNumber = async (transaction?: any): Promise<string> => {
+const generateOrderNumber = async (factoryCode: string = '', transaction?: any): Promise<string> => {
   const today = new Date();
-  const prefix = 'P' + today.getFullYear() +
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
+  const prefix = 'P' + fc + today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
 
@@ -47,12 +50,13 @@ const generateOrderNumber = async (transaction?: any): Promise<string> => {
   return prefix + String(seq).padStart(3, '0');
 };
 
-const generatePurchaseReqNumber = async (transaction?: any): Promise<string> => {
+const generatePurchaseReqNumber = async (factoryCode: string = '', transaction?: any): Promise<string> => {
   const today = new Date();
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `PR-${dateStr}-`;
+  const prefix = `PR${fc}-${dateStr}-`;
 
   const opts: any = { replacements: { prefix: prefix + '%' } };
   if (transaction) opts.transaction = transaction;
@@ -91,6 +95,11 @@ export const getPlansForMrp = async (req: Request, res: Response, next: NextFunc
 
     const conditions: string[] = [`approval_status = N'已审批'`, `plan_status = N'待加入任务'`, `mrp_status IS NULL`];
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       conditions.push(`(production_number LIKE :search OR item_number LIKE :search OR item_name LIKE :search)`);
@@ -125,6 +134,7 @@ export const getPlansForMrp = async (req: Request, res: Response, next: NextFunc
 
 export const runMRP = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body;
     if (!b.production_numbers || !Array.isArray(b.production_numbers) || b.production_numbers.length === 0) {
       res.status(400).json({ success: false, message: '请选择至少一条生产计划' });
@@ -135,6 +145,7 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
 
     const transaction = await sequelize.transaction();
     try {
+      const factoryCode = await getFactoryCode(req);
       // 1. 查询选中的生产计划
       const { placeholders: planPH, replacements: planRepl } = buildInClause(production_numbers, 'pn');
       const [plans]: any = await sequelize.query(`
@@ -151,17 +162,18 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
       }
 
       // 2. 生成MRP运行编号
-      const mrp_run_number = await generateMrpRunNumber(transaction);
+      const mrp_run_number = await generateMrpRunNumber(factoryCode, transaction);
       const now = new Date();
       const creation_date = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       const creation_man = (req as any).user?.username || '';
 
       // 3. 创建 mrp_run 头记录
+      const _factoryId = getFactoryId(req);
       await sequelize.query(`
-        INSERT INTO mrp_run (mrp_run_number, run_date, run_by, run_status, plan_count, remark, creation_date, creation_man)
-        VALUES (:mrp_run_number, GETDATE(), :run_by, N'已计算', :plan_count, '', :creation_date, :creation_man)
+        INSERT INTO mrp_run (mrp_run_number, run_date, run_by, run_status, plan_count, remark, creation_date, creation_man, factory_id)
+        VALUES (:mrp_run_number, GETDATE(), :run_by, N'已计算', :plan_count, '', :creation_date, :creation_man, :factory_id)
       `, {
-        replacements: { mrp_run_number, run_by: creation_man, plan_count: plans.length, creation_date, creation_man },
+        replacements: { mrp_run_number, run_by: creation_man, plan_count: plans.length, creation_date, creation_man, factory_id: req.body.factory_id || _factoryId },
         transaction
       });
 
@@ -584,6 +596,11 @@ export const getMRPRuns = async (req: Request, res: Response, next: NextFunction
 
     const conditions: string[] = [];
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       conditions.push(`(mrp_run_number LIKE :search OR run_by LIKE :search)`);
@@ -630,9 +647,9 @@ export const getMRPRuns = async (req: Request, res: Response, next: NextFunction
 export const getMRPRunDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-
+    const _factoryId = getFactoryId(req);
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM mrp_run WHERE mrp_run_number = :id`, { replacements: { id } }
+      `SELECT * FROM mrp_run WHERE mrp_run_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } }
     );
     if (!headers.length) {
       res.status(404).json({ success: false, message: 'MRP运行记录不存在' });
@@ -680,9 +697,10 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
     const items = b.items;
 
     // 校验MRP状态
+    const _factoryId = getFactoryId(req);
     const [runCheck]: any = await sequelize.query(
-      `SELECT run_status FROM mrp_run WHERE mrp_run_number = :mrp_run_number`,
-      { replacements: { mrp_run_number } }
+      `SELECT run_status FROM mrp_run WHERE mrp_run_number = :mrp_run_number${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+      { replacements: { mrp_run_number, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } }
     );
     if (!runCheck.length || runCheck[0].run_status !== '已计算') {
       res.status(400).json({ success: false, message: 'MRP运行状态不允许执行(需为"已计算"状态)' });
@@ -693,6 +711,7 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
     const creation_man = (req as any).user?.username || '';
 
     try {
+      const factoryCode = await getFactoryCode(req);
       let productionOrderCount = 0;
       let purchaseReqLines: any[] = [];
 
@@ -754,16 +773,16 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
 
         // 生成生产单
         if (prodQty > 0 && (detail.action_type === '生产' || detail.action_type === '生产+采购')) {
-          const orderNum = await generateOrderNumber(transaction);
+          const orderNum = await generateOrderNumber(factoryCode, transaction);
           await sequelize.query(`
             INSERT INTO production_order (
               production_order_number, production_number, item_number, item_name, basic_unit, specifications,
               product_drawing_number, rubber_compound_number, batch_production_quota,
-              planned_quantity, planned_completion_time, plan_status, remark, approval_status, is_semi_product
+              planned_quantity, planned_completion_time, plan_status, remark, approval_status, is_semi_product, factory_id
             ) VALUES (
               :production_order_number, :production_number, :item_number, :item_name, :basic_unit, :specifications,
               '', '', '',
-              :planned_quantity, :planned_completion_time, N'未开始', :remark, N'草稿', :is_semi_product
+              :planned_quantity, :planned_completion_time, N'未开始', :remark, N'草稿', :is_semi_product, :factory_id
             )
           `, {
             replacements: {
@@ -776,7 +795,8 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
               planned_quantity: prodQty,
               planned_completion_time: detail.planned_due_date || null,
               remark: `MRP自动生成 (${mrp_run_number})`,
-              is_semi_product: detail.item_type === "半成品" ? 1 : 0
+              is_semi_product: detail.item_type === "半成品" ? 1 : 0,
+              factory_id: req.body.factory_id || _factoryId
             },
             transaction
           });
@@ -822,7 +842,7 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
       // 批量生成采购申请
       let purchaseReqCount = 0;
       if (purchaseReqLines.length > 0) {
-        const prNumber = await generatePurchaseReqNumber(transaction);
+        const prNumber = await generatePurchaseReqNumber(factoryCode, transaction);
         const now = new Date();
         const creationDate = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
@@ -840,9 +860,9 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
 
         await sequelize.query(`
           INSERT INTO purchase_req (purchase_req_number, request_date, request_department, requester, request_reason,
-            source_number, production_number, approval_status, order_status, [condition], remark, creation_date, creation_man)
+            source_number, production_number, approval_status, order_status, [condition], remark, creation_date, creation_man, factory_id)
           VALUES (:purchase_req_number, GETDATE(), '', :requester, N'MRP物料需求计划',
-            :source_number, :production_number, N'草稿', N'未执行', N'启用', :remark, :creation_date, :creation_man)
+            :source_number, :production_number, N'草稿', N'未执行', N'启用', :remark, :creation_date, :creation_man, :factory_id)
         `, {
           replacements: {
             purchase_req_number: prNumber,
@@ -851,7 +871,8 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
             production_number: productionNumbers,
             remark: 'MRP自动生成 (' + mrp_run_number + ')',
             creation_date: creationDate,
-            creation_man: creation_man
+            creation_man: creation_man,
+            factory_id: req.body.factory_id || _factoryId
           },
           transaction
         });
@@ -930,20 +951,20 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
         );
         if (existCheck.length > 0) continue;
 
-        const planOrderNum = await generateOrderNumber(transaction);
+        const planOrderNum = await generateOrderNumber(factoryCode, transaction);
         await sequelize.query(`
           INSERT INTO production_order (
             production_order_number, production_number, item_number, item_name, basic_unit, specifications,
             product_drawing_number, rubber_compound_number, batch_production_quota,
             planned_quantity, equipment_number, equipment_name, mould_number,
             formed_part_specifications, formed_part_unit_consumption, actual_cavity_count, actual_hole_count, actual_daily_output,
-            planned_completion_time, plan_status, remark, approval_status
+            planned_completion_time, plan_status, remark, approval_status, factory_id
           ) VALUES (
             :production_order_number, :production_number, :item_number, :item_name, :basic_unit, :specifications,
             :product_drawing_number, :rubber_compound_number, :batch_production_quota,
             :planned_quantity, NULL, NULL, NULL,
             NULL, NULL, NULL, NULL, NULL,
-            :planned_completion_time, N'未开始', :remark, N'草稿'
+            :planned_completion_time, N'未开始', :remark, N'草稿', :factory_id
           )
         `, {
           replacements: {
@@ -958,7 +979,8 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
             batch_production_quota: plan.batch_production_quota || '',
             planned_quantity: plan.planned_quantity || 0,
             planned_completion_time: plan.planned_completion_time || null,
-            remark: plan.remark || ''
+            remark: plan.remark || '',
+            factory_id: req.body.factory_id || _factoryId
           },
           transaction
         });
@@ -995,9 +1017,10 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
 export const cancelMRPRun = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
     const [check]: any = await sequelize.query(
-      `SELECT run_status FROM mrp_run WHERE mrp_run_number = :id`,
-      { replacements: { id } }
+      `SELECT run_status FROM mrp_run WHERE mrp_run_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+      { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } }
     );
     if (!check.length) {
       res.status(404).json({ success: false, message: 'MRP运行记录不存在' });
@@ -1009,8 +1032,8 @@ export const cancelMRPRun = async (req: Request, res: Response, next: NextFuncti
     }
 
     await sequelize.query(
-      `UPDATE mrp_run SET run_status = N'已取消' WHERE mrp_run_number = :id`,
-      { replacements: { id } }
+      `UPDATE mrp_run SET run_status = N'已取消' WHERE mrp_run_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+      { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } }
     );
     res.json(success(null, 'MRP运行已取消'));
   } catch (err) { next(err); }
@@ -1021,9 +1044,10 @@ export const cancelMRPRun = async (req: Request, res: Response, next: NextFuncti
 export const deleteMRPRun = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
     const [check]: any = await sequelize.query(
-      `SELECT run_status FROM mrp_run WHERE mrp_run_number = :id`,
-      { replacements: { id } }
+      `SELECT run_status FROM mrp_run WHERE mrp_run_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+      { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } }
     );
     if (!check.length) {
       res.status(404).json({ success: false, message: 'MRP运行记录不存在' });
@@ -1038,7 +1062,7 @@ export const deleteMRPRun = async (req: Request, res: Response, next: NextFuncti
     try {
       await sequelize.query(`DELETE FROM mrp_run_detail WHERE mrp_run_number = :id`, { replacements: { id }, transaction });
       await sequelize.query(`DELETE FROM mrp_run_plan WHERE mrp_run_number = :id`, { replacements: { id }, transaction });
-      await sequelize.query(`DELETE FROM mrp_run WHERE mrp_run_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM mrp_run WHERE mrp_run_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) }, transaction });
       await transaction.commit();
       res.json(success(null, 'MRP运行记录已删除'));
     } catch (e) {

@@ -37,6 +37,7 @@ const rowSelection = computed(() => ({
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getPieceRateWages)
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '工资表编号', dataIndex: 'wage_number', key: 'wage_number', width: 180, resizable: true },
   { title: '名称', dataIndex: 'wage_name', key: 'wage_name', width: 160, resizable: true },
   { title: '周期类型', dataIndex: 'period_type', key: 'period_type', width: 90, resizable: true },

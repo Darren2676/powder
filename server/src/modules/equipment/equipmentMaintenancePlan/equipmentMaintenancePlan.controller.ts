@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 const fields = [
   'plan_number', 'equipment_number', 'maintenance_type', 'planned_date',
@@ -15,7 +16,7 @@ const headers = [
 ];
 
 // 生成计划编号
-async function generatePlanNumber(): Promise<string> {
+async function generatePlanNumber(factoryCode: string = ''): Promise<string> {
   const today = new Date();
   const prefix = `MP${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}`;
   const [rows]: any = await sequelize.query(
@@ -42,6 +43,11 @@ export const getEquipmentMaintenancePlans = async (req: Request, res: Response, 
 
     let whereClause = 'WHERE 1=1';
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ' AND mp.factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
+    }
 
     if (equipmentNumber) {
       whereClause += ' AND mp.equipment_number = :equipmentNumber';
@@ -96,6 +102,8 @@ export const getEquipmentMaintenancePlans = async (req: Request, res: Response, 
 
 export const createEquipmentMaintenancePlan = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     const username = (req as any).user?.username || '';
 
@@ -122,10 +130,10 @@ export const createEquipmentMaintenancePlan = async (req: Request, res: Response
       return;
     }
 
-    const planNumber = await generatePlanNumber();
-    const cols = 'plan_number, ' + fields.slice(1).join(', ') + ', approval_status, created_by';
-    const vals = ':plan_number, ' + fields.slice(1).map(f => ':' + f).join(', ') + ', N\'未审核\', :created_by';
-    const replacements: any = { plan_number: planNumber, created_by: username };
+    const planNumber = await generatePlanNumber(factoryCode);
+    const cols = 'plan_number, ' + fields.slice(1).join(', ') + ', approval_status, created_by, factory_id';
+    const vals = ':plan_number, ' + fields.slice(1).map(f => ':' + f).join(', ') + ', N\'未审核\', :created_by, :factory_id';
+    const replacements: any = { plan_number: planNumber, created_by: username, factory_id: _factoryId };
     for (const f of fields.slice(1)) {
       replacements[f] = b[f] !== undefined ? b[f] : null;
     }
@@ -230,6 +238,8 @@ export const cancelMaintenancePlan = async (req: Request, res: Response, next: N
 // 自动生成保养计划
 export const autoGeneratePlans = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const username = (req as any).user?.username || '';
 
     // 查找需要保养的设备（有保养周期且下次保养日期在7天内或已过期）
@@ -250,13 +260,13 @@ export const autoGeneratePlans = async (req: Request, res: Response, next: NextF
       );
       if (existing[0].cnt > 0) continue;
 
-      const planNumber = await generatePlanNumber();
+      const planNumber = await generatePlanNumber(factoryCode);
       const plannedDate = eq.next_maintenance_date || new Date().toISOString().slice(0, 10);
 
       await sequelize.query(
-        `INSERT INTO equipment_maintenance_plan (plan_number, equipment_number, maintenance_type, planned_date, plan_status, maintenance_items, approval_status, created_by)
-         VALUES (:pn, :en, N'定期保养', :pd, N'待执行', N'按保养周期自动生成', N'未审核', :cb)`,
-        { replacements: { pn: planNumber, en: eq.equipment_number, pd: plannedDate, cb: username } }
+        `INSERT INTO equipment_maintenance_plan (plan_number, equipment_number, maintenance_type, planned_date, plan_status, maintenance_items, approval_status, created_by, factory_id)
+         VALUES (:pn, :en, N'定期保养', :pd, N'待执行', N'按保养周期自动生成', N'未审核', :cb, :factory_id)`,
+        { replacements: { pn: planNumber, en: eq.equipment_number, pd: plannedDate, cb: username, factory_id: _factoryId } }
       );
       generated++;
     }
@@ -271,6 +281,11 @@ export const exportEquipmentMaintenancePlans = async (req: Request, res: Respons
     const planStatus = (req.query.plan_status as string) || '';
     let whereClause = 'WHERE 1=1';
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ' AND mp.factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
+    }
     if (equipmentNumber) { whereClause += ' AND mp.equipment_number = :equipmentNumber'; replacements.equipmentNumber = equipmentNumber; }
     if (planStatus) { whereClause += ' AND mp.plan_status = :planStatus'; replacements.planStatus = planStatus; }
 

@@ -87,6 +87,7 @@ const formStartTime = ref<any>(null)
 const formEndTime = ref<any>(null)
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '设备编号', dataIndex: 'equipment_number', key: 'equipment_number', width: 120, sorter: (a: any, b: any) => (a.equipment_number || '').localeCompare(b.equipment_number || ''), resizable: true },
   { title: '设备名称', dataIndex: 'equipment_name', key: 'equipment_name', width: 140, resizable: true },
   { title: '停机类型', dataIndex: 'downtime_type', key: 'downtime_type', width: 90, resizable: true },

@@ -4,7 +4,20 @@ async function migrate() {
   try {
     console.log('开始补全权限菜单数据...');
 
-    // ============ 1. 添加缺失的二级子菜单 ============
+    // ============ 0. 添加集团管理一级菜单 ============
+    const groupMenu: any = await sequelize.query(
+      `SELECT id FROM permission WHERE permission_code = 'group'`,
+      { type: 'SELECT' }
+    );
+    if (groupMenu.length === 0) {
+      await sequelize.query(
+        `INSERT INTO permission (permission_name, permission_code, permission_type, parent_id, menu_key, icon, sort_order, status)
+         VALUES (N'集团管理', 'group', 'menu', NULL, 'group', 'GlobalOutlined', 0, N'启用')
+      );
+      console.log('  Added domain menu: 集团管理');
+    }
+
+    // ============ 1. 添加缺失的二级子菜单 ============"
     const subMenus = [
       // 主数据子菜单
       { name: '生产数据', code: 'production-data', parent_code: 'master-data', menu_key: 'production-data', icon: 'ToolOutlined', sort: 1 },
@@ -37,6 +50,8 @@ async function migrate() {
       { name: '质量数据管理', code: 'quality-data-management', parent_code: 'quality', menu_key: 'quality-data-management', icon: 'DatabaseOutlined', sort: 2 },
       { name: '质量报表', code: 'quality-report-menu', parent_code: 'quality', menu_key: 'quality-report-menu', icon: 'PieChartOutlined', sort: 3 },
       { name: '新核云', code: 'xhy-dev', parent_code: 'quality', menu_key: 'xhy-dev', icon: 'CloudOutlined', sort: 4 },
+      // 集团管理子菜单
+      { name: '总部汇总报表', code: 'hq-reports', parent_code: 'group', menu_key: 'hq-reports', icon: 'BarChartOutlined', sort: 1 },
     ];
 
     for (const sm of subMenus) {
@@ -157,6 +172,15 @@ async function migrate() {
       // 系统设置
       { name: '角色管理', code: 'roles', parent_code: 'system', menu_key: 'roles', route: '/roles', sort: 2 },
       { name: '权限菜单管理', code: 'permissions', parent_code: 'system', menu_key: 'permissions', route: '/permissions', sort: 3 },
+      { name: '工厂管理', code: 'factories', parent_code: 'system', menu_key: 'factories', route: '/factories', sort: 4 },
+      // 集团管理 > 总部汇总报表
+      { name: '集团销售汇总表', code: 'hq-sales-summary', parent_code: 'hq-reports', menu_key: 'hq-sales-summary', route: '/hq-sales-summary', sort: 1 },
+      { name: '集团生产汇总表', code: 'hq-production-summary', parent_code: 'hq-reports', menu_key: 'hq-production-summary', route: '/hq-production-summary', sort: 2 },
+      { name: '集团采购汇总表', code: 'hq-purchase-summary', parent_code: 'hq-reports', menu_key: 'hq-purchase-summary', route: '/hq-purchase-summary', sort: 3 },
+      { name: '集团库存汇总表', code: 'hq-inventory-summary', parent_code: 'hq-reports', menu_key: 'hq-inventory-summary', route: '/hq-inventory-summary', sort: 4 },
+      { name: '集团财务汇总表', code: 'hq-finance-summary', parent_code: 'hq-reports', menu_key: 'hq-finance-summary', route: '/hq-finance-summary', sort: 5 },
+      { name: '集团质量汇总表', code: 'hq-quality-summary', parent_code: 'hq-reports', menu_key: 'hq-quality-summary', route: '/hq-quality-summary', sort: 6 },
+      { name: '集团出入库流水总表', code: 'hq-inventory-flow', parent_code: 'hq-reports', menu_key: 'hq-inventory-flow', route: '/hq-inventory-flow', sort: 7 },
     ];
 
     for (const p of pages) {
@@ -329,6 +353,54 @@ async function migrate() {
         }
       }
       console.log('  staff role reassigned permissions');
+    }
+
+    // ============ 8. 确保HQ角色存在 + 分配集团管理权限 ============
+    const hqRoles = [
+      { code: 'headquarters_admin', name: '总部管理员', desc: '总部系统管理员，可查看全部集团报表', sort: 10 },
+      { code: 'headquarters_manager', name: '总部经理', desc: '总部管理层，可查看全部集团报表', sort: 11 },
+      { code: 'headquarters_finance', name: '总部财务', desc: '总部财务岗，可查看财务/库存/出入库报表', sort: 12 },
+      { code: 'headquarters_quality', name: '总部质量', desc: '总部质量岗，可查看质量/生产/库存报表', sort: 13 },
+      { code: 'headquarters_sales', name: '总部销售', desc: '总部销售岗，可查看销售/采购/库存/出入库报表', sort: 14 },
+    ];
+    for (const hr of hqRoles) {
+      const existing: any = await sequelize.query(`SELECT id FROM role WHERE role_code = :rc`, { replacements: { rc: hr.code }, type: 'SELECT' });
+      if (existing.length === 0) {
+        await sequelize.query(
+          `INSERT INTO role (role_name, role_code, description, is_system, status, sort_order) VALUES (:name, :code, :desc, 1, N'启用', :sort)`,
+          { replacements: { name: hr.name, code: hr.code, desc: hr.desc, sort: hr.sort } }
+        );
+        console.log(`  Created HQ role: ${hr.name} (${hr.code})`);
+      }
+    }
+
+    const hqRolePerms: Record<string, string[]> = {
+      'headquarters_admin': ['group', 'hq-reports', 'hq-sales-summary', 'hq-production-summary', 'hq-purchase-summary', 'hq-inventory-summary', 'hq-finance-summary', 'hq-quality-summary', 'hq-inventory-flow'],
+      'headquarters_manager': ['group', 'hq-reports', 'hq-sales-summary', 'hq-production-summary', 'hq-purchase-summary', 'hq-inventory-summary', 'hq-finance-summary', 'hq-quality-summary', 'hq-inventory-flow'],
+      'headquarters_finance': ['group', 'hq-reports', 'hq-finance-summary', 'hq-inventory-summary', 'hq-inventory-flow'],
+      'headquarters_quality': ['group', 'hq-reports', 'hq-quality-summary', 'hq-production-summary', 'hq-inventory-summary'],
+      'headquarters_sales': ['group', 'hq-reports', 'hq-sales-summary', 'hq-purchase-summary', 'hq-inventory-summary', 'hq-inventory-flow'],
+    };
+    for (const [roleCode, permCodes] of Object.entries(hqRolePerms)) {
+      const hqRole: any = await sequelize.query(`SELECT id FROM role WHERE role_code = :rc`, { replacements: { rc: roleCode }, type: 'SELECT' });
+      if (hqRole.length > 0) {
+        for (const code of permCodes) {
+          const permRows: any = await sequelize.query(`SELECT id FROM permission WHERE permission_code = :code`, { replacements: { code }, type: 'SELECT' });
+          if (permRows.length > 0) {
+            const existing: any = await sequelize.query(
+              `SELECT 1 FROM role_permission WHERE role_id = :rid AND permission_id = :pid`,
+              { replacements: { rid: hqRole[0].id, pid: permRows[0].id }, type: 'SELECT' }
+            );
+            if (existing.length === 0) {
+              await sequelize.query(
+                `INSERT INTO role_permission (role_id, permission_id) VALUES (:rid, :pid)`,
+                { replacements: { rid: hqRole[0].id, pid: permRows[0].id } }
+              );
+            }
+          }
+        }
+        console.log(`  ${roleCode} role assigned group permissions`);
+      }
     }
 
     console.log('权限菜单补全完成!');

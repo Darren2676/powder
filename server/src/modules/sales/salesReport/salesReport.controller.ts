@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 // 解析日期范围参数，默认近12个月
 const parseDateRange = (query: any) => {
@@ -16,6 +17,8 @@ const parseDateRange = (query: any) => {
 export const getKPI = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { start_date, end_date } = parseDateRange(req.query);
+    const _factoryId = getFactoryId(req);
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     // 涉及的销售订单数（有发货记录的去重计数）
     const [orderCountRes]: any = await sequelize.query(`
@@ -23,14 +26,16 @@ export const getKPI = async (req: Request, res: Response, next: NextFunction) =>
       FROM shipping_order_detail sod
       INNER JOIN shipping_order so ON so.shipping_order_number = sod.shipping_order_number
       WHERE so.shipping_date >= :start_date AND so.shipping_date < DATEADD(day, 1, CAST(:end_date AS DATE))
-    `, { replacements: { start_date, end_date } });
+        ${_factoryId !== null ? 'AND so.factory_id = :_factoryId' : ''}
+    `, { replacements: { start_date, end_date, ...factoryReps } });
 
     // 发货单数
     const [shippedOrdersRes]: any = await sequelize.query(`
       SELECT COUNT(*) as total
       FROM shipping_order
       WHERE shipping_date >= :start_date AND shipping_date < DATEADD(day, 1, CAST(:end_date AS DATE))
-    `, { replacements: { start_date, end_date } });
+        ${_factoryId !== null ? 'AND factory_id = :_factoryId' : ''}
+    `, { replacements: { start_date, end_date, ...factoryReps } });
 
     // 总发货数量
     const [shippedQtyRes]: any = await sequelize.query(`
@@ -38,7 +43,8 @@ export const getKPI = async (req: Request, res: Response, next: NextFunction) =>
       FROM shipping_order_detail sod
       INNER JOIN shipping_order so ON so.shipping_order_number = sod.shipping_order_number
       WHERE so.shipping_date >= :start_date AND so.shipping_date < DATEADD(day, 1, CAST(:end_date AS DATE))
-    `, { replacements: { start_date, end_date } });
+        ${_factoryId !== null ? 'AND so.factory_id = :_factoryId' : ''}
+    `, { replacements: { start_date, end_date, ...factoryReps } });
 
     // 总退货数量（排除已驳回）
     const [returnedQtyRes]: any = await sequelize.query(`
@@ -46,8 +52,9 @@ export const getKPI = async (req: Request, res: Response, next: NextFunction) =>
       FROM return_order_detail rod
       INNER JOIN return_order ro ON ro.return_order_number = rod.return_order_number
       WHERE ro.status != N'已驳回'
+        ${_factoryId !== null ? 'AND ro.factory_id = :_factoryId' : ''}
         AND ro.creation_date >= :start_date AND ro.creation_date < DATEADD(day, 1, CAST(:end_date AS DATE))
-    `, { replacements: { start_date, end_date } });
+    `, { replacements: { start_date, end_date, ...factoryReps } });
 
     const totalShippedQty = Number(shippedQtyRes[0]?.total) || 0;
     const totalReturnedQty = Number(returnedQtyRes[0]?.total) || 0;
@@ -67,6 +74,8 @@ export const getKPI = async (req: Request, res: Response, next: NextFunction) =>
 export const getMonthlyTrend = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { start_date, end_date } = parseDateRange(req.query);
+    const _factoryId = getFactoryId(req);
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     // 发货月度汇总
     const [shippedRows]: any = await sequelize.query(`
@@ -75,8 +84,9 @@ export const getMonthlyTrend = async (req: Request, res: Response, next: NextFun
       FROM shipping_order_detail sod
       INNER JOIN shipping_order so ON so.shipping_order_number = sod.shipping_order_number
       WHERE so.shipping_date >= :start_date AND so.shipping_date < DATEADD(day, 1, CAST(:end_date AS DATE))
+        ${_factoryId !== null ? 'AND so.factory_id = :_factoryId' : ''}
       GROUP BY CONVERT(varchar(7), so.shipping_date, 120)
-    `, { replacements: { start_date, end_date } });
+    `, { replacements: { start_date, end_date, ...factoryReps } });
 
     // 退货月度汇总
     const [returnedRows]: any = await sequelize.query(`
@@ -85,9 +95,10 @@ export const getMonthlyTrend = async (req: Request, res: Response, next: NextFun
       FROM return_order_detail rod
       INNER JOIN return_order ro ON ro.return_order_number = rod.return_order_number
       WHERE ro.status != N'已驳回'
+        ${_factoryId !== null ? 'AND ro.factory_id = :_factoryId' : ''}
         AND ro.creation_date >= :start_date AND ro.creation_date < DATEADD(day, 1, CAST(:end_date AS DATE))
       GROUP BY CONVERT(varchar(7), ro.creation_date, 120)
-    `, { replacements: { start_date, end_date } });
+    `, { replacements: { start_date, end_date, ...factoryReps } });
 
     // 合并月份数据
     const shippedMap: Record<string, number> = {};
@@ -119,6 +130,8 @@ export const getMonthlyTrend = async (req: Request, res: Response, next: NextFun
 export const getCustomerRanking = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { start_date, end_date } = parseDateRange(req.query);
+    const _factoryId = getFactoryId(req);
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [rows]: any = await sequelize.query(`
       SELECT TOP 10
@@ -130,6 +143,7 @@ export const getCustomerRanking = async (req: Request, res: Response, next: Next
         FROM shipping_order_detail sod
         INNER JOIN shipping_order so ON so.shipping_order_number = sod.shipping_order_number
         WHERE so.shipping_date >= :start_date AND so.shipping_date < DATEADD(day, 1, CAST(:end_date AS DATE))
+          ${_factoryId !== null ? 'AND so.factory_id = :_factoryId' : ''}
         GROUP BY so.customer_name
       ) s
       FULL OUTER JOIN (
@@ -137,11 +151,12 @@ export const getCustomerRanking = async (req: Request, res: Response, next: Next
         FROM return_order_detail rod
         INNER JOIN return_order ro ON ro.return_order_number = rod.return_order_number
         WHERE ro.status != N'已驳回'
+          ${_factoryId !== null ? 'AND ro.factory_id = :_factoryId' : ''}
           AND ro.creation_date >= :start_date AND ro.creation_date < DATEADD(day, 1, CAST(:end_date AS DATE))
         GROUP BY ro.customer_name
       ) r ON s.customer_name = r.customer_name
       ORDER BY ISNULL(s.shipped_qty, 0) DESC
-    `, { replacements: { start_date, end_date } });
+    `, { replacements: { start_date, end_date, ...factoryReps } });
 
     res.json(success(rows));
   } catch (err) { next(err); }
@@ -151,6 +166,8 @@ export const getCustomerRanking = async (req: Request, res: Response, next: Next
 export const getProductRanking = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { start_date, end_date } = parseDateRange(req.query);
+    const _factoryId = getFactoryId(req);
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [rows]: any = await sequelize.query(`
       SELECT TOP 10
@@ -163,6 +180,7 @@ export const getProductRanking = async (req: Request, res: Response, next: NextF
         FROM shipping_order_detail sod
         INNER JOIN shipping_order so ON so.shipping_order_number = sod.shipping_order_number
         WHERE so.shipping_date >= :start_date AND so.shipping_date < DATEADD(day, 1, CAST(:end_date AS DATE))
+          ${_factoryId !== null ? 'AND so.factory_id = :_factoryId' : ''}
         GROUP BY sod.item_number
       ) s
       FULL OUTER JOIN (
@@ -170,11 +188,12 @@ export const getProductRanking = async (req: Request, res: Response, next: NextF
         FROM return_order_detail rod
         INNER JOIN return_order ro ON ro.return_order_number = rod.return_order_number
         WHERE ro.status != N'已驳回'
+          ${_factoryId !== null ? 'AND ro.factory_id = :_factoryId' : ''}
           AND ro.creation_date >= :start_date AND ro.creation_date < DATEADD(day, 1, CAST(:end_date AS DATE))
         GROUP BY rod.item_number
       ) r ON s.item_number = r.item_number
       ORDER BY ISNULL(s.shipped_qty, 0) DESC
-    `, { replacements: { start_date, end_date } });
+    `, { replacements: { start_date, end_date, ...factoryReps } });
 
     res.json(success(rows));
   } catch (err) { next(err); }
@@ -184,6 +203,8 @@ export const getProductRanking = async (req: Request, res: Response, next: NextF
 export const getReturnReasonDistribution = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { start_date, end_date } = parseDateRange(req.query);
+    const _factoryId = getFactoryId(req);
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [rows]: any = await sequelize.query(`
       SELECT
@@ -193,10 +214,11 @@ export const getReturnReasonDistribution = async (req: Request, res: Response, n
       FROM return_order ro
       LEFT JOIN return_order_detail rod ON rod.return_order_number = ro.return_order_number
       WHERE ro.status != N'已驳回'
+        ${_factoryId !== null ? 'AND ro.factory_id = :_factoryId' : ''}
         AND ro.creation_date >= :start_date AND ro.creation_date < DATEADD(day, 1, CAST(:end_date AS DATE))
       GROUP BY CASE WHEN ro.reason IS NULL OR ro.reason = '' THEN N'未注明原因' ELSE ro.reason END
       ORDER BY total_qty DESC
-    `, { replacements: { start_date, end_date } });
+    `, { replacements: { start_date, end_date, ...factoryReps } });
 
     res.json(success(rows));
   } catch (err) { next(err); }
@@ -215,6 +237,10 @@ export const getShippingWarning = async (req: Request, res: Response, next: Next
 
     let searchClause = '';
     const replacements: any = { days: dayCount, offset, offsetEnd };
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       searchClause = ` AND (so.sales_order_number LIKE :search OR so.customer_name LIKE :search OR sod.item_number LIKE :search OR sod.item_name LIKE :search)`;
@@ -228,6 +254,7 @@ export const getShippingWarning = async (req: Request, res: Response, next: Next
       AND sod.shipping_status NOT IN (N'全部发货', N'超额发货')
       AND sod.promised_delivery_date IS NOT NULL
       AND so.approval_status = N'已审批'
+      ${_factoryId !== null ? 'AND so.factory_id = :_factoryId' : ''}
       ${isOverdue
         ? `AND CAST(sod.promised_delivery_date AS DATE) < CAST(GETDATE() AS DATE)`
         : `AND CAST(sod.promised_delivery_date AS DATE) >= CAST(GETDATE() AS DATE)
@@ -313,6 +340,10 @@ export const getOrderSummary = async (req: Request, res: Response, next: NextFun
 
     let searchClause = '';
     const replacements: any = { start_date, end_date, offset, offsetEnd };
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       searchClause = ` AND (so.sales_order_number LIKE :search OR so.customer_name LIKE :search OR sod.item_number LIKE :search OR sod.item_name LIKE :search)`;
@@ -330,14 +361,17 @@ export const getOrderSummary = async (req: Request, res: Response, next: NextFun
           INNER JOIN shipping_order sh ON sh.shipping_order_number = sd.shipping_order_number
           WHERE sd.sales_detail_id = sod.id
             AND sh.shipping_date >= :start_date AND sh.shipping_date < DATEADD(day, 1, CAST(:end_date AS DATE))
+            ${_factoryId !== null ? 'AND sh.factory_id = :_factoryId' : ''}
         )
         OR EXISTS (
           SELECT 1 FROM return_order_detail rd
           INNER JOIN return_order ro ON ro.return_order_number = rd.return_order_number
           WHERE rd.sales_detail_id = sod.id AND ro.status != N'已驳回'
             AND ro.creation_date >= :start_date AND ro.creation_date < DATEADD(day, 1, CAST(:end_date AS DATE))
+            ${_factoryId !== null ? 'AND ro.factory_id = :_factoryId' : ''}
         )
       )
+      ${_factoryId !== null ? 'AND so.factory_id = :_factoryId' : ''}
       ${searchClause}
     `, { replacements });
 
@@ -365,6 +399,7 @@ export const getOrderSummary = async (req: Request, res: Response, next: NextFun
           INNER JOIN shipping_order sh ON sh.shipping_order_number = sd.shipping_order_number
           WHERE sd.sales_detail_id = sod.id
             AND sh.shipping_date >= :start_date AND sh.shipping_date < DATEADD(day, 1, CAST(:end_date AS DATE))
+            ${_factoryId !== null ? 'AND sh.factory_id = :_factoryId' : ''}
         ) shipped_sub
         OUTER APPLY (
           SELECT SUM(rd.return_quantity) as returned_qty
@@ -372,8 +407,10 @@ export const getOrderSummary = async (req: Request, res: Response, next: NextFun
           INNER JOIN return_order ro ON ro.return_order_number = rd.return_order_number
           WHERE rd.sales_detail_id = sod.id AND ro.status != N'已驳回'
             AND ro.creation_date >= :start_date AND ro.creation_date < DATEADD(day, 1, CAST(:end_date AS DATE))
+            ${_factoryId !== null ? 'AND ro.factory_id = :_factoryId' : ''}
         ) returned_sub
         WHERE (ISNULL(shipped_sub.shipped_qty, 0) > 0 OR ISNULL(returned_sub.returned_qty, 0) > 0)
+        ${_factoryId !== null ? 'AND so.factory_id = :_factoryId' : ''}
         ${searchClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
@@ -394,6 +431,10 @@ export const getShippingByOrderSummary = async (req: Request, res: Response, nex
     let searchClause = '';
     let dateClause = '';
     const replacements: any = { offset, offsetEnd };
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       searchClause = ` AND (so.sales_order_number LIKE :search OR so.customer_name LIKE :search OR sod.item_number LIKE :search OR sod.item_name LIKE :search)`;
@@ -413,6 +454,7 @@ export const getShippingByOrderSummary = async (req: Request, res: Response, nex
       INNER JOIN sales_order_detail sod ON sod.sales_order_number = so.sales_order_number
       WHERE so.approval_status = N'已审批'
         AND sod.status NOT IN (N'已取消')
+        ${_factoryId !== null ? 'AND so.factory_id = :_factoryId' : ''}
         ${dateClause}
         ${searchClause}
     `, { replacements });
@@ -445,15 +487,18 @@ export const getShippingByOrderSummary = async (req: Request, res: Response, nex
           FROM shipping_order_detail sd
           INNER JOIN shipping_order sh ON sh.shipping_order_number = sd.shipping_order_number
           WHERE sd.sales_detail_id = sod.id
+            ${_factoryId !== null ? 'AND sh.factory_id = :_factoryId' : ''}
         ) shipped_sub
         OUTER APPLY (
           SELECT SUM(rd.return_quantity) as returned_qty
           FROM return_order_detail rd
           INNER JOIN return_order ro ON ro.return_order_number = rd.return_order_number
           WHERE rd.sales_detail_id = sod.id AND ro.status != N'已驳回'
+            ${_factoryId !== null ? 'AND ro.factory_id = :_factoryId' : ''}
         ) returned_sub
         WHERE so.approval_status = N'已审批'
           AND sod.status NOT IN (N'已取消')
+          ${_factoryId !== null ? 'AND so.factory_id = :_factoryId' : ''}
           ${dateClause}
           ${searchClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
@@ -471,6 +516,10 @@ export const exportShippingByOrderSummary = async (req: Request, res: Response, 
     let searchClause = '';
     let dateClause = '';
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       searchClause = ` AND (so.sales_order_number LIKE :search OR so.customer_name LIKE :search OR sod.item_number LIKE :search OR sod.item_name LIKE :search)`;
@@ -506,15 +555,18 @@ export const exportShippingByOrderSummary = async (req: Request, res: Response, 
         FROM shipping_order_detail sd
         INNER JOIN shipping_order sh ON sh.shipping_order_number = sd.shipping_order_number
         WHERE sd.sales_detail_id = sod.id
+        ${_factoryId !== null ? 'AND sh.factory_id = :_factoryId' : ''}
       ) shipped_sub
       OUTER APPLY (
         SELECT SUM(rd.return_quantity) as returned_qty
         FROM return_order_detail rd
         INNER JOIN return_order ro ON ro.return_order_number = rd.return_order_number
         WHERE rd.sales_detail_id = sod.id AND ro.status != N'已驳回'
+        ${_factoryId !== null ? 'AND ro.factory_id = :_factoryId' : ''}
       ) returned_sub
       WHERE so.approval_status = N'已审批'
         AND sod.status NOT IN (N'已取消')
+        ${_factoryId !== null ? 'AND so.factory_id = :_factoryId' : ''}
         ${dateClause}
         ${searchClause}
       ORDER BY so.order_date DESC, so.sales_order_number, sod.line_number
@@ -548,6 +600,10 @@ export const getOrderProductionSummary = async (req: Request, res: Response, nex
     let searchClause = '';
     let dateClause = '';
     const replacements: any = { offset, offsetEnd };
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       searchClause = ` AND (so.sales_order_number LIKE :search OR so.customer_name LIKE :search OR sod.item_number LIKE :search OR sod.item_name LIKE :search OR pp.production_number LIKE :search OR po.production_order_number LIKE :search)`;
@@ -571,6 +627,7 @@ export const getOrderProductionSummary = async (req: Request, res: Response, nex
         AND po.item_number = pp.item_number
       WHERE so.approval_status = N'已审批'
         AND sod.status NOT IN (N'已取消')
+        ${_factoryId !== null ? 'AND so.factory_id = :_factoryId' : ''}
         ${dateClause}
         ${searchClause}
     `, { replacements });
@@ -612,9 +669,11 @@ export const getOrderProductionSummary = async (req: Request, res: Response, nex
           FROM production_order po2
           WHERE po2.production_number = pp.production_number
             AND po2.item_number = pp.item_number
+            ${_factoryId !== null ? 'AND po2.factory_id = :_factoryId' : ''}
         ) inbound_sub
         WHERE so.approval_status = N'已审批'
           AND sod.status NOT IN (N'已取消')
+          ${_factoryId !== null ? 'AND so.factory_id = :_factoryId' : ''}
           ${dateClause}
           ${searchClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd

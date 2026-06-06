@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { generateProductionNumber } from '@/services/documentNumber.service';
+import { getFactoryCode, getFactoryId } from '@/utils/factoryWhere.util';
 
 // ==================== MPS 主计划计算 ====================
 export const calculateMPS = async (req: Request, res: Response, next: NextFunction) => {
@@ -243,6 +244,7 @@ export const calculateMPS = async (req: Request, res: Response, next: NextFuncti
 // ==================== 将 MPS 结果导入生产计划 ====================
 export const importToPlan = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body;
     if (!b.items || !Array.isArray(b.items) || b.items.length === 0) {
       res.status(400).json({ success: false, message: '请选择至少一条MPS结果' });
@@ -256,10 +258,11 @@ export const importToPlan = async (req: Request, res: Response, next: NextFuncti
     const results: any[] = [];
 
     try {
+      const factoryCode = await getFactoryCode(req);
       for (const item of items) {
         if (!item.item_number || !item.net_demand || item.net_demand <= 0) continue;
 
-        const production_number = await generateProductionNumber(transaction);
+        const production_number = await generateProductionNumber(factoryCode, transaction);
         const planned_quantity = item.planned_quantity || item.net_demand;
         const bpq = parseFloat(item.batch_production_quota);
         const shifts_number = (bpq && bpq > 0) ? Math.ceil(planned_quantity / bpq) : null;
@@ -395,6 +398,7 @@ export const getDemandSources = async (req: Request, res: Response, next: NextFu
 // ==================== 从需求来源混合列表导入生产计划 ====================
 export const importFromDemandSources = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body;
     if (!b.items || !Array.isArray(b.items) || b.items.length === 0) {
       res.status(400).json({ success: false, message: '请选择至少一条记录' });
@@ -408,8 +412,9 @@ export const importFromDemandSources = async (req: Request, res: Response, next:
     const results: any[] = [];
 
     try {
+      const factoryCode = await getFactoryCode(req);
       for (const item of items) {
-        const production_number = await generateProductionNumber(transaction);
+        const production_number = await generateProductionNumber(factoryCode, transaction);
         const planned_quantity = item.remaining_quantity || item.quantity || 0;
         const bpq = parseFloat(item.batch_production_quota);
         const shifts_number = (bpq && bpq > 0) ? Math.ceil(planned_quantity / bpq) : null;
@@ -484,6 +489,12 @@ export const getSalesOrdersForMpsImport = async (req: Request, res: Response, ne
 
     let whereClause = `WHERE d.shipping_status IN (N'未申请', N'未发货', N'部分发货') AND h.approval_status = N'已审批'`;
     const replacements: any = {};
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ' AND h.factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       whereClause += ` AND (h.sales_order_number LIKE :search OR h.customer_name LIKE :search OR d.item_number LIKE :search OR d.item_name LIKE :search)`;

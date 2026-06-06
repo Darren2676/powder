@@ -3,14 +3,16 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
 import { syncLineStatus } from '@/services/salesOrderSync.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
-const generateShippingRequestNumber = async (): Promise<string> => {
+const generateShippingRequestNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = new Date();
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `SR-${dateStr}-`;
+  const prefix = `SR${fc}-${dateStr}-`;
 
   const [rows]: any = await sequelize.query(
     `SELECT MAX(request_number) as max_num FROM shipping_request WHERE request_number LIKE :prefix`,
@@ -59,6 +61,12 @@ export const getPendingShipments = async (req: Request, res: Response, next: Nex
       replacements.dataScopeUserId = scope.head_of_sales_id;
     }
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND h.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
       `SELECT COUNT(*) as total FROM sales_order_detail d
        INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number
@@ -101,29 +109,32 @@ export const getPendingShipments = async (req: Request, res: Response, next: Nex
 // ==================== 生成发货申请 ====================
 export const createShippingRequest = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     // b.details: [{ sales_order_number, detail_id, item_number, item_name, specifications, basic_unit, order_quantity, ship_quantity, ... }]
     if (!b.details || !Array.isArray(b.details) || b.details.length === 0) {
       res.status(400).json({ success: false, message: '请选择至少一条发货明细' }); return;
     }
 
-    const request_number = await generateShippingRequestNumber();
+    const request_number = await generateShippingRequestNumber(factoryCode);
     const transaction = await sequelize.transaction();
 
     try {
       // 创建发货申请主表
       await sequelize.query(`
         INSERT INTO shipping_request (request_number, customer_number, customer_name, request_date, status, remark,
-          creation_man, creation_date)
+          creation_man, creation_date, factory_id)
         VALUES (:request_number, :customer_number, :customer_name, GETDATE(), N'待审核', :remark,
-          :creation_man, GETDATE())
+          :creation_man, GETDATE(), :factory_id)
       `, {
         replacements: {
           request_number,
           customer_number: b.customer_number || '',
           customer_name: b.customer_name || '',
           remark: b.remark || '',
-          creation_man: (req as any).user?.username || ''
+          creation_man: (req as any).user?.username || '',
+          factory_id: _factoryId
         },
         transaction
       });
@@ -215,6 +226,12 @@ export const getPendingRequestDetails = async (req: Request, res: Response, next
     if (search) {
       whereClause += ` AND (h.request_number LIKE :search OR d.item_number LIKE :search OR d.item_name LIKE :search OR h.customer_name LIKE :search OR d.sales_order_number LIKE :search)`;
       replacements.search = `%${search}%`;
+    }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND h.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
     }
 
     const [countResult]: any = await sequelize.query(
@@ -321,6 +338,12 @@ export const getShippingRequests = async (req: Request, res: Response, next: Nex
       replacements.dataScopeUserId = scope.head_of_sales_id;
     }
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
       `SELECT COUNT(*) as total FROM shipping_request ${whereClause}`, { replacements }
     );
@@ -370,9 +393,13 @@ export const updateShippingRequest = async (req: Request, res: Response, next: N
     const { id } = req.params;
     const b = req.body;
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     // 校验状态
     const [chk]: any = await sequelize.query(
-      `SELECT status FROM shipping_request WHERE request_number = :id`, { replacements: { id } }
+      `SELECT status FROM shipping_request WHERE request_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '发货申请不存在' }); return; }
     if (chk[0].status !== '待审核') {
@@ -510,9 +537,13 @@ export const cancelShippingRequest = async (req: Request, res: Response, next: N
     const transaction = await sequelize.transaction();
     try {
       // 查询申请状态（加锁）
+      const _factoryId = getFactoryId(req);
+      const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+      const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
       const [chk]: any = await sequelize.query(
-        `SELECT status FROM shipping_request WITH (UPDLOCK) WHERE request_number = :id`,
-        { replacements: { id }, transaction }
+        `SELECT status FROM shipping_request WITH (UPDLOCK) WHERE request_number = :id${factoryCond}`,
+        { replacements: { id, ...factoryReps }, transaction }
       );
       if (!chk.length) {
         await transaction.rollback();
@@ -578,8 +609,12 @@ export const cancelShippingRequest = async (req: Request, res: Response, next: N
 export const deleteShippingRequest = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [chk]: any = await sequelize.query(
-      `SELECT status FROM shipping_request WHERE request_number = :id`, { replacements: { id } }
+      `SELECT status FROM shipping_request WHERE request_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) {
       res.status(404).json({ success: false, message: '发货申请不存在' }); return;
@@ -601,7 +636,7 @@ export const deleteShippingRequest = async (req: Request, res: Response, next: N
 
       // 删除明细和主表
       await sequelize.query(`DELETE FROM shipping_request_detail WHERE request_number = :id`, { replacements: { id }, transaction });
-      await sequelize.query(`DELETE FROM shipping_request WHERE request_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM shipping_request WHERE request_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
 
       // 回写销售订单明细发货状态
       if (salesDetailIds.length > 0) {

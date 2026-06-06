@@ -3,6 +3,7 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
 import { logLinesideMovement, logWorkReportLinesideMovement, logWorkReportReverseLinesideMovement } from '@/services/linesideMovement.service';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 // Re-export from service for backward compatibility
 export { logLinesideMovement, logWorkReportLinesideMovement, logWorkReportReverseLinesideMovement } from '@/services/linesideMovement.service';
@@ -25,6 +26,12 @@ export const getWipByOrder = async (req: Request, res: Response, next: NextFunct
     if (plan_status) {
       conditions.push(`po.plan_status = :plan_status`);
       replacements.plan_status = plan_status;
+    }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`po.factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

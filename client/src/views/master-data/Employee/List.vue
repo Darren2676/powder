@@ -3,6 +3,7 @@ import { ref, reactive, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, DownloadOutlined, UploadOutlined, PlusOutlined, DownOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee, exportEmployees, importEmployees, approveEmployee, withdrawEmployee, enableEmployee, disableEmployee } from '@/api/master-data/employee'
+import { getFactories } from '@/api/system/factory'
 import { getActiveDepartments } from '@/api/system/department'
 import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
@@ -18,6 +19,7 @@ interface Employee {
   date_on_board: string | null
   department: string
   status: string
+  factory_id?: number | null
 }
 
 const { loading, dataSource, searchText, selectedRowKeys, pagination, rowSelection, fetchData, handleTableChange, handleSearch, handleReset } = useTableList<Employee>(getEmployees)
@@ -30,6 +32,7 @@ const emptyForm = (): Employee & { date_on_board_dayjs?: Dayjs | null } => ({
   date_on_board: null,
   department: '',
   status: EMPLOYEE_STATUS.INACTIVE,
+  factory_id: null,
   date_on_board_dayjs: null
 })
 
@@ -56,7 +59,16 @@ const loadDepartments = async () => {
   }
 }
 
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
+
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '员工编号', dataIndex: 'employee_number', key: 'employee_number', width: 120, sorter: (a: any, b: any) => (a.employee_number || '').localeCompare(b.employee_number || ''), resizable: true },
   { title: '员工姓名', dataIndex: 'employee_name', key: 'employee_name', width: 120, resizable: true },
   { title: '性别', dataIndex: 'gender', key: 'gender', width: 80, resizable: true },
@@ -272,6 +284,7 @@ onMounted(() => {
   loadColumnPreference()
   fetchData()
   loadDepartments()
+  loadFactories()
 })
 </script>
 
@@ -345,6 +358,11 @@ onMounted(() => {
             <a-select-option v-for="dept in departmentList" :key="dept.id" :value="dept.dept_name" :label="dept.dept_name">{{ dept.dept_name }}</a-select-option>
           </a-select>
         </a-form-item>
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="editForm.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
+        </a-form-item>
       </a-form>
     </a-modal>
     <a-modal v-model:open="createModalVisible" title="新建员工" :confirm-loading="createLoading" @ok="handleCreateSubmit" width="600px">
@@ -362,6 +380,11 @@ onMounted(() => {
         <a-form-item label="部门">
           <a-select v-model:value="createForm.department" placeholder="请选择部门" allow-clear show-search :filter-option="(input: string, option: any) => option.label?.toLowerCase().includes(input.toLowerCase())">
             <a-select-option v-for="dept in departmentList" :key="dept.id" :value="dept.dept_name" :label="dept.dept_name">{{ dept.dept_name }}</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="createForm.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
           </a-select>
         </a-form-item>
       </a-form>

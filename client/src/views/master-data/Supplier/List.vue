@@ -5,6 +5,7 @@ import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, ExclamationCircleOutlined, DownloadOutlined, UploadOutlined, PlusOutlined, DownOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getSuppliers, createSupplier, updateSupplier, deleteSupplier, exportSuppliers, importSuppliers, updateSupplierCondition, approveSupplier, withdrawSupplier } from '@/api/master-data/supplier'
 import { getEmployees } from '@/api/master-data/employee'
+import { getFactories } from '@/api/system/factory'
 import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import { useModalDrag } from '@/composables/useModalDrag'
@@ -47,6 +48,7 @@ interface Supplier {
   tax_id: string
   payment_terms: string
   condition: string
+  factory_id?: number | null
 }
 
 const emptyForm = (): Supplier => ({
@@ -55,7 +57,8 @@ const emptyForm = (): Supplier => ({
   linkman: '', mobile: '', contacts: '', region: '', detail_address: '', zip_code: '',
   telephone: '', fax: '', email: '', contact_remark: '',
   bank_account_name: '', bank_name: '', bank_account_number: '',
-  invoice_address: '', invoice_phone: '', invoice_title: '', tax_id: '', payment_terms: '', condition: CONDITION_STATUS.ENABLED
+  invoice_address: '', invoice_phone: '', invoice_title: '', tax_id: '', payment_terms: '', condition: CONDITION_STATUS.ENABLED,
+  factory_id: null
 })
 
 const { loading, dataSource, searchText, selectedRowKeys, pagination, rowSelection, fetchData, handleTableChange, handleSearch, handleReset } = useTableList<Supplier>(getSuppliers)
@@ -79,7 +82,16 @@ const loadEmployees = async () => {
   } catch { /* ignore */ }
 }
 
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
+
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '供应商编号', dataIndex: 'supplier_number', key: 'supplier_number', width: 120, resizable: true },
   { title: '供应商名称', dataIndex: 'supplier_name', key: 'supplier_name', width: 200, resizable: true },
   { title: '状态', dataIndex: 'condition', key: 'condition', width: 80, resizable: true },
@@ -220,6 +232,7 @@ onMounted(() => {
   loadColumnPreference()
   fetchData()
   loadEmployees()
+  loadFactories()
 })
 </script>
 
@@ -298,6 +311,7 @@ onMounted(() => {
         </a-row>
         <a-row :gutter="12">
           <a-col :span="6"><a-form-item label="采购税率"><a-input-number v-model:value="createForm.purchase_tax_rate" :precision="4" style="width: 100%" /></a-form-item></a-col>
+          <a-col :span="6"><a-form-item label="所属工厂"><a-select v-model:value="createForm.factory_id" placeholder="请选择" allow-clear><a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="6"><a-form-item label="付款条件"><a-input v-model:value="createForm.payment_terms" placeholder="请输入" /></a-form-item></a-col>
         </a-row>
         <a-divider orientation="left" style="margin: 8px 0 12px">联系信息</a-divider>
@@ -352,6 +366,7 @@ onMounted(() => {
         </a-row>
         <a-row :gutter="12">
           <a-col :span="6"><a-form-item label="采购税率"><a-input-number v-model:value="editForm.purchase_tax_rate" :precision="4" style="width: 100%" /></a-form-item></a-col>
+          <a-col :span="6"><a-form-item label="所属工厂"><a-select v-model:value="editForm.factory_id" placeholder="请选择" allow-clear><a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option></a-select></a-form-item></a-col>
           <a-col :span="6"><a-form-item label="付款条件"><a-input v-model:value="editForm.payment_terms" /></a-form-item></a-col>
         </a-row>
         <a-divider orientation="left" style="margin: 8px 0 12px">联系信息</a-divider>

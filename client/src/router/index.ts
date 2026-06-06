@@ -16,6 +16,7 @@ import { financeRoutes } from './finance';
 import { integrationRoutes } from './integration';
 import { equipmentRoutes } from './equipment';
 import { scoreRoutes } from './score';
+import { groupRoutes } from './group';
 
 const routes: RouteRecordRaw[] = [
   {
@@ -53,6 +54,7 @@ const routes: RouteRecordRaw[] = [
       ...integrationRoutes,
       ...equipmentRoutes,
       ...scoreRoutes,
+      ...groupRoutes,
     ]
   },
   {
@@ -71,6 +73,7 @@ const routePermissionMap: Record<string, string> = {
   'UserManagement': 'users',
   'RoleList': 'system',
   'DepartmentList': 'departments',
+  'FactoryList': 'system',
   'WorkflowList': 'workflow',
   'WorkflowDesigner': 'workflow',
   'SalesOrderList': 'sales-orders',
@@ -87,6 +90,9 @@ const routePermissionMap: Record<string, string> = {
   'SalesDashboard': 'sales-order-dashboard',
   'SampleRequestList': 'sample-requests',
   'SampleRequestCreate': 'sample-request-create',
+  'SampleBomList': 'sample-boms',
+  'SampleBomDetail': 'sample-boms',
+  'InspectionReportList': 'sample-inspection-reports',
   'SalesPersonShippingReport': 'sales-person-shipping-report',
   'MpsReport': 'mps-report',
   'PlanList': 'plans',
@@ -151,9 +157,18 @@ const routePermissionMap: Record<string, string> = {
   'ScrapInboundOrderList': 'scrap-inbound-orders',
   'ScrapInventoryList': 'scrap-inventory',
   'ScrapTransactionList': 'scrap-transactions',
+  'ShelfLifeReport': 'shelf-life-report',
   'PurchaseReturnList': 'purchase-returns',
   'PurchaseInvoiceList': 'purchase-invoices',
+  'PurchaseReconciliation': 'purchase-reconciliation',
   'HefeiUniversity2025': 'hefei-university-2025',
+  'HQSalesSummary': 'hq-sales-summary',
+  'HQProductionSummary': 'hq-production-summary',
+  'HQPurchaseSummary': 'hq-purchase-summary',
+  'HQInventorySummary': 'hq-inventory-summary',
+  'HQFinanceSummary': 'hq-finance-summary',
+  'HQQualitySummary': 'hq-quality-summary',
+  'HQInventoryFlow': 'hq-inventory-flow',
 };
 
 // Navigation guard

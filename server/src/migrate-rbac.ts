@@ -237,6 +237,7 @@ async function migrate() {
         { name: '用户管理', code: 'users', parent_code: 'system', menu_key: 'users', route: '/users', sort: 1 },
         { name: '部门管理', code: 'departments', parent_code: 'system', menu_key: 'departments', route: '/departments', sort: 2 },
         { name: '流程管理', code: 'workflow', parent_code: 'system', menu_key: 'workflow', route: '/workflow', sort: 3 },
+        { name: '工厂管理', code: 'factories', parent_code: 'system', menu_key: 'factories', route: '/factories', sort: 4 },
       ];
 
       for (const p of pages) {

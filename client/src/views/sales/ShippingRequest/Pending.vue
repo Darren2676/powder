@@ -68,6 +68,7 @@ const pagination = reactive({
 const defaultPendingColumns: any[] = [
   { title: '销售订单号', dataIndex: 'order_number', key: 'order_number', width: 170, resizable: true },
   { title: '行号', dataIndex: 'line_number', key: 'line_number', width: 70 },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '客户编号', dataIndex: 'customer_number', key: 'customer_number', width: 110, resizable: true },
   { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 150, resizable: true },
   { title: '销售负责人', dataIndex: 'head_of_sales', key: 'head_of_sales', width: 100, resizable: true },

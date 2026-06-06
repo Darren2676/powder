@@ -5,6 +5,7 @@ import { exportToExcel } from '../../../utils/excel.util';
 import { generateOutsourcingOrderNumber, generateOutsourcingReqNumber } from '@/services/documentNumber.service';
 import dayjs from 'dayjs';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // Re-export from service for backward compatibility
 export { generateOutsourcingReqNumber } from '@/services/documentNumber.service';
@@ -28,6 +29,12 @@ export const getOutsourcingReqs = async (req: Request, res: Response, next: Next
     if (approval_status) { conditions.push(`approval_status = :approval_status`); replacements.approval_status = approval_status; }
     if (order_status) { conditions.push(`order_status = :order_status`); replacements.order_status = order_status; }
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
+
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM outsourcing_req ${whereClause}`, { replacements });
     const total = countResult[0].total;
@@ -47,7 +54,9 @@ export const getOutsourcingReqs = async (req: Request, res: Response, next: Next
 export const getOutsourcingReqDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [rows]: any = await sequelize.query(`SELECT * FROM outsourcing_req WHERE outsourcing_req_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const [rows]: any = await sequelize.query(`SELECT * FROM outsourcing_req WHERE outsourcing_req_number = :id${factoryCond}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } });
     if (!rows.length) { res.status(404).json({ success: false, message: '委外申请单不存在' }); return; }
 
     const [details]: any = await sequelize.query(
@@ -62,23 +71,26 @@ export const getOutsourcingReqDetail = async (req: Request, res: Response, next:
 // ==================== 创建 ====================
 export const createOutsourcingReq = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const username = (req as any).user?.username || '';
 
     const transaction = await sequelize.transaction();
     try {
-      const reqNumber = await generateOutsourcingReqNumber(transaction);
+      const factoryCode = await getFactoryCode(req);
+      const reqNumber = await generateOutsourcingReqNumber(factoryCode, transaction);
 
       await sequelize.query(`
         INSERT INTO outsourcing_req (
           outsourcing_req_number, production_order_number, production_number,
           item_number, item_name, specifications, basic_unit, planned_quantity,
-          approval_status, order_status, remark, creation_date, creation_man
+          approval_status, order_status, remark, factory_id, creation_date, creation_man
         ) VALUES (
           :reqNumber, :production_order_number, :production_number,
           :item_number, :item_name, :specifications, :basic_unit, :planned_quantity,
-          N'草稿', N'未执行', :remark, :creation_date, :creation_man
+          N'草稿', N'未执行', :remark, :factory_id, :creation_date, :creation_man
         )
       `, {
         replacements: {
@@ -91,6 +103,7 @@ export const createOutsourcingReq = async (req: Request, res: Response, next: Ne
           basic_unit: b.basic_unit || '',
           planned_quantity: b.planned_quantity || 0,
           remark: b.remark || '',
+          factory_id: _factoryId,
           creation_date: now,
           creation_man: username
         },
@@ -229,6 +242,8 @@ export const deleteOutsourcingReq = async (req: Request, res: Response, next: Ne
 // ==================== 转委外订单 ====================
 export const toOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const { id } = req.params;
     const b = req.body;
     if (!b.supplier_number) { res.status(400).json({ success: false, message: '供应商不能为空' }); return; }
@@ -259,6 +274,7 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
 
     const transaction = await sequelize.transaction();
     try {
+      const factoryCode = await getFactoryCode(req);
       const createdOrders: string[] = [];
 
       for (const d of selectedDetails) {
@@ -268,7 +284,7 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
         if (remaining <= 0) continue;
 
         const unitPrice = parseFloat(b.unit_prices?.[d.id]) || 0;
-        const ooNumber = await generateOutsourcingOrderNumber(transaction);
+        const ooNumber = await generateOutsourcingOrderNumber(factoryCode, transaction);
 
         // 创建委外订单（一条明细 → 一张委外订单）
         await sequelize.query(`
@@ -279,7 +295,7 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
             planned_quantity, received_quantity, supplier_number, supplier_name,
             unit_price, total_amount, expected_return_date,
             approval_status, order_status, source_req_number, source_req_detail_id,
-            remark, creation_date, creation_man
+            remark, factory_id, creation_date, creation_man
           ) VALUES (
             :ooNumber, :process_task_number, :production_order_number, :production_number,
             '', :step_number, :standard_process_number, :standard_process_name,
@@ -287,7 +303,7 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
             :planned_quantity, 0, :supplier_number, :supplier_name,
             :unit_price, :total_amount, :expected_return_date,
             N'草稿', N'待发出', :source_req_number, :source_req_detail_id,
-            :remark, :creation_date, :creation_man
+            :remark, :factory_id, :creation_date, :creation_man
           )
         `, {
           replacements: {
@@ -313,6 +329,7 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
             source_req_number: id,
             source_req_detail_id: d.id,
             remark: b.remark || '',
+            factory_id: _factoryId,
             creation_date: now,
             creation_man: username
           },

@@ -3,6 +3,7 @@ import sequelize from '../../../config/database';
 import { generateMaterialTxnNumber, syncMaterialInventorySummary } from '@/services/inventory.service';
 import { fifoDeductBatches, createMaterialTransaction } from '@/services/warehouse/helpers';
 import { logLinesideMovement } from '@/services/linesideMovement.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 /**
  * 获取委外发料订单详情（移动端）
@@ -11,6 +12,7 @@ import { logLinesideMovement } from '@/services/linesideMovement.service';
 export const getIssueOrder = async (req: Request, res: Response) => {
   try {
     const { order_number } = req.params;
+    const _factoryId = getFactoryId(req);
 
     // 查询委外订单
     const [order]: any = await sequelize.query(`
@@ -27,9 +29,9 @@ export const getIssueOrder = async (req: Request, res: Response) => {
         oo.production_order_number,
         oo.process_task_number as work_order_number
       FROM outsourcing_order oo
-      WHERE oo.outsourcing_order_number = :order_number
+      WHERE oo.outsourcing_order_number = :order_number ${_factoryId !== null ? 'AND oo.factory_id = :_factoryId' : ''}
     `, {
-      replacements: { order_number }
+      replacements: { order_number, ...(_factoryId !== null ? { _factoryId } : {}) }
     });
 
     if (!order || order.length === 0) {
@@ -45,9 +47,9 @@ export const getIssueOrder = async (req: Request, res: Response) => {
     const [pendingIssues]: any = await sequelize.query(`
       SELECT issue_number, warehouse_number, warehouse_name, status
       FROM outsourcing_material_issue
-      WHERE outsourcing_order_number = :order_number AND status = N'待确认'
+      WHERE outsourcing_order_number = :order_number AND status = N'待确认' ${_factoryId !== null ? 'AND factory_id = :_factoryId' : ''}
       ORDER BY creation_date ASC
-    `, { replacements: { order_number } });
+    `, { replacements: { order_number, ...(_factoryId !== null ? { _factoryId } : {}) } });
 
     // 查询所有待确认出库申请的明细
     const pendingIssuesWithDetails: any[] = [];
@@ -108,6 +110,8 @@ export const submitIssue = async (req: Request, res: Response) => {
   const transaction = await sequelize.transaction();
 
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const { order_number, items, remark, issue_number } = req.body;
 
     if (!order_number) {
@@ -121,8 +125,8 @@ export const submitIssue = async (req: Request, res: Response) => {
       // 指定出库单号（分批发料场景）
       const [specified]: any = await sequelize.query(`
         SELECT * FROM outsourcing_material_issue
-        WHERE issue_number = :issue_number AND outsourcing_order_number = :order_number AND status = N'待确认'
-      `, { replacements: { issue_number, order_number }, transaction });
+        WHERE issue_number = :issue_number AND outsourcing_order_number = :order_number AND status = N'待确认' ${_factoryId !== null ? 'AND factory_id = :_factoryId' : ''}
+      `, { replacements: { issue_number, order_number, ...(_factoryId !== null ? { _factoryId } : {}) }, transaction });
       if (!specified.length) {
         await transaction.rollback();
         return res.status(404).json({ success: false, message: '指定的出库申请不存在或已确认' });
@@ -132,9 +136,9 @@ export const submitIssue = async (req: Request, res: Response) => {
       // 默认取第一条待确认记录（向后兼容）
       const [pendingIssues]: any = await sequelize.query(`
         SELECT * FROM outsourcing_material_issue
-        WHERE outsourcing_order_number = :order_number AND status = N'待确认'
+        WHERE outsourcing_order_number = :order_number AND status = N'待确认' ${_factoryId !== null ? 'AND factory_id = :_factoryId' : ''}
         ORDER BY creation_date ASC
-      `, { replacements: { order_number }, transaction });
+      `, { replacements: { order_number, ...(_factoryId !== null ? { _factoryId } : {}) }, transaction });
       if (!pendingIssues.length) {
         await transaction.rollback();
         return res.status(404).json({ success: false, message: '未找到待确认的备料出库申请，请先审批委外订单' });
@@ -179,7 +183,7 @@ export const submitIssue = async (req: Request, res: Response) => {
         { replacements: { item_number: d.item_number, warehouse_number: warehouseNumber }, transaction }
       );
       const mat = matInfo.length > 0 ? matInfo[0] : {};
-      const txNum = await generateMaterialTxnNumber(transaction);
+      const txNum = await generateMaterialTxnNumber(factoryCode, transaction);
       await createMaterialTransaction({
         transaction_number: txNum,
         transaction_type: '出库',
@@ -222,8 +226,8 @@ export const submitIssue = async (req: Request, res: Response) => {
 
     // 更新发料单状态
     await sequelize.query(
-      `UPDATE outsourcing_material_issue SET status = N'已出库' WHERE issue_number = :issueNumber`,
-      { replacements: { issueNumber }, transaction }
+      `UPDATE outsourcing_material_issue SET status = N'已出库' WHERE issue_number = :issueNumber ${_factoryId !== null ? 'AND factory_id = :_factoryId' : ''}`,
+      { replacements: { issueNumber, ...(_factoryId !== null ? { _factoryId } : {}) }, transaction }
     );
 
     await transaction.commit();

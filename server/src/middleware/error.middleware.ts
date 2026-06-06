@@ -55,11 +55,17 @@ export const errorHandler = (err: any, req: Request, res: Response, next: NextFu
   }
 
   const statusCode = err.statusCode || 500;
-  const message = err.message || '服务器内部错误';
+
+  // 提取错误消息（Sequelize DatabaseError 可能藏在 parent.errors 中）
+  let message = err.parent?.errors?.[0]?.message
+    || err.parent?.message
+    || err.original?.message
+    || err.message
+    || '服务器内部错误';
 
   res.status(statusCode).json({
     success: false,
     message,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
   });
 };

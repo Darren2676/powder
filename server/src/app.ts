@@ -24,7 +24,7 @@ app.use(cors({
   origin: corsOrigin ? corsOrigin.split(',').map(s => s.trim()) : true, // 未配置时全开(开发环境)，配置后仅允许指定Origin
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'x-view-mode', 'x-factory-id']
 }));
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(requestLogger);

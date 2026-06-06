@@ -2,16 +2,21 @@ import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 销售负责人列表（下拉用） ====================
 export const getSalesPersons = async (_req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(_req);
+    const factoryCond = _factoryId !== null ? 'AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [rows]: any = await sequelize.query(`
       SELECT DISTINCT head_of_sales
       FROM sales_order
       WHERE head_of_sales IS NOT NULL AND head_of_sales != ''
+        ${factoryCond}
       ORDER BY head_of_sales
-    `);
+    `, { replacements: factoryReps });
     res.json(success(rows.map((r: any) => r.head_of_sales)));
   } catch (err) { next(err); }
 };
@@ -29,6 +34,11 @@ export const getSalesPersonShippingReport = async (req: Request, res: Response, 
 
     const conditions: string[] = [`h.approval_status = N'已审批'`];
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`h.factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
 
     if (head_of_sales) {
       conditions.push(`h.head_of_sales = :head_of_sales`);
@@ -119,6 +129,10 @@ export const getSalesPersonShippingReport = async (req: Request, res: Response, 
 
       // 添加与主查询相同的筛选条件
       const detailConditions = [`h.approval_status = N'已审批'`, `h.head_of_sales IN (${placeholders})`];
+      if (_factoryId !== null) {
+        detailConditions.push(`h.factory_id = :_factoryId`);
+        detailReplacements._factoryId = _factoryId;
+      }
       if (start_date) {
         detailConditions.push(`h.order_date >= :start_date`);
         detailReplacements.start_date = start_date;
@@ -187,6 +201,11 @@ export const exportSalesPersonShippingReport = async (req: Request, res: Respons
 
     const conditions: string[] = [`h.approval_status = N'已审批'`];
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`h.factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
 
     if (head_of_sales) {
       conditions.push(`h.head_of_sales = :head_of_sales`);

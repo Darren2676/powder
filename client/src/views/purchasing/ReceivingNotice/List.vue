@@ -40,11 +40,13 @@ const confirmVisible = ref(false)
 const confirmRN = ref('')
 const confirmDetails = ref<any[]>([])
 const confirmWarehouse = reactive({ warehouse_number: '', warehouse_name: '' })
+const confirmProductionDate = ref<string>('')  // 批量设置生产日期
 
 // ==================== 列定义 ====================
 const { loading, searchText, pagination } = useTableList(getReceivingNotices)
 
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '收货通知号', dataIndex: 'receiving_number', key: 'receiving_number', width: 170 },
   { title: '采购订单号', dataIndex: 'purchase_order_number', key: 'purchase_order_number', width: 170 },
   { title: '供应商', dataIndex: 'supplier_name', key: 'supplier_name', width: 150 },
@@ -180,6 +182,7 @@ const openConfirm = async (record: any) => {
   }))
   confirmWarehouse.warehouse_number = ''
   confirmWarehouse.warehouse_name = ''
+  confirmProductionDate.value = ''
   confirmVisible.value = true
 }
 
@@ -204,6 +207,15 @@ const onLineWarehouseChange = (record: any, val: string) => {
   }
 }
 
+const onProductionDateSelect = (val: string) => {
+  confirmProductionDate.value = val || ''
+  if (val) {
+    for (const row of confirmDetails.value) {
+      row.production_date = val
+    }
+  }
+}
+
 const handleConfirm = async () => {
   // 校验每行都有仓库
   const missingWh = confirmDetails.value.find((d: any) => !d.warehouse_number)
@@ -212,12 +224,16 @@ const handleConfirm = async () => {
   const qualifiedQtys: any = {}
   const unqualifiedQtys: any = {}
   const lineWarehouses: any = {}
+  const lineProductionDates: any = {}
   for (const d of confirmDetails.value) {
     qualifiedQtys[d.item_number] = parseFloat(d.qualified_quantity) || 0
     unqualifiedQtys[d.item_number] = parseFloat(d.unqualified_quantity) || 0
     lineWarehouses[d.item_number] = {
       warehouse_number: d.warehouse_number,
       warehouse_name: d.warehouse_name
+    }
+    if (d.production_date) {
+      lineProductionDates[d.item_number] = d.production_date
     }
   }
 
@@ -226,7 +242,8 @@ const handleConfirm = async () => {
     warehouse_name: confirmWarehouse.warehouse_name,
     qualified_quantities: qualifiedQtys,
     unqualified_quantities: unqualifiedQtys,
-    line_warehouses: lineWarehouses
+    line_warehouses: lineWarehouses,
+    line_production_dates: lineProductionDates
   })
   message.success('确认收货成功')
   confirmVisible.value = false
@@ -322,6 +339,9 @@ const handleConfirm = async () => {
               <a-select-option v-for="w in warehouseOptions" :key="w.warehouse_number" :value="w.warehouse_number" :label="w.warehouse_number + ' ' + w.warehouse_name">{{ w.warehouse_name }}</a-select-option>
             </a-select>
           </a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="批量设置生产日期">
+            <a-date-picker v-model:value="confirmProductionDate" value-format="YYYY-MM-DD" style="width:100%" @change="onProductionDateSelect" placeholder="选择后批量填充到所有行" />
+          </a-form-item></a-col>
         </a-row>
       </a-form>
       <h4>确认明细</h4>
@@ -333,8 +353,9 @@ const handleConfirm = async () => {
         { title: '收货数量', dataIndex: 'receiving_quantity', width: 80 },
         { title: '入库仓库', key: 'warehouse', width: 150 },
         { title: '合格数量', key: 'qualified_quantity', width: 90 },
-        { title: '不合格数量', key: 'unqualified_quantity', width: 90 }
-      ]" :data-source="confirmDetails" :pagination="false" row-key="item_number" size="small">
+        { title: '不合格数量', key: 'unqualified_quantity', width: 90 },
+        { title: '生产日期', key: 'production_date', width: 140 }
+      ]" :data-source="confirmDetails" :pagination="false" row-key="item_number" size="small" :scroll="{ x: 1100 }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'warehouse'">
             <a-select v-model:value="record.warehouse_number" show-search option-filter-prop="label" style="width:100%" size="small" @change="(val: string) => onLineWarehouseChange(record, val)" placeholder="选择仓库">
@@ -346,6 +367,9 @@ const handleConfirm = async () => {
           </template>
           <template v-else-if="column.key === 'unqualified_quantity'">
             <a-input-number v-model:value="record.unqualified_quantity" :min="0" :max="record.receiving_quantity" style="width:100%" size="small" @change="record.qualified_quantity = (parseFloat(record.receiving_quantity) || 0) - (parseFloat(record.unqualified_quantity) || 0)" />
+          </template>
+          <template v-else-if="column.key === 'production_date'">
+            <a-date-picker v-model:value="record.production_date" value-format="YYYY-MM-DD" size="small" style="width:100%" placeholder="生产日期" />
           </template>
         </template>
       </a-table>

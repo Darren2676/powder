@@ -25,6 +25,7 @@ const pagination = reactive({
 })
 
 const defaultDataColumns: any[] = [
+{ title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '流水编号', dataIndex: 'transaction_number', key: 'transaction_number', width: 170, resizable: true },
   { title: '类型', dataIndex: 'transaction_type', key: 'transaction_type', width: 80, resizable: true },
   { title: '来源类型', dataIndex: 'source_type', key: 'source_type', width: 100, resizable: true },

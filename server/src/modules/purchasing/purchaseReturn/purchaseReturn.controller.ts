@@ -3,14 +3,16 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { generateBatchNumber, generateMaterialTxnNumber, syncMaterialInventorySummary } from '@/services/inventory.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
-export const generateReturnNumber = async (transaction?: any): Promise<string> => {
+export const generateReturnNumber = async (factoryCode: string = '', transaction?: any): Promise<string> => {
   const today = new Date();
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `PRT-${dateStr}-`;
+  const prefix = `PRT${fc}-${dateStr}-`;
   const opts: any = transaction ? { replacements: { prefix: prefix + '%' }, transaction } : { replacements: { prefix: prefix + '%' } };
   const [rows]: any = await sequelize.query(
     `SELECT MAX(return_number) as max_num FROM purchase_return WHERE return_number LIKE :prefix`, opts
@@ -40,6 +42,11 @@ export const getPurchaseReturns = async (req: Request, res: Response, next: Next
     if (approval_status) {
       conditions.push(`r.approval_status = :approval_status`);
       replacements.approval_status = approval_status;
+    }
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`r.factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
     }
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
@@ -112,11 +119,13 @@ export const getPOReceivedItems = async (req: Request, res: Response, next: Next
 // ==================== 创建 ====================
 export const createPurchaseReturn = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body;
     if (!b.purchase_order_number) { res.status(400).json({ success: false, message: '采购订单号不能为空' }); return; }
     if (!b.details || !b.details.length) { res.status(400).json({ success: false, message: '请选择退货明细' }); return; }
 
-    const return_number = await generateReturnNumber();
+    const return_number = await generateReturnNumber(factoryCode);
+    const _factoryId = getFactoryId(req);
     const creation_man = (req as any).user?.username || '';
     const now = new Date();
     const creation_date = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -136,11 +145,11 @@ export const createPurchaseReturn = async (req: Request, res: Response, next: Ne
         INSERT INTO purchase_return (return_number, purchase_order_number, supplier_number, supplier_name,
           return_type, return_reason, warehouse_number, warehouse_name,
           approval_status, return_status, exchange_status, total_return_quantity, total_return_amount,
-          remark, creation_date, creation_man)
+          remark, factory_id, creation_date, creation_man)
         VALUES (:return_number, :purchase_order_number, :supplier_number, :supplier_name,
           :return_type, :return_reason, :warehouse_number, :warehouse_name,
           N'草稿', N'待退货', N'待换货', :total_return_quantity, :total_return_amount,
-          :remark, :creation_date, :creation_man)
+          :remark, :factory_id, :creation_date, :creation_man)
       `, {
         replacements: {
           return_number,
@@ -154,6 +163,7 @@ export const createPurchaseReturn = async (req: Request, res: Response, next: Ne
           total_return_quantity: totalQty,
           total_return_amount: totalAmt,
           remark: b.remark || '',
+          factory_id: b.factory_id || _factoryId,
           creation_date,
           creation_man
         },
@@ -295,15 +305,18 @@ export const updatePurchaseReturn = async (req: Request, res: Response, next: Ne
 export const deletePurchaseReturn = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM purchase_return WHERE return_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM purchase_return WHERE return_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '退货单不存在' }); return; }
     if (chk[0].approval_status !== '草稿') { res.status(403).json({ success: false, message: '非草稿状态不允许删除' }); return; }
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`DELETE FROM purchase_return_detail WHERE return_number = :id`, { replacements: { id }, transaction });
-      await sequelize.query(`DELETE FROM purchase_return WHERE return_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM purchase_return WHERE return_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
       await transaction.commit();
       res.json(success(null, '删除成功'));
     } catch (e) { await transaction.rollback(); throw e; }
@@ -314,10 +327,13 @@ export const deletePurchaseReturn = async (req: Request, res: Response, next: Ne
 export const submitPurchaseReturn = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [chk]: any = await sequelize.query(`SELECT approval_status FROM purchase_return WHERE return_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    const [chk]: any = await sequelize.query(`SELECT approval_status FROM purchase_return WHERE return_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!chk.length) { res.status(404).json({ success: false, message: '退货单不存在' }); return; }
     if (chk[0].approval_status !== '草稿') { res.status(400).json({ success: false, message: '只有草稿可以提交审批' }); return; }
-    await sequelize.query(`UPDATE purchase_return SET approval_status = N'待审批' WHERE return_number = :id`, { replacements: { id } });
+    await sequelize.query(`UPDATE purchase_return SET approval_status = N'待审批' WHERE return_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     res.json(success(null, '提交审批成功'));
   } catch (err) { next(err); }
 };
@@ -326,10 +342,13 @@ export const submitPurchaseReturn = async (req: Request, res: Response, next: Ne
 export const approvePurchaseReturn = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [chk]: any = await sequelize.query(`SELECT approval_status FROM purchase_return WHERE return_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    const [chk]: any = await sequelize.query(`SELECT approval_status FROM purchase_return WHERE return_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!chk.length) { res.status(404).json({ success: false, message: '退货单不存在' }); return; }
     if (chk[0].approval_status !== '待审批') { res.status(400).json({ success: false, message: '只有待审批可以审批' }); return; }
-    await sequelize.query(`UPDATE purchase_return SET approval_status = N'已审批' WHERE return_number = :id`, { replacements: { id } });
+    await sequelize.query(`UPDATE purchase_return SET approval_status = N'已审批' WHERE return_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     res.json(success(null, '审批通过'));
   } catch (err) { next(err); }
 };
@@ -338,7 +357,10 @@ export const approvePurchaseReturn = async (req: Request, res: Response, next: N
 export const rejectPurchaseReturn = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    await sequelize.query(`UPDATE purchase_return SET approval_status = N'已驳回' WHERE return_number = :id AND approval_status = N'待审批'`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    await sequelize.query(`UPDATE purchase_return SET approval_status = N'已驳回' WHERE return_number = :id AND approval_status = N'待审批'${factoryCond}`, { replacements: { id, ...factoryReps } });
     res.json(success(null, '已驳回'));
   } catch (err) { next(err); }
 };
@@ -347,11 +369,14 @@ export const rejectPurchaseReturn = async (req: Request, res: Response, next: Ne
 export const withdrawPurchaseReturn = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [chk]: any = await sequelize.query(`SELECT approval_status, return_status FROM purchase_return WHERE return_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    const [chk]: any = await sequelize.query(`SELECT approval_status, return_status FROM purchase_return WHERE return_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!chk.length) { res.status(404).json({ success: false, message: '退货单不存在' }); return; }
     if (chk[0].approval_status !== '已审批') { res.status(400).json({ success: false, message: '只有已审批可以撤消' }); return; }
     if (chk[0].return_status !== '待退货') { res.status(400).json({ success: false, message: '已执行退货，不可撤消' }); return; }
-    await sequelize.query(`UPDATE purchase_return SET approval_status = N'草稿' WHERE return_number = :id`, { replacements: { id } });
+    await sequelize.query(`UPDATE purchase_return SET approval_status = N'草稿' WHERE return_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     res.json(success(null, '已撤消审批'));
   } catch (err) { next(err); }
 };
@@ -359,11 +384,15 @@ export const withdrawPurchaseReturn = async (req: Request, res: Response, next: 
 // ==================== 执行退货出库（核心） ====================
 export const executeReturn = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const { id } = req.params;
     const operator = (req as any).user?.username || '';
 
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM purchase_return WHERE return_number = :id`, { replacements: { id } }
+      `SELECT * FROM purchase_return WHERE return_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '退货单不存在' }); return; }
     const header = headers[0];
@@ -376,6 +405,7 @@ export const executeReturn = async (req: Request, res: Response, next: NextFunct
 
     const transaction = await sequelize.transaction();
     try {
+      const factoryCode = await getFactoryCode(req);
       for (const d of details) {
         const retQty = parseFloat(d.return_quantity) || 0;
         if (retQty <= 0) continue;
@@ -423,7 +453,7 @@ export const executeReturn = async (req: Request, res: Response, next: NextFunct
         const afterQty = parseFloat(invRows[0]?.qty) || 0;
         const beforeQty = afterQty + retQty;
 
-        const txNum = await generateMaterialTxnNumber(transaction);
+        const txNum = await generateMaterialTxnNumber(factoryCode, transaction);
         await sequelize.query(`
           INSERT INTO material_inventory_transaction (transaction_number, transaction_type, source_type, source_number,
             item_number, item_name, specifications, basic_unit, item_type,
@@ -480,15 +510,15 @@ export const executeReturn = async (req: Request, res: Response, next: NextFunct
         const anyReceived = poDetails.some((r: any) => r.receive_status !== '未到货');
         const newStatus = allReceived ? '已完成' : (anyReceived ? '执行中' : '待执行');
         await sequelize.query(
-          `UPDATE purchase_order SET order_status = :newStatus WHERE purchase_order_number = :pon`,
-          { replacements: { newStatus, pon: header.purchase_order_number }, transaction }
+          `UPDATE purchase_order SET order_status = :newStatus WHERE purchase_order_number = :pon${factoryCond}`,
+          { replacements: { newStatus, pon: header.purchase_order_number, ...factoryReps }, transaction }
         );
       }
 
       // 6. 更新退货单状态
       await sequelize.query(
-        `UPDATE purchase_return SET return_status = N'已退货' WHERE return_number = :id`,
-        { replacements: { id }, transaction }
+        `UPDATE purchase_return SET return_status = N'已退货' WHERE return_number = :id${factoryCond}`,
+        { replacements: { id, ...factoryReps }, transaction }
       );
 
       await transaction.commit();
@@ -635,6 +665,10 @@ export const printPurchaseReturn = async (req: Request, res: Response, next: Nex
 // ==================== 换货入库 ====================
 export const exchangeStockIn = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const { id } = req.params;
     const operator = (req as any).user?.username || '';
 
@@ -653,6 +687,7 @@ export const exchangeStockIn = async (req: Request, res: Response, next: NextFun
 
     const transaction = await sequelize.transaction();
     try {
+      const factoryCode = await getFactoryCode(req);
       const whNumber = header.warehouse_number;
       const whName = header.warehouse_name;
       let allExchanged = true;
@@ -663,14 +698,14 @@ export const exchangeStockIn = async (req: Request, res: Response, next: NextFun
         if (d.exchange_status === '已换货') continue;
 
         // 1. 生成批次号
-        const batchNo = await generateBatchNumber('MB', transaction);
+        const batchNo = await generateBatchNumber('MB', factoryCode, transaction);
 
         // 2. 写入批次库存
         await sequelize.query(`
           INSERT INTO material_batch_inventory (batch_number, item_number, item_name, specifications, basic_unit, item_type,
-            warehouse_number, warehouse_name, quantity, status, creation_date)
+            warehouse_number, warehouse_name, quantity, status, creation_date, factory_id)
           VALUES (:batch_number, :item_number, :item_name, :specifications, :basic_unit, N'原材料',
-            :warehouse_number, :warehouse_name, :quantity, N'可用', GETDATE())
+            :warehouse_number, :warehouse_name, :quantity, N'可用', GETDATE(), :factory_id)
         `, {
           replacements: {
             batch_number: batchNo,
@@ -680,7 +715,8 @@ export const exchangeStockIn = async (req: Request, res: Response, next: NextFun
             basic_unit: d.basic_unit || '',
             warehouse_number: whNumber,
             warehouse_name: whName,
-            quantity: exQty
+            quantity: exQty,
+            factory_id: _factoryId
           },
           transaction
         });
@@ -696,7 +732,7 @@ export const exchangeStockIn = async (req: Request, res: Response, next: NextFun
         const afterQty = parseFloat(invRows[0]?.qty) || 0;
         const beforeQty = afterQty - exQty;
 
-        const txNum = await generateMaterialTxnNumber(transaction);
+        const txNum = await generateMaterialTxnNumber(factoryCode, transaction);
         await sequelize.query(`
           INSERT INTO material_inventory_transaction (transaction_number, transaction_type, source_type, source_number,
             item_number, item_name, specifications, basic_unit, item_type,
@@ -758,8 +794,8 @@ export const exchangeStockIn = async (req: Request, res: Response, next: NextFun
         const anyReceived = poDetails.some((r: any) => r.receive_status !== '未到货');
         const newStatus = allReceived ? '已完成' : (anyReceived ? '执行中' : '待执行');
         await sequelize.query(
-          `UPDATE purchase_order SET order_status = :newStatus WHERE purchase_order_number = :pon`,
-          { replacements: { newStatus, pon: header.purchase_order_number }, transaction }
+          `UPDATE purchase_order SET order_status = :newStatus WHERE purchase_order_number = :pon${factoryCond}`,
+          { replacements: { newStatus, pon: header.purchase_order_number, ...factoryReps }, transaction }
         );
       }
 
@@ -770,8 +806,8 @@ export const exchangeStockIn = async (req: Request, res: Response, next: NextFun
       );
       const allDone = remainDetails.every((r: any) => r.exchange_status === '已换货');
       await sequelize.query(
-        `UPDATE purchase_return SET exchange_status = :es WHERE return_number = :id`,
-        { replacements: { es: allDone ? '已换货' : '部分换货', id }, transaction }
+        `UPDATE purchase_return SET exchange_status = :es WHERE return_number = :id${factoryCond}`,
+        { replacements: { es: allDone ? '已换货' : '部分换货', id, ...factoryReps }, transaction }
       );
 
       await transaction.commit();

@@ -4,6 +4,7 @@ import { success } from '../../../utils/response.util';
 import { BusinessError } from '../../../shared/errors/BusinessError';
 import { generateParameterNumber } from './processParameter.service';
 import dayjs from 'dayjs';
+import { getFactoryCode } from '../../../utils/factoryWhere.util';
 
 const headerSelectCols = 'id, parameter_number, item_number, item_name, process_route_number, version, description, approval_status, [condition], creation_date, creation_man, remark';
 const detailSelectCols = 'id, parameter_number, line_number, step_number, step_name, param_name, param_code, param_value, unit, param_type, min_value, max_value, is_required, remark, process_category_code, process_category_name';
@@ -97,12 +98,13 @@ export const getProcessParameterDetail = async (req: Request, res: Response, nex
 // ==================== 创建 ====================
 export const createProcessParameter = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body || {};
     const user = (req as any).user;
 
     if (!b.item_number) throw new BusinessError(400, '产品编号必填');
 
-    const parameterNumber = await generateParameterNumber();
+    const parameterNumber = await generateParameterNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
 
     await sequelize.query(
@@ -380,6 +382,7 @@ export const downloadImportTemplate = async (_req: Request, res: Response, next:
 // ==================== 导入 ====================
 export const importProcessParameters = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     if (!req.file) { res.status(400).json({ success: false, message: '请上传Excel文件' }); return; }
 
     const XLSX = await import('xlsx');
@@ -411,7 +414,7 @@ export const importProcessParameters = async (req: Request, res: Response, next:
     if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件明细内容为空' }); return; }
 
     // 生成编号并创建
-    const parameterNumber = await generateParameterNumber();
+    const parameterNumber = await generateParameterNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const user = (req as any).user;
 

@@ -24,6 +24,7 @@ const pagination = reactive({
 })
 
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '物料编号', dataIndex: 'item_number', key: 'item_number', width: 140 },
   { title: '物料名称', dataIndex: 'item_name', key: 'item_name', width: 180 },
   { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 140 },

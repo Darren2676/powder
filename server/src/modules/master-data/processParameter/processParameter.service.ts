@@ -1,12 +1,13 @@
 import sequelize from '../../../config/database';
 
 // ==================== 编号生成 PP-YYYYMMDD-NNN ====================
-export const generateParameterNumber = async (): Promise<string> => {
+export const generateParameterNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = new Date();
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `PP-${dateStr}-`;
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
+  const prefix = `PP${fc}-${dateStr}-`;
 
   const [rows]: any = await sequelize.query(
     `SELECT MAX(parameter_number) as max_num FROM process_parameter_header WHERE parameter_number LIKE :prefix`,

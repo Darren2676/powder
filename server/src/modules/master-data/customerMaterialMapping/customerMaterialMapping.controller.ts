@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 列表查询 ====================
 export const getList = async (req: Request, res: Response, next: NextFunction) => {
@@ -16,31 +17,40 @@ export const getList = async (req: Request, res: Response, next: NextFunction) =
     const replacements: any = { offset, offsetEnd };
 
     if (customer_number) {
-      whereClause += ` AND customer_number = :customer_number`;
+      whereClause += ` AND cm.customer_number = :customer_number`;
       replacements.customer_number = customer_number;
     }
     if (item_number) {
-      whereClause += ` AND item_number = :item_number`;
+      whereClause += ` AND cm.item_number = :item_number`;
       replacements.item_number = item_number;
     }
     if (approval_status) {
-      whereClause += ` AND approval_status = :approval_status`;
+      whereClause += ` AND cm.approval_status = :approval_status`;
       replacements.approval_status = approval_status;
     }
     if (search) {
-      whereClause += ` AND (customer_number LIKE :search OR customer_name LIKE :search OR item_number LIKE :search OR item_name LIKE :search OR customer_item_number LIKE :search OR customer_item_description LIKE :search)`;
+      whereClause += ` AND (cm.customer_number LIKE :search OR cm.customer_name LIKE :search OR cm.item_number LIKE :search OR cm.item_name LIKE :search OR cm.customer_item_number LIKE :search OR cm.customer_item_description LIKE :search)`;
       replacements.search = `%${search}%`;
     }
 
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND cm.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
-      `SELECT COUNT(*) as total FROM customer_material_mapping ${whereClause}`,
+      `SELECT COUNT(*) as total FROM customer_material_mapping cm ${whereClause}`,
       { replacements }
     );
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY customer_number, item_number) AS _row_num
-        FROM customer_material_mapping ${whereClause}
+        SELECT cm.*, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY cm.customer_number, cm.item_number) AS _row_num
+        FROM customer_material_mapping cm
+        LEFT JOIN factory f ON cm.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
 
@@ -93,9 +103,9 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
 
     await sequelize.query(`
       INSERT INTO customer_material_mapping
-        (customer_number, customer_name, item_number, item_name, specifications, customer_item_number, customer_item_description, remark)
+        (customer_number, customer_name, item_number, item_name, specifications, customer_item_number, customer_item_description, remark, factory_id)
       VALUES
-        (:customer_number, :customer_name, :item_number, :item_name, :specifications, :customer_item_number, :customer_item_description, :remark)
+        (:customer_number, :customer_name, :item_number, :item_name, :specifications, :customer_item_number, :customer_item_description, :remark, :factory_id)
     `, {
       replacements: {
         customer_number: b.customer_number,
@@ -105,7 +115,8 @@ export const create = async (req: Request, res: Response, next: NextFunction) =>
         specifications: b.specifications || '',
         customer_item_number: b.customer_item_number || '',
         customer_item_description: b.customer_item_description || '',
-        remark: b.remark || ''
+        remark: b.remark || '',
+        factory_id: b.factory_id || null
       }
     });
 
@@ -142,6 +153,7 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
         customer_item_number = :customer_item_number,
         customer_item_description = :customer_item_description,
         remark = :remark,
+        factory_id = :factory_id,
         update_date = GETDATE()
       WHERE id = :id
     `, {
@@ -154,7 +166,8 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
         specifications: b.specifications || '',
         customer_item_number: b.customer_item_number || '',
         customer_item_description: b.customer_item_description || '',
-        remark: b.remark || ''
+        remark: b.remark || '',
+        factory_id: b.factory_id || null
       }
     });
 
@@ -179,10 +192,18 @@ export const remove = async (req: Request, res: Response, next: NextFunction) =>
       res.status(404).json({ success: false, message: '记录不存在' }); return;
     }
 
-    await sequelize.query(
-      `DELETE FROM customer_material_mapping WHERE id = :id`,
-      { replacements: { id } }
-    );
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      await sequelize.query(
+        `DELETE FROM customer_material_mapping WHERE id = :id AND factory_id = :_factoryId`,
+        { replacements: { id, _factoryId } }
+      );
+    } else {
+      await sequelize.query(
+        `DELETE FROM customer_material_mapping WHERE id = :id`,
+        { replacements: { id } }
+      );
+    }
 
     res.json(success(null, '删除成功'));
   } catch (err) { next(err); }
@@ -234,8 +255,8 @@ export const exportMappings = async (req: Request, res: Response, next: NextFunc
       { replacements }
     );
 
-    const headers = ['客户编号', '客户名称', '物料编号', '物料名称', '物料规格', '客户物料号', '客户物料描述', '备注'];
-    const fields = ['customer_number', 'customer_name', 'item_number', 'item_name', 'specifications', 'customer_item_number', 'customer_item_description', 'remark'];
+    const headers = ['客户编号', '客户名称', '物料编号', '物料名称', '物料规格', '客户物料号', '客户物料描述', '备注', '所属工厂'];
+    const fields = ['customer_number', 'customer_name', 'item_number', 'item_name', 'specifications', 'customer_item_number', 'customer_item_description', 'remark', 'factory_id'];
 
     exportToExcel(items, fields, headers, 'customer_material_mappings', res);
   } catch (err) {
@@ -251,8 +272,8 @@ export const importMappings = async (req: Request, res: Response, next: NextFunc
       return;
     }
 
-    const fields = ['customer_number', 'customer_name', 'item_number', 'item_name', 'specifications', 'customer_item_number', 'customer_item_description', 'remark'];
-    const headers = ['客户编号', '客户名称', '物料编号', '物料名称', '物料规格', '客户物料号', '客户物料描述', '备注'];
+    const fields = ['customer_number', 'customer_name', 'item_number', 'item_name', 'specifications', 'customer_item_number', 'customer_item_description', 'remark', 'factory_id'];
+    const headers = ['客户编号', '客户名称', '物料编号', '物料名称', '物料规格', '客户物料号', '客户物料描述', '备注', '所属工厂'];
     const rows = parseExcelFile(req.file.buffer, fields, headers);
 
     if (rows.length === 0) {
@@ -278,14 +299,14 @@ export const importMappings = async (req: Request, res: Response, next: NextFunc
         await sequelize.query(`
           UPDATE customer_material_mapping SET
             customer_name = :customer_name, item_name = :item_name, specifications = :specifications,
-            customer_item_description = :customer_item_description, remark = :remark, update_date = GETDATE()
+            customer_item_description = :customer_item_description, remark = :remark, factory_id = :factory_id, update_date = GETDATE()
           WHERE customer_number = :customer_number AND item_number = :item_number AND customer_item_number = :customer_item_number
-        `, { replacements: { ...row, customer_item_number: row.customer_item_number || '' } });
+        `, { replacements: { ...row, customer_item_number: row.customer_item_number || '', factory_id: row.factory_id || null } });
       } else {
         await sequelize.query(`
-          INSERT INTO customer_material_mapping (customer_number, customer_name, item_number, item_name, specifications, customer_item_number, customer_item_description, remark)
-          VALUES (:customer_number, :customer_name, :item_number, :item_name, :specifications, :customer_item_number, :customer_item_description, :remark)
-        `, { replacements: { ...row, customer_item_number: row.customer_item_number || '' } });
+          INSERT INTO customer_material_mapping (customer_number, customer_name, item_number, item_name, specifications, customer_item_number, customer_item_description, remark, factory_id)
+          VALUES (:customer_number, :customer_name, :item_number, :item_name, :specifications, :customer_item_number, :customer_item_description, :remark, :factory_id)
+        `, { replacements: { ...row, customer_item_number: row.customer_item_number || '', factory_id: row.factory_id || null } });
       }
       imported++;
     }

@@ -3,9 +3,11 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import { APPROVAL_STATUS, CONDITION_STATUS } from '@/shared/constants/statuses';
+import { getFactoryId, getFactoryCode } from '../../../utils/factoryWhere.util';
+import { generateWarehouseNumber } from '@/services/documentNumber.service';
 
-const fields = ['warehouse_number', 'warehouse_name', 'warehouse_type', 'condition', 'supplier_number', 'customer_number', 'enable_location', 'default_location', 'is_system_warehouse', 'is_in_balance', 'remark', 'creation_date', 'creation_man', 'last_updater', 'last_updated_at'];
-const headers = ['仓库编号', '仓库名称', '仓库类型', '启用状态', '供应商编号', '客户编号', '启用库位', '默认库位', '是否系统仓库', '是否参与结存', '备注', '创建时间', '创建人', '最后更新人', '最后更新时间'];
+const fields = ['warehouse_number', 'warehouse_name', 'warehouse_type', 'condition', 'supplier_number', 'customer_number', 'enable_location', 'default_location', 'is_system_warehouse', 'is_in_balance', 'remark', 'creation_date', 'creation_man', 'last_updater', 'last_updated_at', 'factory_id'];
+const headers = ['仓库编号', '仓库名称', '仓库类型', '启用状态', '供应商编号', '客户编号', '启用库位', '默认库位', '是否系统仓库', '是否参与结存', '备注', '创建时间', '创建人', '最后更新人', '最后更新时间', '所属工厂'];
 
 export const getWarehouses = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -14,11 +16,19 @@ export const getWarehouses = async (req: Request, res: Response, next: NextFunct
     const search = (req.query.search as string) || '';
     let whereClause = '';
     const replacements: any = {};
-    if (search) { whereClause = `WHERE warehouse_number LIKE :search OR warehouse_name LIKE :search`; replacements.search = `%${search}%`; }
-    const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM warehouse ${whereClause}`, { replacements });
+    if (search) { whereClause = `WHERE w.warehouse_number LIKE :search OR w.warehouse_name LIKE :search`; replacements.search = `%${search}%`; }
+
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += (whereClause ? ' AND' : 'WHERE') + ` w.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
+
+    const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM warehouse w ${whereClause}`, { replacements });
     const total = countResult[0].total;
     const offset = (page - 1) * limit;
-    const [items]: any = await sequelize.query(`SELECT * FROM (SELECT *, ROW_NUMBER() OVER (ORDER BY warehouse_number) AS _row_num FROM warehouse ${whereClause}) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd`, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
+    const [items]: any = await sequelize.query(`SELECT * FROM (SELECT w.*, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY w.warehouse_number) AS _row_num FROM warehouse w LEFT JOIN factory f ON w.factory_id = f.id ${whereClause}) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd`, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
     const cleanItems = items.map((item: any) => { const { _row_num, ...rest } = item; return rest; });
     res.json(success({ items: cleanItems, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } }, '获取仓库列表成功'));
   } catch (err) { next(err); }
@@ -37,16 +47,21 @@ export const getWarehouseDetail = async (req: Request, res: Response, next: Next
 export const createWarehouse = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const b = req.body;
-    if (!b.warehouse_number) { res.status(400).json({ success: false, message: '仓库编号不能为空' }); return; }
+    const factoryCode = await getFactoryCode(req);
+    // 自动生成仓库编号（如未手动指定）
+    let warehouseNumber = b.warehouse_number;
+    if (!warehouseNumber) {
+      warehouseNumber = await generateWarehouseNumber(factoryCode, b.warehouse_type || '');
+    }
     const username = (req as any).user?.username || '';
     const now = new Date();
     const creation_date = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     await sequelize.query(`
-      INSERT INTO warehouse (warehouse_number, warehouse_name, warehouse_type, [condition], supplier_number, customer_number, enable_location, default_location, is_system_warehouse, is_in_balance, remark, creation_date, creation_man, last_updater, last_updated_at)
-      VALUES (:warehouse_number, :warehouse_name, :warehouse_type, :condition, :supplier_number, :customer_number, :enable_location, :default_location, :is_system_warehouse, :is_in_balance, :remark, :creation_date, :creation_man, :last_updater, GETDATE())
+      INSERT INTO warehouse (warehouse_number, warehouse_name, warehouse_type, [condition], supplier_number, customer_number, enable_location, default_location, is_system_warehouse, is_in_balance, remark, creation_date, creation_man, last_updater, last_updated_at, factory_id)
+      VALUES (:warehouse_number, :warehouse_name, :warehouse_type, :condition, :supplier_number, :customer_number, :enable_location, :default_location, :is_system_warehouse, :is_in_balance, :remark, :creation_date, :creation_man, :last_updater, GETDATE(), :factory_id)
     `, {
       replacements: {
-        warehouse_number: b.warehouse_number,
+        warehouse_number: warehouseNumber,
         warehouse_name: b.warehouse_name || '',
         warehouse_type: b.warehouse_type || '',
         condition: b.condition || CONDITION_STATUS.ENABLED,
@@ -59,7 +74,8 @@ export const createWarehouse = async (req: Request, res: Response, next: NextFun
         remark: b.remark || '',
         creation_date,
         creation_man: username,
-        last_updater: username
+        last_updater: username,
+        factory_id: b.factory_id || null
       }
     });
     // 添加仓库负责人
@@ -67,12 +83,12 @@ export const createWarehouse = async (req: Request, res: Response, next: NextFun
       for (const m of b.managers) {
         if (m.manager_name) {
           await sequelize.query(`INSERT INTO warehouse_manager (warehouse_number, manager_name) VALUES (:warehouse_number, :manager_name)`, {
-            replacements: { warehouse_number: b.warehouse_number, manager_name: m.manager_name }
+            replacements: { warehouse_number: warehouseNumber, manager_name: m.manager_name }
           });
         }
       }
     }
-    res.json(success(null, '创建仓库成功'));
+    res.json(success({ warehouse_number: warehouseNumber }, '创建仓库成功'));
   } catch (err) { next(err); }
 };
 
@@ -89,7 +105,7 @@ export const updateWarehouse = async (req: Request, res: Response, next: NextFun
         supplier_number = :supplier_number, customer_number = :customer_number,
         enable_location = :enable_location, default_location = :default_location,
         is_system_warehouse = :is_system_warehouse, is_in_balance = :is_in_balance,
-        remark = :remark, last_updater = :last_updater, last_updated_at = GETDATE()
+        remark = :remark, factory_id = :factory_id, last_updater = :last_updater, last_updated_at = GETDATE()
       WHERE warehouse_number = :id
     `, {
       replacements: {
@@ -104,6 +120,7 @@ export const updateWarehouse = async (req: Request, res: Response, next: NextFun
         is_system_warehouse: b.is_system_warehouse || '否',
         is_in_balance: b.is_in_balance || '是',
         remark: b.remark || '',
+        factory_id: b.factory_id || null,
         last_updater: username
       }
     });
@@ -145,15 +162,21 @@ export const deleteWarehouse = async (req: Request, res: Response, next: NextFun
     const { id } = req.params;
     const [chk]: any = await sequelize.query(`SELECT approval_status FROM warehouse WHERE warehouse_number = :id`, { replacements: { id } });
     if (chk.length && (chk[0].approval_status || '').trim() === APPROVAL_STATUS.APPROVED) { res.status(403).json({ success: false, message: '已审核的记录不允许删除，请先撤消审核' }); return; }
-    await sequelize.query(`DELETE FROM warehouse_manager WHERE warehouse_number = :id`, { replacements: { id } });
-    await sequelize.query(`DELETE FROM warehouse WHERE warehouse_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      await sequelize.query(`DELETE FROM warehouse_manager WHERE warehouse_number = :id AND EXISTS (SELECT 1 FROM warehouse WHERE warehouse_number = :id AND factory_id = :_factoryId)`, { replacements: { id, _factoryId } });
+      await sequelize.query(`DELETE FROM warehouse WHERE warehouse_number = :id AND factory_id = :_factoryId`, { replacements: { id, _factoryId } });
+    } else {
+      await sequelize.query(`DELETE FROM warehouse_manager WHERE warehouse_number = :id`, { replacements: { id } });
+      await sequelize.query(`DELETE FROM warehouse WHERE warehouse_number = :id`, { replacements: { id } });
+    }
     res.json(success(null, '删除仓库成功'));
   } catch (err) { next(err); }
 };
 
 export const exportWarehouses = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [items]: any = await sequelize.query(`SELECT * FROM warehouse ORDER BY warehouse_number`);
+    const [items]: any = await sequelize.query(`SELECT w.*, f.factory_name, f.factory_short FROM warehouse w LEFT JOIN factory f ON w.factory_id = f.id ORDER BY w.warehouse_number`);
     const format = (req.query.format as string) === 'xls' ? 'xls' : 'xlsx';
     exportToExcel(items, fields, headers, 'warehouses', res, format);
   } catch (err) { next(err); }
@@ -175,7 +198,7 @@ export const importWarehouses = async (req: Request, res: Response, next: NextFu
               supplier_number = :supplier_number, customer_number = :customer_number,
               enable_location = :enable_location, default_location = :default_location,
               is_system_warehouse = :is_system_warehouse, is_in_balance = :is_in_balance,
-              remark = :remark, last_updater = :last_updater, last_updated_at = GETDATE()
+              remark = :remark, factory_id = :factory_id, last_updater = :last_updater, last_updated_at = GETDATE()
             WHERE warehouse_number = :warehouse_number
           `, {
             replacements: {
@@ -190,13 +213,14 @@ export const importWarehouses = async (req: Request, res: Response, next: NextFu
               is_system_warehouse: item.is_system_warehouse || '否',
               is_in_balance: item.is_in_balance || '是',
               remark: item.remark || '',
+              factory_id: item.factory_id || null,
               last_updater: username
             }
           });
         } else {
           await sequelize.query(`
-            INSERT INTO warehouse (warehouse_number, warehouse_name, warehouse_type, [condition], supplier_number, customer_number, enable_location, default_location, is_system_warehouse, is_in_balance, remark, creation_date, creation_man, last_updater, last_updated_at)
-            VALUES (:warehouse_number, :warehouse_name, :warehouse_type, :condition, :supplier_number, :customer_number, :enable_location, :default_location, :is_system_warehouse, :is_in_balance, :remark, :creation_date, :creation_man, :last_updater, GETDATE())
+            INSERT INTO warehouse (warehouse_number, warehouse_name, warehouse_type, [condition], supplier_number, customer_number, enable_location, default_location, is_system_warehouse, is_in_balance, remark, creation_date, creation_man, last_updater, last_updated_at, factory_id)
+            VALUES (:warehouse_number, :warehouse_name, :warehouse_type, :condition, :supplier_number, :customer_number, :enable_location, :default_location, :is_system_warehouse, :is_in_balance, :remark, :creation_date, :creation_man, :last_updater, GETDATE(), :factory_id)
           `, {
             replacements: {
               warehouse_number: item.warehouse_number || '',
@@ -212,7 +236,8 @@ export const importWarehouses = async (req: Request, res: Response, next: NextFu
               remark: item.remark || '',
               creation_date: item.creation_date || null,
               creation_man: item.creation_man || username,
-              last_updater: username
+              last_updater: username,
+              factory_id: item.factory_id || null
             }
           });
         }

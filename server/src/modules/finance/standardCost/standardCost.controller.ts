@@ -4,10 +4,12 @@ import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import dayjs from 'dayjs';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
-const generateCostListNumber = async (): Promise<string> => {
+const generateCostListNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = dayjs().format('YYYYMMDD');
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
   const prefix = `SC-${today}-`;
   const result: any = await sequelize.query(
     `SELECT MAX(cost_list_number) as max_num FROM standard_cost_header WHERE cost_list_number LIKE :prefix`,
@@ -32,6 +34,11 @@ export const getStandardCosts = async (req: Request, res: Response, next: NextFu
 
     const conditions: string[] = [];
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`h.factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
 
     if (search) {
       conditions.push(`(h.cost_list_number LIKE :search OR h.cost_list_name LIKE :search)`);
@@ -57,8 +64,11 @@ export const getStandardCosts = async (req: Request, res: Response, next: NextFu
                CONVERT(VARCHAR(10), h.expiration_date, 23) as expiration_date,
                h.approval_status, h.remark, h.creation_date, h.creation_man,
                (SELECT COUNT(*) FROM standard_cost_detail d WHERE d.cost_list_number = h.cost_list_number) as detail_count,
+               f.factory_name, f.factory_short,
                ROW_NUMBER() OVER (ORDER BY h.creation_date DESC, h.cost_list_number DESC) AS _row_num
-        FROM standard_cost_header h ${whereClause}
+        FROM standard_cost_header h
+        LEFT JOIN factory f ON h.factory_id = f.id
+        ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
@@ -76,12 +86,13 @@ export const getStandardCosts = async (req: Request, res: Response, next: NextFu
 export const getStandardCostDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
     const headersResult: any = await sequelize.query(
       `SELECT cost_list_number, cost_list_name,
               CONVERT(VARCHAR(10), effective_date, 23) as effective_date,
               CONVERT(VARCHAR(10), expiration_date, 23) as expiration_date,
               approval_status, remark, creation_date, creation_man
-       FROM standard_cost_header WHERE cost_list_number = :id`, { replacements: { id } }
+       FROM standard_cost_header WHERE cost_list_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } }
     );
     if (!headersResult[0].length) { res.status(404).json({ success: false, message: '标准成本单价表不存在' }); return; }
     const detailsResult: any = await sequelize.query(
@@ -95,12 +106,14 @@ export const getStandardCostDetail = async (req: Request, res: Response, next: N
 // ==================== 创建 ====================
 export const createStandardCost = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.cost_list_name) { res.status(400).json({ success: false, message: '名称不能为空' }); return; }
     if (!b.effective_date) { res.status(400).json({ success: false, message: '生效日期不能为空' }); return; }
     if (!b.expiration_date) { res.status(400).json({ success: false, message: '失效日期不能为空' }); return; }
 
-    const cost_list_number = await generateCostListNumber();
+    const cost_list_number = await generateCostListNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const creation_man = (req as any).user?.username || '';
 
@@ -108,9 +121,9 @@ export const createStandardCost = async (req: Request, res: Response, next: Next
     try {
       await sequelize.query(`
         INSERT INTO standard_cost_header (cost_list_number, cost_list_name, effective_date, expiration_date,
-          approval_status, remark, creation_date, creation_man)
+          approval_status, remark, creation_date, creation_man, factory_id)
         VALUES (:cost_list_number, :cost_list_name, :effective_date, :expiration_date,
-          N'草稿', :remark, :creation_date, :creation_man)
+          N'草稿', :remark, :creation_date, :creation_man, :factory_id)
       `, {
         replacements: {
           cost_list_number,
@@ -119,7 +132,8 @@ export const createStandardCost = async (req: Request, res: Response, next: Next
           expiration_date: b.expiration_date || null,
           remark: b.remark || '',
           creation_date: now,
-          creation_man
+          creation_man,
+          factory_id: _factoryId
         },
         transaction
       });
@@ -245,8 +259,11 @@ export const updateStandardCost = async (req: Request, res: Response, next: Next
 export const deleteStandardCost = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const chkResult: any = await sequelize.query(
-      `SELECT approval_status FROM standard_cost_header WHERE cost_list_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM standard_cost_header WHERE cost_list_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (chkResult[0].length && chkResult[0][0].approval_status !== ORDER_STATUS.DRAFT) {
       res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return;
@@ -254,7 +271,7 @@ export const deleteStandardCost = async (req: Request, res: Response, next: Next
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`DELETE FROM standard_cost_detail WHERE cost_list_number = :id`, { replacements: { id }, transaction });
-      await sequelize.query(`DELETE FROM standard_cost_header WHERE cost_list_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM standard_cost_header WHERE cost_list_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
       await transaction.commit();
       res.json(success(null, '删除标准成本单价表成功'));
     } catch (e) {
@@ -342,6 +359,8 @@ export const downloadImportTemplate = async (req: Request, res: Response, next: 
 
 export const importStandardCost = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     if (!req.file) { res.status(400).json({ success: false, message: '请上传Excel文件' }); return; }
 
     // 解析Excel：前2行为主表信息，第3行空行，第4行起为明细列头+数据
@@ -372,7 +391,7 @@ export const importStandardCost = async (req: Request, res: Response, next: Next
     if (!excelEffectiveDate) { res.status(400).json({ success: false, message: '生效日期不能为空，请在Excel第2行第2列填写' }); return; }
     if (!excelExpirationDate) { res.status(400).json({ success: false, message: '失效日期不能为空，请在Excel第2行第3列填写' }); return; }
 
-    const cost_list_number = await generateCostListNumber();
+    const cost_list_number = await generateCostListNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const creation_man = (req as any).user?.username || '';
 
@@ -380,9 +399,9 @@ export const importStandardCost = async (req: Request, res: Response, next: Next
     try {
       await sequelize.query(`
         INSERT INTO standard_cost_header (cost_list_number, cost_list_name, effective_date, expiration_date,
-          approval_status, remark, creation_date, creation_man)
+          approval_status, remark, creation_date, creation_man, factory_id)
         VALUES (:cost_list_number, :cost_list_name, :effective_date, :expiration_date,
-          N'草稿', :remark, :creation_date, :creation_man)
+          N'草稿', :remark, :creation_date, :creation_man, :factory_id)
       `, {
         replacements: {
           cost_list_number,
@@ -391,7 +410,8 @@ export const importStandardCost = async (req: Request, res: Response, next: Next
           expiration_date: excelExpirationDate || null,
           remark: excelRemark,
           creation_date: now,
-          creation_man
+          creation_man,
+          factory_id: _factoryId
         },
         transaction
       });

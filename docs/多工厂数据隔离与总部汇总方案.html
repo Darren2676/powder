@@ -1,0 +1,1679 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Molding Powder MOM — 多工厂数据隔离与总部汇总方案</title>
+<style>
+  body { font-family: "Microsoft YaHei","SimHei","PingFang SC",sans-serif; font-size:13px; line-height:1.9; color:#1a1a1a; max-width:1024px; margin:0 auto; padding:20px; }
+  h1 { font-size:22px; text-align:center; margin:0 0 8px 0; padding-bottom:10px; border-bottom:2px solid #1890ff; color:#0d1a26; }
+  h2 { font-size:16px; margin:28px 0 10px 0; padding:6px 0 6px 12px; border-left:4px solid #1890ff; background:#f0f5ff; color:#0d1a26; }
+  h3 { font-size:14px; margin:18px 0 8px 0; color:#1a3a5c; }
+  table { width:100%; border-collapse:collapse; margin:8px 0; font-size:12px; }
+  th { background:#1890ff; color:#fff; padding:6px 8px; text-align:left; font-weight:600; }
+  td { padding:5px 8px; border:1px solid #d9d9d9; vertical-align:top; }
+  tr:nth-child(even) td { background:#fafafa; }
+  pre { background:#282c34; color:#abb2bf; border-radius:4px; padding:12px 14px; font-size:11.5px; line-height:1.5; overflow-x:auto; }
+  code { font-family:Consolas,"Courier New",monospace; font-size:11px; background:#f0f0f0; padding:1px 4px; border-radius:2px; }
+  pre code { background:none; padding:0; color:#abb2bf; }
+  .note { background:#fff7e6; border:1px solid #ffd591; border-radius:4px; padding:10px 14px; margin:10px 0; font-size:12px; }
+  .note strong { color:#d46b08; }
+  .info { background:#e6f7ff; border:1px solid #91d5ff; border-radius:4px; padding:10px 14px; margin:10px 0; font-size:12px; }
+  .info strong { color:#1890ff; }
+  .warning { background:#fff1f0; border:1px solid #ffa39e; border-radius:4px; padding:10px 14px; margin:10px 0; font-size:12px; }
+  .warning strong { color:#f5222d; }
+  .diagram { background:#f9f9f9; border:2px solid #1890ff; border-radius:6px; padding:16px; margin:10px 0; text-align:center; font-family:Consolas,monospace; font-size:12px; }
+  ul, ol { margin:4px 0; padding-left:22px; }
+  li { margin:3px 0; }
+  .footer { text-align:center; font-size:10px; color:#999; margin-top:30px; padding-top:8px; border-top:1px solid #e0e0e0; }
+  .tag { display:inline-block; padding:1px 8px; border-radius:3px; font-size:11px; font-weight:600; }
+  .tag-db { background:#e6f7ff; color:#1890ff; }
+  .tag-api { background:#f6ffed; color:#52c41a; }
+  .tag-ui { background:#fff7e6; color:#fa8c16; }
+  .tag-config { background:#f9f0ff; color:#722ed1; }
+</style>
+</head>
+<body>
+
+<h1>Molding Powder MOM — 多工厂数据隔离与总部汇总方案</h1>
+<p style="text-align:center;color:#666;">宁国市睿信信息技术有限责任公司 &nbsp;|&nbsp; 2026年6月 &nbsp;|&nbsp; V1.0</p>
+
+<div class="info">
+<strong>需求概述：</strong>当前系统已运行一个工厂的业务。现需扩展为管理 <strong>2个分公司工厂</strong>（分别为宁国工厂和广州工厂）的全部业务。要求：<br>
+① 两个工厂的销售订单、计划单、生产单、采购单、仓库及流水、出入库单据、报表 <strong>完全隔离</strong><br>
+② 总部能够生成 <strong>跨工厂的汇总报表</strong>（如集团销售汇总、集团库存汇总等）
+</div>
+
+<hr>
+
+<!-- ==================== 一、方案概述 ==================== -->
+<h2>一、方案总体架构</h2>
+
+<h3>1.1 设计原则</h3>
+<table>
+<tr><th>原则</th><th>说明</th></tr>
+<tr><td><strong>共享数据库，逻辑隔离</strong></td><td>两个工厂共用同一数据库，通过 <code>factory_id</code> 字段实现数据隔离，避免维护多套数据库的成本</td></tr>
+<tr><td><strong>最小侵入</strong></td><td>新增字段尽量为可空且有默认值，保证向后兼容，已有数据自动归入默认工厂</td></tr>
+<tr><td><strong>中间件统一拦截</strong></td><td>通过请求中间件自动注入 <code>factory_id</code> 过滤条件，业务代码改动最小化</td></tr>
+<tr><td><strong>汇总报表独立查询</strong></td><td>总部报表不使用中间件过滤，直接跨工厂查询，权限通过角色控制</td></tr>
+</table>
+
+<h3>1.2 总体架构图</h3>
+<div class="diagram">
+┌─────────────────────────────────────────────────────┐<br>
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>前端 (Vue 3 + Ant Design Vue)</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;&nbsp;┌──────────┐&nbsp;&nbsp;┌──────────┐&nbsp;&nbsp;┌──────────────┐&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;&nbsp;│&nbsp;宁国工厂用户&nbsp;│&nbsp;&nbsp;│&nbsp;广州工厂用户&nbsp;│&nbsp;&nbsp;│&nbsp;总部&nbsp;Admin&nbsp;│&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;&nbsp;└────┬─────┘&nbsp;&nbsp;└────┬─────┘&nbsp;&nbsp;└──────┬───────┘&nbsp;&nbsp;│<br>
+└──────────────────┼─────────────┼──────────────┼──────────┘<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;┌──────────┴──────────┴──────┐<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;Express&nbsp;API&nbsp;Server&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;┌────────────────────────┐│<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;│&nbsp;<strong>factoryScope</strong>&nbsp;中间件&nbsp;&nbsp;││&nbsp;&nbsp;←&nbsp;自动注入&nbsp;factory_id<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;│&nbsp;●&nbsp;普通用户→限定工厂&nbsp;&nbsp;││<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;│&nbsp;●&nbsp;总部用户→不限工厂&nbsp;&nbsp;││<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;└────────────────────────┘│<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└─────────────┬──────────────┘<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;┌─────────────┴──────────────┐<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;&nbsp;&nbsp;SQL&nbsp;Server&nbsp;数据库&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;所有业务表含&nbsp;factory_id&nbsp;&nbsp;│<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│&nbsp;&nbsp;宁国工厂数据&nbsp;│&nbsp;广州工厂数据&nbsp;&nbsp;│<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└───────────────────────────┘<br>
+</div>
+
+<hr>
+
+<!-- ==================== 二、数据库层 ==================== -->
+<h2>二、数据库层设计</h2>
+
+<h3>2.1 核心策略：<span class="tag tag-db">共享数据库 + factory_id 列隔离</span></h3>
+
+<p>不拆分数据库，在所有业务表和基础数据表中新增 <code>factory_id</code> 字段，通过该字段区分数据归属。</p>
+
+<h3>2.2 工厂定义表（新建）</h3>
+<pre><code>-- 工厂主表
+CREATE TABLE factory (
+  id INT IDENTITY(1,1) PRIMARY KEY,
+  factory_code NVARCHAR(10) NOT NULL UNIQUE,   -- 工厂编码，如 'N'(宁国), 'G'(广州)
+  factory_name NVARCHAR(100) NOT NULL,          -- 工厂名称，如 '宁国工厂', '广州工厂'
+  factory_short NVARCHAR(20),                   -- 简称
+  address NVARCHAR(200),
+  contact_name NVARCHAR(50),
+  contact_phone NVARCHAR(30),
+  is_headquarters BIT DEFAULT 0,                -- 是否总部
+  status NVARCHAR(10) DEFAULT N'启用',
+  created_at DATETIME DEFAULT GETDATE(),
+  updated_at DATETIME DEFAULT GETDATE()
+);
+
+-- 初始数据：两个工厂（N=宁国工厂, G=广州工厂）
+INSERT INTO factory (factory_code, factory_name, factory_short, is_headquarters, status, created_at, updated_at)
+VALUES ('N', N'宁国工厂', N'宁国', 1, N'启用', GETDATE(), GETDATE());
+
+IF NOT EXISTS (SELECT 1 FROM factory WHERE factory_code = 'G')
+INSERT INTO factory (factory_code, factory_name, factory_short, is_headquarters, status, created_at, updated_at)
+VALUES ('G', N'广州工厂', N'广州', 0, N'启用', GETDATE(), GETDATE());</code></pre>
+
+<h3>2.3 需要添加 factory_id 的表清单</h3>
+
+<p>所有以下表统一增加 <code>factory_id INT NULL</code> 字段（允许 NULL 向后兼容），并建索引：</p>
+
+<table>
+<tr><th>域</th><th>表名</th><th>说明</th></tr>
+<tr><td rowspan="14"><strong>销售管理</strong></td><td>sales_order</td><td>销售订单主表</td></tr>
+<tr><td>sales_order_detail</td><td>销售订单明细</td></tr>
+<tr><td>sales_forecast</td><td>销售预测主表</td></tr>
+<tr><td>sales_forecast_detail</td><td>销售预测明细</td></tr>
+<tr><td>sales_price</td><td>销售价目表</td></tr>
+<tr><td>shipping_request</td><td>发货申请主表</td></tr>
+<tr><td>shipping_request_detail</td><td>发货申请明细</td></tr>
+<tr><td>shipping_order</td><td>发货单主表</td></tr>
+<tr><td>shipping_order_detail</td><td>发货单明细</td></tr>
+<tr><td>return_order</td><td>退货单主表</td></tr>
+<tr><td>return_order_detail</td><td>退货单明细</td></tr>
+<tr><td>sales_invoice</td><td>销售发票主表</td></tr>
+<tr><td>sales_invoice_line</td><td>销售发票明细</td></tr>
+<tr><td>sample_request / sample_bom / sample_bom_detail</td><td>样品相关</td></tr>
+
+<tr><td rowspan="3"><strong>计划管理</strong></td><td>Production_plan</td><td>生产计划主表</td></tr>
+<tr><td>Production_plan_detail</td><td>生产计划明细</td></tr>
+<tr><td>mrp_run / mrp_run_detail</td><td>MRP运行记录</td></tr>
+
+<tr><td rowspan="17"><strong>生产管理</strong></td><td>production_order</td><td>生产单</td></tr>
+<tr><td>process_task</td><td>工序任务</td></tr>
+<tr><td>work_report / work_report_detail</td><td>报工记录</td></tr>
+<tr><td>material_preparation / material_preparation_detail</td><td>备料单</td></tr>
+<tr><td>material_issue</td><td>领料单</td></tr>
+<tr><td>material_return</td><td>退料单</td></tr>
+<tr><td>backflush_task</td><td>倒冲任务</td></tr>
+<tr><td>outsourcing_req / outsourcing_order</td><td>委外申请/订单</td></tr>
+<tr><td>outsourcing_issue / outsourcing_receipt</td><td>委外发料/收货</td></tr>
+<tr><td>outsourcing_settlement</td><td>委外结算</td></tr>
+<tr><td>outsourcing_price</td><td>委外价目表</td></tr>
+<tr><td>piece_rate_wage</td><td>计件工资</td></tr>
+<tr><td>production_material_cost_snapshot</td><td>材料成本快照</td></tr>
+
+<tr><td rowspan="6"><strong>采购管理</strong></td><td>purchase_req / purchase_req_detail</td><td>采购申请</td></tr>
+<tr><td>purchase_order / purchase_order_detail</td><td>采购订单</td></tr>
+<tr><td>receiving_notice / receiving_notice_detail</td><td>收货通知</td></tr>
+<tr><td>purchase_return</td><td>采购退货</td></tr>
+<tr><td>purchase_price</td><td>采购价目表</td></tr>
+<tr><td>purchase_invoice / purchase_invoice_line</td><td>采购发票</td></tr>
+
+<tr><td rowspan="12"><strong>仓储管理</strong></td><td>material_batch_inventory</td><td>原材料批次库存</td></tr>
+<tr><td>finished_batch_inventory</td><td>成品批次库存</td></tr>
+<tr><td>stock_in / stock_in_detail</td><td>来料入库单</td></tr>
+<tr><td>stock_count / stock_count_detail</td><td>盘点单</td></tr>
+<tr><td>abnormal_io / abnormal_io_detail</td><td>其他出入库</td></tr>
+<tr><td>packing_order / packing_box_inventory</td><td>装箱单</td></tr>
+<tr><td>scrap_disposal</td><td>报废处置</td></tr>
+<tr><td>scrap_inbound_order</td><td>报废入库单</td></tr>
+<tr><td>semi_production_inbound_order_detail</td><td>半成品入库明细</td></tr>
+
+<tr><td rowspan="3"><strong>质量管理</strong></td><td>purchase_quality_inspection / purchase_quality_inspection_detail</td><td>采购检验</td></tr>
+<tr><td>production_inspection</td><td>生产检验</td></tr>
+<tr><td>nonconforming_product</td><td>不合格品</td></tr>
+
+<tr><td rowspan="7"><strong>基础数据</strong></td><td>customer</td><td>客户（工厂专属客户）</td></tr>
+<tr><td>supplier</td><td>供应商（工厂专属供应商）</td></tr>
+<tr><td>warehouse</td><td>仓库（工厂专属仓库）</td></tr>
+<tr><td>storage_location</td><td>库位</td></tr>
+<tr><td>employee</td><td>员工</td></tr>
+<tr><td>equipment / mould</td><td>设备/模具</td></tr>
+<tr><td>item_master</td><td><strong>物料主数据（共享，不加 factory_id）</strong></td></tr>
+</table>
+
+<div class="warning">
+<strong>重要设计决策：</strong>物料主数据 (<code>item_master</code>)、BOM、工序、工作中心、工艺路线等<strong>基础工程数据</strong>不加 <code>factory_id</code>，两个工厂<strong>共享</strong>。这避免了物料编码重复维护，符合集团统一标准化的管理诉求。只有<strong>业务交易数据</strong>和<strong>组织级基础数据</strong>（客户/供应商/仓库/员工/设备）才按工厂隔离。
+</div>
+
+<h3>2.4 迁移脚本模板</h3>
+<pre><code>-- 以 sales_order 为例
+ALTER TABLE sales_order ADD factory_id INT NULL;
+CREATE INDEX IX_sales_order_factory ON sales_order(factory_id);
+
+-- 为已有数据填充默认工厂ID（宁国工厂）
+UPDATE sales_order SET factory_id = (SELECT id FROM factory WHERE factory_code = 'N') WHERE factory_id IS NULL;
+-- 后续可逐步迁移到具体工厂
+
+-- 设置为 NOT NULL（等数据迁移完成后）
+-- ALTER TABLE sales_order ALTER COLUMN factory_id INT NOT NULL;</code></pre>
+
+<hr>
+
+<!-- ==================== 三、应用层 ==================== -->
+<h2>三、应用层设计</h2>
+
+<h3>3.1 用户-工厂绑定</h3>
+
+<p>在 <code>users</code> 表增加 <code>default_factory_id</code> 字段，以及新增 <code>user_factory_access</code> 关联表支持一个用户管理多工厂：</p>
+
+<pre><code>-- 方式一：用户默认工厂（简单模式，一用户一工厂）
+ALTER TABLE users ADD default_factory_id INT NULL;
+
+-- 方式二：多工厂关联表（推荐，支持一用户多工厂）
+CREATE TABLE user_factory_access (
+  id INT IDENTITY(1,1) PRIMARY KEY,
+  user_id INT NOT NULL,
+  factory_id INT NOT NULL,
+  access_level NVARCHAR(20) DEFAULT 'read',  -- 'read'仅查看 | 'write'可操作 | 'admin'可配置
+  is_default BIT DEFAULT 0,
+  UNIQUE(user_id, factory_id)
+);</code></pre>
+
+<h3>3.2 核心：factoryScope 中间件 <span class="tag tag-api">API层</span></h3>
+
+<p>新增一个 Express 中间件，根据当前登录用户自动注入工厂过滤条件。这是<strong>本方案最关键的部分</strong>——通过中间件实现业务代码的最小改动。</p>
+
+<pre><code>// middleware/factoryScope.middleware.ts
+import { Request, Response, NextFunction } from 'express';
+import sequelize from '../config/database';
+import { QueryTypes } from 'sequelize';
+
+/**
+ * 多工厂数据隔离中间件
+ * 
+ * 三种模式：
+ * 1. 'all'    — 总部角色，查看全部工厂数据（请求头 x-view-mode: all）
+ * 2. 'single' — 限定单工厂（默认模式，自动注入 users.default_factory_id）
+ * 3. 'none'   — 白名单路由，不使用工厂隔离（如登录、健康检查等）
+ */
+
+// 总部角色列表
+const HQ_ROLES = [
+  'headquarters_admin',
+  'headquarters_manager',
+  'headquarters_finance',
+  'headquarters_quality',
+  'headquarters_sales'
+];
+
+// 判断是否为总部角色
+export function isHQRole(role: string): boolean {
+  return HQ_ROLES.includes(role);
+}
+
+// 验证用户是否有某工厂的访问权限
+async function hasFactoryAccess(userId: number, factoryId: number): Promise<boolean> {
+  const rows = await sequelize.query(
+    'SELECT 1 FROM user_factory_access WHERE user_id = :uid AND factory_id = :fid',
+    { replacements: { uid: userId, fid: factoryId }, type: QueryTypes.SELECT }
+  );
+  return rows.length > 0;
+}
+
+/**
+ * 同步设置 factoryScope（供 auth.middleware 调用，不依赖异步中间件链）
+ */
+export function applyFactoryScope(req: Request): void {
+  if (!req.user) return;
+
+  const user = req.user as any;
+
+  // 模式1: 总部角色 + 选择了"全部工厂"视图
+  if (isHQRole(user.role) && req.headers['x-view-mode'] === 'all') {
+    (req as any).factoryScope = {
+      mode: 'all',
+      filter: false,
+      accessibleFactories: []
+    };
+    return;
+  }
+
+  // 模式2: 总部角色/多工厂用户 + 选择了特定工厂
+  if (req.headers['x-factory-id']) {
+    const targetFactoryId = parseInt(req.headers['x-factory-id'] as string, 10);
+    if (isNaN(targetFactoryId)) return;
+
+    (req as any).factoryScope = {
+      mode: 'single',
+      factory_id: targetFactoryId,
+      filter: true
+    };
+    return;
+  }
+
+  // 模式3: 默认 — 使用用户绑定的默认工厂
+  const factoryId = user.default_factory_id || null;
+
+  (req as any).factoryScope = {
+    mode: 'single',
+    factory_id: factoryId,
+    filter: factoryId !== null
+  };
+}
+
+export const factoryScope = async (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return next();
+  }
+
+  const user = req.user as any;
+
+  // 模式1: 总部角色 + 选择了"全部工厂"视图
+  if (isHQRole(user.role) && req.headers['x-view-mode'] === 'all') {
+    applyFactoryScope(req);
+    return next();
+  }
+
+  // 模式2: 总部角色/多工厂用户 + 选择了特定工厂
+  if (req.headers['x-factory-id']) {
+    const targetFactoryId = parseInt(req.headers['x-factory-id'] as string, 10);
+    if (isNaN(targetFactoryId)) {
+      return next();
+    }
+
+    // 总部角色直接放行；普通用户需验证权限
+    if (!isHQRole(user.role)) {
+      const hasAccess = await hasFactoryAccess(user.id, targetFactoryId);
+      if (!hasAccess) {
+        return res.status(403).json({
+          success: false,
+          message: '无权限访问该工厂'
+        });
+      }
+    }
+
+    applyFactoryScope(req);
+    return next();
+  }
+
+  // 模式3: 默认 — 使用用户绑定的默认工厂
+  applyFactoryScope(req);
+  next();
+};</code></pre>
+
+<h3>3.3 业务 Controller 改动模式</h3>
+
+<p>在所有查询语句中追加 <code>factory_id</code> 过滤条件。改动集中在 SQL WHERE 子句中，<strong>不改变 Controller 的结构</strong>。</p>
+
+<p><strong>通用辅助函数：</strong></p>
+<pre><code>// utils/factoryWhere.util.ts
+/**
+ * factoryWhere - 自动为 SQL 查询注入 factory_id 过滤条件
+ *
+ * 使用方式：
+ *   const { sql, replacements } = factoryWhere(
+ *     'SELECT * FROM sales_order WHERE status = @status',
+ *     { status: '已审批' },
+ *     req.factoryScope
+ *   );
+ *   const result = await sequelize.query(sql, { replacements });
+ */
+
+interface FactoryScope {
+  mode: 'all' | 'single';
+  factory_id?: number | null;
+  filter: boolean;
+  accessibleFactories?: number[];
+}
+
+interface FactoryWhereResult {
+  sql: string;
+  replacements: Record<string, any>;
+}
+
+/**
+ * 从请求对象中获取 factory_id
+ */
+export function getFactoryId(req: Request): number | null {
+  const scope = (req as any).factoryScope as FactoryScope | undefined;
+  if (scope && scope.filter && scope.factory_id != null) {
+    return scope.factory_id;
+  }
+  return null;
+}
+
+/**
+ * 为查询语句自动追加工厂过滤条件
+ * @param baseSQL 原始 SQL（使用 @param 参数化）
+ * @param replacements 已有的替换参数
+ * @param scope factoryScope 中间件注入的作用域
+ * @param tableAlias 表别名，默认 't'（如 SELECT ... FROM xxx t）
+ */
+export function factoryWhere(
+  baseSQL: string,
+  replacements: Record<string, any> = {},
+  scope?: FactoryScope | null,
+  tableAlias: string = 't'
+): FactoryWhereResult {
+  // 无作用域或不过滤，原样返回
+  if (!scope || !scope.filter || scope.factory_id == null) {
+    return { sql: baseSQL, replacements };
+  }
+
+  const factoryIdParam = `_factoryId_${Math.random().toString(36).substring(2, 8)}`;
+  const whereClause = `${tableAlias}.factory_id = @${factoryIdParam}`;
+
+  // 查找 WHERE 子句位置
+  const upperSQL = baseSQL.toUpperCase();
+  const whereIdx = upperSQL.indexOf('WHERE');
+
+  let sql: string;
+  if (whereIdx >= 0) {
+    // 在已有 WHERE 后追加 AND
+    sql = baseSQL.slice(0, whereIdx + 5) + ' ' + whereClause + ' AND ' + baseSQL.slice(whereIdx + 5);
+  } else {
+    // 查找是否有 GROUP BY / ORDER BY（WHERE 在它们之前）
+    const groupByIdx = upperSQL.indexOf('GROUP BY');
+    const orderByIdx = upperSQL.indexOf('ORDER BY');
+    const insertIdx = groupByIdx >= 0 ? groupByIdx : (orderByIdx >= 0 ? orderByIdx : baseSQL.length);
+
+    if (insertIdx < baseSQL.length) {
+      sql = baseSQL.slice(0, insertIdx) + ' WHERE ' + whereClause + ' ' + baseSQL.slice(insertIdx);
+    } else {
+      sql = baseSQL + ' WHERE ' + whereClause;
+    }
+  }
+
+  return {
+    sql,
+    replacements: { ...replacements, [factoryIdParam]: scope.factory_id }
+  };
+}</code></pre>
+
+<p><strong>Controller 改动示例（销售订单查询）：</strong></p>
+<pre><code>// 改造前
+export const getSalesOrders = async (req, res, next) => {
+  // ... search/approval_status 条件拼接 ...
+  const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+  // ❌ 无工厂过滤
+};
+
+// 改造后（实际采用的模式：getFactoryId + _factoryId 参数化）
+import { getFactoryId } from '../../../utils/factoryWhere.util';
+
+export const getSalesOrders = async (req, res, next) => {
+  // ... search/approval_status 条件拼接 ...
+  
+  // ✅ 添加工厂过滤
+  const _factoryId = getFactoryId(req);
+  if (_factoryId !== null) {
+    conditions.push(`factory_id = :_factoryId`);
+    replacements._factoryId = _factoryId;
+  }
+  const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+  
+  const [countResult] = await sequelize.query(
+    `SELECT COUNT(*) as total FROM sales_order ${whereClause}`,
+    { replacements }
+  );
+  // ...
+};</code></pre>
+
+<div class="info">
+<strong>改动量估算：</strong>每个 Controller 的 List 查询约增加 <strong>3-5行代码</strong>（调用 getFactoryId + 条件拼接 + 参数替换）。全系统约 <strong>80-100个</strong> 查询函数需要改动，预估总改动量约 <strong>400-500行</strong>。创建操作通过 auth.middleware 自动注入 <code>factory_id</code> 到 req.body，无需手动处理。
+
+<strong>标准改造模式：</strong>
+1. <code>import { getFactoryId } from '../../../utils/factoryWhere.util';</code>
+2. <code>const _factoryId = getFactoryId(req);</code>
+3. 条件拼接：<code>conditions.push('xxx.factory_id = :_factoryId');</code>
+4. 参数替换：<code>replacements._factoryId = _factoryId;</code>
+5. SELECT 加 <code>f.factory_name, f.factory_short</code>
+6. FROM 加 <code>LEFT JOIN factory f ON xxx.factory_id = f.id</code>
+</div>
+
+<h3>3.4 前端工厂切换 <span class="tag tag-ui">UI层</span></h3>
+
+<p>在顶部导航栏添加工厂选择器，仅多工厂用户可见：</p>
+
+<pre><code>// 前端在请求拦截器中自动附加当前选择的 factory_id
+// client/src/api/request.ts
+service.interceptors.request.use(config => {
+  const currentFactoryId = useUserStore().currentFactoryId;
+  if (currentFactoryId) {
+    config.headers['X-Factory-Id'] = currentFactoryId;
+  }
+  return config;
+});</code></pre>
+
+<p>后端从 <code>X-Factory-Id</code> header 读取当前工厂上下文，或提供 <code>/api/v1/users/me/factories</code> 接口返回用户可访问的工厂列表。</p>
+
+<hr>
+
+<!-- ==================== 四、编号规则 ==================== -->
+<h2>四、单据编号规则调整</h2>
+
+<p>为避免两个工厂的单据编号冲突，建议在编号中加入工厂前缀：</p>
+
+<table>
+<tr><th>单据类型</th><th>原格式</th><th>新格式（含工厂）</th></tr>
+<tr><td>销售订单</td><td><code>SO-20260604-001</code></td><td><code>SO-N-20260604-001</code></td></tr>
+<tr><td>生产计划</td><td><code>PP-20260604-001</code></td><td><code>PP-N-20260604-001</code></td></tr>
+<tr><td>生产单</td><td><code>P20260504005</code></td><td><code>PN20260604005</code>（宁国工厂）/ <code>PG20260604005</code>（广州工厂）</td></tr>
+<tr><td>采购订单</td><td><code>PO-20260604-001</code></td><td><code>PO-N-20260604-001</code></td></tr>
+<tr><td>批次号</td><td><code>MB-20260604-001</code></td><td><code>MB-N-20260604-001</code></td></tr>
+</table>
+
+<div class="note">
+<strong>向后兼容：</strong>如已有大量历史数据，可保留原编号格式不变（通过 factory_id 区分），新单据使用新格式。或使用工厂ID数字后缀：<code>SO-20260604-001-N</code>（宁国工厂）、<code>SO-20260604-001-G</code>（广州工厂）。
+</div>
+
+<hr>
+
+<!-- ==================== 五、仓库隔离 ==================== -->
+<h2>五、仓库与库存隔离</h2>
+
+<h3>5.1 仓库划分</h3>
+
+<p>每个工厂建立自己独立的仓库体系：</p>
+
+<table>
+<tr><th>工厂</th><th>仓库编码</th><th>仓库名称</th></tr>
+<tr><td rowspan="4">宁国工厂</td><td>RM-N-01</td><td>宁国-原料仓</td></tr>
+<tr><td>FG-N-01</td><td>宁国-成品仓</td></tr>
+<tr><td>SF-N-01</td><td>宁国-半成品仓</td></tr>
+<tr><td>SCRAP-N</td><td>宁国-报废仓</td></tr>
+<tr><td rowspan="4">广州工厂</td><td>RM-G-01</td><td>广州-原料仓</td></tr>
+<tr><td>FG-G-01</td><td>广州-成品仓</td></tr>
+<tr><td>SF-G-01</td><td>广州-半成品仓</td></tr>
+<tr><td>SCRAP-G</td><td>广州-报废仓</td></tr>
+</table>
+
+<p>仓库表 (<code>warehouse</code>) 增加 <code>factory_id</code>，库存查询自动限定工厂范围。</p>
+
+<h3>5.2 库存绝对隔离</h3>
+
+<ul>
+  <li><code>material_batch_inventory.factory_id</code> 确保原料库存不跨工厂混用</li>
+  <li><code>finished_batch_inventory.factory_id</code> 确保成品库存不跨工厂混用</li>
+  <li>入库/出库/调拨操作只能在同一工厂内进行</li>
+  <li>如需要跨工厂调拨，通过新增 <strong>"工厂间调拨单"</strong> 功能实现（出A工厂仓，入B工厂仓，两边各自生成出入库记录）</li>
+</ul>
+
+<hr>
+
+<!-- ==================== 六、总部汇总报表 ==================== -->
+<h2>六、总部汇总报表方案</h2>
+
+<h3>6.1 设计原则</h3>
+
+<p>总部报表<strong>不使用 factoryScope 中间件</strong>，直接在 SQL 中按 <code>factory_id</code> 进行 GROUP BY 聚合或 UNION ALL 合并：</p>
+
+<pre><code>-- 集团销售汇总：按工厂维度统计
+SELECT 
+  f.factory_code,
+  f.factory_name,
+  COUNT(DISTINCT so.sales_order_number) AS order_count,
+  ISNULL(SUM(CAST(sod.total_amount AS DECIMAL(18,2))), 0) AS total_amount
+FROM sales_order so
+JOIN sales_order_detail sod ON sod.sales_order_number = so.sales_order_number
+JOIN factory f ON f.id = so.factory_id
+WHERE so.approval_status = N'已审批'
+GROUP BY f.factory_code, f.factory_name
+ORDER BY f.factory_code;</code></pre>
+
+<h3>6.2 需要新增的总部汇总报表</h3>
+
+<table>
+<tr><th>报表名称</th><th>数据来源</th><th>汇总维度</th></tr>
+<tr><td><strong>集团销售汇总表</strong></td><td>sales_order + sales_order_detail + factory</td><td>按工厂/客户/物料/月份</td></tr>
+<tr><td><strong>集团生产汇总表</strong></td><td>production_order + work_report + factory</td><td>按工厂/物料/月份</td></tr>
+<tr><td><strong>集团采购汇总表</strong></td><td>purchase_order + purchase_order_detail + factory</td><td>按工厂/供应商/物料/月份</td></tr>
+<tr><td><strong>集团库存汇总表</strong></td><td>material_batch_inventory + finished_batch_inventory + factory</td><td>按工厂/仓库/物料类型</td></tr>
+<tr><td><strong>集团财务汇总表</strong></td><td>sales_invoice + purchase_invoice + factory</td><td>按工厂/月份</td></tr>
+<tr><td><strong>集团质量汇总表</strong></td><td>purchase_quality_inspection + production_inspection + factory</td><td>按工厂/物料/缺陷类型</td></tr>
+<tr><td><strong>集团出入库流水总表</strong></td><td>stock_in + abnormal_io + packing_order + factory</td><td>按工厂/仓库/物料/日期</td></tr>
+</table>
+
+<h3>6.3 总部报表权限</h3>
+
+<pre><code>-- 新增角色
+INSERT INTO role (role_code, role_name) VALUES ('headquarters', N'总部管理');
+
+-- 新增菜单分组
+INSERT INTO permission_menu (name, code, parent_code, menu_key, icon, sort)
+VALUES (N'总部报表', 'headquarters-reports', null, 'headquarters-reports', 'BarChartOutlined', 100);
+
+-- 总部报表子菜单
+INSERT INTO permission_menu (name, code, parent_code, menu_key, icon, sort) VALUES
+(N'集团销售汇总', 'hq-sales-summary', 'headquarters-reports', 'hq-sales-summary', null, 1),
+(N'集团生产汇总', 'hq-production-summary', 'headquarters-reports', 'hq-production-summary', null, 2),
+(N'集团采购汇总', 'hq-purchase-summary', 'headquarters-reports', 'hq-purchase-summary', null, 3),
+(N'集团库存汇总', 'hq-inventory-summary', 'headquarters-reports', 'hq-inventory-summary', null, 4),
+(N'集团财务汇总', 'hq-finance-summary', 'headquarters-reports', 'hq-finance-summary', null, 5);</code></pre>
+
+<hr>
+
+<!-- ==================== 七、实施路线图 ==================== -->
+<h2>七、实施路线图</h2>
+
+<table>
+<tr><th>阶段</th><th>任务</th><th>预估工时</th><th>依赖</th></tr>
+<tr><td><strong>Phase 1</strong><br>基础设施</td>
+<td>
+  ① 创建 factory 表 + 初始数据<br>
+  ② 创建 user_factory_access 关联表<br>
+  ③ ALTER 所有业务表添加 factory_id 字段<br>
+  ④ 已有数据统一赋值为宁国工厂（factory_code='N'）<br>
+  ⑤ 编写 factoryScope 中间件<br>
+  ⑥ 编写 factoryWhere 辅助函数<br>
+  ⑦ 前端新增工厂选择器组件
+</td>
+<td>5-7 人天</td>
+<td>数据库DDL权限</td></tr>
+
+<tr><td><strong>Phase 2</strong><br>核心业务改造</td>
+<td>
+  ① 销售模块 Controller 改造（约12个文件）<br>
+  ② 计划模块 Controller 改造（约3个文件）<br>
+  ③ 生产模块 Controller 改造（约15个文件）<br>
+  ④ 采购模块 Controller 改造（约8个文件）<br>
+  ⑤ 编号生成规则调整<br>
+  ⑥ 前端各页面适配（筛选器、请求头）
+</td>
+<td>8-12 人天</td>
+<td>Phase 1 完成</td></tr>
+
+<tr><td><strong>Phase 3</strong><br>仓库质量改造</td>
+<td>
+  ① 仓储模块 Controller 改造（约12个文件）<br>
+  ② 质量模块 Controller 改造（约15个文件）<br>
+  ③ 财务模块 Controller 改造（约4个文件）<br>
+  ④ 仓库/库位数据按工厂重新整理<br>
+  ⑤ 库存查询页面适配
+</td>
+<td>7-10 人天</td>
+<td>Phase 2 完成</td></tr>
+
+<tr><td><strong>Phase 4</strong><br>总部报表</td>
+<td>
+  ① 新增总部报表后端 API<br>
+  ② 新增总部报表前端页面（Vue3 + ECharts）<br>
+  ③ headquarters 角色 + 菜单配置<br>
+  ④ 权限校验（仅总部角色可访问）
+</td>
+<td>5-8 人天</td>
+<td>Phase 3 完成</td></tr>
+
+<tr><td><strong>Phase 5</strong><br>测试与上线</td>
+<td>
+  ① 单元测试 + 集成测试<br>
+  ② 数据迁移验证<br>
+  ③ 双工厂并行运行验证<br>
+  ④ 性能测试（含跨工厂联合查询）
+</td>
+<td>5-7 人天</td>
+<td>Phase 4 完成</td></tr>
+
+<tr style="background:#f0f5ff; font-weight:bold;">
+<td colspan="2" style="text-align:right;">合计预估</td>
+<td><strong>30-44 人天</strong></td>
+<td></td>
+</tr>
+</table>
+
+<hr>
+
+<!-- ==================== 八、关键决策 ==================== -->
+<h2>八、关键技术决策与注意事项</h2>
+
+<h3>8.1 为什么选择"共享数据库+字段隔离"而非"独立数据库"？</h3>
+<table>
+<tr><th>方案</th><th>优点</th><th>缺点</th><th>适用场景</th></tr>
+<tr><td>共享数据库 + factory_id</td><td>实施成本低、总部汇总简单（单库 JOIN）</td><td>逻辑隔离需代码保证、大并发可能有性能瓶颈</td><td>✅ 当前场景（2个工厂，数据量可控）</td></tr>
+<tr><td>独立数据库（每厂一个库）</td><td>物理隔离最彻底、互不影响</td><td>维护成本高、总部汇总需跨库查询或数据同步</td><td>数十个工厂、极大数据量场景</td></tr>
+<tr><td>独立 Schema</td><td>隔离性好、汇总可行</td><td>需改造连接池和 ORM 配置</td><td>中等规模多租户</td></tr>
+</table>
+
+<h3>8.2 物料是否需要按工厂隔离？</h3>
+<p><strong>建议不隔离。</strong>理由：</p>
+<ul>
+  <li>两个工厂同属一个集团，产品/物料标准化是管理诉求</li>
+  <li>BOM、工艺路线等工程数据共享可避免重复维护</li>
+  <li>如果未来需要不同工厂使用不同物料，可在物料主数据中增加 <code>factory_id</code> 字段（当前不强制）</li>
+</ul>
+
+<h3>8.3 安全性保障</h3>
+<ul>
+  <li>factoryScope 中间件在<strong>认证之后、业务逻辑之前</strong>执行，不可绕过</li>
+  <li>所有 INSERT 必须从当前用户上下文获取 factory_id，不可由前端传入（防篡改）</li>
+  <li>SQL 使用参数化查询，防止 SQL 注入</li>
+  <li>总部角色权限严格管控，仅分配给授权人员</li>
+</ul>
+
+<h3>8.4 向后兼容策略</h3>
+<ul>
+  <li>factory_id 初始设置为 NULL，再批量 UPDATE 为默认值</li>
+  <li>未分配工厂的用户仍可访问所有数据（过渡期）</li>
+  <li>API 接口不改变响应格式，前端组件无需大改</li>
+  <li>已有的报表和仪表板在过渡期内保持可用</li>
+</ul>
+
+<hr>
+
+<!-- ==================== 九、风险 ==================== -->
+<h2>九、风险与缓解措施</h2>
+
+<table>
+<tr><th>风险</th><th>影响</th><th>缓解措施</th></tr>
+<tr><td>遗漏表的 factory_id 导致数据泄露</td><td>高</td><td>编写自动化脚本扫描所有表，检查是否包含 factory_id 字段</td></tr>
+<tr><td>SQL 查询忘记加 factory_id 过滤</td><td>中</td><td>编写 ESLint 规则 + Code Review 检查清单</td></tr>
+<tr><td>工厂间数据串扰</td><td>高</td><td>充分测试 + 集成测试覆盖跨工厂查询场景</td></tr>
+<tr><td>性能下降（每次查询多一个 WHERE 条件）</td><td>低</td><td>factory_id 列建索引，查询优化器可高效利用</td></tr>
+<tr><td>编号规则变更导致引用断裂</td><td>中</td><td>提供兼容模式，历史编号保持不变</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 十、实施路线比较与建议 ==================== -->
+<h2>十、实施路线比较与建议</h2>
+
+<div class="info">
+<strong>核心问题：</strong>是先调通单工厂功能后再改造多工厂（路线A），还是先搭建多工厂框架再调试功能（路线B）？这直接影响开发效率、返工成本和上线节奏。
+</div>
+
+<h3>10.1 两条路线全景对比</h3>
+
+<table>
+<tr><th style="width:22%;">对比维度</th><th style="width:39%;">路线A：先单工厂 → 后改造多工厂</th><th style="width:39%;">路线B：骨架先行 → 再调试功能</th></tr>
+<tr>
+  <td><strong>初始开发复杂度</strong></td>
+  <td>✅ 低 — 开发阶段不关心 factory_id，完全按单工厂思维编写代码</td>
+  <td>⚠️ 稍高 — 前期需搭建 factory 表、factory_id 字段、factoryScope 中间件等基础框架（约3-5天）</td>
+</tr>
+<tr>
+  <td><strong>日常调试效率</strong></td>
+  <td>✅ 高 — 问题域单一，出 bug 容易定位，无隔离逻辑干扰</td>
+  <td>✅ 高（框架透明化后）— 通过默认工厂自动注入，开发者几乎感知不到多工厂存在</td>
+</tr>
+<tr>
+  <td><strong>数据库变更方式</strong></td>
+  <td>⚠️ 两阶段 — 先建表不加 factory_id；后期 ALTER TABLE 逐表补字段，可能遗漏</td>
+  <td>✅ 一步到位 — 所有新表建表时就包含 factory_id 列，无后期 ALTER 风险</td>
+</tr>
+<tr>
+  <td><strong>返工风险</strong></td>
+  <td>❌ 极高 — 改造阶段需逐一修改每个模块的 SQL 查询、API 返回、前端页面；<strong>预估额外投入 15-25 人天</strong></td>
+  <td>✅ 几乎为零 — 架构从一开始就是正确的，所有新功能天然支持多工厂</td>
+</tr>
+<tr>
+  <td><strong>测试成本</strong></td>
+  <td>❌ 高 — 同一功能需要完整测试两轮：单工厂环境测一轮 + 改造后多工厂环境再测一轮</td>
+  <td>✅ 低 — 每个功能只需完整测试一轮，天然覆盖多工厂场景</td>
+</tr>
+<tr>
+  <td><strong>已有生产数据处理</strong></td>
+  <td>❌ 麻烦 — 生产数据 factory_id 为 NULL，需要批量回填，操作风险大且需停机维护</td>
+  <td>✅ 安全 — 从第一天起所有数据就有 factory_id 归属，无历史数据债务</td>
+</tr>
+<tr>
+  <td><strong>代码一致性</strong></td>
+  <td>❌ 差 — 改造过程中容易出现部分 SQL 加了过滤、部分遗漏的情况，数据隔离存在漏洞</td>
+  <td>✅ 好 — 框架统一拦截，代码模式一致，不依赖开发者记忆</td>
+</tr>
+<tr>
+  <td><strong>上线节奏</strong></td>
+  <td>单工厂可先上（快），但多工厂上线需额外改造周期（慢）</td>
+  <td>单工厂随时可上（框架透明），多工厂模式几乎零成本开启</td>
+</tr>
+</table>
+
+<h3>10.2 综合评分</h3>
+
+<table>
+<tr><th>评价指标</th><th>路线A 得分</th><th>路线B 得分</th><th>说明</th></tr>
+<tr><td>前期开发速度</td><td>⭐⭐⭐⭐⭐</td><td>⭐⭐⭐⭐</td><td>路线B前期需多投入3-5天搭建框架</td></tr>
+<tr><td>总体工期（含改造）</td><td>⭐⭐</td><td>⭐⭐⭐⭐⭐</td><td>路线A后期改造工期远超路线B前期投入</td></tr>
+<tr><td>代码质量与安全性</td><td>⭐⭐</td><td>⭐⭐⭐⭐⭐</td><td>路线B框架级隔离，不依赖开发者记忆</td></tr>
+<tr><td>可维护性</td><td>⭐⭐</td><td>⭐⭐⭐⭐⭐</td><td>路线B代码一致性好，新成员上手快</td></tr>
+<tr><td>数据安全风险</td><td>⭐⭐</td><td>⭐⭐⭐⭐⭐</td><td>路线A历史数据迁移存在泄漏/遗漏风险</td></tr>
+<tr><td><strong>综合推荐度</strong></td><td><strong>⭐⭐（26%）</strong></td><td><strong>⭐⭐⭐⭐⭐（96%）</strong></td><td>路线B各项指标全面领先</td></tr>
+</table>
+
+<div class="warning">
+<strong>⚠ 关键警示：</strong>路线A在改造阶段需要逐一检查并修改所有 SQL 查询语句（当前系统有 <strong>138个控制器文件</strong>、数百条 SQL），任何一个漏加 factory_id 过滤条件都会导致数据隔离失效。这种"依赖人工逐行审查"的方式在工程实践中已被反复验证为高风险路径。
+</div>
+
+<h3>10.3 推荐路线："骨架先行，渐进填充"</h3>
+
+<p>综合对比，强烈推荐采用路线B的改良版 — <strong>"骨架先行，渐进填充"</strong>策略。核心思想是：<strong>花最小的前期成本（3-5天）搭建正确的多工厂骨架，让后续所有功能开发在"几乎无感"的状态下天然具备多工厂能力。</strong></p>
+
+<div class="diagram">
+┌─────────────────────────────────────────────────────────────────────┐<br>
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>Phase 1：骨架期（3-5天）</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;①&nbsp;建&nbsp;factory&nbsp;工厂定义表&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;②&nbsp;用户表添加&nbsp;default_factory_id&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;③&nbsp;所有新业务表建表时预置&nbsp;factory_id&nbsp;列&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;④&nbsp;实现&nbsp;factoryScope&nbsp;中间件（默认工厂自动注入）&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;⑤&nbsp;实现&nbsp;factoryWhere&nbsp;通用查询封装&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;⑥&nbsp;种子数据预置两个工厂&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+└──────────────────────────┬──────────────────────────────────────────┘<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;▼<br>
+┌─────────────────────────────────────────────────────────────────────┐<br>
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>Phase 2：功能期（逐模块开发，正常节奏）</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;·&nbsp;销售订单模块&nbsp;→&nbsp;计划模块&nbsp;→&nbsp;生产模块&nbsp;→&nbsp;采购模块&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;·&nbsp;仓库模块&nbsp;→&nbsp;质量模块&nbsp;→&nbsp;财务模块&nbsp;→&nbsp;报表模块&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;·&nbsp;开发者只需关注业务逻辑，factory_id&nbsp;由中间件透明处理&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;·&nbsp;默认所有用户归属宁国工厂，隔离对开发者完全透明&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+└──────────────────────────┬──────────────────────────────────────────┘<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;▼<br>
+┌─────────────────────────────────────────────────────────────────────┐<br>
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>Phase 3：总部期（报表+权限精细化）</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;·&nbsp;总部汇总报表开发（跨工厂查询，绕过隔离中间件）&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;·&nbsp;跨工厂数据校验与一致性检查&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;·&nbsp;权限精细化管控（工厂级+角色级+数据级）&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;·&nbsp;广州工厂独立上线并验证隔离效果&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+└─────────────────────────────────────────────────────────────────────┘<br>
+</div>
+
+<h3>10.4 Phase 1 关键实现：让多工厂框架"透明化"</h3>
+
+<p>骨架期的核心目标不是实现多工厂的全部功能，而是让多工厂框架 <strong>对后续开发完全透明</strong>。开发者不需要每次写代码时都想着"这个查询要加 factory_id"，而是由框架自动处理。</p>
+
+<h4>技巧一：默认工厂自动注入</h4>
+<pre><code>// factoryScope 中间件核心逻辑
+function applyFactoryScope(req) {
+  // 总部角色 + 选择了"全部工厂"视图
+  if (isHQRole(req.user.role) && req.headers['x-view-mode'] === 'all') {
+    req.factoryScope = { mode: 'all', filter: false };
+    return;
+  }
+  
+  // 总部/多工厂用户 + 选择了特定工厂
+  if (req.headers['x-factory-id']) {
+    req.factoryScope = { mode: 'single', factory_id: parseInt(req.headers['x-factory-id']), filter: true };
+    return;
+  }
+  
+  // 普通用户：使用用户绑定的默认工厂
+  const factoryId = req.user.default_factory_id || null;
+  req.factoryScope = { mode: 'single', factory_id: factoryId, filter: factoryId !== null };
+}</code></pre>
+
+<h4>技巧二：通用查询封装</h4>
+<pre><code>// factoryWhere 工具函数 — 自动追加工厂过滤条件
+function factoryWhere(baseSQL, replacements, factoryScope, tableAlias = 't') {
+  if (!factoryScope || !factoryScope.filter || factoryScope.factory_id == null) {
+    // 总部角色/无工厂限制：不加工厂过滤
+    return { sql: baseSQL, replacements };
+  }
+  
+  const factoryIdParam = `_factoryId_${Math.random().toString(36).substring(2, 8)}`;
+  const whereClause = `${tableAlias}.factory_id = @${factoryIdParam}`;
+
+  // 自动在 WHERE 子句中追加 factory_id 过滤
+  const whereIdx = baseSQL.toUpperCase().indexOf('WHERE');
+  if (whereIdx >= 0) {
+    return {
+      sql: baseSQL.slice(0, whereIdx + 5) + 
+           ' ' + whereClause + ' AND ' + 
+           baseSQL.slice(whereIdx + 5),
+      replacements: { ...replacements, [factoryIdParam]: factoryScope.factory_id }
+    };
+  } else {
+    return {
+      sql: baseSQL + ' WHERE ' + whereClause,
+      replacements: { ...replacements, [factoryIdParam]: factoryScope.factory_id }
+    };
+  }
+}
+
+// 控制器中的使用示例（开发者只需加一行调用）
+const list = async (req, res) => {
+  const baseSQL = `
+    SELECT t.*, ROW_NUMBER() OVER (ORDER BY t.id DESC) AS row_num
+    FROM sales_orders t
+    WHERE t.status = @status
+  `;
+  // 👇 只需这一行，factory_id 过滤自动加上
+  const { sql, replacements } = factoryWhere(
+    baseSQL, 
+    { status: req.query.status }, 
+    req.factoryScope
+  );
+  const result = await sequelize.query(sql, { replacements });
+  // ...
+};</code></pre>
+
+<h4>技巧三：INSERT 数据时自动注入 factory_id</h4>
+<pre><code>// auth.middleware.ts 中自动注入 factory_id 到 req.body
+// 对所有 POST/PUT/PATCH 请求，自动从 req.factoryScope 中读取 factory_id
+const scope = req.factoryScope;
+if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body && scope && scope.filter && scope.factory_id != null && scope.mode !== 'all') {
+  if (req.body.factory_id === undefined) {
+    req.body.factory_id = scope.factory_id;  // 自动注入，前端不可覆盖
+  }
+}
+
+// 控制器中无需手动处理 factory_id，中间件已自动注入
+const create = async (req, res) => {
+  const { order_no, customer_id, factory_id, ...rest } = req.body;
+  // factory_id 已由中间件自动注入，无需手动获取
+  
+  await sequelize.query(`
+    INSERT INTO sales_orders (order_no, customer_id, factory_id, ...)
+    VALUES (@orderNo, @customerId, @factoryId, ...)
+  `, {
+    replacements: { orderNo: order_no, customerId: customer_id, factoryId: factory_id, ... }
+  });
+};</code></pre>
+
+<h4>技巧四：种子数据预置</h4>
+<pre><code>-- 迁移脚本：自动创建两个工厂
+IF NOT EXISTS (SELECT 1 FROM factory WHERE factory_code = 'N')
+  INSERT INTO factory (factory_code, factory_name, factory_short, is_headquarters, status, created_at, updated_at) 
+  VALUES ('N', N'宁国工厂', N'宁国', 1, N'启用', GETDATE(), GETDATE());
+
+IF NOT EXISTS (SELECT 1 FROM factory WHERE factory_code = 'G')
+  INSERT INTO factory (factory_code, factory_name, factory_short, is_headquarters, status, created_at, updated_at) 
+  VALUES ('G', N'广州工厂', N'广州', 0, N'启用', GETDATE(), GETDATE());
+
+-- 所有已有用户默认归属宁国工厂
+UPDATE users SET default_factory_id = (SELECT id FROM factory WHERE factory_code = 'N') WHERE default_factory_id IS NULL;</code></pre>
+
+<h3>10.5 开发体验对比</h3>
+
+<p>在 Phase 1 骨架搭建完成后，Phase 2 开发新功能时，开发者的实际体验与单工厂开发几乎一致：</p>
+
+<table>
+<tr><th>开发场景</th><th>单工厂写法</th><th>骨架先行后的写法</th><th>差异</th></tr>
+<tr>
+  <td>查询列表</td>
+  <td><code>SELECT * FROM sales_orders WHERE status=@s</code></td>
+  <td><code>factoryWhere('SELECT * FROM sales_orders WHERE status=@s', {...}, req.factoryScope)</code></td>
+  <td>多一行 factoryWhere 调用</td>
+</tr>
+<tr>
+  <td>创建记录</td>
+  <td><code>INSERT INTO sales_orders (...) VALUES (...)</code></td>
+  <td><code>INSERT INTO sales_orders (..., factory_id) VALUES (..., @factoryId)</code></td>
+  <td>多一个字段</td>
+</tr>
+<tr>
+  <td>更新记录</td>
+  <td><code>UPDATE sales_orders SET ... WHERE id=@id</code></td>
+  <td><code>UPDATE sales_orders SET ... WHERE id=@id AND factory_id=@factoryId</code></td>
+  <td>多一个 AND 条件</td>
+</tr>
+<tr>
+  <td>前端页面</td>
+  <td>无需关注工厂</td>
+  <td>无需关注工厂（中间件自动处理）</td>
+  <td>无差异</td>
+</tr>
+</table>
+
+<h3>10.6 结论与建议</h3>
+
+<div class="note">
+<strong>结论：</strong>综合考虑开发效率、代码质量、数据安全、可维护性和总体工期，<strong>强烈推荐采用路线B的改良版"骨架先行，渐进填充"策略</strong>。前期投入 3-5 天搭建多工厂骨架，后续所有功能开发体验与单工厂几乎无差异，但架构基础正确，避免了"先建后拆"的巨大返工成本（预估节省 15-25 人天）。
+</div>
+
+<h4>建议的具体执行顺序：</h4>
+<ol>
+  <li><strong>第1步（Day 1-2）：</strong>创建 factory 表 + users 表加 default_factory_id + 编写种子数据脚本</li>
+  <li><strong>第2步（Day 2-3）：</strong>实现 factoryScope 中间件 + factoryWhere 工具函数 + 注册到 Express 中间件链</li>
+  <li><strong>第3步（Day 3-4）：</strong>编写一个示例模块（如仓库模块），验证隔离效果</li>
+  <li><strong>第4步（Day 4-5）：</strong>制定开发规范文档，团队内部培训</li>
+  <li><strong>第5步（Day 5+）：</strong>按正常节奏逐模块开发业务功能，框架已透明化</li>
+</ol>
+
+<hr>
+
+<!-- ==================== 十一、用户登录与工厂访问 ==================== -->
+<h2>十一、用户登录与工厂访问方案</h2>
+
+<div class="info">
+<strong>核心问题：</strong>在多工厂架构下，普通用户如何登录到自已所在的工厂？系统的登录流程是否需要改造？用户能否在工厂之间切换？
+</div>
+
+<h3>11.1 当前系统登录流程</h3>
+
+<p>当前登录流程为经典的 JWT 无状态认证模式：</p>
+
+<div class="diagram">
+登录页 → POST /api/v1/auth/login {username, password}<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 验证用户名密码 → 检查账户锁定/禁用状态<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ JWT 签发 {id, username, role}<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 返回 {token, user, permissions}<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ 前端存 localStorage → 进入系统<br>
+</div>
+
+<p>关键特征：</p>
+<ul>
+  <li>JWT Token 中仅含 <code>{id, username, role}</code>，<strong>没有工厂信息</strong></li>
+  <li><code>auth.middleware.ts</code> 解析 Token 后设置 <code>req.user = {id, username, real_name, role}</code></li>
+  <li>前端登录页为简单的用户名+密码表单，无工厂选择</li>
+</ul>
+
+<h3>11.2 三种可选方案对比</h3>
+
+<table>
+<tr><th style="width:18%;">方案</th><th style="width:27%;">方案1：后台绑定<br>（静默分配）</th><th style="width:27%;">方案2：登录页选择<br>（显式选择）</th><th style="width:28%;">方案3：登录后切换<br>（顶部切换器）</th></tr>
+<tr>
+  <td><strong>操作方式</strong></td>
+  <td>管理员在后台将用户绑定到工厂；用户登录时无需选择，系统自动识别</td>
+  <td>登录页增加工厂下拉框；用户先选工厂再输入用户名密码</td>
+  <td>用户名密码登录后，顶部栏显示工厂切换器，可随时切换</td>
+</tr>
+<tr>
+  <td><strong>登录页是否改动</strong></td>
+  <td>✅ 无需改动</td>
+  <td>❌ 需要增加工厂下拉框</td>
+  <td>✅ 无需改动</td>
+</tr>
+<tr>
+  <td><strong>一个账号多工厂</strong></td>
+  <td>❌ 不支持（一个账号仅绑定一个工厂）</td>
+  <td>✅ 支持（通过权限表控制）</td>
+  <td>✅ 支持（通过权限表控制）</td>
+</tr>
+<tr>
+  <td><strong>安全性</strong></td>
+  <td>✅ 最高 — 前端无法篡改工厂归属</td>
+  <td>⚠️ 中等 — 需后端校验用户是否有该工厂权限</td>
+  <td>⚠️ 中等 — 切换工厂需刷新 Token，后端校验</td>
+</tr>
+<tr>
+  <td><strong>实施复杂度</strong></td>
+  <td>✅ 简单 — JWT 加字段 + 用户表单加下拉</td>
+  <td>⚠️ 中等 — 登录页 + 权限表 + 校验逻辑</td>
+  <td>⚠️ 中等 — 切换器组件 + Token 刷新 + 权限表</td>
+</tr>
+<tr>
+  <td><strong>适用场景</strong></td>
+  <td>操作员（一个员工仅在一个工厂工作）</td>
+  <td>用户知道自己要去哪个工厂</td>
+  <td>管理人员需要跨工厂查看</td>
+</tr>
+</table>
+
+<h3>11.3 推荐方案：方案1 + 方案3 组合</h3>
+
+<p>结合两个工厂的实际场景，推荐采用 <strong>以方案1为主（默认绑定），辅以方案3（工厂切换器）</strong> 的混合策略：</p>
+
+<div class="diagram">
+┌─────────────────────────────────────────────────────────────────┐<br>
+│&nbsp;&nbsp;Molding&nbsp;Powder&nbsp;MOM&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;当前工厂:&nbsp;宁国&nbsp;&nbsp;▼&nbsp;&nbsp;│&nbsp;&nbsp;←&nbsp;仅多工厂权限用户可见<br>
+├─────────────────────────────────────────────────────────────────┤<br>
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;<strong>普通操作员</strong>：管理员在后台将其绑定到固定工厂&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;→&nbsp;登录后自动进入绑定工厂，无需选择，也看不到切换器&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;<strong>管理人员/总部</strong>：管理员赋予多工厂权限&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;→&nbsp;登录后默认进入主工厂，可点击顶部切换器换厂&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+└─────────────────────────────────────────────────────────────────┘<br>
+</div>
+
+<h3>11.4 数据库层改动</h3>
+
+<h4>11.4.1 users 表增加工厂字段</h4>
+<pre><code>-- users 表新增字段
+ALTER TABLE users ADD default_factory_id INT NULL;
+ALTER TABLE users ADD CONSTRAINT fk_user_factory 
+  FOREIGN KEY (default_factory_id) REFERENCES factory(id);
+
+-- 已有用户批量归入宁国工厂
+UPDATE users SET default_factory_id = (SELECT id FROM factory WHERE factory_code = 'N') WHERE default_factory_id IS NULL;</code></pre>
+
+<h4>11.4.2 用户-工厂多对多权限表（用于方案3的切换器）</h4>
+<pre><code>-- 用户可访问的工厂列表（仅需跨工厂的用户才需要配置）
+CREATE TABLE user_factory_access (
+  id INT IDENTITY(1,1) PRIMARY KEY,
+  user_id INT NOT NULL,
+  factory_id INT NOT NULL,
+  access_level NVARCHAR(20) DEFAULT 'read',  -- 'read'仅查看 | 'write'可操作 | 'admin'可配置
+  is_default BIT DEFAULT 0,                    -- 是否默认工厂
+  created_by INT NULL,
+  created_at DATETIME DEFAULT GETDATE(),
+  CONSTRAINT fk_ufa_user FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT fk_ufa_factory FOREIGN KEY (factory_id) REFERENCES factory(id),
+  CONSTRAINT uq_user_factory_access UNIQUE (user_id, factory_id)
+);</code></pre>
+
+<h3>11.5 后端改动</h3>
+
+<h4>11.5.1 登录接口 — JWT 注入 factory_id</h4>
+<pre><code>// auth.controller.ts → login 函数
+const token = generateToken({
+  id: user.id,
+  username: user.username,
+  role: user.role,
+  factory_id: user.default_factory_id   // ← 新增：注入工厂归属
+});
+
+res.json(success({
+  token,
+  user: {
+    id: user.id,
+    username: user.username,
+    real_name: user.real_name,
+    role: user.role,
+    factory_id: user.default_factory_id,  // ← 新增：返回给前端显示
+    ...
+  },
+  permissions: permInfo
+}));</code></pre>
+
+<h4>11.5.2 Token 刷新也带上 factory_id</h4>
+<pre><code>// auth.controller.ts → refreshToken 函数
+const newToken = generateToken({
+  id: user.id,
+  username: user.username,
+  role: user.role,
+  factory_id: user.default_factory_id   // ← 同样注入
+});</code></pre>
+
+<h4>11.5.3 auth.middleware.ts — 解析 factory_id</h4>
+<pre><code>// auth.middleware.ts → authenticate 函数
+const decoded = verifyToken(token);
+// decoded 现在包含: {id, username, role, factory_id, iat, exp}
+
+const user = await User.findByPk(decoded.id, {
+  attributes: { exclude: ['password'] }
+});
+
+req.user = {
+  id: user.id,
+  username: user.username,
+  real_name: (user as any).real_name || '',
+  role: user.role,
+  factory_id: decoded.factory_id || user.default_factory_id  // ← 新增
+};</code></pre>
+
+<h4>11.5.4 工厂切换接口（用于方案3顶部切换器）</h4>
+<pre><code>// 新增接口：POST /api/v1/auth/switch-factory
+// 用户点击顶部切换器时调用，生成新 Token
+const switchFactory = async (req, res) => {
+  const { factory_id } = req.body;
+  
+  // 验证用户是否有权访问目标工厂
+  const hasAccess = await checkUserFactoryAccess(req.user.id, factory_id);
+  if (!hasAccess) {
+    return res.status(403).json(error('无权限访问该工厂'));
+  }
+  
+  // 生成新 Token，包含目标 factory_id
+  const newToken = generateToken({
+    id: req.user.id,
+    username: req.user.username,
+    role: req.user.role,
+    factory_id: factory_id
+  });
+  
+  res.json(success({ token: newToken }, '工厂切换成功'));
+};</code></pre>
+
+<h3>11.6 前端改动</h3>
+
+<h4>11.6.1 登录页 — 无需改动</h4>
+<p>登录页保持原有的用户名+密码表单，<strong>不增加工厂选择</strong>。用户的工厂归属由后台管理员配置，登录时自动确定。</p>
+
+<h4>11.6.2 顶部栏 — 工厂切换器（仅多工厂权限用户可见）</h4>
+<pre><code>&lt;!-- 顶部栏右侧，仅当用户有多个可访问工厂时显示 --&gt;
+&lt;a-dropdown v-if="userStore.accessibleFactories.length > 1"&gt;
+  &lt;a-button type="text"&gt;
+    &lt;ShopOutlined /&gt;
+    当前工厂: {{ userStore.currentFactory.name }}
+    &lt;DownOutlined /&gt;
+  &lt;/a-button&gt;
+  &lt;template #overlay&gt;
+    &lt;a-menu @click="handleSwitchFactory"&gt;
+      &lt;a-menu-item 
+        v-for="f in userStore.accessibleFactories" 
+        :key="f.id"
+      &gt;
+        {{ f.factory_name }}
+        &lt;a-tag v-if="f.id === userStore.currentFactory.id"&gt;当前&lt;/a-tag&gt;
+      &lt;/a-menu-item&gt;
+    &lt;/a-menu&gt;
+  &lt;/template&gt;
+&lt;/a-dropdown&gt;</code></pre>
+
+<h4>11.6.3 用户管理页面 — 新增工厂选择字段</h4>
+<p>在创建/编辑用户的表单中增加"所属工厂"下拉选择：</p>
+
+<div class="diagram">
+┌──&nbsp;创建用户&nbsp;──────────────────────────────┐<br>
+│&nbsp;用户名：&nbsp;&nbsp;[_______________]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;姓名：&nbsp;&nbsp;&nbsp;&nbsp;[_______________]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;角色：&nbsp;&nbsp;&nbsp;&nbsp;[普通员工&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;▼]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;所属工厂：[宁国&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;▼]&nbsp;&nbsp;←&nbsp;新增&nbsp;│<br>
+│&nbsp;密码：&nbsp;&nbsp;&nbsp;&nbsp;[_______________]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[保存]&nbsp;[取消]&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+└──────────────────────────────────────────┘<br>
+</div>
+
+<h3>11.7 用户体验完整流程</h3>
+
+<table>
+<tr><th>用户类型</th><th>登录流程</th><th>进入系统后</th></tr>
+<tr>
+  <td><strong>宁国工厂操作员</strong><br>（绑定宁国工厂）</td>
+  <td>
+    1. 打开登录页<br>
+    2. 输入用户名+密码<br>
+    3. 点击登录<br>
+    4. 系统自动识别其归属宁国工厂
+  </td>
+  <td>
+    · 顶部栏无工厂切换器<br>
+    · 所有数据自动限定为宁国工厂<br>
+    · 创建单据自动归属宁国工厂
+  </td>
+</tr>
+<tr>
+  <td><strong>广州工厂操作员</strong><br>（绑定广州工厂）</td>
+  <td>
+    1. 打开登录页<br>
+    2. 输入用户名+密码<br>
+    3. 点击登录<br>
+    4. 系统自动识别其归属广州工厂
+  </td>
+  <td>
+    · 顶部栏无工厂切换器<br>
+    · 所有数据自动限定为广州工厂<br>
+    · 创建单据自动归属广州工厂
+  </td>
+</tr>
+<tr>
+  <td><strong>跨工厂管理人员</strong><br>（多工厂权限）</td>
+  <td>
+    1. 打开登录页<br>
+    2. 输入用户名+密码<br>
+    3. 点击登录<br>
+    4. 系统进入其默认工厂（如宁国工厂）
+  </td>
+  <td>
+    · 顶部栏显示 "当前工厂: 宁国 ▼"<br>
+    · 点击可切换到广州工厂<br>
+    · 切换后页面刷新，数据变为目标工厂<br>
+    · 可随时在两个工厂间切换
+  </td>
+</tr>
+<tr>
+  <td><strong>总部 Admin</strong><br>（headquarters 角色）</td>
+  <td>
+    1. 打开登录页<br>
+    2. 输入用户名+密码<br>
+    3. 点击登录<br>
+    4. 系统不限定工厂
+  </td>
+  <td>
+    · 顶部栏显示 "总部视图"<br>
+    · 可查看/切换所有工厂数据<br>
+    · 可访问总部汇总报表<br>
+    · 可管理工厂基础配置
+  </td>
+</tr>
+</table>
+
+<h3>11.8 安全性保障</h3>
+
+<ul>
+  <li><strong>factory_id 不可从前端传入：</strong>JWT 中的 factory_id 由后端在登录时根据用户绑定关系生成，前端无法篡改</li>
+  <li><strong>工厂切换需后端校验：</strong>切换工厂接口验证 <code>user_factory_access</code> 表，防止越权访问</li>
+  <li><strong>Token 即时刷新：</strong>切换工厂后立即签发新 Token，旧 Token 中的 factory_id 失效</li>
+  <li><strong>双重保障：</strong>factoryScope 中间件 + SQL 层 WHERE 条件，即使 JWT 被篡改，数据库层也能兜底</li>
+</ul>
+
+<div class="note">
+<strong>小结：</strong>对于普通操作员，登录体验与单工厂完全一致（用户名+密码即可）；对于需要跨工厂的管理人员，登录后在顶部栏一键切换。整个方案<strong>前端改动极小</strong>（登录页不动，用户管理加一个下拉框，顶部栏加一个切换器），<strong>安全性由后端全链路保障</strong>。
+</div>
+
+<hr>
+
+<!-- ==================== 十二、总部权限精细化管控 ==================== -->
+<h2>十二、总部权限精细化管控方案</h2>
+
+<div class="info">
+<strong>核心问题：</strong>总部人员如何实现"能看到多个工厂所有数据、自由切换工厂视图、访问集团汇总报表"？这需要在角色设计、工厂访问权限、报表权限三个层面建立精细化的管控模型。
+</div>
+
+<h3>12.1 权限管控三层模型</h3>
+
+<p>总部权限不是"一个角色打天下"，而是遵循<strong>三层递进模型</strong>：</p>
+
+<div class="diagram">
+┌─────────────────────────────────────────────────────────────────┐<br>
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>第一层：角色层（能不能进总部功能）</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;headquarters&nbsp;角色&nbsp;→&nbsp;拥有"总部报表"菜单访问权&nbsp;+&nbsp;工厂切换器可见&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+├─────────────────────────────────────────────────────────────────┤<br>
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>第二层：工厂访问层（能看哪些工厂）</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;user_factory_access&nbsp;表&nbsp;→&nbsp;定义该总部用户可访问的工厂列表&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;可配置为：全部工厂&nbsp;/&nbsp;部分工厂&nbsp;/&nbsp;单工厂&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+├─────────────────────────────────────────────────────────────────┤<br>
+│&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>第三层：数据范围层（相同工厂内能看什么）</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+│&nbsp;&nbsp;数据维度控制&nbsp;→&nbsp;如：总部财务仅看财务数据、总部质量仅看质量数据&nbsp;│<br>
+│&nbsp;&nbsp;通过现有&nbsp;permission_menu&nbsp;的菜单可见性实现&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;│<br>
+└─────────────────────────────────────────────────────────────────┘<br>
+</div>
+
+<h3>12.2 总部角色体系设计</h3>
+
+<p>摒弃"一个 headquarters 角色管全部"的粗放方式，建立<strong>总部角色梯队</strong>：</p>
+
+<table>
+<tr><th>角色编码</th><th>角色名称</th><th>能力范围</th><th>适用人员</th></tr>
+<tr>
+  <td><code>headquarters_admin</code></td>
+  <td>总部超级管理员</td>
+  <td>· 查看所有工厂全部数据<br>· 访问所有总部汇总报表<br>· 管理工厂基础配置<br>· 管理用户和权限分配</td>
+  <td>集团IT负责人、系统管理员</td>
+</tr>
+<tr>
+  <td><code>headquarters_manager</code></td>
+  <td>总部管理层</td>
+  <td>· 查看所有工厂全部业务数据<br>· 访问所有总部汇总报表<br>· 可切换工厂视图<br>· 不可修改基础配置</td>
+  <td>总经理、集团运营总监</td>
+</tr>
+<tr>
+  <td><code>headquarters_finance</code></td>
+  <td>总部财务</td>
+  <td>· 查看所有工厂的财务相关数据<br>· 访问集团财务汇总报表<br>· 可查看各工厂财务明细<br>· 不可查看生产/质量数据</td>
+  <td>集团财务总监、总部会计</td>
+</tr>
+<tr>
+  <td><code>headquarters_quality</code></td>
+  <td>总部质量</td>
+  <td>· 查看所有工厂的质量数据<br>· 访问集团质量汇总报表<br>· 可查看各工厂质检明细<br>· 不可查看财务/成本数据</td>
+  <td>集团质量总监</td>
+</tr>
+<tr>
+  <td><code>headquarters_sales</code></td>
+  <td>总部销售</td>
+  <td>· 查看所有工厂的销售数据<br>· 访问集团销售汇总报表<br>· 跨工厂客户分析<br>· 不可查看生产成本数据</td>
+  <td>集团销售总监</td>
+</tr>
+</table>
+
+<h3>12.3 工厂访问权限表设计</h3>
+
+<pre><code>-- 用户工厂访问权限表（精细化版本）
+CREATE TABLE user_factory_access (
+  id INT IDENTITY(1,1) PRIMARY KEY,
+  user_id INT NOT NULL,
+  factory_id INT NOT NULL,
+  access_level NVARCHAR(20) DEFAULT 'read',  -- 'read'仅查看 | 'write'可操作 | 'admin'可配置
+  is_default BIT DEFAULT 0,                   -- 是否默认登录工厂
+  created_by INT,
+  created_at DATETIME DEFAULT GETDATE(),
+  CONSTRAINT fk_ufa_user FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT fk_ufa_factory FOREIGN KEY (factory_id) REFERENCES factory(id),
+  CONSTRAINT uq_user_factory_access UNIQUE (user_id, factory_id)
+);
+
+-- 示例：总部管理层可以查看两个工厂的全部数据
+INSERT INTO user_factory_access (user_id, factory_id, access_level, is_default) VALUES
+  (10, (SELECT id FROM factory WHERE factory_code = 'N'), 'write', 1),   -- 总部经理 → 宁国工厂（默认登录，可操作）
+  (10, (SELECT id FROM factory WHERE factory_code = 'G'), 'write', 0);   -- 总部经理 → 广州工厂（可切换，可操作）
+
+-- 示例：总部财务可以查看两个工厂但不可操作
+INSERT INTO user_factory_access (user_id, factory_id, access_level, is_default) VALUES
+  (11, (SELECT id FROM factory WHERE factory_code = 'N'), 'read', 1),    -- 总部财务 → 宁国工厂（默认登录，只读）
+  (11, (SELECT id FROM factory WHERE factory_code = 'G'), 'read', 0);    -- 总部财务 → 广州工厂（可切换，只读）</code></pre>
+
+<h3>12.4 factoryScope 中间件增强 — 支持三种视图模式</h3>
+
+<pre><code>// 增强版 factoryScope 中间件
+function factoryScope(req, res, next) {
+  const user = req.user;
+  
+  // 1. 总部角色 + 选择了"全部工厂"视图
+  if (isHQRole(user.role) && req.headers['x-view-mode'] === 'all') {
+    req.factoryScope = {
+      mode: 'all',           // 全工厂视图
+      filter: false,          // 不过滤 factory_id
+      accessibleFactories: [] // 所有有权限的工厂
+    };
+    return next();
+  }
+  
+  // 2. 总部角色 + 选择了特定工厂视图
+  if (isHQRole(user.role) && req.headers['x-factory-id']) {
+    const targetFactoryId = parseInt(req.headers['x-factory-id']);
+    // 验证该用户是否有此工厂的访问权限
+    if (!hasFactoryAccess(user.id, targetFactoryId)) {
+      return res.status(403).json({ 
+        success: false, 
+        message: '无权限访问该工厂' 
+      });
+    }
+    req.factoryScope = {
+      mode: 'single',
+      factory_id: targetFactoryId,
+      filter: true
+    };
+    return next();
+  }
+  
+  // 3. 普通用户 / 总部用户默认进入其绑定工厂
+  const factoryId = user.default_factory_id || 
+    (user.accessibleFactories && user.accessibleFactories[0]);
+  req.factoryScope = {
+    mode: 'single',
+    factory_id: factoryId,
+    filter: true
+  };
+  next();
+}
+
+// 判断是否为总部角色
+function isHQRole(role) {
+  return ['headquarters_admin', 'headquarters_manager', 
+          'headquarters_finance', 'headquarters_quality',
+          'headquarters_sales'].includes(role);
+}
+
+// 验证用户是否有某工厂的访问权限
+async function hasFactoryAccess(userId, factoryId) {
+  const access = await sequelize.query(
+    'SELECT 1 FROM user_factory_access WHERE user_id = @uid AND factory_id = @fid',
+    { replacements: { uid: userId, fid: factoryId }, type: QueryTypes.SELECT }
+  );
+  return access.length > 0;
+}</code></pre>
+
+<h3>12.5 顶部栏 — 总部用户专属视图切换器</h3>
+
+<pre><code>&lt;!-- 总部用户可见的增强版视图切换器 --&gt;
+&lt;template&gt;
+  &lt;div class="factory-view-switcher" v-if="isHQUser"&gt;
+    &lt;a-radio-group 
+      :value="currentViewMode" 
+      @change="handleViewModeChange"
+      button-style="solid"
+      size="small"
+    &gt;
+      &lt;a-radio-button value="all"&gt;
+        &lt;GlobalOutlined /&gt; 全部工厂
+      &lt;/a-radio-button&gt;
+      &lt;a-radio-button 
+        v-for="f in accessibleFactories" 
+        :key="f.id" 
+        :value="'factory_' + f.id"
+      &gt;
+        {{ f.factory_short }}
+      &lt;/a-radio-button&gt;
+    &lt;/a-radio-group&gt;
+  &lt;/div&gt;
+&lt;/template&gt;
+
+&lt;script setup&gt;
+const currentViewMode = ref('all'); // 默认全部工厂视图
+
+const handleViewModeChange = (e) =&gt; {
+  if (e.target.value === 'all') {
+    // 切换到全部工厂模式 → 所有 API 请求头携带 x-view-mode: all
+    apiClient.defaults.headers['x-view-mode'] = 'all';
+    delete apiClient.defaults.headers['x-factory-id'];
+  } else {
+    // 切换到单工厂模式 → 携带 x-factory-id
+    const factoryId = e.target.value.replace('factory_', '');
+    apiClient.defaults.headers['x-factory-id'] = factoryId;
+    delete apiClient.defaults.headers['x-view-mode'];
+  }
+  currentViewMode.value = e.target.value;
+  // 触发页面数据重新加载
+  router.go(0);  // 或使用 provide/inject 触发全局刷新
+};
+&lt;/script&gt;</code></pre>
+
+<h3>12.6 三种视图模式的完整交互流程</h3>
+
+<table>
+<tr><th style="width:18%;">视图模式</th><th style="width:30%;">顶部栏显示</th><th style="width:26%;">API 请求头</th><th style="width:26%;">查询结果</th></tr>
+<tr>
+  <td><strong>全部工厂</strong></td>
+  <td>
+    <code>[● 全部工厂] [宁国工厂] [广州工厂]</code><br>
+    默认选中"全部工厂"
+  </td>
+  <td>
+    <code>x-view-mode: all</code><br>
+    不携带 factory_id
+  </td>
+  <td>
+    列表页：每条数据显示所属工厂<br>
+    汇总页：按工厂分组统计<br>
+    报表：跨工厂聚合
+  </td>
+</tr>
+<tr>
+  <td><strong>单宁国工厂</strong></td>
+  <td>
+    <code>[全部工厂] [● 宁国工厂] [广州工厂]</code><br>
+    选中"宁国工厂"
+  </td>
+  <td>
+    <code>x-factory-id: (宁国工厂ID)</code><br>
+    携带宁国工厂的 factory_id
+  </td>
+  <td>
+    完全等同于宁国工厂操作员视角<br>
+    数据隔离，仅显示宁国工厂数据
+  </td>
+</tr>
+<tr>
+  <td><strong>单广州工厂</strong></td>
+  <td>
+    <code>[全部工厂] [宁国工厂] [● 广州工厂]</code><br>
+    选中"广州工厂"
+  </td>
+  <td>
+    <code>x-factory-id: (广州工厂ID)</code><br>
+    携带广州工厂的 factory_id
+  </td>
+  <td>
+    完全等同于广州工厂操作员视角<br>
+    数据隔离，仅显示广州工厂数据
+  </td>
+</tr>
+</table>
+
+<h3>12.7 总部汇总报表的权限控制</h3>
+
+<p>集团汇总报表独立于日常业务操作，通过<strong>菜单权限 + 角色白名单</strong>双控机制：</p>
+
+<pre><code>// 总部报表路由 — 独立权限验证
+// server/src/modules/headquarters/headquarters.routes.ts
+
+router.use(authenticate);  // 先验证登录
+router.use(authorizeHQ);    // 再验证总部角色
+
+// 总部权限中间件
+function authorizeHQ(req, res, next) {
+  const allowedRoles = [
+    'headquarters_admin',
+    'headquarters_manager',
+    'headquarters_finance',
+    'headquarters_quality',
+    'headquarters_sales'
+  ];
+  
+  if (!allowedRoles.includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: '仅总部人员可访问汇总报表'
+    });
+  }
+  next();
+}
+
+// 总部报表路由（不使用 factoryScope 中间件）
+router.get('/sales-summary',      authorizeHQ, salesSummaryController.list);
+router.get('/production-summary', authorizeHQ, productionSummaryController.list);
+router.get('/purchase-summary',   authorizeHQ, purchaseSummaryController.list);
+router.get('/inventory-summary',  authorizeHQ, inventorySummaryController.list);
+router.get('/finance-summary',    authorizeHQ, financeSummaryController.list);
+router.get('/quality-summary',    authorizeHQ, qualitySummaryController.list);</code></pre>
+
+<h4>报表级权限细化</h4>
+
+<table>
+<tr><th>角色</th><th>销售汇总</th><th>生产汇总</th><th>采购汇总</th><th>库存汇总</th><th>财务汇总</th><th>质量汇总</th></tr>
+<tr><td><code>headquarters_admin</code></td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td><code>headquarters_manager</code></td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+<tr><td><code>headquarters_finance</code></td><td>✅</td><td>❌</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td></tr>
+<tr><td><code>headquarters_quality</code></td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td><td>✅</td></tr>
+<tr><td><code>headquarters_sales</code></td><td>✅</td><td>❌</td><td>❌</td><td>✅</td><td>❌</td><td>❌</td></tr>
+</table>
+
+<h3>12.8 完整权限配置流程（管理员操作）</h3>
+
+<div class="diagram">
+<strong>Step 1：分配总部角色</strong><br>
+用户管理 → 编辑用户 → 角色下拉选择 → "总部管理层" → 保存<br>
+&nbsp;&nbsp;&nbsp;&nbsp;↓<br>
+<strong>Step 2：配置工厂访问权限</strong><br>
+用户管理 → 工厂权限 → 勾选"宁国工厂" + "广州工厂" → 设置默认工厂 → 选择 access_level<br>
+&nbsp;&nbsp;&nbsp;&nbsp;↓<br>
+<strong>Step 3：分配菜单权限</strong><br>
+角色管理 → 总部管理层 → 菜单权限 → 勾选"总部报表"及其子菜单 → 保存<br>
+&nbsp;&nbsp;&nbsp;&nbsp;↓<br>
+<strong>Step 4：用户下次登录生效</strong><br>
+用户重新登录 → JWT 注入全部工厂权限 → 顶部栏出现视图切换器 → 可访问总部报表<br>
+</div>
+
+<h3>12.9 总部用户的完整体验流程</h3>
+
+<table>
+<tr><th style="width:15%;">场景</th><th style="width:45%;">操作</th><th style="width:40%;">系统表现</th></tr>
+<tr>
+  <td><strong>登录</strong></td>
+  <td>用户名+密码 → 登录</td>
+  <td>
+    · JWT 注入角色+可访问工厂列表<br>
+    · 默认进入"全部工厂"视图<br>
+    · 顶部栏显示 [●全部工厂] [宁国工厂] [广州工厂]
+  </td>
+</tr>
+<tr>
+  <td><strong>查看销售订单</strong><br>（全部工厂模式）</td>
+  <td>点击"销售订单"菜单</td>
+  <td>
+    · 列表中每条订单显示"工厂"列<br>
+    · 可筛选/排序工厂维度<br>
+    · 数据来自两个工厂，不隔离
+  </td>
+</tr>
+<tr>
+  <td><strong>切换到单宁国工厂</strong></td>
+  <td>点击顶部 [宁国工厂] 按钮</td>
+  <td>
+    · API 请求自动携带 x-factory-id:宁国工厂ID<br>
+    · 页面刷新，仅显示宁国工厂数据<br>
+    · 与宁国工厂操作员看到完全一致
+  </td>
+</tr>
+<tr>
+  <td><strong>查看集团销售汇总</strong></td>
+  <td>总部报表 → 集团销售汇总</td>
+  <td>
+    · 跨工厂聚合统计<br>
+    · 图表按工厂分色对比<br>
+    · KPI 卡片显示集团总量
+  </td>
+</tr>
+<tr>
+  <td><strong>钻取明细</strong></td>
+  <td>在汇总报表中点击某工厂的柱状图</td>
+  <td>
+    · 自动切换到该工厂单视图<br>
+    · 展示该工厂的订单明细列表<br>
+    · 支持进一步筛选和导出
+  </td>
+</tr>
+</table>
+
+<h3>12.10 安全性约束总结</h3>
+
+<table>
+<tr><th>安全层级</th><th>机制</th><th>防护目标</th></tr>
+<tr>
+  <td><strong>认证层</strong></td>
+  <td>JWT 解析 → 确定用户身份和角色</td>
+  <td>防止未登录访问</td>
+</tr>
+<tr>
+  <td><strong>角色层</strong></td>
+  <td>authorizeHQ 中间件 → 只放行总部角色</td>
+  <td>防止普通用户访问总部报表</td>
+</tr>
+<tr>
+  <td><strong>工厂访问层</strong></td>
+  <td>user_factory_access 表 → 验证每个工厂的访问权限</td>
+  <td>防止越权查看未授权的工厂</td>
+</tr>
+<tr>
+  <td><strong>数据范围层</strong></td>
+  <td>permission_menu → 控制菜单可见性</td>
+  <td>防止总部财务查看生产数据等横向越权</td>
+</tr>
+<tr>
+  <td><strong>操作层</strong></td>
+  <td>access_level (read/write/admin)</td>
+  <td>防止只读用户执行写操作</td>
+</tr>
+</table>
+
+<hr>
+
+<div class="footer">Molding Powder MOM — 多工厂数据隔离与总部汇总方案 &nbsp;|&nbsp; 宁国市睿信信息技术有限责任公司 &nbsp;|&nbsp; 2026年6月 &nbsp;|&nbsp; V1.0</div>
+</body>
+</html>

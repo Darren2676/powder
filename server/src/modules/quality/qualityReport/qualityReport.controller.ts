@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 /**
  * 获取单个生产单的完整质量报告
@@ -9,6 +10,7 @@ import { success } from '../../../utils/response.util';
 export const getProductionQualityReport = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { production_order_number } = req.params;
+    const _factoryId = getFactoryId(req);
 
     // 1. 获取生产单基本信息
     const [orderRows]: any = await sequelize.query(`
@@ -33,8 +35,8 @@ export const getProductionQualityReport = async (req: Request, res: Response, ne
         po.yield_rate,
         po.inbound_quantity
       FROM production_order po
-      WHERE po.production_order_number = :production_order_number
-    `, { replacements: { production_order_number } });
+      WHERE po.production_order_number = :production_order_number${_factoryId !== null ? ' AND po.factory_id = :_factoryId' : ''}
+    `, { replacements: { production_order_number, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } });
 
     if (!orderRows.length) {
       res.status(404).json({ success: false, message: '生产单不存在' });
@@ -180,6 +182,12 @@ export const getQualitySummary = async (req: Request, res: Response, next: NextF
     let whereClause = 'WHERE 1=1';
     const replacements: any = { offset, offsetEnd };
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND po.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
+
     if (start_date) {
       whereClause += ` AND po.production_date >= :start_date`;
       replacements.start_date = start_date;
@@ -285,6 +293,12 @@ export const getProductionOrderQualityPivot = async (req: Request, res: Response
 
     let whereClause = 'WHERE 1=1';
     const replacements: any = { offset, offsetEnd };
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ' AND po.factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
+    }
 
     if (start_date) {
       whereClause += ' AND po.production_date >= :start_date';
@@ -510,6 +524,11 @@ export const getDefectAnalysis = async (req: Request, res: Response, next: NextF
 
     let whereClause = 'WHERE wr.unqualified_quantity > 0';
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND wr.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
 
     if (start_date) {
       whereClause += ` AND wr.report_date >= :start_date`;
@@ -606,6 +625,11 @@ export const getProcessQuality = async (req: Request, res: Response, next: NextF
 
     let whereClause = 'WHERE 1=1';
     const replacements: any = {};
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND wr.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
 
     if (start_date) {
       whereClause += ` AND wr.report_date >= :start_date`;
@@ -702,6 +726,11 @@ export const getProductQualitySummary = async (req: Request, res: Response, next
 
     let whereClause = 'WHERE 1=1';
     const replacements: any = { offset, offsetEnd };
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND wr.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
 
     if (start_date) {
       whereClause += ` AND wr.report_date >= :start_date`;
@@ -827,6 +856,11 @@ export const getYieldRateReport = async (req: Request, res: Response, next: Next
 
     let whereClause = 'WHERE 1=1';
     const replacements: any = { offset, offsetEnd };
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ` AND po.factory_id = :_factoryId`;
+      replacements._factoryId = _factoryId;
+    }
 
     if (start_date) {
       whereClause += ` AND po.production_date >= :start_date`;

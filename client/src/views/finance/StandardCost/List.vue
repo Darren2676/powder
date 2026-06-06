@@ -40,6 +40,7 @@ const { loading, searchText, pagination, fetchData, handleTableChange, handleSea
 const defaultDataColumns: any[] = [
   { title: '编号', dataIndex: 'cost_list_number', key: 'cost_list_number', width: 180, resizable: true },
   { title: '名称', dataIndex: 'cost_list_name', key: 'cost_list_name', width: 160, resizable: true },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '生效日期', dataIndex: 'effective_date', key: 'effective_date', width: 110, resizable: true },
   { title: '失效日期', dataIndex: 'expiration_date', key: 'expiration_date', width: 110, resizable: true },
   { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 90, resizable: true },

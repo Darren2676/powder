@@ -48,13 +48,41 @@ async function tryRefreshToken(): Promise<string | null> {
   }
 }
 
-// Request interceptor - attach JWT token and prevent GET caching
+// 读取工厂上下文（避免循环依赖，直接从 localStorage 读取）
+function getFactoryHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  try {
+    // 视图模式：all → 查看全部工厂
+    const viewMode = localStorage.getItem('factory_view_mode');
+    if (viewMode === 'all') {
+      headers['x-view-mode'] = 'all';
+    }
+    // 当前工厂 ID
+    const factoryStr = localStorage.getItem('current_factory');
+    if (factoryStr) {
+      const factory = JSON.parse(factoryStr);
+      if (factory?.id) {
+        headers['x-factory-id'] = String(factory.id);
+      }
+    }
+  } catch { /* ignore */ }
+  return headers;
+}
+
+// Request interceptor - attach JWT token, factory headers, and prevent GET caching
 request.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('token');
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    // 注入工厂上下文头（排除登录等不需要的接口）
+    if (config.headers && !config.url?.includes('/auth/')) {
+      const factoryHeaders = getFactoryHeaders();
+      Object.assign(config.headers, factoryHeaders);
+    }
+
     // 防止浏览器缓存 GET 请求
     if (config.method === 'get') {
       config.headers['Cache-Control'] = 'no-cache';

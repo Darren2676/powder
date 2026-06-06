@@ -3,15 +3,17 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { generateBatchNumber, generateMaterialTxnNumber } from '@/services/inventory.service';
 import { checkAndAutoComplete } from '@/services/documentAutoComplete.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
 
-const generateReceivingNumber = async (): Promise<string> => {
+const generateReceivingNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = new Date();
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `RN-${dateStr}-`;
+  const prefix = `RN${fc}-${dateStr}-`;
 
   const [rows]: any = await sequelize.query(
     `SELECT MAX(receiving_number) as max_num FROM purchase_receiving_notice WHERE receiving_number LIKE :prefix`,
@@ -46,6 +48,12 @@ export const getReceivingNotices = async (req: Request, res: Response, next: Nex
     if (approval_status) {
       conditions.push(`approval_status = :approval_status`);
       replacements.approval_status = approval_status;
+    }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
     }
 
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -125,10 +133,12 @@ export const getReceivingNoticeDetail = async (req: Request, res: Response, next
 
 export const createReceivingNotice = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body;
     if (!b.purchase_order_number) { res.status(400).json({ success: false, message: '采购订单号不能为空' }); return; }
 
-    const receiving_number = await generateReceivingNumber();
+    const receiving_number = await generateReceivingNumber(factoryCode);
+    const _factoryId = getFactoryId(req);
     const creation_man = (req as any).user?.username || '';
 
     // 获取 PO 供应商信息
@@ -141,9 +151,9 @@ export const createReceivingNotice = async (req: Request, res: Response, next: N
     try {
       await sequelize.query(`
         INSERT INTO purchase_receiving_notice (receiving_number, purchase_order_number, supplier_number, supplier_name,
-          delivery_note, receiving_date, operator, approval_status, remark, creation_date, creation_man)
+          delivery_note, receiving_date, operator, approval_status, remark, factory_id, creation_date, creation_man)
         VALUES (:receiving_number, :purchase_order_number, :supplier_number, :supplier_name,
-          :delivery_note, :receiving_date, :operator, N'待确认', :remark, GETDATE(), :creation_man)
+          :delivery_note, :receiving_date, :operator, N'待确认', :remark, :factory_id, GETDATE(), :creation_man)
       `, {
         replacements: {
           receiving_number,
@@ -154,6 +164,7 @@ export const createReceivingNotice = async (req: Request, res: Response, next: N
           receiving_date: b.receiving_date || new Date().toISOString().split('T')[0],
           operator: creation_man,
           remark: b.remark || '',
+          factory_id: b.factory_id || _factoryId,
           creation_man
         },
         transaction
@@ -205,8 +216,11 @@ export const createReceivingNotice = async (req: Request, res: Response, next: N
 export const deleteReceivingNotice = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM purchase_receiving_notice WHERE receiving_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM purchase_receiving_notice WHERE receiving_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (chk.length && chk[0].approval_status !== '待确认') {
       res.status(403).json({ success: false, message: '已确认的收货通知不允许删除' }); return;
@@ -215,7 +229,7 @@ export const deleteReceivingNotice = async (req: Request, res: Response, next: N
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`DELETE FROM purchase_receiving_notice_detail WHERE receiving_number = :id`, { replacements: { id }, transaction });
-      await sequelize.query(`DELETE FROM purchase_receiving_notice WHERE receiving_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM purchase_receiving_notice WHERE receiving_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
       await transaction.commit();
       res.json(success(null, '删除收货通知成功'));
     } catch (e) {
@@ -229,6 +243,8 @@ export const deleteReceivingNotice = async (req: Request, res: Response, next: N
 
 export const confirmReceivingNotice = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const { id } = req.params;
     const b = req.body;
     const operator = (req as any).user?.username || '';
@@ -250,7 +266,7 @@ export const confirmReceivingNotice = async (req: Request, res: Response, next: 
       { replacements: { id } }
     );
 
-    const siNumber = await generateStockInNumber();
+    const siNumber = await generateStockInNumber(factoryCode);
     const creation_man = operator;
 
     // 获取PO供应商信息
@@ -352,7 +368,7 @@ export const confirmReceivingNotice = async (req: Request, res: Response, next: 
             received_quantity: rQty,
             batch_number: '',
             creation_man
-          }, transaction);
+          }, factoryCode, _factoryId, transaction);
           autoInspections.push(inspNo);
           await sequelize.query(
             `UPDATE stock_in_detail SET inspection_number = :inspNo, inspect_status = N'待检验'
@@ -363,7 +379,7 @@ export const confirmReceivingNotice = async (req: Request, res: Response, next: 
       }
 
       // 确认入库（调用本地执行函数）
-      await executeConfirmStockIn(siNumber, operator, transaction);
+      await executeConfirmStockIn(siNumber, operator, factoryCode, _factoryId, transaction);
 
       // 更新收货通知状态
       await sequelize.query(
@@ -381,12 +397,13 @@ export const confirmReceivingNotice = async (req: Request, res: Response, next: 
 };
 
 // ==================== 入库单号生成（内部） ====================
-async function generateStockInNumber(): Promise<string> {
+async function generateStockInNumber(factoryCode: string = ''): Promise<string> {
   const today = new Date();
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `SI-${dateStr}-`;
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
+  const prefix = `SI${fc}-${dateStr}-`;
   const [rows]: any = await sequelize.query(
     `SELECT MAX(stock_in_number) as max_num FROM stock_in WHERE stock_in_number LIKE :prefix`,
     { replacements: { prefix: prefix + '%' } }
@@ -400,7 +417,7 @@ async function generateStockInNumber(): Promise<string> {
 }
 
 // ==================== 入库确认内核（内联） ====================
-async function executeConfirmStockIn(siNumber: string, operator: string, transaction: any) {
+async function executeConfirmStockIn(siNumber: string, operator: string, factoryCode: string = '', _factoryId: number | null = null, transaction: any) {
   const [siHeader]: any = await sequelize.query(
     `SELECT * FROM stock_in WHERE stock_in_number = :id`, { replacements: { id: siNumber }, transaction }
   );
@@ -457,16 +474,16 @@ async function executeConfirmStockIn(siNumber: string, operator: string, transac
     const inspectStatus = needsInspection ? '待检验' : '免检';
 
     // 生成批次号
-    const batchNo = await generateBatchNumber('MB', transaction);
+    const batchNo = await generateBatchNumber('MB', factoryCode, transaction);
 
     // 写入批次库存
     await sequelize.query(`
       INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications,
         basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity,
-        supplier_number, supplier_name, production_order_number, inbound_date, status, creation_date, last_updated)
+        supplier_number, supplier_name, production_order_number, inbound_date, status, creation_date, last_updated, factory_id)
       VALUES (:batchNo, :item_number, :item_name, N'原材料', :specifications,
         :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity,
-        :supplier_number, :supplier_name, '', GETDATE(), N'正常', GETDATE(), GETDATE())
+        :supplier_number, :supplier_name, '', GETDATE(), N'正常', GETDATE(), GETDATE(), :factory_id)
     `, {
       replacements: {
         batchNo,
@@ -478,7 +495,8 @@ async function executeConfirmStockIn(siNumber: string, operator: string, transac
         warehouse_name: whName,
         quantity: entryQty,
         supplier_number: header.supplier_number || '',
-        supplier_name: header.supplier_name || ''
+        supplier_name: header.supplier_name || '',
+        factory_id: _factoryId
       },
       transaction
     });
@@ -505,7 +523,7 @@ async function executeConfirmStockIn(siNumber: string, operator: string, transac
     });
 
     // 记录流水
-    const txnNo = await generateMaterialTxnNumber(transaction);
+    const txnNo = await generateMaterialTxnNumber(factoryCode, transaction);
 
     const [invRows]: any = await sequelize.query(
       `SELECT quantity FROM material_inventory WHERE item_number = :itemNo AND warehouse_number = :whNo`,

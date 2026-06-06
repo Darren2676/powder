@@ -4,10 +4,12 @@ import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import dayjs from 'dayjs';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
-const generatePriceListNumber = async (): Promise<string> => {
+const generatePriceListNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = dayjs().format('YYYYMMDD');
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
   const prefix = `SP-${today}-`;
   const [rows]: any = await sequelize.query(
     `SELECT MAX(price_list_number) as max_num FROM sales_price_list WHERE price_list_number LIKE :prefix`,
@@ -39,6 +41,12 @@ export const getSalesPriceLists = async (req: Request, res: Response, next: Next
     if (approval_status) {
       conditions.push(`approval_status = :approval_status`);
       replacements.approval_status = approval_status;
+    }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
     }
 
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -88,10 +96,12 @@ export const getSalesPriceListDetail = async (req: Request, res: Response, next:
 // ==================== 创建 ====================
 export const createSalesPriceList = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.price_list_name) { res.status(400).json({ success: false, message: '价目表名称不能为空' }); return; }
 
-    const price_list_number = await generatePriceListNumber();
+    const price_list_number = await generatePriceListNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const creation_man = (req as any).user?.username || '';
 
@@ -100,10 +110,10 @@ export const createSalesPriceList = async (req: Request, res: Response, next: Ne
       await sequelize.query(`
         INSERT INTO sales_price_list (price_list_number, price_list_name, customer_number, customer_name,
           customer_category, effective_date, expiration_date, price_type, currency,
-          approval_status, remark, creation_date, creation_man)
+          approval_status, remark, creation_date, creation_man, factory_id)
         VALUES (:price_list_number, :price_list_name, :customer_number, :customer_name,
           :customer_category, :effective_date, :expiration_date, :price_type, :currency,
-          N'草稿', :remark, :creation_date, :creation_man)
+          N'草稿', :remark, :creation_date, :creation_man, :factory_id)
       `, {
         replacements: {
           price_list_number,
@@ -117,7 +127,8 @@ export const createSalesPriceList = async (req: Request, res: Response, next: Ne
           currency: b.currency || 'CNY',
           remark: b.remark || '',
           creation_date: now,
-          creation_man
+          creation_man,
+          factory_id: _factoryId
         },
         transaction
       });
@@ -173,8 +184,12 @@ export const updateSalesPriceList = async (req: Request, res: Response, next: Ne
     const { id } = req.params;
     const b = req.body;
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM sales_price_list WHERE price_list_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM sales_price_list WHERE price_list_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '销售价目表不存在' }); return; }
     if (chk[0].approval_status !== ORDER_STATUS.DRAFT) {
@@ -258,8 +273,12 @@ export const updateSalesPriceList = async (req: Request, res: Response, next: Ne
 export const deleteSalesPriceList = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM sales_price_list WHERE price_list_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM sales_price_list WHERE price_list_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) {
       res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return;
@@ -267,7 +286,7 @@ export const deleteSalesPriceList = async (req: Request, res: Response, next: Ne
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`DELETE FROM sales_price_list_detail WHERE price_list_number = :id`, { replacements: { id }, transaction });
-      await sequelize.query(`DELETE FROM sales_price_list WHERE price_list_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM sales_price_list WHERE price_list_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
       await transaction.commit();
       res.json(success(null, '删除销售价目表成功'));
     } catch (e) {
@@ -283,6 +302,10 @@ const exportHeaders = ['价目表编号', '价目表名称', '客户编号', '�
 
 export const exportSalesPriceLists = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' WHERE h.factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [items]: any = await sequelize.query(`
       SELECT h.price_list_number, h.price_list_name, h.customer_number, h.customer_name,
              d.item_number, d.item_name, d.item_category, d.specifications,
@@ -292,8 +315,9 @@ export const exportSalesPriceLists = async (req: Request, res: Response, next: N
              d.min_price_inclusive, d.min_price_exclusive, h.approval_status
       FROM sales_price_list h
       INNER JOIN sales_price_list_detail d ON d.price_list_number = h.price_list_number
+      ${factoryCond}
       ORDER BY h.price_list_number, d.item_number, d.line_number
-    `);
+    `, { replacements: factoryReps });
     exportToExcel(items, exportFields, exportHeaders, 'sales_price_lists', res);
   } catch (err) { next(err); }
 };
@@ -342,6 +366,8 @@ export const downloadImportTemplate = async (req: Request, res: Response, next: 
 
 export const importSalesPriceList = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     if (!req.file) { res.status(400).json({ success: false, message: '请上传Excel文件' }); return; }
 
     // 解析Excel：前2行为主表信息，第3行空行，第4行起为明细列头+数据
@@ -377,7 +403,7 @@ export const importSalesPriceList = async (req: Request, res: Response, next: Ne
     if (!excelEffectiveDate) { res.status(400).json({ success: false, message: '生效日期不能为空，请在Excel第2行第5列填写' }); return; }
     if (!excelExpirationDate) { res.status(400).json({ success: false, message: '失效日期不能为空，请在Excel第2行第6列填写' }); return; }
 
-    const price_list_number = await generatePriceListNumber();
+    const price_list_number = await generatePriceListNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const creation_man = (req as any).user?.username || '';
 
@@ -386,10 +412,10 @@ export const importSalesPriceList = async (req: Request, res: Response, next: Ne
       await sequelize.query(`
         INSERT INTO sales_price_list (price_list_number, price_list_name, customer_number, customer_name,
           customer_category, effective_date, expiration_date, price_type, currency,
-          approval_status, remark, creation_date, creation_man)
+          approval_status, remark, creation_date, creation_man, factory_id)
         VALUES (:price_list_number, :price_list_name, :customer_number, :customer_name,
           :customer_category, :effective_date, :expiration_date, :price_type, :currency,
-          N'草稿', :remark, :creation_date, :creation_man)
+          N'草稿', :remark, :creation_date, :creation_man, :factory_id)
       `, {
         replacements: {
           price_list_number,
@@ -403,7 +429,8 @@ export const importSalesPriceList = async (req: Request, res: Response, next: Ne
           currency: excelCurrency || 'CNY',
           remark: excelRemark,
           creation_date: now,
-          creation_man
+          creation_man,
+          factory_id: _factoryId
         },
         transaction
       });
@@ -460,6 +487,10 @@ export const getSalesPriceForOrder = async (req: Request, res: Response, next: N
       return;
     }
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND h.factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [rows]: any = await sequelize.query(`
       SELECT TOP 1
         h.price_type,
@@ -478,9 +509,10 @@ export const getSalesPriceForOrder = async (req: Request, res: Response, next: N
         AND d.item_number = :item_number
         AND (h.effective_date IS NULL OR CONVERT(DATE, h.effective_date) <= CONVERT(DATE, GETDATE()))
         AND (h.expiration_date IS NULL OR CONVERT(DATE, h.expiration_date) >= CONVERT(DATE, GETDATE()))
+        ${factoryCond}
       ORDER BY h.effective_date DESC, h.creation_date DESC
     `, {
-      replacements: { customer_number: String(customer_number), item_number: String(item_number) }
+      replacements: { customer_number: String(customer_number), item_number: String(item_number), ...factoryReps }
     });
 
     if (rows.length === 0) {

@@ -21,6 +21,7 @@ const detailRows = ref<any[]>([])
 
 // ==================== 列定义 ====================
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '入库单号', dataIndex: 'stock_in_number', key: 'stock_in_number', width: 180 },
   { title: '采购订单号', dataIndex: 'purchase_order_number', key: 'purchase_order_number', width: 180 },
   { title: '供应商', dataIndex: 'supplier_name', key: 'supplier_name', width: 150 },
@@ -46,7 +47,8 @@ const detailColumns = [
   { title: '不合格数量', dataIndex: 'unqualified_quantity', width: 90 },
   { title: '检验单号', dataIndex: 'inspection_number', width: 160 },
   { title: '检验状态', dataIndex: 'inspect_status', width: 100 },
-  { title: '批次号', dataIndex: 'batch_number', width: 160 }
+  { title: '批次号', dataIndex: 'batch_number', width: 160 },
+  { title: '生产日期', dataIndex: 'production_date', key: 'production_date', width: 110 }
 ]
 
 // ==================== 加载 ====================
@@ -198,7 +200,13 @@ const handleExport = async () => {
         <a-descriptions-item label="创建时间">{{ detailHeader.creation_date }}</a-descriptions-item>
         <a-descriptions-item label="备注">{{ detailHeader.remark }}</a-descriptions-item>
       </a-descriptions>
-      <a-table :columns="detailColumns" :data-source="detailRows" :pagination="false" row-key="id" size="small" :scroll="{ x: 1100 }" />
+      <a-table :columns="detailColumns" :data-source="detailRows" :pagination="false" row-key="id" size="small" :scroll="{ x: 1100 }">
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'production_date'">
+            {{ record.production_date ? dayjs(record.production_date).format('YYYY-MM-DD') : '-' }}
+          </template>
+        </template>
+      </a-table>
     </a-modal>
   </div>
 </template>

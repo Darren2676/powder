@@ -82,7 +82,7 @@ export const createFinishedTransaction = async (
     product_drawing_number: string; warehouse_number: string; warehouse_name: string;
     quantity: number; before_quantity: number; after_quantity: number;
     batch_number: string; operator: string; remark: string; quality_status: string; accounting_period: string;
-    shipping_order_number?: string;
+    shipping_order_number?: string; factory_id?: number | null;
   },
   transaction?: Transaction
 ) => {
@@ -99,8 +99,8 @@ export const createFinishedTransaction = async (
     }
   }
   await sequelize.query(
-    "INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number, item_number, item_name, specifications, basic_unit, product_drawing_number, warehouse_number, warehouse_name, quantity, before_quantity, after_quantity, batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period, shipping_order_number) VALUES (:transaction_number, :transaction_type, :source_type, :source_number, :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number, :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity, :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE(), :accounting_period, :shipping_order_number)",
-    { replacements: { ...params, shipping_order_number: params.shipping_order_number || '' }, transaction }
+    "INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number, item_number, item_name, specifications, basic_unit, product_drawing_number, warehouse_number, warehouse_name, quantity, before_quantity, after_quantity, batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period, shipping_order_number, factory_id) VALUES (:transaction_number, :transaction_type, :source_type, :source_number, :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number, :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity, :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE(), :accounting_period, :shipping_order_number, :factory_id)",
+    { replacements: { ...params, shipping_order_number: params.shipping_order_number || '', factory_id: params.factory_id ?? null }, transaction }
   );
 };
 

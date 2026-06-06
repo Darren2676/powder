@@ -26,6 +26,9 @@
           <template v-if="column.key === 'inbound_input'">
             <a-input-number v-model:value="record._inbound_qty" :min="0" :max="record.pending_inbound_qty" size="small" style="width:100px;" />
           </template>
+          <template v-else-if="column.key === 'production_date'">
+            <a-date-picker v-model:value="record.production_date" size="small" style="width:110px;" value-format="YYYY-MM-DD" placeholder="生产日期" />
+          </template>
         </template>
       </a-table>
     </a-card>
@@ -57,6 +60,7 @@ const prodColumns = [
   { title: '产品编号', dataIndex: 'item_number', width: 120 },
   { title: '产品名称', dataIndex: 'item_name', width: 150 },
   { title: '规格', dataIndex: 'specifications', width: 120 },
+  { title: '生产日期', dataIndex: 'production_date', key: 'production_date', width: 110 },
   { title: '计划数量', dataIndex: 'planned_quantity', width: 90 },
   { title: '已入库', dataIndex: 'inbound_qty', width: 80 },
   { title: '待入库', dataIndex: 'pending_inbound_qty', width: 80 },
@@ -68,7 +72,7 @@ const fetchPending = async () => {
   try {
     const res: any = await getPendingInbound({ page: prodPagination.current, limit: prodPagination.pageSize, search: prodSearch.value })
     const items = res?.data?.items || []
-    prodItems.value = items.map((i: any) => ({ ...i, _inbound_qty: i.pending_inbound_qty }))
+    prodItems.value = items.map((i: any) => ({ ...i, _inbound_qty: i.pending_inbound_qty, production_date: i.production_date ? i.production_date.substring(0, 10) : null }))
     prodPagination.total = res?.data?.total || 0
   } catch { message.error('查询失败') }
   finally { prodLoading.value = false }

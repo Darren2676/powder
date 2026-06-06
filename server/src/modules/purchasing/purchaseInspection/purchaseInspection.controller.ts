@@ -5,16 +5,18 @@ import { success } from '../../../utils/response.util';
 import { createNonconformingFromInspection } from '../../quality/nonconformingProduct/nonconformingProduct.controller';
 import { generateMaterialTxnNumber } from '@/services/inventory.service';
 import { checkAndAutoComplete } from '@/services/documentAutoComplete.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 /**
  * 生成检验单号 QI-YYYYMMDD-###
  */
-async function generateInspectionNumber(transaction?: Transaction): Promise<string> {
+async function generateInspectionNumber(factoryCode: string = '', transaction?: Transaction): Promise<string> {
   const today = new Date();
   const dateStr = today.getFullYear().toString() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `QI-${dateStr}-`;
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
+  const prefix = `QI${fc}-${dateStr}-`;
 
   const [rows]: any = await sequelize.query(`
     SELECT TOP 1 inspection_number
@@ -49,14 +51,14 @@ export async function createInspectionForStockIn(params: {
   received_quantity: number;
   batch_number: string;
   creation_man: string;
-}, transaction?: Transaction): Promise<string> {
+}, factoryCode: string = '', _factoryId: number | null = null, transaction?: Transaction): Promise<string> {
   const {
     stock_in_number, purchase_order_number, supplier_number, supplier_name,
     item_number, item_name, specifications, basic_unit,
     received_quantity, batch_number, creation_man
   } = params;
 
-  const inspection_number = await generateInspectionNumber(transaction);
+  const inspection_number = await generateInspectionNumber(factoryCode, transaction);
 
   // 查询物料主数据的 enable_quality_chars
   const [itemRows]: any = await sequelize.query(`
@@ -125,7 +127,7 @@ export async function createInspectionForStockIn(params: {
       sampling_method, sampling_ratio, defect_categories,
       inspector_name, inspect_date,
       inspect_result, inspect_status, enable_quality_chars,
-      batch_number, creation_date, creation_man
+      factory_id, batch_number, creation_date, creation_man
     ) VALUES (
       :inspection_number, :stock_in_number, :purchase_order_number,
       :supplier_number, :supplier_name,
@@ -136,7 +138,7 @@ export async function createInspectionForStockIn(params: {
       :sampling_method, :sampling_ratio, :defect_categories,
       :inspector_name, GETDATE(),
       '', N'待检验', :enable_quality_chars,
-      :batch_number, GETDATE(), :creation_man
+      :factory_id, :batch_number, GETDATE(), :creation_man
     )
   `, {
     replacements: {
@@ -160,6 +162,7 @@ export async function createInspectionForStockIn(params: {
       inspector_name,
       enable_quality_chars,
       batch_number: batch_number || '',
+      factory_id: _factoryId,
       creation_man
     },
     ...(transaction ? { transaction } : {})
@@ -232,13 +235,15 @@ export const createPurchaseInspection = async (req: Request, res: Response, next
     }
 
     const creation_man = (req as any).user?.username || '';
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const inspection_number = await createInspectionForStockIn({
       stock_in_number, purchase_order_number,
       supplier_number, supplier_name,
       item_number, item_name, specifications, basic_unit,
       received_quantity, batch_number,
       creation_man
-    });
+    }, factoryCode, _factoryId);
 
     res.json(success({ inspection_number, message: '检验单创建成功' }));
   } catch (err) {
@@ -281,6 +286,12 @@ export const getPurchaseInspections = async (req: Request, res: Response, next: 
     if (end_date) {
       whereClause += ` AND qi.inspect_date <= :end_date`;
       replacements.end_date = end_date;
+    }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ' AND qi.factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
     }
 
     // 计数
@@ -667,6 +678,8 @@ export const completePurchaseInspection = async (req: Request, res: Response, ne
       if ((inspect_result === '合格' || inspect_result === '让步接收') && qQty > 0) {
         const transaction = await sequelize.transaction();
         try {
+          const factoryCode = await getFactoryCode(req);
+          const _factoryId = getFactoryId(req);
           // 查询待检仓中的批次库存
           const batchNoToSearch = insp.batch_number || '';
           const [batchRows]: any = await sequelize.query(`
@@ -725,7 +738,7 @@ export const completePurchaseInspection = async (req: Request, res: Response, ne
               });
 
               // 记录待检仓出库流水
-              const txnOut = await generateMaterialTxnNumber(transaction);
+              const txnOut = await generateMaterialTxnNumber(factoryCode, transaction);
 
               const [invOut]: any = await sequelize.query(
                 `SELECT quantity FROM material_inventory WHERE item_number = :itemNo AND warehouse_number = :whNo`,
@@ -760,10 +773,10 @@ export const completePurchaseInspection = async (req: Request, res: Response, ne
               await sequelize.query(`
                 INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications,
                   basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity,
-                  supplier_number, supplier_name, production_order_number, inbound_date, status, creation_date, last_updated)
+                  supplier_number, supplier_name, production_order_number, inbound_date, status, creation_date, last_updated, factory_id)
                 VALUES (:batchNo, :item_number, :item_name, N'原材料', :specifications,
                   :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity,
-                  '', '', '', GETDATE(), N'正常', GETDATE(), GETDATE())
+                  '', '', '', GETDATE(), N'正常', GETDATE(), GETDATE(), :factory_id)
               `, {
                 replacements: {
                   batchNo: b.batch_number,
@@ -773,7 +786,8 @@ export const completePurchaseInspection = async (req: Request, res: Response, ne
                   basic_unit: insp.basic_unit || '',
                   warehouse_number: rawWhNumber,
                   warehouse_name: rawWhName,
-                  quantity: deductQty
+                  quantity: deductQty,
+                  factory_id: _factoryId
                 },
                 transaction
               });
@@ -800,7 +814,7 @@ export const completePurchaseInspection = async (req: Request, res: Response, ne
               });
 
               // 记录原料库入库流水
-              const txnIn = await generateMaterialTxnNumber(transaction);
+              const txnIn = await generateMaterialTxnNumber(factoryCode, transaction);
 
               const [invIn]: any = await sequelize.query(
                 `SELECT quantity FROM material_inventory WHERE item_number = :itemNo AND warehouse_number = :whNo`,
@@ -935,6 +949,12 @@ export const getPurchaseInspectionSummary = async (req: Request, res: Response, 
     if (supplier_number) {
       whereClause += ` AND qi.supplier_number = :supplier_number`;
       replacements.supplier_number = supplier_number;
+    }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ' AND qi.factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
     }
 
     // 按供应商汇总
@@ -1082,6 +1102,8 @@ export const cancelDefectHandlingPurchaseInspection = async (req: Request, res: 
 
 export const defectHandlingPurchaseInspection = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const { inspection_number } = req.params;
 
     // 查询检验单
@@ -1159,7 +1181,7 @@ export const defectHandlingPurchaseInspection = async (req: Request, res: Respon
           creation_man: (req as any).user?.username || '',
           inspection_table: 'purchase_quality_inspection',
           defect_line_id: defect.id
-        }, transaction);
+        }, factoryCode, _factoryId, transaction);
 
         // 回写NC单号到缺陷行
         await sequelize.query(

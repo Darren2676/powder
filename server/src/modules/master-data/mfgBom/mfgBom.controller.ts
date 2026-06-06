@@ -3,15 +3,17 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import { CONDITION_STATUS, ORDER_STATUS } from '@/shared/constants/statuses';
+import { getFactoryCode } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
 
-const generatemfgBomNumber = async (): Promise<string> => {
+const generatemfgBomNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = new Date();
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
   const dateStr = today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
-  const prefix = `MB-${dateStr}-`;
+  const prefix = `MB${fc}-${dateStr}-`;
 
   const [rows]: any = await sequelize.query(
     `SELECT MAX(mfg_bom_number) as max_num FROM mfg_bom_header WHERE mfg_bom_number LIKE :prefix`,

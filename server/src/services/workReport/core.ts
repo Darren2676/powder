@@ -37,7 +37,7 @@ export const createWorkReport = async (params: {
   defect_number?: string;
   defect_name?: string;
   remark?: string;
-}, user: { username: string }): Promise<{ workReportNumber: string }> => {
+}, user: { username: string }, factoryCode: string = '', _factoryId: number | null = null): Promise<{ workReportNumber: string }> => {
   return await withTransaction(async (transaction) => {
     const b = params;
 
@@ -197,12 +197,12 @@ export const createWorkReport = async (params: {
       }
     }
 
-    const wrNumber = await generateWRNumber(transaction);
+    const wrNumber = await generateWRNumber(factoryCode, transaction);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
 
     await sequelize.query(`
-      INSERT INTO work_report (work_report_number, process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, basic_unit, work_center_number, work_center_name, planned_quantity, qualified_quantity, unqualified_quantity, total_quantity, cumulative_quantity, report_date, schedules_id, schedules_name, team_number, team_name, operator_number, operator_name, actual_start_time, actual_end_time, actual_hours, unqualified_reason, defect_class_number, defect_class_name, defect_number, defect_name, approval_status, remark, creation_date, creation_man)
-      VALUES (:work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_number, :item_name, :specifications, :basic_unit, :work_center_number, :work_center_name, :planned_quantity, :qualified_quantity, :unqualified_quantity, :total_quantity, :cumulative_quantity, :report_date, :schedules_id, :schedules_name, :team_number, :team_name, :operator_number, :operator_name, :actual_start_time, :actual_end_time, :actual_hours, :unqualified_reason, :defect_class_number, :defect_class_name, :defect_number, :defect_name, N'已审批', :remark, :creation_date, :creation_man)
+      INSERT INTO work_report (work_report_number, process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, basic_unit, work_center_number, work_center_name, planned_quantity, qualified_quantity, unqualified_quantity, total_quantity, cumulative_quantity, report_date, schedules_id, schedules_name, team_number, team_name, operator_number, operator_name, actual_start_time, actual_end_time, actual_hours, unqualified_reason, defect_class_number, defect_class_name, defect_number, defect_name, approval_status, remark, factory_id, creation_date, creation_man)
+      VALUES (:work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_number, :item_name, :specifications, :basic_unit, :work_center_number, :work_center_name, :planned_quantity, :qualified_quantity, :unqualified_quantity, :total_quantity, :cumulative_quantity, :report_date, :schedules_id, :schedules_name, :team_number, :team_name, :operator_number, :operator_name, :actual_start_time, :actual_end_time, :actual_hours, :unqualified_reason, :defect_class_number, :defect_class_name, :defect_number, :defect_name, N'已审批', :remark, :factory_id, :creation_date, :creation_man)
     `, {
       replacements: {
         work_report_number: wrNumber,
@@ -237,6 +237,7 @@ export const createWorkReport = async (params: {
         defect_number: b.defect_number || '',
         defect_name: b.defect_name || '',
         remark: b.remark || '',
+        factory_id: _factoryId,
         creation_date: now,
         creation_man: user?.username || ''
       },
@@ -294,7 +295,7 @@ export const quickReport = async (params: {
   defect_number?: string;
   defect_name?: string;
   remark?: string;
-}, user: { username: string }): Promise<{ workReportNumber: string }> => {
+}, user: { username: string }, factoryCode: string = '', _factoryId: number | null = null): Promise<{ workReportNumber: string }> => {
   return await withTransaction(async (transaction) => {
     const b = params;
 
@@ -463,12 +464,12 @@ export const quickReport = async (params: {
       if (empRows.length) operatorName = empRows[0].employee_name || '';
     }
 
-    const wrNumber = await generateWRNumber(transaction);
+    const wrNumber = await generateWRNumber(factoryCode, transaction);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
 
     await sequelize.query(`
-      INSERT INTO work_report (work_report_number, process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, basic_unit, work_center_number, work_center_name, planned_quantity, qualified_quantity, unqualified_quantity, total_quantity, cumulative_quantity, report_date, schedules_id, schedules_name, team_number, team_name, operator_number, operator_name, actual_start_time, actual_end_time, actual_hours, unqualified_reason, defect_class_number, defect_class_name, defect_number, defect_name, approval_status, remark, creation_date, creation_man)
-      VALUES (:work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_number, :item_name, :specifications, :basic_unit, :work_center_number, :work_center_name, :planned_quantity, :qualified_quantity, :unqualified_quantity, :total_quantity, :cumulative_quantity, :report_date, :schedules_id, :schedules_name, :team_number, :team_name, :operator_number, :operator_name, :actual_start_time, :actual_end_time, :actual_hours, :unqualified_reason, :defect_class_number, :defect_class_name, :defect_number, :defect_name, N'已审批', :remark, :creation_date, :creation_man)
+      INSERT INTO work_report (work_report_number, process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, basic_unit, work_center_number, work_center_name, planned_quantity, qualified_quantity, unqualified_quantity, total_quantity, cumulative_quantity, report_date, schedules_id, schedules_name, team_number, team_name, operator_number, operator_name, actual_start_time, actual_end_time, actual_hours, unqualified_reason, defect_class_number, defect_class_name, defect_number, defect_name, approval_status, remark, factory_id, creation_date, creation_man)
+      VALUES (:work_report_number, :process_task_number, :production_order_number, :step_number, :standard_process_name, :item_number, :item_name, :specifications, :basic_unit, :work_center_number, :work_center_name, :planned_quantity, :qualified_quantity, :unqualified_quantity, :total_quantity, :cumulative_quantity, :report_date, :schedules_id, :schedules_name, :team_number, :team_name, :operator_number, :operator_name, :actual_start_time, :actual_end_time, :actual_hours, :unqualified_reason, :defect_class_number, :defect_class_name, :defect_number, :defect_name, N'已审批', :remark, :factory_id, :creation_date, :creation_man)
     `, {
       replacements: {
         work_report_number: wrNumber,
@@ -503,6 +504,7 @@ export const quickReport = async (params: {
         defect_number: b.defect_number || '',
         defect_name: b.defect_name || '',
         remark: b.remark || '',
+        factory_id: _factoryId,
         creation_date: now,
         creation_man: user?.username || ''
       },
@@ -559,7 +561,7 @@ export const updateWorkReport = async (workReportNumber: string, params: {
   defect_number?: string;
   defect_name?: string;
   remark?: string;
-}, user: { username: string }): Promise<void> => {
+}, user: { username: string }, factoryCode: string = '', _factoryId: number | null = null): Promise<void> => {
   return await withTransaction(async (transaction) => {
     const [chk]: any = await sequelize.query(`SELECT approval_status, process_task_number, production_order_number, qualified_quantity FROM work_report WHERE work_report_number = :id`, { replacements: { id: workReportNumber }, transaction });
     if (!chk.length) throw new BusinessError(404, '报工单不存在');
@@ -632,10 +634,10 @@ export const updateWorkReport = async (workReportNumber: string, params: {
 
     // 线边仓流转：先冲销旧量，再记录新量
     if (taskNo && oldQualifiedQty > 0) {
-      await logWorkReportReverseLinesideMovement(taskNo, oldQualifiedQty, workReportNumber, user?.username || '', transaction);
+      await logWorkReportReverseLinesideMovement(taskNo, oldQualifiedQty, workReportNumber, user?.username || '', transaction, factoryCode);
     }
     if (taskNo && qualifiedQty > 0) {
-      await logWorkReportLinesideMovement(taskNo, qualifiedQty, workReportNumber, user?.username || '', transaction);
+      await logWorkReportLinesideMovement(taskNo, qualifiedQty, workReportNumber, user?.username || '', transaction, factoryCode);
     }
 
     // 重算生产单综合合格率
@@ -743,7 +745,7 @@ export const completeOrderReport = async (params: {
   defect_number?: string;
   defect_name?: string;
   remark?: string;
-}, user: { username: string }): Promise<{ workReportNumber: string | null; completedTasks: number }> => {
+}, user: { username: string }, factoryCode: string = '', _factoryId: number | null = null): Promise<{ workReportNumber: string | null; completedTasks: number }> => {
   const orderNo = params.production_order_number;
   return await withTransaction(async (transaction) => {
     const b = params;
@@ -815,7 +817,7 @@ export const completeOrderReport = async (params: {
         if (empRows.length) operatorName = empRows[0].employee_name || '';
       }
 
-      wrNumber = await generateWRNumber(transaction);
+      wrNumber = await generateWRNumber(factoryCode, transaction);
       const now = dayjs().format('YYYY/MM/DD HH:mm');
 
       await sequelize.query(`
@@ -855,6 +857,7 @@ export const completeOrderReport = async (params: {
           defect_number: b.defect_number || '',
           defect_name: b.defect_name || '',
           remark: b.remark || '',
+          factory_id: _factoryId,
           creation_date: now,
           creation_man: user?.username || ''
         },

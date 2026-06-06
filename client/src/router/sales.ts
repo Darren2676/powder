@@ -24,6 +24,9 @@ const SampleRequestCreate = () => import('@/views/sales/sampleRequest/Create.vue
 const SampleRequestDetail = () => import('@/views/sales/sampleRequest/Detail.vue');
 const SalesPersonShippingReport = () => import('@/views/sales/SalesPersonShippingReport/Index.vue');
 const SalesReconciliation = () => import('@/views/sales/SalesReconciliation/Index.vue');
+const SampleBomList = () => import('@/views/sales/SampleBom/List.vue');
+const SampleBomDetail = () => import('@/views/sales/SampleBom/Detail.vue');
+const InspectionReportList = () => import('@/views/sales/SampleBom/InspectionReportList.vue');
 
 export const salesRoutes: RouteRecordRaw[] = [
   { path: 'sales-orders', name: 'SalesOrderList', component: SalesOrderList, meta: {"title":"销售订单"} },
@@ -50,4 +53,7 @@ export const salesRoutes: RouteRecordRaw[] = [
   { path: 'sample-request/:id', name: 'SampleRequestDetail', component: SampleRequestDetail, meta: {"title":"样品申请详情"} },
   { path: 'sales-person-shipping-report', name: 'SalesPersonShippingReport', component: SalesPersonShippingReport, meta: {"title":"销售员订单发货报表"} },
   { path: 'sales-reconciliation', name: 'SalesReconciliation', component: SalesReconciliation, meta: {"title":"销售对账"} },
+  { path: 'sample-boms', name: 'SampleBomList', component: SampleBomList, meta: {"title":"样件BOM"} },
+  { path: 'sample-boms/:id', name: 'SampleBomDetail', component: SampleBomDetail, meta: {"title":"样件BOM详情"} },
+  { path: 'sample-inspection-reports', name: 'InspectionReportList', component: InspectionReportList, meta: {"title":"样件检测报告"} },
 ];

@@ -34,8 +34,8 @@ const onBomSearch = (val: string) => {
     if (!val || val.length < 1) { bomOptions.value = []; return }
     bomSearchLoading.value = true
     try {
-      const res = await getMfgBomHeaders({ search: val, page: 1, pageSize: 20 })
-      bomOptions.value = (res.data?.data?.list || []).map((b: any) => ({
+      const res = await getMfgBomHeaders({ search: val, page: 1, limit: 20 })
+      bomOptions.value = (res.data?.items || []).map((b: any) => ({
         value: b.mfg_bom_number,
         label: `${b.mfg_bom_number} - ${b.item_name || b.item_number} (v${b.bom_version})`,
         item_number: b.item_number,
@@ -64,7 +64,7 @@ const onRunReport = async () => {
       mfg_bom_number: selectedBomId.value,
       planned_quantity: plannedQuantity.value
     })
-    demandData.value = (res.data?.data?.items || []).map((item: any, idx: number) => ({
+    demandData.value = (res.data?.items || []).map((item: any, idx: number) => ({
       ...item,
       key: idx,
       shortage: Math.max(0, (parseFloat(item.required_quantity) || 0) - (parseFloat(item.available_stock) || 0))

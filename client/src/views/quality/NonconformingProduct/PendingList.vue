@@ -60,6 +60,7 @@ const handlingOptions = computed(() => {
 
 // ==================== Columns ====================
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '不合格品单号', dataIndex: 'nonconforming_number', key: 'nonconforming_number', width: 160, resizable: true },
   { title: '来源类型', key: 'source_type', width: 90, resizable: true },
   { title: '检验单号', dataIndex: 'source_number', key: 'source_number', width: 160, resizable: true },

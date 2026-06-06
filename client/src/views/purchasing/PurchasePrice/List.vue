@@ -39,6 +39,7 @@ const importFileRef = ref<HTMLInputElement | null>(null)
 const { loading, searchText, pagination, handleTableChange, handleSearch } = useTableList(getPurchasePriceLists)
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '价目表编号', dataIndex: 'price_list_number', key: 'price_list_number', width: 180, resizable: true },
   { title: '价目表名称', dataIndex: 'price_list_name', key: 'price_list_name', width: 160, resizable: true },
   { title: '供应商名称', dataIndex: 'supplier_name', key: 'supplier_name', width: 140, resizable: true },

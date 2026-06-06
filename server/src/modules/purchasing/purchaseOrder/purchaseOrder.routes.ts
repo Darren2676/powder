@@ -7,7 +7,8 @@ import {
   closePurchaseOrder, getReceivable, exportPurchaseOrders, printPurchaseOrder,
   getPurchaseOrderDetailsPage, exportPurchaseOrderDetailsSelected,
   getPurchaseOrderStats, getPurchaseOrderStatusDistribution, getPurchaseOrderSupplierRanking,
-  getPurchaseOrderMonthlyTrend, getPurchaseOrderRecentList, getPurchaseOrderDeliveryTrend
+  getPurchaseOrderMonthlyTrend, getPurchaseOrderRecentList, getPurchaseOrderDeliveryTrend,
+  getPurchaseOrderReconciliationPage, updatePurchaseOrderReconciliationStatus, getPurchaseOrderReconciliationPrintData
 } from './purchaseOrder.controller';
 
 const router = Router();
@@ -19,6 +20,11 @@ router.get('/supplier-ranking', authenticate, getPurchaseOrderSupplierRanking);
 router.get('/monthly-trend', authenticate, getPurchaseOrderMonthlyTrend);
 router.get('/recent-list', authenticate, getPurchaseOrderRecentList);
 router.get('/delivery-trend', authenticate, getPurchaseOrderDeliveryTrend);
+
+// 采购对账
+router.get('/reconciliation/page', authenticate, getPurchaseOrderReconciliationPage);
+router.put('/reconciliation/status', authenticate, updatePurchaseOrderReconciliationStatus);
+router.post('/reconciliation/print', authenticate, getPurchaseOrderReconciliationPrintData);
 
 // Header
 router.get('/', authenticate, getPurchaseOrders);

@@ -4,6 +4,7 @@ import type { User, LoginFormData, RegisterFormData, UpdateProfileFormData } fro
 import * as authApi from '@/api/system/auth';
 import { usePermissionStore } from './permission';
 import { useMenuStore } from './menu';
+import { useFactoryStore } from './factory';
 import { message } from 'ant-design-vue';
 
 export const useAuthStore = defineStore('auth', () => {
@@ -46,6 +47,12 @@ export const useAuthStore = defineStore('auth', () => {
         // 加载菜单树
         const menuStore = useMenuStore();
         await menuStore.fetchMenuTree();
+
+        // 初始化工厂数据
+        if (response.data.user?.default_factory_id || response.data.user?.accessibleFactories?.length) {
+          const factoryStore = useFactoryStore();
+          factoryStore.initFactories();
+        }
         
         message.success('登录成功');
         return true;
@@ -122,6 +129,10 @@ export const useAuthStore = defineStore('auth', () => {
     // 清除菜单信息
     const menuStore = useMenuStore();
     menuStore.clearMenuTree();
+
+    // 清除工厂信息
+    const factoryStore = useFactoryStore();
+    factoryStore.clearFactory();
 
     message.success('已退出登录');
   };

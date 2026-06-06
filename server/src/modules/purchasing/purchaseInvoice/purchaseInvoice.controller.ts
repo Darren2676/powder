@@ -1,12 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // 发票编号生成: PI-YYYYMMDD-NNN
-const generateInvoiceNumber = async (): Promise<string> => {
+const generateInvoiceNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = new Date();
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
   const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
-  const prefix = `PI-${dateStr}-`;
+  const prefix = `PI${fc}-${dateStr}-`;
   const [rows]: any = await sequelize.query(
     `SELECT TOP 1 invoice_number FROM purchase_invoice WHERE invoice_number LIKE :prefix ORDER BY invoice_number DESC`,
     { replacements: { prefix: `${prefix}%` } }
@@ -44,7 +46,7 @@ async function recalcStockInDetailInvoiceStatus(detailIds: number[], t?: any) {
     else if (invoiced_qty > 0) status = '部分开票';
 
     await sequelize.query(
-      `UPDATE stock_in_detail SET invoice_status = N'${status}' WHERE id = :detailId`,
+      `UPDATE stock_in_detail SET invoice_status = :status WHERE id = :detailId`,
       { replacements: { status, detailId }, transaction: t }
     );
   }
@@ -75,7 +77,7 @@ async function recalcPurchaseDetailInvoiceStatus(purchaseDetailIds: number[], t?
     else if (invoiced_qty > 0) status = '部分开票';
 
     await sequelize.query(
-      `UPDATE purchase_order_detail SET invoice_status = N'${status}' WHERE id = :detailId`,
+      `UPDATE purchase_order_detail SET invoice_status = :status WHERE id = :detailId`,
       { replacements: { status, detailId }, transaction: t }
     );
   }
@@ -112,19 +114,20 @@ export const getPurchaseInvoices = async (req: Request, res: Response, next: Nex
     const end_date = (req.query.end_date as string) || '';
 
     let whereClause = 'WHERE 1=1';
+    const replacements: any = { offset: (page - 1) * limit + 1, limit, search: `%${search}%`, approval_status, supplier_number, start_date, end_date };
     if (search) whereClause += ` AND (pi.invoice_number LIKE :search OR pi.invoice_code LIKE :search OR pi.invoice_no LIKE :search OR pi.supplier_name LIKE :search)`;
     if (approval_status) whereClause += ` AND pi.approval_status = :approval_status`;
     if (supplier_number) whereClause += ` AND pi.supplier_number = :supplier_number`;
     if (start_date) whereClause += ` AND pi.invoice_date >= :start_date`;
     if (end_date) whereClause += ` AND pi.invoice_date < DATEADD(day, 1, CAST(:end_date AS DATE))`;
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) { whereClause += ` AND pi.factory_id = :_factoryId`; replacements._factoryId = _factoryId; }
 
     const countSql = `SELECT COUNT(*) as total FROM purchase_invoice pi ${whereClause}`;
     const dataSql = `SELECT * FROM (
       SELECT pi.*, ROW_NUMBER() OVER (ORDER BY pi.created_at DESC) AS _row_num
       FROM purchase_invoice pi ${whereClause}
     ) t WHERE _row_num BETWEEN :offset AND :offset + :limit - 1`;
-
-    const replacements: any = { offset: (page - 1) * limit + 1, limit, search: `%${search}%`, approval_status, supplier_number, start_date, end_date };
     const [countResult]: any = await sequelize.query(countSql, { replacements });
     const [rows]: any = await sequelize.query(dataSql, { replacements });
 
@@ -136,8 +139,10 @@ export const getPurchaseInvoices = async (req: Request, res: Response, next: Nex
 export const getPurchaseInvoiceDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
     const [headerRows]: any = await sequelize.query(
-      `SELECT * FROM purchase_invoice WHERE invoice_number = :id`, { replacements: { id } }
+      `SELECT * FROM purchase_invoice WHERE invoice_number = :id${factoryCond}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } }
     );
     if (headerRows.length === 0) { res.status(404).json({ success: false, message: '发票不存在' }); return; }
 
@@ -152,8 +157,10 @@ export const getPurchaseInvoiceDetail = async (req: Request, res: Response, next
 // ==================== 创建发票 ====================
 export const createPurchaseInvoice = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
-    const invoice_number = await generateInvoiceNumber();
+    const invoice_number = await generateInvoiceNumber(factoryCode);
     const t = await sequelize.transaction();
 
     try {
@@ -162,12 +169,12 @@ export const createPurchaseInvoice = async (req: Request, res: Response, next: N
           supplier_number, supplier_name, invoice_title, tax_id, invoice_address, invoice_phone,
           bank_name, bank_account_number, invoice_date, tax_rate,
           amount_without_tax, tax_amount, amount_with_tax, currency_code,
-          remark, approval_status, created_by)
+          remark, approval_status, created_by, factory_id)
         VALUES (:invoice_number, :invoice_code, :invoice_no, :invoice_type,
           :supplier_number, :supplier_name, :invoice_title, :tax_id, :invoice_address, :invoice_phone,
           :bank_name, :bank_account_number, :invoice_date, :tax_rate,
           :amount_without_tax, :tax_amount, :amount_with_tax, :currency_code,
-          :remark, N'草稿', :created_by)
+          :remark, N'草稿', :created_by, :factory_id)
       `, {
         replacements: {
           invoice_number, invoice_code: b.invoice_code || '', invoice_no: b.invoice_no || '',
@@ -179,7 +186,8 @@ export const createPurchaseInvoice = async (req: Request, res: Response, next: N
           tax_rate: b.tax_rate || 0, amount_without_tax: b.amount_without_tax || 0,
           tax_amount: b.tax_amount || 0, amount_with_tax: b.amount_with_tax || 0,
           currency_code: b.currency_code || 'CNY', remark: b.remark || '',
-          created_by: (req as any).user?.username || ''
+          created_by: (req as any).user?.username || '',
+          factory_id: req.body.factory_id || _factoryId
         },
         transaction: t
       });
@@ -232,16 +240,19 @@ export const updatePurchaseInvoice = async (req: Request, res: Response, next: N
     const { id: rawId } = req.params;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
     const b = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM purchase_invoice WHERE invoice_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM purchase_invoice WHERE invoice_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (chk.length === 0) { res.status(404).json({ success: false, message: '发票不存在' }); return; }
     // 已审批发票允许编辑（自动撤消为草稿后编辑）
     if (chk[0].approval_status === '已审批') {
       await sequelize.query(
-        `UPDATE purchase_invoice SET approval_status = N'草稿', updated_at = GETDATE() WHERE invoice_number = :id`,
-        { replacements: { id } }
+        `UPDATE purchase_invoice SET approval_status = N'草稿', updated_at = GETDATE() WHERE invoice_number = :id${factoryCond}`,
+        { replacements: { id, ...factoryReps } }
       );
       await recalcInvoiceRelatedStatus(id);
     }
@@ -258,10 +269,10 @@ export const updatePurchaseInvoice = async (req: Request, res: Response, next: N
           amount_without_tax = :amount_without_tax, tax_amount = :tax_amount,
           amount_with_tax = :amount_with_tax, currency_code = :currency_code,
           remark = :remark, updated_at = GETDATE()
-        WHERE invoice_number = :id
+        WHERE invoice_number = :id${factoryCond}
       `, {
         replacements: {
-          id, invoice_code: b.invoice_code || '', invoice_no: b.invoice_no || '',
+          id, ...factoryReps, invoice_code: b.invoice_code || '', invoice_no: b.invoice_no || '',
           invoice_type: b.invoice_type || '', supplier_number: b.supplier_number || '',
           supplier_name: b.supplier_name || '', invoice_title: b.invoice_title || '',
           tax_id: b.tax_id || '', invoice_address: b.invoice_address || '',
@@ -274,7 +285,7 @@ export const updatePurchaseInvoice = async (req: Request, res: Response, next: N
         transaction: t
       });
 
-      await sequelize.query(`DELETE FROM purchase_invoice_line WHERE invoice_number = :id`, { replacements: { id }, transaction: t });
+      await sequelize.query(`DELETE FROM purchase_invoice_line WHERE invoice_number = :id`, { replacements: { id }, transaction: t }); // line表无factory_id，通过header关联
       if (b.lines && b.lines.length > 0) {
         for (let i = 0; i < b.lines.length; i++) {
           const line = b.lines[i];
@@ -323,15 +334,18 @@ export const deletePurchaseInvoice = async (req: Request, res: Response, next: N
   try {
     const { id: rawId } = req.params;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM purchase_invoice WHERE invoice_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM purchase_invoice WHERE invoice_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (chk.length === 0) { res.status(404).json({ success: false, message: '发票不存在' }); return; }
     if (chk[0].approval_status === '已审批') { res.status(400).json({ success: false, message: '已审批的发票不允许删除，请先撤消审批' }); return; }
 
     const { stockInDetailIds, purchaseDetailIds } = await getInvoiceRelatedDetailIds(id);
-    await sequelize.query(`DELETE FROM purchase_invoice_line WHERE invoice_number = :id`, { replacements: { id } });
-    await sequelize.query(`DELETE FROM purchase_invoice WHERE invoice_number = :id`, { replacements: { id } });
+    await sequelize.query(`DELETE FROM purchase_invoice_line WHERE invoice_number = :id`, { replacements: { id } }); // line表无factory_id
+    await sequelize.query(`DELETE FROM purchase_invoice WHERE invoice_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     await recalcStockInDetailInvoiceStatus(stockInDetailIds);
     await recalcPurchaseDetailInvoiceStatus(purchaseDetailIds);
     res.json(success(null, '删除采购发票成功'));
@@ -343,15 +357,18 @@ export const approvePurchaseInvoice = async (req: Request, res: Response, next: 
   try {
     const { id: rawId } = req.params;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM purchase_invoice WHERE invoice_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM purchase_invoice WHERE invoice_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (chk.length === 0) { res.status(404).json({ success: false, message: '发票不存在' }); return; }
     if (chk[0].approval_status === '已审批') { res.status(400).json({ success: false, message: '发票已审批' }); return; }
 
     await sequelize.query(
-      `UPDATE purchase_invoice SET approval_status = N'已审批', updated_at = GETDATE() WHERE invoice_number = :id`,
-      { replacements: { id } }
+      `UPDATE purchase_invoice SET approval_status = N'已审批', updated_at = GETDATE() WHERE invoice_number = :id${factoryCond}`,
+      { replacements: { id, ...factoryReps } }
     );
     await recalcInvoiceRelatedStatus(id);
     res.json(success(null, '审批成功'));
@@ -363,15 +380,18 @@ export const withdrawPurchaseInvoice = async (req: Request, res: Response, next:
   try {
     const { id: rawId } = req.params;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM purchase_invoice WHERE invoice_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM purchase_invoice WHERE invoice_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (chk.length === 0) { res.status(404).json({ success: false, message: '发票不存在' }); return; }
     if (chk[0].approval_status !== '已审批') { res.status(400).json({ success: false, message: '仅已审批发票可撤消' }); return; }
 
     await sequelize.query(
-      `UPDATE purchase_invoice SET approval_status = N'草稿', updated_at = GETDATE() WHERE invoice_number = :id`,
-      { replacements: { id } }
+      `UPDATE purchase_invoice SET approval_status = N'草稿', updated_at = GETDATE() WHERE invoice_number = :id${factoryCond}`,
+      { replacements: { id, ...factoryReps } }
     );
     await recalcInvoiceRelatedStatus(id);
     res.json(success(null, '撤消审批成功'));
@@ -449,10 +469,13 @@ export const exportPurchaseInvoices = async (req: Request, res: Response, next: 
   try {
     const search = (req.query.search as string) || '';
     let whereClause = 'WHERE 1=1';
+    const replacements: any = { search: `%${search}%` };
     if (search) whereClause += ` AND (invoice_number LIKE :search OR supplier_name LIKE :search OR invoice_code LIKE :search OR invoice_no LIKE :search)`;
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) { whereClause += ` AND factory_id = :_factoryId`; replacements._factoryId = _factoryId; }
     const [rows]: any = await sequelize.query(
       `SELECT * FROM purchase_invoice ${whereClause} ORDER BY created_at DESC`,
-      { replacements: { search: `%${search}%` } }
+      { replacements }
     );
     res.json(success(rows, '导出成功'));
   } catch (err) { next(err); }

@@ -53,7 +53,7 @@ const {
   openColumnSetting, moveColumnUp, moveColumnDown, saveColumnSetting, resetColumnSetting,
   loadColumnPreference, handleResizeColumn
 } = useColumnPreference('return_order_list', defaultDataColumns, {
-  fixedLeft: [{ title: '退货单号', dataIndex: 'return_order_number', key: 'return_order_number', width: 170, fixed: 'left' as const, resizable: true }],
+  fixedLeft: [{ title: '退货单号', dataIndex: 'return_order_number', key: 'return_order_number', width: 170, fixed: 'left' as const, resizable: true }, { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' }],
   fixedRight: [{ title: '操作', key: 'action', width: 150, fixed: 'right' as const }]
 })
 

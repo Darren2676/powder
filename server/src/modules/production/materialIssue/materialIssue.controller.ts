@@ -7,10 +7,12 @@ import { logLinesideMovement } from '@/services/linesideMovement.service';
 import { syncProductionStatus } from '@/services/salesOrderSync.service';
 import { createMaterialTransaction } from '@/services/warehouse/helpers';
 import { writeCostSnapshot, deleteCostSnapshot, CostSnapshotItem } from '@/services/materialCostSnapshot.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // 自动生成领料单编号: MI-YYYYMMDD-NNN
-const generateIssueNumber = async (): Promise<string> => {
+const generateIssueNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = dayjs().format('YYYYMMDD');
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
   const prefix = `MI-${today}-`;
 
   const [rows]: any = await sequelize.query(
@@ -179,6 +181,7 @@ export const queryByOrder = async (req: Request, res: Response, next: NextFuncti
 export const createMaterialIssue = async (req: Request, res: Response, next: NextFunction) => {
   const transaction = await sequelize.transaction();
   try {
+    const factoryCode = await getFactoryCode(req);
     const user = (req as any).user;
     const b = req.body;
 
@@ -211,7 +214,7 @@ export const createMaterialIssue = async (req: Request, res: Response, next: Nex
     const prep = preps[0];
 
     // 生成领料单编号
-    const issue_number = await generateIssueNumber();
+    const issue_number = await generateIssueNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
 
     // 插入领料单主表
@@ -381,7 +384,7 @@ export const createMaterialIssue = async (req: Request, res: Response, next: Nex
             );
             const invInfo = invRows[0] || {};
 
-            const mtNum = await generateMaterialTxnNumber(transaction);
+            const mtNum = await generateMaterialTxnNumber(factoryCode, transaction);
             await createMaterialTransaction({
               transaction_number: mtNum,
               transaction_type: '出库',
@@ -555,6 +558,12 @@ export const getMaterialIssues = async (req: Request, res: Response, next: NextF
       replacements.search = `%${search}%`;
     }
 
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
+
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const [countResult]: any = await sequelize.query(
@@ -587,14 +596,15 @@ export const getMaterialIssues = async (req: Request, res: Response, next: NextF
 export const getMaterialIssueDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
 
     const [headers]: any = await sequelize.query(`
       SELECT issue_number, preparation_number, production_order_number, production_number,
              item_number, item_name, specifications, basic_unit, planned_quantity,
              total_issue_items, issue_status, remark, creation_date, creation_man
       FROM material_issue
-      WHERE issue_number = :id
-    `, { replacements: { id } });
+      WHERE issue_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}
+    `, { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } });
 
     if (!headers.length) {
       res.status(404).json({ success: false, message: '领料记录不存在' });
@@ -620,6 +630,7 @@ export const getMaterialIssueDetail = async (req: Request, res: Response, next: 
 export const deleteMaterialIssue = async (req: Request, res: Response, next: NextFunction) => {
   const transaction = await sequelize.transaction();
   try {
+    const factoryCode = await getFactoryCode(req);
     const user = (req as any).user;
     const { id } = req.params;
 
@@ -721,7 +732,7 @@ export const deleteMaterialIssue = async (req: Request, res: Response, next: Nex
           );
           await syncMaterialInventorySummary(detail.material_number, targetWh, transaction);
 
-          const mtNum = await generateMaterialTxnNumber(transaction);
+          const mtNum = await generateMaterialTxnNumber(factoryCode, transaction);
           await createMaterialTransaction({
             transaction_number: mtNum,
             transaction_type: '入库',
@@ -761,7 +772,7 @@ export const deleteMaterialIssue = async (req: Request, res: Response, next: Nex
             { replacements: { qty: afterQty, iid: invRows[0].id }, transaction }
           );
 
-          const mtNum = await generateMaterialTxnNumber(transaction);
+          const mtNum = await generateMaterialTxnNumber(factoryCode, transaction);
           await createMaterialTransaction({
             transaction_number: mtNum,
             transaction_type: '入库',

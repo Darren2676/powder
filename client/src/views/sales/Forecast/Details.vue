@@ -36,6 +36,7 @@ const pagination = reactive({
 
 const defaultDataColumns: any[] = [
   { title: '行号', dataIndex: 'line_number', key: 'line_number', width: 60 },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '客户编号', dataIndex: 'customer_number', key: 'customer_number', width: 110, resizable: true },
   { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 150, resizable: true },
   { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 130, resizable: true },

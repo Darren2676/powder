@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Seals MES System — 有效期管理操作手册</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 16mm 14mm; }
+  body {
+    font-family: "Microsoft YaHei", "SimHei", "PingFang SC", sans-serif;
+    font-size: 12px; line-height: 1.8; color: #1a1a1a;
+    max-width: 100%; padding: 0; margin: 0;
+  }
+  h1 { font-size: 20px; text-align: center; margin: 0 0 6px 0; padding-bottom: 10px; border-bottom: 2px solid #1890ff; color: #0d1a26; }
+  h2 { font-size: 15px; margin: 22px 0 8px 0; padding: 5px 0 5px 10px; border-left: 4px solid #1890ff; background: #f0f5ff; color: #0d1a26; page-break-after: avoid; }
+  h3 { font-size: 13px; margin: 14px 0 6px 0; color: #1a3a5c; page-break-after: avoid; }
+  h4 { font-size: 12px; margin: 10px 0 4px 0; color: #2a4a6c; }
+  p { margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 11px; page-break-inside: avoid; }
+  th { background: #1890ff; color: #fff; padding: 5px 6px; text-align: left; font-weight: 600; }
+  td { padding: 4px 6px; border: 1px solid #d9d9d9; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafafa; }
+  pre { background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 3px; padding: 8px 10px; font-size: 10.5px; line-height: 1.4; overflow-x: auto; white-space: pre-wrap; word-break: break-all; font-family: Consolas, "Courier New", monospace; page-break-inside: avoid; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 10.5px; background: #f0f0f0; padding: 1px 3px; border-radius: 2px; }
+  pre code { background: none; padding: 0; }
+  ul, ol { margin: 4px 0; padding-left: 20px; }
+  li { margin: 2px 0; }
+  strong { color: #cf1322; }
+  hr { border: none; border-top: 1px solid #e0e0e0; margin: 16px 0; }
+  .footer { text-align: center; font-size: 10px; color: #999; margin-top: 20px; padding-top: 6px; border-top: 1px solid #e0e0e0; }
+  .note { background: #fff7e6; border: 1px solid #ffd591; border-radius: 3px; padding: 8px 10px; margin: 6px 0; font-size: 11px; }
+  .note strong { color: #d46b08; }
+  .info { background: #e6f7ff; border: 1px solid #91d5ff; border-radius: 3px; padding: 8px 10px; margin: 6px 0; font-size: 11px; }
+  .info strong { color: #1890ff; }
+  .warning { background: #fff1f0; border: 1px solid #ffa39e; border-radius: 3px; padding: 8px 10px; margin: 6px 0; font-size: 11px; }
+  .warning strong { color: #f5222d; }
+  .step { background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 3px; padding: 8px 10px; margin: 6px 0; font-size: 11px; }
+  .step strong { color: #52c41a; }
+  .flow-box { background: #fafafa; border: 2px solid #1890ff; border-radius: 8px; padding: 16px; margin: 10px 0; }
+  .flow-arrow { text-align: center; font-size: 16px; color: #1890ff; margin: 4px 0; }
+  .flow-step { display: inline-block; background: #1890ff; color: #fff; padding: 4px 12px; border-radius: 4px; margin: 2px 4px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<h1>Seals MES System — 有效期管理操作手册</h1>
+<p style="text-align:center;color:#666;">宁国市睿信信息技术有限责任公司 &nbsp;|&nbsp; 2026年6月 &nbsp;|&nbsp; V1.0</p>
+
+<!-- ==================== 一、概述 ==================== -->
+<h2>一、有效期管理概述</h2>
+
+<h3>1.1 功能定位</h3>
+<p>有效期管理是 Seals MES System 中贯穿<strong>基础数据 → 采购入库 → 生产入库 → 库存管理 → 报告预警</strong>的全链路功能。系统通过物料主数据中设置的<code>启用有效期</code>和<code>有效天数</code>，结合入库时录入的<code>生产日期</code>，自动计算到期日，并在有效期管理报告中按<strong>已到期 / 即将到期（30天内）/ 未到期</strong>三种状态分类展示。</p>
+
+<h3>1.2 核心计算规则</h3>
+<table>
+<tr><th>计算项</th><th>规则</th><th>说明</th></tr>
+<tr><td>到期日</td><td><code>生产日期 + 有效天数</code>（优先）</td><td>有生产日期时使用生产日期计算</td></tr>
+<tr><td>到期日（回退）</td><td><code>入库日期 + 有效天数</code></td><td>无生产日期时回退使用入库日期</td></tr>
+<tr><td>已到期</td><td><code>到期日 &lt; 今天</code></td><td><span style="color:#f5222d;">■ 红色标记</span></td></tr>
+<tr><td>即将到期</td><td><code>到期日 - 30天 ≤ 今天 &lt; 到期日</code></td><td><span style="color:#fa8c16;">■ 橙色标记</span></td></tr>
+<tr><td>未到期</td><td><code>到期日 - 30天 &gt; 今天</code></td><td><span style="color:#52c41a;">■ 绿色标记</span></td></tr>
+</table>
+
+<div class="info">
+<strong>提示：</strong>即将到期预警天数固定为 <strong>30天</strong>，当前不可配置。
+</div>
+
+<h3>1.3 涉及的数据表</h3>
+<table>
+<tr><th>表名</th><th>有效期相关字段</th><th>用途</th></tr>
+<tr><td><code>item_master</code></td><td><code>enable_shelf_life (Y/N)</code>、<code>shelf_life_days</code></td><td>物料有效期基础设置</td></tr>
+<tr><td><code>stock_in_detail</code></td><td><code>production_date</code></td><td>采购入库明细生产日期</td></tr>
+<tr><td><code>material_batch_inventory</code></td><td><code>production_date</code>、<code>inbound_date</code></td><td>原材料/半成品批次库存</td></tr>
+<tr><td><code>finished_batch_inventory</code></td><td><code>production_date</code>、<code>inbound_date</code></td><td>成品批次库存</td></tr>
+<tr><td><code>semi_production_inbound_order_detail</code></td><td><code>production_date</code></td><td>半成品生产入库明细</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 二、基础数据设置 ==================== -->
+<h2>二、基础数据设置 — 物料有效期配置</h2>
+
+<h3>2.1 操作入口</h3>
+<p>路径：<strong>基础数据 → 物料主数据 → 创建/编辑物料</strong></p>
+<p>在物料主数据的创建/编辑表单中，找到 <strong>"库存基础"</strong> 折叠面板，其中包含有效期相关字段：</p>
+
+<h3>2.2 字段说明</h3>
+<table>
+<tr><th>字段名</th><th>类型</th><th>默认值</th><th>说明</th></tr>
+<tr><td><code>启用有效期</code></td><td>下拉选择（是/否）</td><td>否</td><td>设为"是"后，该物料将纳入有效期管理报告统计范围</td></tr>
+<tr><td><code>有效天数</code></td><td>数字输入</td><td>0</td><td>仅当启用有效期=是时显示；输入正整数天数</td></tr>
+</table>
+
+<div class="step">
+<strong>操作步骤：</strong><br>
+① 进入物料主数据列表页 → 点击"创建"或某条记录的"编辑"<br>
+② 展开 <strong>"库存基础"</strong> 折叠面板<br>
+③ 将 <strong>"启用有效期"</strong> 下拉框选为 <strong>"是"</strong><br>
+④ 在 <strong>"有效天数"</strong> 输入框中输入天数（如 90、180、365）<br>
+⑤ 填写其他必填字段后，点击保存/提交审批
+</div>
+
+<div class="note">
+<strong>注意：</strong>只有 <code>enable_shelf_life = 'Y'</code> 的物料才会出现在有效期管理报告中。未启用有效期的物料即使有批次库存也不会被统计。
+</div>
+
+<h3>2.3 配置示例</h3>
+<table>
+<tr><th>物料类型</th><th>物料编号</th><th>启用有效期</th><th>有效天数</th><th>说明</th></tr>
+<tr><td>原材料</td><td>RM-NBR-001</td><td>是</td><td>180</td><td>丁腈橡胶，保质期6个月</td></tr>
+<tr><td>半成品</td><td>SF-SL-001</td><td>是</td><td>90</td><td>混炼胶半成品，保质期3个月</td></tr>
+<tr><td>成品</td><td>FG-OR-001</td><td>是</td><td>365</td><td>O型密封圈成品，保质期1年</td></tr>
+<tr><td>原材料</td><td>RM-STEEL-001</td><td>否</td><td>0</td><td>金属骨架，无有效期要求</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 三、采购入库 ==================== -->
+<h2>三、采购入库 — 生产日期录入</h2>
+
+<h3>3.1 操作入口</h3>
+<p>路径：<strong>采购管理 → 收货通知 → 确认收货</strong></p>
+
+<h3>3.2 生产日期录入方式</h3>
+<p>在确认收货弹窗中，提供<strong>两种</strong>生产日期录入方式：</p>
+
+<table>
+<tr><th>方式</th><th>操作</th><th>适用场景</th></tr>
+<tr><td><strong>批量设置</strong></td><td>在弹窗顶部"批量设置生产日期"日期选择器中选取日期，所有明细行自动填充</td><td>同一批次物料生产日期相同</td></tr>
+<tr><td><strong>逐行设置</strong></td><td>在明细表格的"生产日期"列逐行点击日期选择器</td><td>不同物料生产日期不同</td></tr>
+</table>
+
+<div class="step">
+<strong>操作步骤：</strong><br>
+① 在收货通知列表页，点击某条记录的 <strong>"确认收货"</strong> 按钮<br>
+② 在弹出窗口中，先选择 <strong>"批量设置仓库"</strong>（下拉选择目标仓库）<br>
+③ 选择 <strong>"批量设置生产日期"</strong>（日期选择器），或逐行设置<br>
+④ 核对合格数量/不合格数量<br>
+⑤ 点击 <strong>"确认入库"</strong> 按钮提交
+</div>
+
+<h3>3.3 数据流转</h3>
+<div class="flow-box">
+  <span class="flow-step">收货通知确认</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-step">stock_in_detail.production_date</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-step">confirmStockIn</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-step">material_batch_inventory.production_date</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-step">有效期管理报告</span>
+</div>
+
+<div class="info">
+<strong>技术说明：</strong>确认收货时，系统将 <code>line_production_dates</code> 按物料编号映射传递到后端，写入 <code>stock_in_detail.production_date</code>。后续执行 <code>confirmStockIn</code> 时，从 <code>stock_in_detail</code> 读取 <code>production_date</code>，同步写入 <code>material_batch_inventory.production_date</code>。
+</div>
+
+<div class="warning">
+<strong>重要：</strong>如果确认收货时未填写生产日期，该批次在有效期管理报告中将回退使用 <strong>入库日期</strong> 计算到期日，可能导致到期日不准确。
+</div>
+
+<hr>
+
+<!-- ==================== 四、生产入库 ==================== -->
+<h2>四、生产入库 — 半成品/成品生产日期</h2>
+
+<h3>4.1 半成品生产入库</h3>
+<p>路径：<strong>仓储管理 → 材料仓 → 生产入库（半成品入库）</strong></p>
+
+<p>半成品生产完工后，通过生产入库功能将半成品纳入库存。入库时可填写<strong>生产日期</strong>（通常为生产完工日期）。</p>
+
+<div class="step">
+<strong>操作步骤：</strong><br>
+① 进入材料仓 → 半成品待入库列表<br>
+② 勾选待入库的生产单行项<br>
+③ 选择目标仓库<br>
+④ （可选）填写生产日期<br>
+⑤ 点击"确认入库"
+</div>
+
+<h3>4.2 成品入库</h3>
+<p>路径：<strong>仓储管理 → 成品仓 → 入库</strong></p>
+
+<p>成品入库时，生产日期随成品入库单录入，写入 <code>finished_batch_inventory.production_date</code>。</p>
+
+<h3>4.3 数据流转</h3>
+<div class="flow-box">
+  <span class="flow-step">生产完工</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-step">生产入库单 (production_date)</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-step">material_batch_inventory / finished_batch_inventory</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-step">有效期管理报告</span>
+</div>
+
+<hr>
+
+<!-- ==================== 五、其他出入库操作 ==================== -->
+<h2>五、其他出入库操作中的有效期管理</h2>
+
+<h3>5.1 原材料手工入库</h3>
+<p>路径：<strong>仓储管理 → 材料仓 → 入库</strong></p>
+<p>原材料手工入库时，支持逐行填写<strong>生产日期</strong>字段。该日期将写入 <code>material_batch_inventory.production_date</code>。</p>
+
+<div class="info">
+<strong>提示：</strong>手工入库适用于非采购流程的物料入库场景（如盘点盈余、赠送样品等），同样需要填写生产日期以确保有效期计算准确。
+</div>
+
+<h3>5.2 成品/原材料出库</h3>
+<p>出库操作（材料出库、成品出库、退货出库等）<strong>不涉及</strong>生产日期的录入或修改。出库时系统按 FIFO（先进先出）规则选择批次，自动扣减对应批次的库存数量。</p>
+
+<h3>5.3 库存查询中的生产日期</h3>
+<p>路径：<strong>仓储管理 → 成品仓 → 库存查询</strong></p>
+<p>在库存查询页面，点击某条库存记录的<strong>"批次明细"</strong>，弹出窗口中会显示每个批次的<strong>生产日期</strong>字段：</p>
+<ul>
+  <li>对于<strong>原材料/半成品</strong>：显示 <code>material_batch_inventory.production_date</code></li>
+  <li>对于<strong>成品</strong>：显示 <code>finished_batch_inventory.production_date</code></li>
+</ul>
+
+<div class="note">
+<strong>注意：</strong>如果某批次入库时未填写生产日期，批次明细中该字段显示为 <strong>"-"</strong>。
+</div>
+
+<h3>5.4 涉及生产日期的操作汇总</h3>
+<table>
+<tr><th>操作类型</th><th>路径</th><th>是否录入生产日期</th><th>写入目标表</th></tr>
+<tr><td>采购收货确认</td><td>采购管理 → 收货通知 → 确认收货</td><td>✅ 是</td><td>stock_in_detail → material_batch_inventory</td></tr>
+<tr><td>原材料手工入库</td><td>仓储管理 → 材料仓 → 入库</td><td>✅ 是</td><td>material_batch_inventory</td></tr>
+<tr><td>半成品生产入库</td><td>仓储管理 → 材料仓 → 生产入库</td><td>✅ 是</td><td>material_batch_inventory</td></tr>
+<tr><td>成品入库</td><td>仓储管理 → 成品仓 → 入库</td><td>✅ 是</td><td>finished_batch_inventory</td></tr>
+<tr><td>材料出库</td><td>仓储管理 → 材料仓 → 出库</td><td>❌ 否</td><td>—（仅扣减数量）</td></tr>
+<tr><td>成品出库</td><td>仓储管理 → 成品仓 → 出库</td><td>❌ 否</td><td>—（仅扣减数量）</td></tr>
+<tr><td>退货出库</td><td>仓储管理 → 材料仓 → 退货出库</td><td>❌ 否</td><td>—（仅扣减数量）</td></tr>
+<tr><td>盘点</td><td>仓储管理 → 盘点</td><td>❌ 否</td><td>—（仅调整数量）</td></tr>
+</table>
+
+<hr>
+
+<!-- ==================== 六、有效期管理报告 ==================== -->
+<h2>六、有效期管理报告</h2>
+
+<h3>6.1 操作入口</h3>
+<p>路径：<strong>仓储管理 → 有效期管理报告</strong></p>
+
+<h3>6.2 报告界面说明</h3>
+<p>报告页面包含以下筛选器和数据列：</p>
+
+<h4>筛选器</h4>
+<table>
+<tr><th>筛选项</th><th>类型</th><th>说明</th></tr>
+<tr><td>仓库</td><td>下拉选择（可清空）</td><td>按仓库筛选，空=全部仓库</td></tr>
+<tr><td>物料类型</td><td>下拉选择（原材料/半成品/成品）</td><td>按物料类型筛选</td></tr>
+<tr><td>到期状态</td><td>下拉选择（未到期/即将到期/已到期）</td><td>按到期状态筛选</td></tr>
+<tr><td>搜索框</td><td>文本输入</td><td>按物料编号或物料名称模糊搜索</td></tr>
+</table>
+
+<h4>数据列</h4>
+<table>
+<tr><th>列名</th><th>说明</th></tr>
+<tr><td>批次号</td><td>系统自动生成的批次编号（MB开头=原材料，HB开头=半成品，FB开头=成品）</td></tr>
+<tr><td>物料编号</td><td>物料编码</td></tr>
+<tr><td>物料名称</td><td>物料名称</td></tr>
+<tr><td>物料类型</td><td>原材料 / 半成品 / 成品</td></tr>
+<tr><td>仓库</td><td>当前库存所在仓库</td></tr>
+<tr><td>库存数量</td><td>当前批次库存余量</td></tr>
+<tr><td>生产日期</td><td>入库时录入的生产日期（无则显示入库日期）</td></tr>
+<tr><td>有效天数</td><td>物料主数据中设置的有效天数</td></tr>
+<tr><td>到期日</td><td>系统计算的到期日（生产日期+有效天数，或入库日期+有效天数）</td></tr>
+<tr><td>到期状态</td><td><span style="color:#f5222d;">已到期</span> / <span style="color:#fa8c16;">即将到期</span> / <span style="color:#52c41a;">未到期</span></td></tr>
+</table>
+
+<h3>6.3 操作说明</h3>
+
+<div class="step">
+<strong>查看全部有效期报告：</strong><br>
+① 进入"仓储管理 → 有效期管理报告"页面<br>
+② 页面默认加载所有启用有效期物料且库存>0的批次<br>
+③ 通过筛选器按仓库/物料类型/到期状态缩小范围<br>
+④ 在搜索框中输入物料编号或名称进行精确查找<br>
+⑤ 点击"查询"按钮刷新数据<br>
+⑥ 点击"重置"按钮清空所有筛选条件
+</div>
+
+<div class="step">
+<strong>查看即将到期的物料：</strong><br>
+① 在"到期状态"下拉框中选择 <strong>"即将到期"</strong><br>
+② 系统显示所有距到期日≤30天的批次<br>
+③ 橙色标记表示需要优先处理
+</div>
+
+<div class="step">
+<strong>查看已到期的物料：</strong><br>
+① 在"到期状态"下拉框中选择 <strong>"已到期"</strong><br>
+② 系统显示所有到期日已过期的批次<br>
+③ 红色标记表示需要立即处置
+</div>
+
+<h3>6.4 数据来源</h3>
+<p>报告通过 UNION ALL 查询合并两类数据源：</p>
+<table>
+<tr><th>数据源</th><th>表</th><th>JOIN条件</th><th>覆盖类型</th></tr>
+<tr><td>原材料+半成品</td><td><code>material_batch_inventory</code></td><td><code>JOIN item_master ON item_number</code></td><td>原材料、半成品</td></tr>
+<tr><td>成品</td><td><code>finished_batch_inventory</code></td><td><code>JOIN item_master ON item_number</code></td><td>成品</td></tr>
+</table>
+
+<div class="info">
+<strong>筛选逻辑：</strong>报告仅展示 <code>item_master.enable_shelf_life = 'Y'</code> 且 <code>batch.quantity > 0</code> 的批次记录。
+</div>
+
+<h3>6.5 到期状态判定逻辑</h3>
+<pre><code>-- 到期日计算（优先使用生产日期）
+CASE WHEN production_date IS NOT NULL
+  THEN DATEADD(DAY, shelf_life_days, production_date)
+  ELSE DATEADD(DAY, shelf_life_days, inbound_date)
+END AS expiry_date
+
+-- 到期状态判定
+CASE
+  WHEN expiry_date &lt; GETDATE()                         THEN '已到期'
+  WHEN DATEADD(DAY, -30, expiry_date) &lt; GETDATE()      THEN '即将到期'
+  ELSE                                                      '未到期'
+END AS expire_status</code></pre>
+
+<hr>
+
+<!-- ==================== 七、数据流全景图 ==================== -->
+<h2>七、有效期管理数据流全景</h2>
+
+<div class="flow-box">
+  <p><strong>基础数据层</strong></p>
+  <span class="flow-step">物料主数据：enable_shelf_life=Y, shelf_life_days=90</span>
+  <br><br>
+  <p><strong>入库操作层</strong>（录入生产日期）</p>
+  <table>
+  <tr><th>业务场景</th><th>操作</th><th>生产日期来源</th><th>写入表</th></tr>
+  <tr><td>采购入库</td><td>收货通知 → 确认收货</td><td>确认弹窗手动选择</td><td>stock_in_detail → material_batch_inventory</td></tr>
+  <tr><td>原材料手工入库</td><td>材料仓 → 入库</td><td>入库表单手动填写</td><td>material_batch_inventory</td></tr>
+  <tr><td>半成品生产入库</td><td>材料仓 → 生产入库</td><td>入库表单手动填写</td><td>material_batch_inventory</td></tr>
+  <tr><td>成品入库</td><td>成品仓 → 入库</td><td>入库表单手动填写</td><td>finished_batch_inventory</td></tr>
+  </table>
+  <br>
+  <p><strong>报告展示层</strong></p>
+  <span class="flow-step">有效期管理报告 = material_batch_inventory + finished_batch_inventory（JOIN item_master）</span>
+  <br><br>
+  <p><strong>计算公式</strong></p>
+  <span class="flow-step">到期日 = production_date(优先) 或 inbound_date(回退) + shelf_life_days</span>
+  <span class="flow-arrow">→</span>
+  <span class="flow-step">到期状态 = 已到期 / 即将到期(≤30天) / 未到期</span>
+</div>
+
+<hr>
+
+<!-- ==================== 八、完整操作流程示例 ==================== -->
+<h2>八、完整操作流程示例</h2>
+
+<h3>8.1 场景：采购一批橡胶原料并跟踪有效期</h3>
+
+<div class="step">
+<strong>第一步：设置物料有效期（基础数据）</strong><br>
+进入"基础数据 → 物料主数据"，编辑物料 <code>RM-NBR-001</code>：<br>
+• 启用有效期：是<br>
+• 有效天数：180<br>
+• 保存并提交审批
+</div>
+
+<div class="step">
+<strong>第二步：采购收货并录入生产日期（采购管理）</strong><br>
+① 创建采购订单 → 生成收货通知<br>
+② 在收货通知列表页，点击"确认收货"<br>
+③ 在弹窗中选择目标仓库（如：原材料仓-04）<br>
+④ 批量设置生产日期：选择物料的生产日期（如：2026-05-15）<br>
+⑤ 核对合格数量后点击"确认入库"
+</div>
+
+<div class="step">
+<strong>第三步：验证库存批次（仓储管理）</strong><br>
+① 进入"仓储管理 → 成品仓 → 库存查询"<br>
+② 搜索物料 <code>RM-NBR-001</code><br>
+③ 点击"批次明细"查看生产日期已正确显示为 2026-05-15
+</div>
+
+<div class="step">
+<strong>第四步：查看有效期报告（仓储管理）</strong><br>
+① 进入"仓储管理 → 有效期管理报告"<br>
+② 到期日显示为 2026-11-11（2026-05-15 + 180天）<br>
+③ 到期状态显示为"未到期"（绿色标记）<br>
+④ 随着时间推移，距到期日≤30天时自动变为"即将到期"（橙色标记）<br>
+⑤ 超过2026-11-11后变为"已到期"（红色标记）
+</div>
+
+<hr>
+
+<!-- ==================== 九、常见问题 ==================== -->
+<h2>九、常见问题与注意事项</h2>
+
+<h3>9.1 为什么物料在报告中没有显示？</h3>
+<div class="note">
+<strong>排查步骤：</strong><br>
+① 检查物料主数据中 <strong>"启用有效期"</strong> 是否设为 <strong>"是"</strong><br>
+② 检查 <strong>"有效天数"</strong> 是否大于 0<br>
+③ 检查该物料是否有库存（<code>quantity > 0</code>）<br>
+④ 检查物料审批状态是否为"已审核"
+</div>
+
+<h3>9.2 为什么到期日不准确？</h3>
+<div class="note">
+<strong>排查步骤：</strong><br>
+① 确认入库时是否填写了<strong>生产日期</strong>（若未填写，系统回退使用入库日期计算）<br>
+② 确认物料主数据中的<strong>有效天数</strong>是否正确<br>
+③ 注意：入库日期 ≠ 生产日期，两者可能相差较大
+</div>
+
+<h3>9.3 如何修正已入库批次的生产日期？</h3>
+<div class="warning">
+<strong>注意：</strong>当前系统<strong>不支持</strong>在前端直接修改已入库批次的生产日期。如需修正，请联系系统管理员通过数据库直接更新 <code>material_batch_inventory.production_date</code> 或 <code>finished_batch_inventory.production_date</code> 字段。
+</div>
+
+<h3>9.4 出库时如何选择批次？</h3>
+<p>系统按 <strong>FIFO（先进先出）</strong>规则自动选择批次出库。出库操作不涉及生产日期的修改，也不支持按有效期手动选择批次。</p>
+
+<h3>9.5 半成品在报告中属于什么类型？</h3>
+<p>半成品的批次库存存储在 <code>material_batch_inventory</code> 表中（<code>item_type = '半成品'</code>），在有效期管理报告的第一部分（与原材料 UNION 查询）中展示。筛选时选择"半成品"类型即可过滤。</p>
+
+<hr>
+
+<!-- ==================== 十、菜单与权限 ==================== -->
+<h2>十、菜单路径与权限</h2>
+
+<table>
+<tr><th>功能</th><th>菜单路径</th><th>权限编码</th><th>图标</th></tr>
+<tr><td>物料有效期设置</td><td>基础数据 → 物料主数据</td><td><code>item-master</code></td><td>—</td></tr>
+<tr><td>采购入库-生产日期</td><td>采购管理 → 收货通知</td><td><code>receiving-notice</code></td><td>—</td></tr>
+<tr><td>原材料手工入库</td><td>仓储管理 → 材料仓 → 入库</td><td><code>material-warehouse</code></td><td>—</td></tr>
+<tr><td>半成品生产入库</td><td>仓储管理 → 材料仓 → 生产入库</td><td><code>material-warehouse</code></td><td>—</td></tr>
+<tr><td>成品入库</td><td>仓储管理 → 成品仓 → 入库</td><td><code>finished-goods</code></td><td>—</td></tr>
+<tr><td>库存批次查询</td><td>仓储管理 → 成品仓 → 库存查询</td><td><code>finished-goods</code></td><td>—</td></tr>
+<tr><td><strong>有效期管理报告</strong></td><td><strong>仓储管理 → 有效期管理报告</strong></td><td><code>shelf-life-report</code></td><td>FieldTimeOutlined</td></tr>
+</table>
+
+<div class="info">
+<strong>说明：</strong>有效期管理报告的菜单权限编码为 <code>shelf-life-report</code>，需要在角色管理中为相应角色分配该权限后才能访问。
+</div>
+
+<hr>
+
+<div class="footer">Seals MES System — 有效期管理操作手册 &nbsp;|&nbsp; 宁国市睿信信息技术有限责任公司 &nbsp;|&nbsp; 2026年6月 &nbsp;|&nbsp; V1.0</div>
+</body>
+</html>

@@ -141,6 +141,7 @@ const total = ref(0)
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getOutsourcingOrders)
 
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '委外订单号', dataIndex: 'outsourcing_order_number', key: 'outsourcing_order_number', width: 180, fixed: 'left' as const },
   { title: '工序任务号', dataIndex: 'process_task_number', key: 'process_task_number', width: 160 },
   { title: '生产单号', dataIndex: 'production_order_number', key: 'production_order_number', width: 160 },

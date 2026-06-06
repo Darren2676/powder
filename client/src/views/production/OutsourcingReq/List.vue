@@ -165,6 +165,7 @@ const total = ref(0)
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getOutsourcingReqs)
 
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '委外申请号', dataIndex: 'outsourcing_req_number', key: 'outsourcing_req_number', width: 180, fixed: 'left' as const },
   { title: '生产单号', dataIndex: 'production_order_number', key: 'production_order_number', width: 160 },
   { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 120 },

@@ -10,6 +10,7 @@ const PurchaseCalcDemandReport = () => import('@/views/purchasing/PurchaseCalc/D
 const ReceivingNoticeList = () => import('@/views/purchasing/ReceivingNotice/List.vue');
 const PurchaseReturnList = () => import('@/views/purchasing/PurchaseReturn/List.vue');
 const PurchaseInvoiceList = () => import('@/views/purchasing/PurchaseInvoice/List.vue');
+const PurchaseReconciliation = () => import('@/views/purchasing/PurchaseReconciliation/Index.vue');
 const PurchasingDashboard = () => import('@/views/purchasing/PurchasingDashboard/Index.vue');
 
 export const purchasingRoutes: RouteRecordRaw[] = [
@@ -22,5 +23,6 @@ export const purchasingRoutes: RouteRecordRaw[] = [
   { path: 'receiving-notices', name: 'ReceivingNoticeList', component: ReceivingNoticeList, meta: {"title":"采购收货通知"} },
   { path: 'purchase-returns', name: 'PurchaseReturnList', component: PurchaseReturnList, meta: {"title":"采购退货"} },
   { path: 'purchase-invoices', name: 'PurchaseInvoiceList', component: PurchaseInvoiceList, meta: {"title":"采购发票"} },
+  { path: 'purchase-reconciliation', name: 'PurchaseReconciliation', component: PurchaseReconciliation, meta: {"title":"采购对账"} },
   { path: 'purchasing-dashboard', name: 'PurchasingDashboard', component: PurchasingDashboard, meta: {"title":"采购订单仪表板"} },
 ];

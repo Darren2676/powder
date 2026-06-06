@@ -99,6 +99,7 @@ const handleReset = () => {
 
 // ==================== 列个性化 ====================
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '任务编号', dataIndex: 'backflush_task_number', key: 'backflush_task_number', width: 170, resizable: true },
   { title: '生产单号', dataIndex: 'production_order_number', key: 'production_order_number', width: 160, resizable: true },
   { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 120, resizable: true },

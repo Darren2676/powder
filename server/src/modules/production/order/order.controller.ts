@@ -6,6 +6,7 @@ import { generateOrderNumber } from '@/services/documentNumber.service';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { BusinessError } from '@/shared/errors/BusinessError';
 import { splitOrdersCore, dispatchOrdersCore, dispatchAndGenerateCore } from '@/services/orderDispatch.service';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 const fields = ['production_order_number', 'production_number', 'item_number', 'item_name', 'basic_unit', 'specifications', 'product_drawing_number', 'rubber_compound_number', 'batch_production_quota', 'planned_quantity', 'equipment_number', 'equipment_name', 'mould_number', 'formed_part_specifications', 'formed_part_unit_consumption', 'actual_cavity_count', 'actual_hole_count', 'actual_daily_output', 'production_date', 'schedule_id', 'planned_completion_time', 'plan_status', 'completion_status', 'inbound_status', 'remark'];
 const headers = ['生产单编号', '生产计划编号', '产品编号', '产品名称', '基本单位', '规格', '产品图号', '胶料编号', '班产定额', '计划数量', '设备编号', '设备名称', '模具编号', '成型件规格', '成型件单耗', '实际模腔数', '实际模穴数', '实际班产', '生产日期', '班次', '计划完成时间', '状态', '完成状态', '入库状态', '备注'];
@@ -104,6 +105,8 @@ export const getOrders = async (req: Request, res: Response, next: NextFunction)
 
 export const createOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
 
     if (!b.item_number) {
@@ -111,11 +114,11 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    const production_order_number = await generateOrderNumber();
+    const production_order_number = await generateOrderNumber(factoryCode);
 
     const insertSql = `
-      INSERT INTO production_order (production_order_number, production_number, item_number, item_name, basic_unit, specifications, product_drawing_number, rubber_compound_number, batch_production_quota, planned_quantity, equipment_number, equipment_name, mould_number, formed_part_specifications, formed_part_unit_consumption, actual_cavity_count, actual_hole_count, actual_daily_output, planned_completion_time, plan_status, remark, approval_status)
-      VALUES (:production_order_number, :production_number, :item_number, :item_name, :basic_unit, :specifications, :product_drawing_number, :rubber_compound_number, :batch_production_quota, :planned_quantity, :equipment_number, :equipment_name, :mould_number, :formed_part_specifications, :formed_part_unit_consumption, :actual_cavity_count, :actual_hole_count, :actual_daily_output, :planned_completion_time, :plan_status, :remark, N'草稿')
+      INSERT INTO production_order (production_order_number, production_number, item_number, item_name, basic_unit, specifications, product_drawing_number, rubber_compound_number, batch_production_quota, planned_quantity, equipment_number, equipment_name, mould_number, formed_part_specifications, formed_part_unit_consumption, actual_cavity_count, actual_hole_count, actual_daily_output, planned_completion_time, plan_status, remark, factory_id, approval_status)
+      VALUES (:production_order_number, :production_number, :item_number, :item_name, :basic_unit, :specifications, :product_drawing_number, :rubber_compound_number, :batch_production_quota, :planned_quantity, :equipment_number, :equipment_name, :mould_number, :formed_part_specifications, :formed_part_unit_consumption, :actual_cavity_count, :actual_hole_count, :actual_daily_output, :planned_completion_time, :plan_status, :remark, :factory_id, N'草稿')
     `;
 
     await sequelize.query(insertSql, {
@@ -140,7 +143,8 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
         actual_daily_output: b.actual_daily_output || null,
         planned_completion_time: b.planned_completion_time || null,
         plan_status: b.plan_status || '待执行',
-        remark: b.remark || ''
+        remark: b.remark || '',
+        factory_id: _factoryId
       }
     });
 
@@ -230,15 +234,18 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
 export const deleteOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [chk]: any = await sequelize.query(`SELECT approval_status, production_number FROM production_order WHERE production_order_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    const [chk]: any = await sequelize.query(`SELECT approval_status, production_number FROM production_order WHERE production_order_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return; }
 
     const productionNumber = chk[0]?.production_number || '';
 
     const transaction = await sequelize.transaction();
     try {
-      await sequelize.query(`DELETE FROM production_order WHERE production_order_number = :id`, {
-        replacements: { id },
+      await sequelize.query(`DELETE FROM production_order WHERE production_order_number = :id${factoryCond}`, {
+        replacements: { id, ...factoryReps },
         transaction
       });
 
@@ -325,6 +332,8 @@ export const importOrders = async (req: Request, res: Response, next: NextFuncti
 // 从计划导入
 export const importFromPlan = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.production_numbers || !Array.isArray(b.production_numbers) || b.production_numbers.length === 0) {
       res.status(400).json({ success: false, message: '请选择要导入的计划' });
@@ -357,10 +366,10 @@ export const importFromPlan = async (req: Request, res: Response, next: NextFunc
         );
         if (existCheck.length > 0) continue;
 
-        const production_order_number = await generateOrderNumber();
+        const production_order_number = await generateOrderNumber(factoryCode);
         await sequelize.query(
-          `INSERT INTO production_order (production_order_number, production_number, item_number, item_name, basic_unit, specifications, product_drawing_number, rubber_compound_number, batch_production_quota, planned_quantity, equipment_number, equipment_name, mould_number, formed_part_specifications, formed_part_unit_consumption, actual_cavity_count, actual_hole_count, actual_daily_output, planned_completion_time, plan_status, remark, approval_status)
-           VALUES (:production_order_number, :production_number, :item_number, :item_name, :basic_unit, :specifications, :product_drawing_number, :rubber_compound_number, :batch_production_quota, :planned_quantity, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, :planned_completion_time, :plan_status, :remark, :approval_status)`,
+          `INSERT INTO production_order (production_order_number, production_number, item_number, item_name, basic_unit, specifications, product_drawing_number, rubber_compound_number, batch_production_quota, planned_quantity, equipment_number, equipment_name, mould_number, formed_part_specifications, formed_part_unit_consumption, actual_cavity_count, actual_hole_count, actual_daily_output, planned_completion_time, plan_status, remark, factory_id, approval_status)
+           VALUES (:production_order_number, :production_number, :item_number, :item_name, :basic_unit, :specifications, :product_drawing_number, :rubber_compound_number, :batch_production_quota, :planned_quantity, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, :planned_completion_time, :plan_status, :remark, :factory_id, :approval_status)`,
           {
             replacements: {
               production_order_number,
@@ -376,6 +385,7 @@ export const importFromPlan = async (req: Request, res: Response, next: NextFunc
               planned_completion_time: plan.planned_completion_time || null,
               plan_status: '未开始',
               remark: plan.remark || '',
+              factory_id: _factoryId,
               approval_status: ORDER_STATUS.DRAFT
             }
           }

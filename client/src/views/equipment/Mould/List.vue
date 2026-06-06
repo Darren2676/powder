@@ -159,6 +159,7 @@ const createLoading = ref(false)
 const createForm = reactive<Mould>(emptyForm())
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '模具编号', dataIndex: 'item_number', key: 'item_number', width: 120, sorter: (a: any, b: any) => (a.item_number || '').localeCompare(b.item_number || ''), resizable: true },
   { title: '模具名称', dataIndex: 'item_name', key: 'item_name', width: 140, resizable: true },
   { title: '产品编号', dataIndex: 'product_number', key: 'product_number', width: 120, resizable: true },

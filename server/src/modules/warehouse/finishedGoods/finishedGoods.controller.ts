@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { BusinessError } from '@/shared/errors/BusinessError';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 import {
   productionInboundFinished,
   shippingOutbound as shippingOutboundService,
@@ -201,7 +202,9 @@ export const getPendingInbound = async (req: Request, res: Response, next: NextF
 // ==================== 生产完工入库（批次化）- Thin Adapter ====================
 export const productionInbound = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await productionInboundFinished(req.body, (req as any).user?.username || '');
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
+    const result = await productionInboundFinished(req.body, (req as any).user?.username || '', factoryCode, _factoryId);
     res.json(success(result, '入库成功'));
   } catch (err) {
     if (err instanceof BusinessError) {
@@ -321,7 +324,8 @@ export const getPendingOutbound = async (req: Request, res: Response, next: Next
 // ==================== 发货出库（批次FIFO）- Thin Adapter ====================
 export const shippingOutbound = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await shippingOutboundService(req.body, (req as any).user?.username || '');
+    const factoryCode = await getFactoryCode(req);
+    const result = await shippingOutboundService(req.body, (req as any).user?.username || '', factoryCode);
     res.json(success(result, '出库成功'));
   } catch (err) {
     if (err instanceof BusinessError) {
@@ -418,7 +422,8 @@ export const getTransactionList = async (req: Request, res: Response, next: Next
 // ==================== 手动调整库存 - Thin Adapter ====================
 export const adjustInventory = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await adjustFinishedInventoryService(req.body, (req as any).user?.username || '');
+    const factoryCode = await getFactoryCode(req);
+    const result = await adjustFinishedInventoryService(req.body, (req as any).user?.username || '', factoryCode);
     res.json(success(result, '库存调整成功'));
   } catch (err) {
     if (err instanceof BusinessError) {
@@ -630,7 +635,8 @@ export const returnInbound = async (req: Request, res: Response, next: NextFunct
       ...req.body,
       return_order_number: req.params.return_order_number,
     };
-    const result = await returnInboundService(params, (req as any).user?.username || '');
+    const factoryCode = await getFactoryCode(req);
+    const result = await returnInboundService(params, (req as any).user?.username || '', factoryCode);
     res.json(success(result, '退货入库成功'));
   } catch (err) {
     if (err instanceof BusinessError) {

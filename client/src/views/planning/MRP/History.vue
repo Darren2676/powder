@@ -32,6 +32,7 @@ const detailActiveTab = ref('all')
 
 const columns = [
   { title: 'MRP运算编号', dataIndex: 'mrp_run_number', key: 'mrp_run_number', width: 160 },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '状态', dataIndex: 'run_status', key: 'run_status', width: 90, align: 'center' as const },
   { title: '计划数量', dataIndex: 'plan_count', key: 'plan_count', width: 80, align: 'center' as const },
   { title: '明细行数', dataIndex: 'detail_count', key: 'detail_count', width: 80, align: 'center' as const },

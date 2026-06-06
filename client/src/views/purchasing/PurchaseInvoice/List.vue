@@ -40,6 +40,7 @@ const getInvoicesWithFilter = (params: any) => {
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getInvoicesWithFilter)
 
 const defaultDataColumns: any[] = [
+{ title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '发票代码', dataIndex: 'invoice_code', key: 'invoice_code', width: 120, resizable: true },
   { title: '发票号码', dataIndex: 'invoice_no', key: 'invoice_no', width: 120, resizable: true },
   { title: '发票类型', dataIndex: 'invoice_type', key: 'invoice_type', width: 130, resizable: true },

@@ -68,7 +68,8 @@ import {
   ClusterOutlined,
   MenuOutlined,
   DeleteOutlined,
-  TrophyOutlined
+  TrophyOutlined,
+  GlobalOutlined
 } from '@ant-design/icons-vue';
 
 interface Props {
@@ -109,7 +110,8 @@ const iconMap: Record<string, any> = {
   PlusCircleOutlined, OrderedListOutlined, TableOutlined, PartitionOutlined,
   ProjectOutlined, AppstoreAddOutlined, HddOutlined, ClusterOutlined,
   MenuOutlined, DeleteOutlined,
-  TrophyOutlined
+  TrophyOutlined,
+  GlobalOutlined
 };
 
 // 获取图标组件
@@ -213,6 +215,7 @@ const keyToRoute: Record<string, string> = {
   'scrap-inbound-orders': '/scrap-inbound-orders',
   'scrap-inventory': '/scrap-inventory',
   'scrap-transactions': '/scrap-transactions',
+    'shelf-life-report': '/shelf-life-report',
   'xhy-inspect': '/xhy-inspect',
   'xhy-inspect-lines': '/xhy-inspect-lines',
   'xhy-inspect-summary': '/xhy-inspect-summary',
@@ -258,8 +261,21 @@ const keyToRoute: Record<string, string> = {
   'api-keys': '/api-keys',
   'purchase-returns': '/purchase-returns',
   'purchase-invoices': '/purchase-invoices',
+  'purchase-reconciliation': '/purchase-reconciliation',
   'purchasing-dashboard': '/purchasing-dashboard',
   'hefei-university-2025': '/hefei-university-2025',
+  'sample-requests': '/sample-requests',
+  'sample-boms': '/sample-boms',
+  'sample-inspection-reports': '/sample-inspection-reports',
+  'group': '/hq-sales-summary',
+  'hq-reports': '/hq-sales-summary',
+  'hq-sales-summary': '/hq-sales-summary',
+  'hq-production-summary': '/hq-production-summary',
+  'hq-purchase-summary': '/hq-purchase-summary',
+  'hq-inventory-summary': '/hq-inventory-summary',
+  'hq-finance-summary': '/hq-finance-summary',
+  'hq-quality-summary': '/hq-quality-summary',
+  'hq-inventory-flow': '/hq-inventory-flow',
 };
 
 // 从路由路径查找对应的菜单key

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 生产单进度看板：工单列表 ====================
 export const getKanbanOrders = async (req: Request, res: Response, next: NextFunction) => {
@@ -25,6 +26,12 @@ export const getKanbanOrders = async (req: Request, res: Response, next: NextFun
     if (itemProperties) {
       conditions.push(`im.item_properties = :itemProperties`);
       replacements.itemProperties = itemProperties;
+    }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`po.factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
     }
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`;

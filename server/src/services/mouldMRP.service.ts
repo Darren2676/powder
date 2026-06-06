@@ -245,7 +245,7 @@ export const applyMouldMRPComparison = async (params: {
   mouldNumber: string;
   username: string;
   transaction: any;
-}): Promise<{ updated: number; created: number; removed: number; skipped: number; details: any[] }> => {
+}, factoryCode: string = ''): Promise<{ updated: number; created: number; removed: number; skipped: number; details: any[] }> => {
   const { parentOrder, comparison, mouldNumber, username, transaction } = params;
   let updated = 0, created = 0, removed = 0, skipped = 0;
   const details: any[] = [];
@@ -270,7 +270,7 @@ export const applyMouldMRPComparison = async (params: {
       case 'new_added': {
         const netReq = item.new_quantity;
         if (netReq > 0) {
-          const semiOrderNo = await generateOrderNumber(transaction);
+          const semiOrderNo = await generateOrderNumber(factoryCode, transaction);
           await sequelize.query(
             `INSERT INTO production_order (
               production_order_number, production_number, parent_production_order_number,

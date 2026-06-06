@@ -266,7 +266,7 @@ export const dispatchAndGenerateCore = async (params: {
     actualCavityCount?: number; actualHoleCount?: number;
     actualDailyOutput?: number; productionDate?: string; scheduleId?: string;
   }>;
-}, username: string): Promise<{
+}, username: string, factoryCode: string = ''): Promise<{
   dispatch: { count: number; items: any[] };
   processTasks: { totalGenerated: number; details: any[] };
   materialPreparations: { totalGenerated: number; details: any[] };
@@ -388,7 +388,7 @@ export const dispatchAndGenerateCore = async (params: {
         specifications: order.specifications,
         basicUnit: order.basic_unit,
         plannedQuantity: order.planned_quantity
-      }, username, transaction);
+      }, username, transaction, factoryCode);
       taskResults.push({ orderNo, tasksGenerated: taskResult.tasksGenerated, skipped: taskResult.skipReason || undefined });
 
       // ============ 第三步：备料单生成 ============
@@ -410,8 +410,7 @@ export const dispatchAndGenerateCore = async (params: {
         routeMaterialMap: taskResult.routeMaterialMap,
         routeStepNameMap: taskResult.routeStepNameMap,
         taskMap: taskMapPrep
-      }, username, transaction);
-
+      }, username, transaction, factoryCode);
       semiProductResults.push({ orderNo, semiOrders: [] });
       prepResults.push({ orderNo, materialsGenerated: prepResult.materialsGenerated, prepSkipped: prepResult.skipReason || undefined });
 

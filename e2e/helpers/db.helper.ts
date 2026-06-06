@@ -11,7 +11,7 @@ const CONFIG = {
   },
   options: {
     port: 1433,
-    database: 'SEALSMES',
+    database: 'PowderMom',
     encrypt: false,
     trustServerCertificate: true,
     rowCollectionOnRequestCompletion: true,

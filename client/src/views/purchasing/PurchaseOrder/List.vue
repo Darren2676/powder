@@ -51,6 +51,7 @@ const stockInWarehouse = reactive({ warehouse_number: '', warehouse_name: '' })
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getPurchaseOrders)
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '采购订单号', dataIndex: 'purchase_order_number', key: 'purchase_order_number', width: 180, sorter: (a: any, b: any) => (a.purchase_order_number || '').localeCompare(b.purchase_order_number || ''), resizable: true },
   { title: '供应商', dataIndex: 'supplier_name', key: 'supplier_name', width: 150, resizable: true },
   { title: '采购负责人', dataIndex: 'procurement_manager', key: 'procurement_manager', width: 100, resizable: true },

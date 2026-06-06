@@ -3,12 +3,14 @@ import sequelize from '@/config/database';
 import { success } from '@/utils/response.util';
 import { syncFinishedGoodsSummary, generateTransactionNumber } from '@/services/inventory.service';
 import dayjs from 'dayjs';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 单据编号生成 ====================
 
-async function generatePackingNumber(transaction?: any): Promise<string> {
+async function generatePackingNumber(factoryCode: string = '', transaction?: any): Promise<string> {
   const today = new Date();
-  const prefix = 'PK' + today.getFullYear() +
+  const fc = factoryCode ? factoryCode.toUpperCase() : '';
+  const prefix = 'PK' + fc + today.getFullYear() +
     String(today.getMonth() + 1).padStart(2, '0') +
     String(today.getDate()).padStart(2, '0');
   const opts: any = { replacements: { prefix: prefix + '%' } };
@@ -148,6 +150,8 @@ export const getAvailableBatches = async (req: Request, res: Response, next: Nex
 
 export const createPackingOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     const { warehouse_number, warehouse_name, item_number, item_name, specifications, basic_unit,
       total_quantity, inner_pack_qty, outer_pack_qty, remark, selected_batches } = b;
@@ -163,7 +167,8 @@ export const createPackingOrder = async (req: Request, res: Response, next: Next
     const transaction = await sequelize.transaction();
 
     try {
-      const packingNumber = await generatePackingNumber(transaction);
+      const factoryCode = await getFactoryCode(req);
+      const packingNumber = await generatePackingNumber(factoryCode, transaction);
 
       // 如果前端未传规格，从 item_master 获取
       let finalSpecifications = specifications || '';
@@ -306,9 +311,9 @@ export const createPackingOrder = async (req: Request, res: Response, next: Next
 
       // ========== 写入数据库 ==========
       await sequelize.query(
-        `INSERT INTO packing_order (packing_number, warehouse_number, warehouse_name, item_number, item_name, specifications, basic_unit, total_quantity, total_bags, total_boxes, total_labels, status, operator, remark)
-         VALUES (:packing_number, :warehouse_number, :warehouse_name, :item_number, :item_name, :specifications, :basic_unit, :total_quantity, :total_bags, :total_boxes, :total_labels, N'草稿', :operator, :remark)`,
-        { replacements: { packing_number: packingNumber, warehouse_number, warehouse_name, item_number, item_name, specifications: finalSpecifications, basic_unit: basic_unit || '', total_quantity, total_bags: 0, total_boxes: boxData.length, total_labels: totalLabels, operator, remark: remark || '' }, transaction }
+        `INSERT INTO packing_order (packing_number, warehouse_number, warehouse_name, item_number, item_name, specifications, basic_unit, total_quantity, total_bags, total_boxes, total_labels, status, operator, remark, factory_id)
+         VALUES (:packing_number, :warehouse_number, :warehouse_name, :item_number, :item_name, :specifications, :basic_unit, :total_quantity, :total_bags, :total_boxes, :total_labels, N'草稿', :operator, :remark, :factory_id)`,
+        { replacements: { packing_number: packingNumber, warehouse_number, warehouse_name, item_number, item_name, specifications: finalSpecifications, basic_unit: basic_unit || '', total_quantity, total_bags: 0, total_boxes: boxData.length, total_labels: totalLabels, operator, remark: remark || '', factory_id: _factoryId }, transaction }
       );
 
       for (const lb of labelData) {
@@ -341,6 +346,7 @@ export const createPackingOrder = async (req: Request, res: Response, next: Next
 export const confirmPackingOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { packingNumber } = req.params;
+    const _factoryId = getFactoryId(req);
     const [headers]: any = await sequelize.query(
       `SELECT * FROM packing_order WHERE packing_number = :pn`, { replacements: { pn: packingNumber } }
     );
@@ -390,8 +396,8 @@ export const confirmPackingOrder = async (req: Request, res: Response, next: Nex
 
       // 更新状态
       await sequelize.query(
-        `UPDATE packing_order SET status = N'已确认', confirmation_date = GETDATE() WHERE packing_number = :pn`,
-        { replacements: { pn: packingNumber }, transaction }
+        `UPDATE packing_order SET status = N'已确认', confirmation_date = GETDATE() WHERE packing_number = :pn${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+        { replacements: { pn: packingNumber, ...(_factoryId !== null ? { _factoryId } : {}) }, transaction }
       );
 
       // ========== 新增：插入箱装库存 ==========
@@ -432,6 +438,7 @@ export const confirmPackingOrder = async (req: Request, res: Response, next: Nex
 export const cancelPackingOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { packingNumber } = req.params;
+    const _factoryId = getFactoryId(req);
     const [headers]: any = await sequelize.query(
       `SELECT * FROM packing_order WHERE packing_number = :pn`, { replacements: { pn: packingNumber } }
     );
@@ -492,8 +499,8 @@ export const cancelPackingOrder = async (req: Request, res: Response, next: Next
       }
 
       await sequelize.query(
-        `UPDATE packing_order SET status = N'已取消' WHERE packing_number = :pn`,
-        { replacements: { pn: packingNumber }, transaction }
+        `UPDATE packing_order SET status = N'已取消' WHERE packing_number = :pn${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+        { replacements: { pn: packingNumber, ...(_factoryId !== null ? { _factoryId } : {}) }, transaction }
       );
       await transaction.commit();
       res.json(success(null, '取消成功'));
@@ -806,6 +813,7 @@ async function recalcBoxSummary(boxNumber: string, transaction: any) {
 
 export const shippingBoxOutbound = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const { box_numbers, warehouse_number, shipping_order_number, operator, remark } = req.body || {};
     if (!box_numbers || !Array.isArray(box_numbers) || box_numbers.length === 0) {
       res.status(400).json({ success: false, message: '请提供要出库的箱号列表' }); return;
@@ -816,6 +824,8 @@ export const shippingBoxOutbound = async (req: Request, res: Response, next: Nex
 
     const transaction = await sequelize.transaction();
     try {
+      const factoryCode = await getFactoryCode(req);
+      const _factoryId = getFactoryId(req);
       const op = operator || req.user?.username || 'system';
       const now = new Date();
       const accountingPeriod = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
@@ -867,7 +877,7 @@ export const shippingBoxOutbound = async (req: Request, res: Response, next: Nex
         }
 
         // 6. 创建库存流水
-        const txNum = await generateTransactionNumber(transaction);
+        const txNum = await generateTransactionNumber(factoryCode, transaction);
 
         // 从 packing_bag_label 读取批次明细
         const [boxLabels]: any = await sequelize.query(
@@ -880,11 +890,11 @@ export const shippingBoxOutbound = async (req: Request, res: Response, next: Nex
           `INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number,
             item_number, item_name, specifications, basic_unit, product_drawing_number,
             warehouse_number, warehouse_name, quantity, before_quantity, after_quantity,
-            batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period, shipping_order_number)
+            batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period, shipping_order_number, factory_id)
           VALUES (:transaction_number, :transaction_type, :source_type, :source_number,
             :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number,
             :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity,
-            :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE(), :accounting_period, :shipping_order_number)`,
+            :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE(), :accounting_period, :shipping_order_number, :factory_id)`,
           {
             replacements: {
               transaction_number: txNum, transaction_type: '出库', source_type: '扫箱码出库',
@@ -897,7 +907,8 @@ export const shippingBoxOutbound = async (req: Request, res: Response, next: Nex
               batch_number: primaryBatch,
               operator: op, remark: remark || `扫箱码出库 ${boxNumber}`,
               quality_status: '合格品', accounting_period: accountingPeriod,
-              shipping_order_number: shipping_order_number || ''
+              shipping_order_number: shipping_order_number || '',
+              factory_id: _factoryId
             },
             transaction
           }
@@ -981,6 +992,8 @@ export const getBoxInventory = async (req: Request, res: Response, next: NextFun
 
 export const unpackPackingOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const { packingNumber } = req.params;
     const { remark } = req.body || {};
     const [headers]: any = await sequelize.query(
@@ -993,6 +1006,7 @@ export const unpackPackingOrder = async (req: Request, res: Response, next: Next
 
     const transaction = await sequelize.transaction();
     try {
+      const factoryCode = await getFactoryCode(req);
       const [outBoxes]: any = await sequelize.query(
         `SELECT box_number FROM packing_box_inventory WHERE packing_number = :pn AND status = N'已出库'`,
         { replacements: { pn: packingNumber }, transaction }
@@ -1036,10 +1050,10 @@ export const unpackPackingOrder = async (req: Request, res: Response, next: Next
             { replacements: { item_number: headers[0].item_number, wn: headers[0].warehouse_number }, transaction }
           );
           const beforeQty = summaryRow.length > 0 ? Number(summaryRow[0].quantity) : 0;
-          const txNum = await generateTransactionNumber(transaction);
+          const txNum = await generateTransactionNumber(factoryCode, transaction);
           await sequelize.query(
-            `INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number, item_number, item_name, specifications, basic_unit, product_drawing_number, warehouse_number, warehouse_name, quantity, before_quantity, after_quantity, batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period, shipping_order_number) VALUES (:transaction_number, :transaction_type, :source_type, :source_number, :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number, :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity, :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE(), :accounting_period, :shipping_order_number)`,
-            { replacements: { transaction_number: txNum, transaction_type: '入库', source_type: '整单拆箱', source_number: packingNumber, item_number: headers[0].item_number, item_name: headers[0].item_name || '', specifications: headers[0].specifications || '', basic_unit: headers[0].basic_unit || '', product_drawing_number: '', warehouse_number: headers[0].warehouse_number, warehouse_name: headers[0].warehouse_name || '', quantity: totalRestoredQty, before_quantity: beforeQty, after_quantity: beforeQty, batch_number: primaryBatch, operator: op, remark: remark || `整单拆箱 ${packingNumber}`, quality_status: '合格品', accounting_period: accountingPeriod, shipping_order_number: '' }, transaction }
+            `INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number, item_number, item_name, specifications, basic_unit, product_drawing_number, warehouse_number, warehouse_name, quantity, before_quantity, after_quantity, batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period, shipping_order_number, factory_id) VALUES (:transaction_number, :transaction_type, :source_type, :source_number, :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number, :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity, :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE(), :accounting_period, :shipping_order_number, :factory_id)`,
+            { replacements: { transaction_number: txNum, transaction_type: '入库', source_type: '整单拆箱', source_number: packingNumber, item_number: headers[0].item_number, item_name: headers[0].item_name || '', specifications: headers[0].specifications || '', basic_unit: headers[0].basic_unit || '', product_drawing_number: '', warehouse_number: headers[0].warehouse_number, warehouse_name: headers[0].warehouse_name || '', quantity: totalRestoredQty, before_quantity: beforeQty, after_quantity: beforeQty, batch_number: primaryBatch, operator: op, remark: remark || `整单拆箱 ${packingNumber}`, quality_status: '合格品', accounting_period: accountingPeriod, shipping_order_number: '', factory_id: _factoryId }, transaction }
           );
           for (const bt of labels) {
             await sequelize.query(
@@ -1065,6 +1079,8 @@ export const unpackPackingOrder = async (req: Request, res: Response, next: Next
 
 export const unpackBoxes = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const { box_numbers, warehouse_number, remark } = req.body || {};
     if (!box_numbers || !Array.isArray(box_numbers) || box_numbers.length === 0) {
       res.status(400).json({ success: false, message: '请提供要拆箱的箱号列表' }); return;
@@ -1073,6 +1089,7 @@ export const unpackBoxes = async (req: Request, res: Response, next: NextFunctio
 
     const transaction = await sequelize.transaction();
     try {
+      const factoryCode = await getFactoryCode(req);
       const op = (req as any).user?.username || 'system';
       const now = new Date();
       const accountingPeriod = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
@@ -1108,7 +1125,7 @@ export const unpackBoxes = async (req: Request, res: Response, next: NextFunctio
         await sequelize.query(`UPDATE packing_box_inventory SET status = N'已拆箱', last_updated = GETDATE() WHERE box_number = :bn`, { replacements: { bn: boxNumber }, transaction });
         await sequelize.query(`UPDATE packing_box SET status = N'已拆箱' WHERE box_number = :bn`, { replacements: { bn: boxNumber }, transaction });
 
-        const txNum = await generateTransactionNumber(transaction);
+        const txNum = await generateTransactionNumber(factoryCode, transaction);
         const unpackQty = Number(boxInv.total_quantity);
         const [summaryRow]: any = await sequelize.query(
           `SELECT id, quantity FROM finished_goods_inventory WHERE item_number = :item_number AND warehouse_number = :wn AND quality_status = N'合格品'`,
@@ -1118,8 +1135,8 @@ export const unpackBoxes = async (req: Request, res: Response, next: NextFunctio
         const primaryBatch = boxLabels.length > 0 ? boxLabels[0].batch_number : (boxInv.batch_numbers || '').split(',')[0] || '';
 
         await sequelize.query(
-          `INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number, item_number, item_name, specifications, basic_unit, product_drawing_number, warehouse_number, warehouse_name, quantity, before_quantity, after_quantity, batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period, shipping_order_number) VALUES (:transaction_number, :transaction_type, :source_type, :source_number, :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number, :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity, :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE(), :accounting_period, :shipping_order_number)`,
-          { replacements: { transaction_number: txNum, transaction_type: '入库', source_type: '逐箱拆箱', source_number: boxNumber, item_number: boxInv.item_number, item_name: boxInv.item_name || '', specifications: boxInv.specifications || '', basic_unit: boxInv.basic_unit || '', product_drawing_number: '', warehouse_number, warehouse_name: boxInv.warehouse_name || '', quantity: unpackQty, before_quantity: beforeQty, after_quantity: beforeQty, batch_number: primaryBatch, operator: op, remark: remark || `逐箱拆箱 ${boxNumber}`, quality_status: '合格品', accounting_period: accountingPeriod, shipping_order_number: '' }, transaction }
+          `INSERT INTO inventory_transaction (transaction_number, transaction_type, source_type, source_number, item_number, item_name, specifications, basic_unit, product_drawing_number, warehouse_number, warehouse_name, quantity, before_quantity, after_quantity, batch_number, operator, operation_date, remark, quality_status, creation_date, accounting_period, shipping_order_number, factory_id) VALUES (:transaction_number, :transaction_type, :source_type, :source_number, :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number, :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity, :batch_number, :operator, GETDATE(), :remark, :quality_status, GETDATE(), :accounting_period, :shipping_order_number, :factory_id)`,
+          { replacements: { transaction_number: txNum, transaction_type: '入库', source_type: '逐箱拆箱', source_number: boxNumber, item_number: boxInv.item_number, item_name: boxInv.item_name || '', specifications: boxInv.specifications || '', basic_unit: boxInv.basic_unit || '', product_drawing_number: '', warehouse_number, warehouse_name: boxInv.warehouse_name || '', quantity: unpackQty, before_quantity: beforeQty, after_quantity: beforeQty, batch_number: primaryBatch, operator: op, remark: remark || `逐箱拆箱 ${boxNumber}`, quality_status: '合格品', accounting_period: accountingPeriod, shipping_order_number: '', factory_id: _factoryId }, transaction }
         );
 
         for (const bl of boxLabels) {

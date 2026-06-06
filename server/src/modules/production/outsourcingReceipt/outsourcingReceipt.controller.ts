@@ -6,6 +6,7 @@ import { generateBatchNumber, generateMaterialTxnNumber, syncMaterialInventorySu
 import { fifoDeductBatches, upsertMaterialInventory, createMaterialTransaction } from '@/services/warehouse/helpers';
 import { logLinesideMovement } from '@/services/linesideMovement.service';
 import dayjs from 'dayjs';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 export { generateOutsourcingReceiptNumber } from '@/services/documentNumber.service';
 
@@ -25,6 +26,12 @@ export const getOutsourcingReceipts = async (req: Request, res: Response, next: 
       replacements.search = `%${search}%`;
     }
     if (status) { conditions.push(`status = :status`); replacements.status = status; }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
+    }
 
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
     const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM outsourcing_receipt ${whereClause}`, { replacements });
@@ -60,6 +67,8 @@ export const getOutsourcingReceiptDetail = async (req: Request, res: Response, n
 // ==================== 创建 ====================
 export const createOutsourcingReceipt = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.outsourcing_order_number) { res.status(400).json({ success: false, message: '委外订单号不能为空' }); return; }
 
@@ -68,17 +77,18 @@ export const createOutsourcingReceipt = async (req: Request, res: Response, next
 
     const transaction = await sequelize.transaction();
     try {
-      const receiptNumber = await generateOutsourcingReceiptNumber(transaction);
+      const factoryCode = await getFactoryCode(req);
+      const receiptNumber = await generateOutsourcingReceiptNumber(factoryCode, transaction);
 
       await sequelize.query(`
         INSERT INTO outsourcing_receipt (
           receipt_number, outsourcing_order_number, receipt_date,
           warehouse_number, warehouse_name, handler,
-          inspection_status, status, remark, creation_date, creation_man
+          inspection_status, status, remark, factory_id, creation_date, creation_man
         ) VALUES (
           :receiptNumber, :outsourcing_order_number, :receipt_date,
           :warehouse_number, :warehouse_name, :handler,
-          N'待检验', N'草稿', :remark, :creation_date, :creation_man
+          N'待检验', N'草稿', :remark, :factory_id, :creation_date, :creation_man
         )
       `, {
         replacements: {
@@ -89,6 +99,7 @@ export const createOutsourcingReceipt = async (req: Request, res: Response, next
           warehouse_name: b.warehouse_name || '',
           handler: b.handler || '',
           remark: b.remark || '',
+          factory_id: _factoryId,
           creation_date: now,
           creation_man: username
         },
@@ -133,6 +144,7 @@ export const createOutsourcingReceipt = async (req: Request, res: Response, next
 // ==================== 确认收回（根据物料来料检验字段分流：需检验→入待检仓+创建质检单；免检→直接入库到下道线边仓） ====================
 export const confirmReceipt = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const { id } = req.params;
     const [check]: any = await sequelize.query(`SELECT * FROM outsourcing_receipt WHERE receipt_number = :id`, { replacements: { id } });
     if (!check.length) { res.status(404).json({ success: false, message: '委外收回单不存在' }); return; }
@@ -157,6 +169,8 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
 
     const transaction = await sequelize.transaction();
     try {
+      const factoryCode = await getFactoryCode(req);
+      const _factoryId = getFactoryId(req);
       const operator = (req as any).user?.username || '';
       const inspWhNumber = check[0].inspection_warehouse_number || check[0].warehouse_number || 'INSP_WH';
       const inspWhName = check[0].inspection_warehouse_name || check[0].warehouse_name || '待检仓';
@@ -177,9 +191,9 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
           if (recvQty <= 0) continue;
 
           // 1. 生成批次号，写入 material_batch_inventory（待检仓）
-          const batchNo = await generateBatchNumber('MB', transaction);
+          const batchNo = await generateBatchNumber('MB', factoryCode, transaction);
           await sequelize.query(
-            `INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, inbound_date, status, creation_date, last_updated) VALUES (:batch_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, GETDATE(), N'正常', GETDATE(), GETDATE())`,
+            `INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, inbound_date, status, creation_date, last_updated, factory_id) VALUES (:batch_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, GETDATE(), N'正常', GETDATE(), GETDATE(), :factory_id)`,
             {
               replacements: {
                 batch_number: batchNo,
@@ -190,6 +204,7 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
                 warehouse_number: inspWhNumber,
                 warehouse_name: inspWhName,
                 quantity: recvQty,
+                factory_id: _factoryId
               },
               transaction
             }
@@ -208,7 +223,7 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
           }, transaction);
 
           // 3. 记录 material_inventory_transaction 入库流水
-          const txNum = await generateMaterialTxnNumber(transaction);
+          const txNum = await generateMaterialTxnNumber(factoryCode, transaction);
           await createMaterialTransaction({
             transaction_number: txNum,
             transaction_type: '入库',
@@ -232,7 +247,7 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
         }
 
         // 创建委外质检单（仅包含需检验物料）
-        inspectionNumber = await generateOutsourcingInspectionNumber(transaction);
+        inspectionNumber = await generateOutsourcingInspectionNumber(factoryCode, transaction);
         await sequelize.query(`
           INSERT INTO outsourcing_inspection (
             inspection_number, receipt_number, outsourcing_order_number,
@@ -282,7 +297,7 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
         const productionOrderNumber = order?.production_order_number || '';
 
         // 创建回收入库单
-        stockinNumber = await generateOutsourcingReturnStockinNumber(transaction);
+        stockinNumber = await generateOutsourcingReturnStockinNumber(factoryCode, transaction);
         await sequelize.query(`
           INSERT INTO outsourcing_return_stockin (
             stockin_number, outsourcing_order_number, receipt_number, inspection_number,
@@ -348,15 +363,16 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
 
           // 直接入库到下道工序线边仓
           if (nextWhNumber) {
-            const batchNo = await generateBatchNumber('MB', transaction);
+            const batchNo = await generateBatchNumber('MB', factoryCode, transaction);
             await sequelize.query(
-              `INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, production_order_number, inbound_date, status, creation_date, last_updated) VALUES (:batch_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, :production_order_number, GETDATE(), N'正常', GETDATE(), GETDATE())`,
+              `INSERT INTO material_batch_inventory (batch_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, initial_quantity, production_order_number, inbound_date, status, creation_date, last_updated, factory_id) VALUES (:batch_number, :item_number, :item_name, N'半成品', :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :quantity, :production_order_number, GETDATE(), N'正常', GETDATE(), GETDATE(), :factory_id)`,
               {
                 replacements: {
                   batch_number: batchNo, item_number: itemNumber, item_name: itemName,
                   specifications, basic_unit: basicUnit,
                   warehouse_number: nextWhNumber, warehouse_name: nextWhName,
-                  quantity: recvQty, production_order_number: productionOrderNumber
+                  quantity: recvQty, production_order_number: productionOrderNumber,
+                  factory_id: _factoryId
                 },
                 transaction
               }
@@ -368,7 +384,7 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
               deltaQuantity: recvQty,
             }, transaction);
 
-            const txNumIn = await generateMaterialTxnNumber(transaction);
+            const txNumIn = await generateMaterialTxnNumber(factoryCode, transaction);
             await createMaterialTransaction({
               transaction_number: txNumIn,
               transaction_type: '入库',
@@ -481,6 +497,7 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
 // ==================== 追加回收（分批回收：为同一委外订单创建新的回收申请） ====================
 export const appendReceipt = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     const b = req.body;
     if (!b.outsourcing_order_number) { res.status(400).json({ success: false, message: '委外订单号不能为空' }); return; }
     if (!b.receipt_quantity || parseFloat(b.receipt_quantity) <= 0) { res.status(400).json({ success: false, message: '追加回收数量必须大于0' }); return; }
@@ -528,7 +545,8 @@ export const appendReceipt = async (req: Request, res: Response, next: NextFunct
 
     const transaction = await sequelize.transaction();
     try {
-      const receiptNumber = await generateOutsourcingReceiptNumber(transaction);
+      const factoryCode = await getFactoryCode(req);
+      const receiptNumber = await generateOutsourcingReceiptNumber(factoryCode, transaction);
 
       // 创建回收申请
       await sequelize.query(`

@@ -3,6 +3,7 @@ import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { exportToExcel } from '../../../utils/excel.util';
 import { APPROVAL_STATUS } from '@/shared/constants/statuses';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ========== 主表 CRUD ==========
 
@@ -13,6 +14,7 @@ export const getInspectionSpecs = async (req: Request, res: Response, next: Next
     const search = (req.query.search as string) || '';
     const spec_type = (req.query.spec_type as string) || '';
 
+    const _factoryId = getFactoryId(req);
     const conditions: string[] = [];
     const replacements: any = {};
     if (search) {
@@ -22,6 +24,10 @@ export const getInspectionSpecs = async (req: Request, res: Response, next: Next
     if (spec_type) {
       conditions.push(`spec_type = :spec_type`);
       replacements.spec_type = spec_type;
+    }
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
     }
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
@@ -66,10 +72,13 @@ export const getInspectionSpecs = async (req: Request, res: Response, next: Next
 
 export const getInspectionSpecDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const { id } = req.params;
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM inspection_spec WHERE spec_name = :id`,
-      { replacements: { id } }
+      `SELECT * FROM inspection_spec WHERE spec_name = :id${factoryCond}`,
+      { replacements: { id, ...factoryReps } }
     );
     if (!headers.length) {
       res.status(404).json({ success: false, message: '检验规范不存在' });
@@ -85,6 +94,7 @@ export const getInspectionSpecDetail = async (req: Request, res: Response, next:
 
 export const createInspectionSpec = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.spec_name) {
       res.status(400).json({ success: false, message: '检验规范名称不能为空' });
@@ -94,15 +104,16 @@ export const createInspectionSpec = async (req: Request, res: Response, next: Ne
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`
-        INSERT INTO inspection_spec (spec_name, defect_categories, creation_man, spec_type, enable_quality_chars)
-        VALUES (:spec_name, :defect_categories, :creation_man, :spec_type, :enable_quality_chars)
+        INSERT INTO inspection_spec (spec_name, defect_categories, creation_man, spec_type, enable_quality_chars, factory_id)
+        VALUES (:spec_name, :defect_categories, :creation_man, :spec_type, :enable_quality_chars, :factory_id)
       `, {
         replacements: {
           spec_name: b.spec_name,
           defect_categories: b.defect_categories || '',
           creation_man,
           spec_type: b.spec_type || '来料',
-          enable_quality_chars: b.enable_quality_chars || 'N'
+          enable_quality_chars: b.enable_quality_chars || 'N',
+          factory_id: _factoryId
         },
         transaction
       });
@@ -156,16 +167,19 @@ export const createInspectionSpec = async (req: Request, res: Response, next: Ne
 
 export const updateInspectionSpec = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const { id } = req.params;
-    const [chk]: any = await sequelize.query(`SELECT approval_status FROM inspection_spec WHERE spec_name = :id`, { replacements: { id } });
+    const [chk]: any = await sequelize.query(`SELECT approval_status FROM inspection_spec WHERE spec_name = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (chk.length && (chk[0].approval_status || '').trim() === APPROVAL_STATUS.APPROVED) { res.status(403).json({ success: false, message: '已审核的记录不允许编辑，请先撤消审核' }); return; }
     const b = req.body;
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`
-        UPDATE inspection_spec SET defect_categories = :defect_categories, enable_quality_chars = :enable_quality_chars WHERE spec_name = :id
+        UPDATE inspection_spec SET defect_categories = :defect_categories, enable_quality_chars = :enable_quality_chars WHERE spec_name = :id${factoryCond}
       `, {
-        replacements: { id, defect_categories: b.defect_categories || '', enable_quality_chars: b.enable_quality_chars || 'N' },
+        replacements: { id, defect_categories: b.defect_categories || '', enable_quality_chars: b.enable_quality_chars || 'N', ...factoryReps },
         transaction
       });
 
@@ -222,8 +236,11 @@ export const updateInspectionSpec = async (req: Request, res: Response, next: Ne
 
 export const deleteInspectionSpec = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const { id } = req.params;
-    const [chk]: any = await sequelize.query(`SELECT approval_status FROM inspection_spec WHERE spec_name = :id`, { replacements: { id } });
+    const [chk]: any = await sequelize.query(`SELECT approval_status FROM inspection_spec WHERE spec_name = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (chk.length && (chk[0].approval_status || '').trim() === APPROVAL_STATUS.APPROVED) { res.status(403).json({ success: false, message: '已审核的记录不允许删除，请先撤消审核' }); return; }
     const transaction = await sequelize.transaction();
     try {
@@ -232,8 +249,8 @@ export const deleteInspectionSpec = async (req: Request, res: Response, next: Ne
         { replacements: { id }, transaction }
       );
       await sequelize.query(
-        `DELETE FROM inspection_spec WHERE spec_name = :id`,
-        { replacements: { id }, transaction }
+        `DELETE FROM inspection_spec WHERE spec_name = :id${factoryCond}`,
+        { replacements: { id, ...factoryReps }, transaction }
       );
       await transaction.commit();
       res.json(success(null, '删除检验规范成功'));
@@ -246,6 +263,9 @@ export const deleteInspectionSpec = async (req: Request, res: Response, next: Ne
 
 export const exportInspectionSpecs = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? 'AND h.factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [rows]: any = await sequelize.query(`
       SELECT h.spec_name, h.defect_categories,
         d.item_type, d.char_name, d.char_category, d.inspect_requirement,
@@ -254,8 +274,9 @@ export const exportInspectionSpecs = async (req: Request, res: Response, next: N
         d.default_result, d.default_value, d.is_required, d.required_range
       FROM inspection_spec h
       LEFT JOIN inspection_spec_item d ON h.spec_name = d.spec_name
+      WHERE 1=1 ${factoryCond}
       ORDER BY h.spec_name, d.sort_order, d.id
-    `);
+    `, { replacements: factoryReps });
 
     const fields = ['spec_name', 'defect_categories', 'item_type', 'char_name', 'char_category',
       'inspect_requirement', 'data_type', 'allow_multiple', 'upper_limit', 'standard_value', 'lower_limit',
@@ -382,16 +403,22 @@ export const deleteInspectionSpecItem = async (req: Request, res: Response, next
 
 export const approveInspectionSpec = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const { id } = req.params;
-    await sequelize.query(`UPDATE inspection_spec SET approval_status = N'已审核' WHERE spec_name = :id`, { replacements: { id } });
+    await sequelize.query(`UPDATE inspection_spec SET approval_status = N'已审核' WHERE spec_name = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     res.json(success(null, '审核成功'));
   } catch (err) { next(err); }
 };
 
 export const withdrawInspectionSpec = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const { id } = req.params;
-    await sequelize.query(`UPDATE inspection_spec SET approval_status = N'未审核' WHERE spec_name = :id`, { replacements: { id } });
+    await sequelize.query(`UPDATE inspection_spec SET approval_status = N'未审核' WHERE spec_name = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     res.json(success(null, '已撤消审核'));
   } catch (err) { next(err); }
 };

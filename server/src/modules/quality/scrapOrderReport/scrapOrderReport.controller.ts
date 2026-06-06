@@ -1,11 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 function buildWhere(req: Request, dateField: string, extraClause = '') {
   const { start_date, end_date, search } = req.query;
   let where = `WHERE si.stock_in_type = N'报废入库'${extraClause}`;
   const reps: any = {};
+  const _factoryId = getFactoryId(req);
+  if (_factoryId !== null) { where += ` AND si.factory_id = :_factoryId`; reps._factoryId = _factoryId; }
   if (start_date) { where += ` AND si.${dateField} >= :start_date`; reps.start_date = start_date; }
   if (end_date) { where += ` AND si.${dateField} <= :end_date`; reps.end_date = end_date; }
   if (search) { where += ` AND (si.stock_in_number LIKE :search OR si.warehouse_name LIKE :search)`; reps.search = `%${search}%`; }

@@ -4,10 +4,12 @@ import { success } from '../../../utils/response.util';
 import { exportToExcel, parseExcelFile } from '../../../utils/excel.util';
 import dayjs from 'dayjs';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
+import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 // ==================== 编号生成 ====================
-const generatePriceListNumber = async (): Promise<string> => {
+const generatePriceListNumber = async (factoryCode: string = ''): Promise<string> => {
   const today = dayjs().format('YYYYMMDD');
+  const fc = factoryCode ? `-${factoryCode.toUpperCase()}` : '';
   const prefix = `PP-${today}-`;
   const [rows]: any = await sequelize.query(
     `SELECT MAX(price_list_number) as max_num FROM purchase_price_list WHERE price_list_number LIKE :prefix`,
@@ -39,6 +41,12 @@ export const getPurchasePriceLists = async (req: Request, res: Response, next: N
     if (approval_status) {
       conditions.push(`approval_status = :approval_status`);
       replacements.approval_status = approval_status;
+    }
+
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      conditions.push(`factory_id = :_factoryId`);
+      replacements._factoryId = _factoryId;
     }
 
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -88,10 +96,12 @@ export const getPurchasePriceListDetail = async (req: Request, res: Response, ne
 // ==================== 创建 ====================
 export const createPurchasePriceList = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.price_list_name) { res.status(400).json({ success: false, message: '价目表名称不能为空' }); return; }
 
-    const price_list_number = await generatePriceListNumber();
+    const price_list_number = await generatePriceListNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const creation_man = (req as any).user?.username || '';
 
@@ -100,10 +110,10 @@ export const createPurchasePriceList = async (req: Request, res: Response, next:
       await sequelize.query(`
         INSERT INTO purchase_price_list (price_list_number, price_list_name, supplier_number, supplier_name,
           supplier_category, effective_date, expiration_date, price_type, currency,
-          approval_status, remark, creation_date, creation_man)
+          approval_status, remark, factory_id, creation_date, creation_man)
         VALUES (:price_list_number, :price_list_name, :supplier_number, :supplier_name,
           :supplier_category, :effective_date, :expiration_date, :price_type, :currency,
-          N'草稿', :remark, :creation_date, :creation_man)
+          N'草稿', :remark, :factory_id, :creation_date, :creation_man)
       `, {
         replacements: {
           price_list_number,
@@ -116,6 +126,7 @@ export const createPurchasePriceList = async (req: Request, res: Response, next:
           price_type: b.price_type || '含税',
           currency: b.currency || 'CNY',
           remark: b.remark || '',
+          factory_id: b.factory_id || _factoryId,
           creation_date: now,
           creation_man
         },
@@ -345,6 +356,7 @@ export const downloadImportTemplate = async (req: Request, res: Response, next: 
 
 export const importPurchasePriceList = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const factoryCode = await getFactoryCode(req);
     if (!req.file) { res.status(400).json({ success: false, message: '请上传Excel文件' }); return; }
 
     // 解析Excel：前2行为主表信息，第3行空行，第4行起为明细列头+数据
@@ -380,19 +392,20 @@ export const importPurchasePriceList = async (req: Request, res: Response, next:
     if (!excelEffectiveDate) { res.status(400).json({ success: false, message: '生效日期不能为空，请在Excel第2行第5列填写' }); return; }
     if (!excelExpirationDate) { res.status(400).json({ success: false, message: '失效日期不能为空，请在Excel第2行第6列填写' }); return; }
 
-    const price_list_number = await generatePriceListNumber();
+    const price_list_number = await generatePriceListNumber(factoryCode);
     const now = dayjs().format('YYYY/MM/DD HH:mm');
     const creation_man = (req as any).user?.username || '';
+    const _factoryId = getFactoryId(req);
 
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`
         INSERT INTO purchase_price_list (price_list_number, price_list_name, supplier_number, supplier_name,
           supplier_category, effective_date, expiration_date, price_type, currency,
-          approval_status, remark, creation_date, creation_man)
+          approval_status, remark, factory_id, creation_date, creation_man)
         VALUES (:price_list_number, :price_list_name, :supplier_number, :supplier_name,
           :supplier_category, :effective_date, :expiration_date, :price_type, :currency,
-          N'草稿', :remark, :creation_date, :creation_man)
+          N'草稿', :remark, :factory_id, :creation_date, :creation_man)
       `, {
         replacements: {
           price_list_number,
@@ -405,6 +418,7 @@ export const importPurchasePriceList = async (req: Request, res: Response, next:
           price_type: excelPriceType || '含税',
           currency: excelCurrency || 'CNY',
           remark: excelRemark,
+          factory_id: _factoryId,
           creation_date: now,
           creation_man
         },

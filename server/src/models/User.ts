@@ -7,13 +7,14 @@ interface UserAttributes {
   email: string;
   password: string;
   real_name: string;
-  role: 'admin' | 'manager' | 'staff' | 'sales';
+  role: 'admin' | 'manager' | 'staff' | 'sales' | 'headquarters_admin' | 'headquarters_manager' | 'headquarters_finance' | 'headquarters_quality' | 'headquarters_sales';
   department?: string;
   employee_number?: string;
   employee_name?: string;
   phone?: string;
   avatar?: string;
   status: 'active' | 'inactive' | 'disabled';
+  default_factory_id?: number | null;
   failed_login_attempts?: number;
   locked_until?: Date | null;
   phone_verified?: boolean;
@@ -29,13 +30,14 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
   public email!: string;
   public password!: string;
   public real_name!: string;
-  public role!: 'admin' | 'manager' | 'staff' | 'sales';
+  public role!: 'admin' | 'manager' | 'staff' | 'sales' | 'headquarters_admin' | 'headquarters_manager' | 'headquarters_finance' | 'headquarters_quality' | 'headquarters_sales';
   public department?: string;
   public employee_number?: string;
   public employee_name?: string;
   public phone?: string;
   public avatar?: string;
   public status!: 'active' | 'inactive';
+  public default_factory_id?: number | null;
   public failed_login_attempts?: number;
   public locked_until?: Date | null;
   public phone_verified?: boolean;
@@ -73,7 +75,7 @@ User.init(
       allowNull: false,
       defaultValue: 'staff',
       validate: {
-        isIn: [['admin', 'manager', 'staff', 'sales']]
+        isIn: [['admin', 'manager', 'staff', 'sales', 'headquarters_admin', 'headquarters_manager', 'headquarters_finance', 'headquarters_quality', 'headquarters_sales']]
       }
     },
     department: {
@@ -103,6 +105,12 @@ User.init(
       validate: {
         isIn: [['active', 'inactive', 'disabled']]
       }
+    },
+    default_factory_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null,
+      comment: '默认工厂ID，NULL表示未分配'
     },
     failed_login_attempts: {
       type: DataTypes.INTEGER,

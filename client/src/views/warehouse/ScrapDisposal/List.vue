@@ -35,6 +35,7 @@ const pagination = reactive({
 })
 
 const disposalColumns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '处置单号', dataIndex: 'disposal_number', key: 'disposal_number', width: 170 },
   { title: '仓库', dataIndex: 'warehouse_name', key: 'warehouse_name', width: 120 },
   { title: '处置原因', dataIndex: 'disposal_reason', key: 'disposal_reason', width: 200, ellipsis: true },

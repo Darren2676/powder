@@ -5,6 +5,7 @@ import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, ExclamationCircleOutlined, DownloadOutlined, UploadOutlined, PlusOutlined, DownOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer, exportCustomers, importCustomers, updateCustomerCondition, approveCustomer, withdrawCustomer } from '@/api/master-data/customer'
 import { getUsers } from '@/api/system/user'
+import { getFactories } from '@/api/system/factory'
 import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -45,6 +46,7 @@ interface Customer {
   invoice_title: string
   tax_id: string
   payment_terms: string
+  factory_id?: number | null
 }
 
 const { loading, dataSource, searchText, selectedRowKeys, pagination, rowSelection, fetchData, handleTableChange, handleSearch, handleReset } = useTableList<Customer>(getCustomers)
@@ -55,7 +57,8 @@ const emptyForm = (): Customer => ({
   region: '', region2: '', region3: '', region4: '', detail_address: '', zip_code: '',
   telephone: '', fax: '', linkman: '', area_code: '', contacts: '', email: '', contact_remark: '',
   bank_account_name: '', bank_name: '', bank_account_number: '',
-  invoice_address: '', invoice_phone: '', invoice_title: '', tax_id: '', payment_terms: ''
+  invoice_address: '', invoice_phone: '', invoice_title: '', tax_id: '', payment_terms: '',
+  factory_id: null
 })
 
 const editModalVisible = ref(false)
@@ -68,6 +71,16 @@ const loadSalesUsers = async () => {
     const res: any = await getUsers({ limit: 9999, status: 'active' })
     if (res.success) {
       salesUserList.value = (res.data.items || []).map((u: any) => ({ id: u.id, real_name: u.real_name, username: u.username }))
+    }
+  } catch (e) { /* ignore */ }
+}
+// 工厂列表
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) {
+      factoryList.value = res.data.items || []
     }
   } catch (e) { /* ignore */ }
 }
@@ -88,6 +101,7 @@ const importLoading = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '客户编号', dataIndex: 'customer_number', key: 'customer_number', width: 120, resizable: true },
   { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 200, resizable: true },
   { title: '状态', dataIndex: 'condition', key: 'condition', width: 80, resizable: true },
@@ -253,6 +267,7 @@ onMounted(() => {
   loadColumnPreference()
   fetchData()
   loadSalesUsers()
+  loadFactories()
 })
 </script>
 
@@ -331,6 +346,7 @@ onMounted(() => {
         <a-row :gutter="12">
           <a-col :span="6"><a-form-item label="销售税率"><a-input-number v-model:value="createForm.sales_tax_rate" :precision="4" style="width: 100%" /></a-form-item></a-col>
           <a-col :span="6"><a-form-item label="付款条件"><a-input v-model:value="createForm.payment_terms" placeholder="请输入" /></a-form-item></a-col>
+          <a-col :span="6"><a-form-item label="所属工厂"><a-select v-model:value="createForm.factory_id" placeholder="请选择" allow-clear><a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option></a-select></a-form-item></a-col>
         </a-row>
         <a-divider orientation="left" style="margin: 8px 0 12px">地址信息</a-divider>
         <a-row :gutter="12">
@@ -389,6 +405,7 @@ onMounted(() => {
         <a-row :gutter="12">
           <a-col :span="6"><a-form-item label="销售税率"><a-input-number v-model:value="editForm.sales_tax_rate" :precision="4" style="width: 100%" /></a-form-item></a-col>
           <a-col :span="6"><a-form-item label="付款条件"><a-input v-model:value="editForm.payment_terms" /></a-form-item></a-col>
+          <a-col :span="6"><a-form-item label="所属工厂"><a-select v-model:value="editForm.factory_id" placeholder="请选择" allow-clear><a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option></a-select></a-form-item></a-col>
         </a-row>
         <a-divider orientation="left" style="margin: 8px 0 12px">地址信息</a-divider>
         <a-row :gutter="12">

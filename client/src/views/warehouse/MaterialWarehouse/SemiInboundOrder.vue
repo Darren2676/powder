@@ -109,6 +109,7 @@ const detailColumns = [
   { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 120 },
   { title: '单位', dataIndex: 'basic_unit', key: 'basic_unit', width: 60 },
   { title: '批次号', dataIndex: 'batch_number', key: 'batch_number', width: 150 },
+  { title: '生产日期', dataIndex: 'production_date', key: 'production_date', width: 110 },
   { title: '计划数量', dataIndex: 'planned_quantity', key: 'planned_quantity', width: 100, align: 'right' as const },
   { title: '入库数量', dataIndex: 'inbound_quantity', key: 'inbound_quantity', width: 100, align: 'right' as const },
   { title: '流水号', dataIndex: 'transaction_number', key: 'transaction_number', width: 160 }
@@ -246,6 +247,9 @@ onMounted(() => {
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'inbound_quantity'">
               <span style="color: #52c41a; font-weight: 600">{{ record.inbound_quantity }}</span>
+            </template>
+            <template v-else-if="column.key === 'production_date'">
+              {{ record.production_date ? dayjs(record.production_date).format('YYYY-MM-DD') : '-' }}
             </template>
           </template>
         </a-table>

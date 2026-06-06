@@ -4,13 +4,30 @@ export interface User {
   username: string;
   email: string;
   real_name: string;
-  role: 'admin' | 'manager' | 'staff' | 'sales';
+  role: 'admin' | 'manager' | 'staff' | 'sales' | 'headquarters_admin' | 'headquarters_manager' | 'headquarters_finance' | 'headquarters_quality' | 'headquarters_sales';
   department?: string;
   phone?: string;
   avatar?: string;
   status: 'active' | 'inactive';
+  default_factory_id?: number | null;
+  accessibleFactories?: FactoryInfo[];
   created_at: string;
   updated_at: string;
+}
+
+// Factory related types
+export interface FactoryInfo {
+  id: number;
+  factory_code: string;
+  factory_name: string;
+  factory_short?: string;
+  address?: string;
+  contact_name?: string;
+  contact_phone?: string;
+  is_headquarters?: boolean;
+  status?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 // Notification related types
