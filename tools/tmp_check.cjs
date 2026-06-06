@@ -1,0 +1,1 @@
+const fs = require("fs")/nconst path = require("path")/nconst p = path.join("Seals MES System", "client", "src", "views", "master-data", "ItemMaster", "List.vue")/nconst raw = fs.readFileSync(p, "utf-8")/nconst c = raw.replace(///r//n/g, "//n")/nconst lines = c.split("//n")/nfor (let i = 106; i < 175; i++) {/n  console.log((i + 1) + ": " + lines[i])/n}/n
