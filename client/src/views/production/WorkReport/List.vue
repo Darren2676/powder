@@ -5,6 +5,7 @@ import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined
 import { getWorkReports, createWorkReport, updateWorkReport, deleteWorkReport, exportWorkReports, importWorkReports, getTasksForReport, getSchedules, getTeams, getEmployees } from '@/api/production/workReport'
 import { useAuthStore } from '@/store/auth'
 import { useRouter } from 'vue-router'
+import { getFactories } from '@/api/system/factory'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -15,10 +16,20 @@ import { submitForApproval, approveRecord, reverseApproval, withdrawApproval, ba
 import dayjs from 'dayjs'
 
 const approvalFilter = ref('')
-const { loading, dataSource, searchText, selectedRowKeys, pagination, fetchData: fetchList, handleTableChange, handleSearch, handleReset } = useTableList(getWorkReports)
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const { loading, dataSource, searchText, selectedRowKeys, pagination, fetchData: fetchList, handleTableChange, handleSearch, handleReset: _handleReset } = useTableList(getWorkReports)
 
-// Override fetchData to pass approvalFilter
-const fetchData = () => fetchList({ approval_status: approvalFilter.value || undefined })
+// Override fetchData to pass approvalFilter + factoryFilter
+const fetchData = () => fetchList({ approval_status: approvalFilter.value || undefined, factory_id: factoryFilter.value || undefined })
+const handleReset = () => { approvalFilter.value = ''; factoryFilter.value = undefined; _handleReset() }
+
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -67,7 +78,7 @@ const handleDelete = (record: any) => {
 const fileInputRef = ref<HTMLInputElement>()
 const handleExport = async () => {
   try {
-    const res = await exportWorkReports(searchText.value || undefined)
+    const res = await exportWorkReports({ search: searchText.value || undefined, factory_id: factoryFilter.value || undefined })
     const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = generateExportFilename('work_reports'); link.click(); URL.revokeObjectURL(link.href)
     message.success('导出成功')
@@ -226,7 +237,7 @@ const handleEditSubmit = async () => {
   finally { editSubmitting.value = false }
 }
 
-onMounted(async () => { await loadColumnPreference(); fetchData() })
+onMounted(async () => { await loadColumnPreference(); fetchData(); loadFactories() })
 
 // ==================== 更多操作 (dropdown) ====================
 const handleMoreAction = async (key: string, record: any) => {
@@ -312,6 +323,9 @@ const handleBatchAction = (action: string) => {
             <a-select-option value="草稿">草稿</a-select-option>
             <a-select-option value="待审批">待审批</a-select-option>
             <a-select-option value="已审批">已审批</a-select-option>
+          </a-select>
+          <a-select v-model:value="factoryFilter" placeholder="工厂" allow-clear style="width: 120px" @change="fetchData">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
           </a-select>
           <a-button @click="handleReset"><template #icon><ReloadOutlined /></template>重置</a-button>
           <a-button @click="handleExport"><template #icon><DownloadOutlined /></template>导出</a-button>

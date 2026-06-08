@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 
-export function getStockIns(params?: { page?: number; limit?: number; search?: string; approval_status?: string }) {
+export function getStockIns(params?: { page?: number; limit?: number; search?: string; approval_status?: string; factory_id?: number }) {
   return request.get('/stock-ins', { params })
 }
 

@@ -10,6 +10,7 @@ import {
   deleteMouldMaintenance, exportMouldMaintenances, importMouldMaintenances
 } from '@/api/equipment/mouldMaintenance'
 import { getMoulds } from '@/api/equipment/mould'
+import { getFactories } from '@/api/system/factory'
 import { generateExportFilename } from '@/utils/exportFilename'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -33,15 +34,26 @@ interface MaintenanceRow {
   remark: string
   created_by: string
   created_at: string
+  factory_id?: number | null
+  factory_short?: string
 }
 
 const searchText = ref('')
 const filterMould = ref('')
 const filterType = ref('')
 const filterDateRange = ref<string[]>([])
+const filterFactoryId = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
 const loading = ref(false)
 const dataSource = ref<MaintenanceRow[]>([])
 const pagination = reactive({ current: 1, pageSize: 20, total: 0 })
+
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 const editModalVisible = ref(false)
 const createModalVisible = ref(false)
@@ -60,7 +72,8 @@ const emptyForm = () => ({
   performed_by: '',
   strokes_reset: false,
   reset_strokes_to: 0,
-  remark: ''
+  remark: '',
+  factory_id: null as number | null,
 })
 const editForm = reactive(emptyForm())
 const createForm = reactive(emptyForm())
@@ -134,7 +147,8 @@ const fetchData = async () => {
       mould_number: filterMould.value || undefined,
       maintenance_type: filterType.value || undefined,
       date_from: filterDateRange.value?.[0] || undefined,
-      date_to: filterDateRange.value?.[1] || undefined
+      date_to: filterDateRange.value?.[1] || undefined,
+      factory_id: filterFactoryId.value !== undefined && filterFactoryId.value !== null ? filterFactoryId.value : undefined,
     }
     const res = await getMouldMaintenances(params)
     dataSource.value = res.data.items
@@ -149,6 +163,7 @@ const handleReset = () => {
   filterMould.value = ''
   filterType.value = ''
   filterDateRange.value = []
+  filterFactoryId.value = undefined
   pagination.current = 1
   fetchData()
 }
@@ -190,7 +205,8 @@ const handleEdit = (record: MaintenanceRow) => {
     performed_by: record.performed_by || '',
     strokes_reset: !!record.strokes_reset,
     reset_strokes_to: record.reset_strokes_to || 0,
-    remark: record.remark || ''
+    remark: record.remark || '',
+    factory_id: (record as any).factory_id ?? null,
   })
   mouldOptions.value = [{ value: record.mould_number, label: `${record.mould_number} - ${record.mould_name || ''}` }]
   currentStrokes.value = record.strokes_at_maintenance || 0
@@ -231,7 +247,8 @@ const handleExport = async () => {
   try {
     const res = await exportMouldMaintenances({
       mould_number: filterMould.value || undefined,
-      maintenance_type: filterType.value || undefined
+      maintenance_type: filterType.value || undefined,
+      factory_id: filterFactoryId.value,
     })
     const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const link = document.createElement('a')
@@ -258,7 +275,7 @@ const handleFileChange = async (event: Event) => {
   finally { target.value = '' }
 }
 
-onMounted(() => { loadColumnPreference(); fetchData() })
+onMounted(() => { loadColumnPreference(); fetchData(); loadFactories() })
 </script>
 
 <template>
@@ -275,6 +292,12 @@ onMounted(() => { loadColumnPreference(); fetchData() })
             <a-select-option value="翻新">翻新</a-select-option>
           </a-select>
           <a-range-picker v-model:value="filterDateRange" style="width: 220px" @change="handleSearch" />
+          <a-select
+            v-model:value="filterFactoryId" placeholder="全部工厂" allow-clear
+            style="width:120px" @change="handleSearch" v-if="factoryList.length > 0"
+          >
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
           <a-button @click="handleReset"><template #icon><ReloadOutlined /></template>重置</a-button>
           <a-button @click="handleExport"><template #icon><DownloadOutlined /></template>导出</a-button>
           <a-button @click="handleImportClick"><template #icon><UploadOutlined /></template>导入</a-button>
@@ -374,6 +397,11 @@ onMounted(() => { loadColumnPreference(); fetchData() })
         <a-form-item label="备注">
           <a-textarea v-model:value="createForm.remark" :rows="2" />
         </a-form-item>
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="createForm.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
+        </a-form-item>
       </a-form>
     </a-modal>
 
@@ -410,6 +438,11 @@ onMounted(() => { loadColumnPreference(); fetchData() })
         </a-form-item>
         <a-form-item label="备注">
           <a-textarea v-model:value="editForm.remark" :rows="2" />
+        </a-form-item>
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="editForm.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
         </a-form-item>
       </a-form>
     </a-modal>

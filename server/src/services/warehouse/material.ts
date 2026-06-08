@@ -97,7 +97,8 @@ export const manualInboundMaterial = async (
         batch_number: batchNo,
         supplier_number: item.supplier_number || '', supplier_name: item.supplier_name || '',
         accounting_period: accountingPeriod,
-        operator, remark: b.remark || ''
+        operator, remark: b.remark || '',
+        factory_id: _factoryId
       }, transaction);
     }
 
@@ -185,7 +186,8 @@ export const productionInboundMaterial = async (
         batch_number: batchNo,
         supplier_number: '', supplier_name: '',
         accounting_period: prodAP,
-        operator, remark: b.remark || ''
+        operator, remark: b.remark || '',
+        factory_id: _factoryId
       }, transaction);
 
       // 5. 更新生产单入库状态
@@ -251,13 +253,14 @@ export const productionInboundMaterial = async (
     }
 
     await sequelize.query(
-      'INSERT INTO semi_production_inbound_order (inbound_order_number, warehouse_number, warehouse_name, total_quantity, total_items, remark, accounting_period, operator, inbound_date, creation_date) VALUES (:inbound_order_number, :warehouse_number, :warehouse_name, :total_quantity, :total_items, :remark, :accounting_period, :operator, GETDATE(), GETDATE())',
+      'INSERT INTO semi_production_inbound_order (inbound_order_number, warehouse_number, warehouse_name, total_quantity, total_items, remark, accounting_period, operator, factory_id, inbound_date, creation_date) VALUES (:inbound_order_number, :warehouse_number, :warehouse_name, :total_quantity, :total_items, :remark, :accounting_period, :operator, :factory_id, GETDATE(), GETDATE())',
       {
         replacements: {
           inbound_order_number: inboundOrderNo,
           warehouse_number: b.warehouse_number, warehouse_name: b.warehouse_name,
           total_quantity: totalQty, total_items: lineNum,
-          remark: b.remark || '', accounting_period: prodAP, operator
+          remark: b.remark || '', accounting_period: prodAP, operator,
+          factory_id: _factoryId
         }, transaction
       }
     );
@@ -275,7 +278,8 @@ export const manualOutboundMaterial = async (
     accounting_period?: string;
   },
   operator: string,
-  factoryCode: string = ''
+  factoryCode: string = '',
+  _factoryId: number | null = null
 ) => {
   const b = params;
   if (!b.item_number || !b.warehouse_number) {
@@ -347,7 +351,8 @@ export const manualOutboundMaterial = async (
         batch_number: bd.batch_number,
         supplier_number: '', supplier_name: '',
         accounting_period: outboundAP,
-        operator, remark: b.remark || ''
+        operator, remark: b.remark || '',
+        factory_id: _factoryId
       }, transaction);
     }
 
@@ -368,7 +373,8 @@ export const adjustMaterialInventory = async (
     accounting_period?: string;
   },
   operator: string,
-  factoryCode: string = ''
+  factoryCode: string = '',
+  _factoryId: number | null = null
 ) => {
   const b = params;
   if (!b.item_number || !b.warehouse_number || b.adjust_quantity === undefined) {
@@ -430,7 +436,8 @@ export const adjustMaterialInventory = async (
       quantity: Math.abs(adjustQty), before_quantity: beforeQty, after_quantity: afterQty,
       batch_number: '', supplier_number: '', supplier_name: '',
       accounting_period: adjustAP,
-      operator, remark: b.remark || '手动调整'
+      operator, remark: b.remark || '手动调整',
+      factory_id: _factoryId
     }, transaction);
 
     return { transaction_number: txNum };

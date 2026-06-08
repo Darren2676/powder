@@ -34,9 +34,11 @@ export const getPieceRatePrices = async (req: Request, res: Response, next: Next
     const conditions: string[] = [];
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       conditions.push(`h.factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (search) {
@@ -62,9 +64,12 @@ export const getPieceRatePrices = async (req: Request, res: Response, next: Next
                CONVERT(VARCHAR(10), h.effective_date, 23) as effective_date,
                CONVERT(VARCHAR(10), h.expiration_date, 23) as expiration_date,
                h.approval_status, h.remark, h.creation_date, h.creation_man,
+               f.factory_name, f.factory_short,
                (SELECT COUNT(*) FROM piece_rate_price_detail d WHERE d.price_list_number = h.price_list_number) as detail_count,
                ROW_NUMBER() OVER (ORDER BY h.creation_date DESC, h.price_list_number DESC) AS _row_num
-        FROM piece_rate_price_header h ${whereClause}
+        FROM piece_rate_price_header h
+        LEFT JOIN factory f ON h.factory_id = f.id
+        ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
@@ -83,12 +88,15 @@ export const getPieceRatePriceDetail = async (req: Request, res: Response, next:
   try {
     const { id } = req.params;
     const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
     const [headers]: any = await sequelize.query(
       `SELECT price_list_number, price_list_name,
               CONVERT(VARCHAR(10), effective_date, 23) as effective_date,
               CONVERT(VARCHAR(10), expiration_date, 23) as expiration_date,
-              approval_status, remark, creation_date, creation_man
-       FROM piece_rate_price_header WHERE price_list_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } }
+              approval_status, remark, creation_date, creation_man,
+              factory_id
+       FROM piece_rate_price_header WHERE price_list_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '计件单价表不存在' }); return; }
     const [details]: any = await sequelize.query(
@@ -190,9 +198,12 @@ export const updatePieceRatePrice = async (req: Request, res: Response, next: Ne
   try {
     const { id } = req.params;
     const b = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
 
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM piece_rate_price_header WHERE price_list_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM piece_rate_price_header WHERE price_list_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '计件单价表不存在' }); return; }
     if (chk[0].approval_status !== ORDER_STATUS.DRAFT) {
@@ -205,15 +216,17 @@ export const updatePieceRatePrice = async (req: Request, res: Response, next: Ne
         UPDATE piece_rate_price_header SET
           price_list_name = :price_list_name,
           effective_date = :effective_date, expiration_date = :expiration_date,
-          remark = :remark
-        WHERE price_list_number = :id
+          remark = :remark, factory_id = :factory_id
+        WHERE price_list_number = :id${factoryCond}
       `, {
         replacements: {
           id,
           price_list_name: b.price_list_name || '',
           effective_date: b.effective_date || null,
           expiration_date: b.expiration_date || null,
-          remark: b.remark || ''
+          remark: b.remark || '',
+          factory_id: b.factory_id || null,
+          ...factoryReps
         },
         transaction
       });
@@ -300,11 +313,22 @@ export const deletePieceRatePrice = async (req: Request, res: Response, next: Ne
 };
 
 // ==================== 导出 ====================
-const exportFields = ['price_list_number', 'price_list_name', 'item_number', 'item_name', 'standard_process_number', 'standard_process_name', 'item_category', 'equipment_number', 'equipment_name', 'employee_number', 'employee_name', 'custom_field', 'qualified_piece_rate', 'defective_piece_rate', 'drawing_number', 'version', 'specifications', 'material_type', 'approval_status'];
-const exportHeaders = ['价目表编号', '价目表名称', '物料编号', '物料名称', '工序编号', '工序名称', '物料分类', '设备编号', '设备名称', '人员编号', '人员名称', '自定义项', '合格品计件单价', '次品计件单价', '图号', '版本', '规格', '材质', '审批状态'];
+const exportFields = ['price_list_number', 'price_list_name', 'item_number', 'item_name', 'standard_process_number', 'standard_process_name', 'item_category', 'equipment_number', 'equipment_name', 'employee_number', 'employee_name', 'custom_field', 'qualified_piece_rate', 'defective_piece_rate', 'drawing_number', 'version', 'specifications', 'material_type', 'approval_status', 'factory_id'];
+const exportHeaders = ['价目表编号', '价目表名称', '物料编号', '物料名称', '工序编号', '工序名称', '物料分类', '设备编号', '设备名称', '人员编号', '人员名称', '自定义项', '合格品计件单价', '次品计件单价', '图号', '版本', '规格', '材质', '审批状态', '所属工厂'];
 
 export const exportPieceRatePrices = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+
+    let whereClause = '';
+    const replacements: any = {};
+    if (effectiveFactoryId !== null) {
+      whereClause = 'WHERE h.factory_id = :_factoryId';
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     const [items]: any = await sequelize.query(`
       SELECT h.price_list_number, h.price_list_name,
              d.item_number, d.item_name, d.standard_process_number, d.standard_process_name,
@@ -312,11 +336,14 @@ export const exportPieceRatePrices = async (req: Request, res: Response, next: N
              d.employee_number, d.employee_name, d.custom_field,
              d.qualified_piece_rate, d.defective_piece_rate,
              d.drawing_number, d.version, d.specifications, d.material_type,
-             h.approval_status
+             h.approval_status,
+             f.factory_short as factory_id
       FROM piece_rate_price_header h
       INNER JOIN piece_rate_price_detail d ON d.price_list_number = h.price_list_number
+      LEFT JOIN factory f ON h.factory_id = f.id
+      ${whereClause}
       ORDER BY h.price_list_number, d.line_number
-    `);
+    `, { replacements });
     exportToExcel(items, exportFields, exportHeaders, 'piece_rate_prices', res);
   } catch (err) { next(err); }
 };
@@ -330,6 +357,14 @@ export const exportPieceRatePricesSelected = async (req: Request, res: Response,
     const placeholders = ids.map((_: any, i: number) => `:id${i}`).join(', ');
     const replacements: any = {};
     ids.forEach((id: string, i: number) => { replacements[`id${i}`] = id; });
+
+    const _factoryId = getFactoryId(req);
+    let factoryCond = '';
+    if (_factoryId !== null) {
+      factoryCond = ' AND h.factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
+    }
+
     const [items]: any = await sequelize.query(`
       SELECT h.price_list_number, h.price_list_name,
              d.item_number, d.item_name, d.standard_process_number, d.standard_process_name,
@@ -337,10 +372,12 @@ export const exportPieceRatePricesSelected = async (req: Request, res: Response,
              d.employee_number, d.employee_name, d.custom_field,
              d.qualified_piece_rate, d.defective_piece_rate,
              d.drawing_number, d.version, d.specifications, d.material_type,
-             h.approval_status
+             h.approval_status,
+             f.factory_short as factory_id
       FROM piece_rate_price_header h
       INNER JOIN piece_rate_price_detail d ON d.price_list_number = h.price_list_number
-      WHERE h.price_list_number IN (${placeholders})
+      LEFT JOIN factory f ON h.factory_id = f.id
+      WHERE h.price_list_number IN (${placeholders})${factoryCond}
       ORDER BY h.price_list_number, d.line_number
     `, { replacements });
     exportToExcel(items, exportFields, exportHeaders, 'piece_rate_prices_selected', res);

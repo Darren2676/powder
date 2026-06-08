@@ -37,9 +37,11 @@ export const getProductionInspections = async (req: Request, res: Response, next
     const conditions: string[] = [];
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
-      conditions.push(`factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      conditions.push(`pi.factory_id = :_factoryId`);
+      replacements._factoryId = effectiveFactoryId;
     }
     if (search) {
       conditions.push(`(inspection_number LIKE :search OR production_order_number LIKE :search OR process_task_number LIKE :search OR item_number LIKE :search OR item_name LIKE :search)`);
@@ -50,13 +52,15 @@ export const getProductionInspections = async (req: Request, res: Response, next
     if (status) { conditions.push(`status = :status`); replacements.status = status; }
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
-    const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM production_inspection ${whereClause}`, { replacements });
+    const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM production_inspection pi ${whereClause}`, { replacements });
     const total = countResult[0].total;
     const offset = (page - 1) * limit;
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY creation_date DESC, inspection_number DESC) AS _row_num
-        FROM production_inspection ${whereClause}
+        SELECT pi.*, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY pi.creation_date DESC, pi.inspection_number DESC) AS _row_num
+        FROM production_inspection pi
+        LEFT JOIN factory f ON pi.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
     const cleanItems = items.map((item: any) => { const { _row_num, ...rest } = item; return rest; });
@@ -343,15 +347,21 @@ export const defectHandling = async (req: Request, res: Response, next: NextFunc
 };
 
 // ==================== 导出 ====================
-const exportFields = ['inspection_number', 'work_report_number', 'process_task_number', 'production_order_number', 'step_number', 'standard_process_name', 'item_number', 'item_name', 'inspect_type', 'inspection_plan_name', 'inspection_spec_name', 'total_quantity', 'qualified_quantity', 'unqualified_quantity', 'inspection_result', 'inspector_name', 'inspection_date', 'defect_handling', 'status', 'remark'];
-const exportHeaders = ['检验单号', '报工单号', '工序任务号', '生产单号', '工序序号', '工序名称', '产品编号', '产品名称', '检验类型', '检验方案', '检验规范', '送检数量', '合格数量', '不合格数量', '检验结果', '检验员', '检验日期', '不合格处理', '状态', '备注'];
+const exportFields = ['inspection_number', 'work_report_number', 'process_task_number', 'production_order_number', 'step_number', 'standard_process_name', 'item_number', 'item_name', 'inspect_type', 'inspection_plan_name', 'inspection_spec_name', 'total_quantity', 'qualified_quantity', 'unqualified_quantity', 'inspection_result', 'inspector_name', 'inspection_date', 'defect_handling', 'status', 'factory_short', 'remark'];
+const exportHeaders = ['检验单号', '报工单号', '工序任务号', '生产单号', '工序序号', '工序名称', '产品编号', '产品名称', '检验类型', '检验方案', '检验规范', '送检数量', '合格数量', '不合格数量', '检验结果', '检验员', '检验日期', '不合格处理', '状态', '工厂', '备注'];
 
 export const exportProductionInspections = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const _factoryId = getFactoryId(req);
-    const factoryWhere = _factoryId !== null ? 'WHERE factory_id = :_factoryId' : '';
-    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
-    const [items]: any = await sequelize.query(`SELECT * FROM production_inspection ${factoryWhere} ORDER BY creation_date DESC`, { replacements: factoryReps });
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    let factoryWhere = '';
+    const factoryReps: any = {};
+    if (effectiveFactoryId !== null) {
+      factoryWhere = 'WHERE pi.factory_id = :_factoryId';
+      factoryReps._factoryId = effectiveFactoryId;
+    }
+    const [items]: any = await sequelize.query(`SELECT pi.*, f.factory_name, f.factory_short FROM production_inspection pi LEFT JOIN factory f ON pi.factory_id = f.id ${factoryWhere} ORDER BY pi.creation_date DESC`, { replacements: factoryReps });
     exportToExcel(items, exportFields, exportHeaders, 'production_inspections', res);
   } catch (err) { next(err); }
 };

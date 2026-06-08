@@ -4,6 +4,7 @@ import { message, Modal } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined, DownloadOutlined, UploadOutlined, DownOutlined, ExclamationCircleOutlined, DeleteOutlined, SettingOutlined, ExportOutlined } from '@ant-design/icons-vue'
 import { getStandardCosts, getStandardCostDetail, createStandardCost, updateStandardCost, deleteStandardCost, exportStandardCosts, importStandardCost, downloadImportTemplate } from '@/api/purchasing/standardCost'
 import { getItems } from '@/api/master-data/itemMaster'
+import { getFactories } from '@/api/system/factory'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval } from '@/api/system/approval'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -30,6 +31,14 @@ const itemOptions = ref<any[]>([])
 const importFileRef = ref<HTMLInputElement | null>(null)
 const selectedRowKeys = ref<string[]>([])
 const exportDropdownVisible = ref(false)
+const filterFactoryId = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 // ==================== 字段权限 ====================
 const { canViewField, filterColumns: filterPermColumns } = usePagePermission('standard-costs')
@@ -133,7 +142,8 @@ const fetchList = async () => {
   try {
     const res: any = await getStandardCosts({
       page: pagination.current, limit: pagination.pageSize,
-      search: searchText.value, approval_status: filterApproval.value
+      search: searchText.value, approval_status: filterApproval.value,
+      factory_id: filterFactoryId.value !== undefined && filterFactoryId.value !== null ? filterFactoryId.value : undefined
     })
     dataList.value = res.data?.items || []
     pagination.total = res.data?.pagination?.total || 0
@@ -147,7 +157,7 @@ const loadDropdowns = async () => {
   } catch { /* ignore */ }
 }
 
-onMounted(() => { loadColumnPreference(); fetchList(); loadDropdowns() })
+onMounted(() => { loadColumnPreference(); loadFactories(); fetchList(); loadDropdowns() })
 
 // ==================== 刷新 ====================
 const handleRefresh = () => { fetchList() }
@@ -259,7 +269,7 @@ const handleSave = async () => {
   if (!formData.value.effective_date) { message.warning('请选择生效日期'); return }
   if (!formData.value.expiration_date) { message.warning('请选择失效日期'); return }
 
-  const payload = { ...formData.value, details: detailRows.value }
+  const payload = { ...formData.value, details: detailRows.value, factory_id: formData.value.factory_id }
   if (formData.value.cost_list_number) {
     await updateStandardCost(formData.value.cost_list_number, payload)
     message.success('更新成功')
@@ -384,6 +394,9 @@ const handleImportFile = async (e: Event) => {
             <div></div>
             <a-space :size="4" wrap>
               <a-input-search v-model:value="searchText" placeholder="搜索编号/名称" style="width:220px" @search="handleSearch" allow-clear />
+              <a-select v-model:value="filterFactoryId" placeholder="全部工厂" style="width:120px" allow-clear @change="handleSearch" v-if="factoryList.length > 0">
+                <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+              </a-select>
               <a-select v-model:value="filterApproval" placeholder="审批状态" style="width:110px" allow-clear @change="handleSearch">
                 <a-select-option value="草稿">草稿</a-select-option>
                 <a-select-option value="待审批">待审批</a-select-option>
@@ -516,6 +529,11 @@ const handleImportFile = async (e: Event) => {
         <a-row :gutter="16">
           <a-col :span="6"><a-form-item label="名称" required>
             <a-input v-model:value="formData.cost_list_name" :disabled="isView" placeholder="输入名称" />
+          </a-form-item></a-col>
+          <a-col :span="6"><a-form-item label="所属工厂" v-if="factoryList.length > 0">
+            <a-select v-model:value="formData.factory_id" :disabled="isView" placeholder="请选择" allow-clear>
+              <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+            </a-select>
           </a-form-item></a-col>
           <a-col :span="6"><a-form-item label="生效日期" required>
             <a-date-picker v-model:value="formData.effective_date" :disabled="isView" style="width:100%" value-format="YYYY-MM-DD" />

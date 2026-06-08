@@ -4,6 +4,7 @@ import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, PlusOutlined, SearchOutlined, DownloadOutlined, UploadOutlined, HistoryOutlined, DownOutlined, ShoppingCartOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getPlans, createPlan, updatePlan, deletePlan, exportPlans, importPlans, getSalesOrdersForImport, importFromSalesOrder } from '@/api/planning/plan'
 import { getItems } from '@/api/master-data/itemMaster'
+import { getFactories } from '@/api/system/factory'
 import { useAuthStore } from '@/store/auth'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
@@ -30,6 +31,9 @@ interface Plan {
   remark: string
   approval_status: string
   mrp_status: string
+  factory_id?: number | null
+  factory_name?: string
+  factory_short?: string
 }
 
 interface Product {
@@ -49,12 +53,31 @@ interface Product {
 const authStore = useAuthStore()
 const approvalFilter = ref('')
 const mrpStatusFilter = ref('')
+const factoryFilter = ref<number | undefined>(undefined)
 const approvalLogVisible = ref(false)
 const approvalLogRecordId = ref('')
 
 
 
-const { loading, dataSource, searchText, pagination, selectedRowKeys, rowSelection, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getPlans)
+const { loading, dataSource, searchText, pagination, selectedRowKeys, rowSelection, fetchData, handleTableChange } = useTableList(getPlans)
+
+const doSearch = () => {
+  pagination.current = 1
+  fetchData({
+    approval_status: approvalFilter.value || undefined,
+    mrp_status: mrpStatusFilter.value || undefined,
+    factory_id: factoryFilter.value || undefined
+  })
+}
+
+const doReset = () => {
+  searchText.value = ''
+  approvalFilter.value = ''
+  mrpStatusFilter.value = ''
+  factoryFilter.value = undefined
+  pagination.current = 1
+  fetchData()
+}
 
 const emptyForm = (): Plan => ({
   production_number: '',
@@ -70,7 +93,8 @@ const emptyForm = (): Plan => ({
   plan_status: '待加入任务',
   remark: '',
   approval_status: '草稿',
-  mrp_status: ''
+  mrp_status: '',
+  factory_id: undefined
 })
 
 // 编辑弹窗
@@ -89,6 +113,17 @@ const createDate = ref<any>(null)
 const productOptions = ref<Product[]>([])
 const productSearchLoading = ref(false)
 const selectedProductKey = ref<string | undefined>(undefined)
+
+// 工厂列表
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) {
+      factoryList.value = res.data.items || []
+    }
+  } catch (e) { /* ignore */ }
+}
 
 
 
@@ -476,6 +511,7 @@ const handleBatchAction = (action: string) => {
 onMounted(async () => {
   await loadColumnPreference()
   fetchData()
+  loadFactories()
 })
 </script>
 
@@ -489,22 +525,25 @@ onMounted(async () => {
           placeholder="搜索计划编号/产品编号/名称/状态"
           style="width: 280px"
           allow-clear
-          @search="handleSearch"
-          @pressEnter="handleSearch"
+          @search="doSearch"
+          @pressEnter="doSearch"
         />
-        <a-select v-model:value="approvalFilter" placeholder="审批状态" allow-clear style="width: 120px" @change="handleSearch">
+        <a-select v-model:value="approvalFilter" placeholder="审批状态" allow-clear style="width: 120px" @change="doSearch">
           <a-select-option value="">全部</a-select-option>
           <a-select-option value="草稿">草稿</a-select-option>
           <a-select-option value="待审批">待审批</a-select-option>
           <a-select-option value="已审批">已审批</a-select-option>
           <a-select-option value="已驳回">已驳回</a-select-option>
         </a-select>
-        <a-select v-model:value="mrpStatusFilter" placeholder="MRP状态" allow-clear style="width: 120px" @change="handleSearch">
+        <a-select v-model:value="mrpStatusFilter" placeholder="MRP状态" allow-clear style="width: 120px" @change="doSearch">
           <a-select-option value="">全部</a-select-option>
           <a-select-option value="已分解">已分解</a-select-option>
           <a-select-option value="未分解">未分解</a-select-option>
         </a-select>
-        <a-button @click="handleReset">
+        <a-select v-model:value="factoryFilter" placeholder="工厂" allow-clear style="width: 120px" @change="doSearch">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+        </a-select>
+        <a-button @click="doReset">
           <template #icon><ReloadOutlined /></template>
           重置
         </a-button>
@@ -664,6 +703,11 @@ onMounted(async () => {
             <a-select-option value="已分解">已分解</a-select-option>
           </a-select>
         </a-form-item>
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="editForm.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
+        </a-form-item>
         <a-form-item label="备注">
           <a-textarea v-model:value="editForm.remark" :rows="3" />
         </a-form-item>
@@ -727,6 +771,11 @@ onMounted(async () => {
           <a-select v-model:value="createForm.mrp_status" placeholder="请选择">
             <a-select-option value="">未分解</a-select-option>
             <a-select-option value="已分解">已分解</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="createForm.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item label="备注">

@@ -15,8 +15,8 @@ export const updatePieceRatePrice = (id: string, data: any) =>
 export const deletePieceRatePrice = (id: string) =>
   request.delete(`/piece-rate-prices/${encodeURIComponent(id)}`)
 
-export const exportPieceRatePrices = (search?: string, approval_status?: string) =>
-  request.get('/piece-rate-prices/export', { params: { search, approval_status }, responseType: 'blob' })
+export const exportPieceRatePrices = (search?: string, approval_status?: string, factory_id?: number) =>
+  request.get('/piece-rate-prices/export', { params: { search, approval_status, factory_id }, responseType: 'blob' })
 
 export const exportPieceRatePricesSelected = (data: { ids: string[] }) =>
   request.post('/piece-rate-prices/export-selected', data, { responseType: 'blob' })

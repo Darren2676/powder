@@ -3,12 +3,23 @@ import { ref, reactive, createVNode, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { SearchOutlined, ReloadOutlined, EyeOutlined, UndoOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { getInboundOrderList, getInboundOrderDetail, withdrawInboundOrder } from '@/api/warehouse/finishedGoods'
+import { getFactories } from '@/api/system/factory'
 import { useModalDrag } from '@/composables/useModalDrag'
 import dayjs from 'dayjs'
 
 const loading = ref(false)
 const dataSource = ref<any[]>([])
 const searchText = ref('')
+
+// 工厂筛选
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 
 const pagination = reactive({
   current: 1,
@@ -22,6 +33,7 @@ const pagination = reactive({
 
 const columns = [
   { title: '入库单号', dataIndex: 'inbound_order_number', key: 'inbound_order_number', width: 170 },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '仓库', dataIndex: 'warehouse_name', key: 'warehouse_name', width: 130 },
   { title: '入库项数', dataIndex: 'total_items', key: 'total_items', width: 90, align: 'center' as const },
   { title: '入库总数量', dataIndex: 'total_quantity', key: 'total_quantity', width: 120, align: 'right' as const },
@@ -44,7 +56,8 @@ const fetchData = async () => {
     const res: any = await getInboundOrderList({
       page: pagination.current,
       limit: pagination.pageSize,
-      search: searchText.value
+      search: searchText.value,
+      factory_id: factoryFilter.value || undefined
     })
     if (res?.success) {
       dataSource.value = res.data.items || []
@@ -133,6 +146,7 @@ const handleView = async (record: any) => {
 }
 
 onMounted(() => {
+  loadFactories()
   fetchData()
 })
 </script>
@@ -152,6 +166,9 @@ onMounted(() => {
         >
           <template #prefix><SearchOutlined /></template>
         </a-input-search>
+        <a-select v-model:value="factoryFilter" placeholder="工厂" allow-clear style="width: 120px" @change="fetchData">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+        </a-select>
         <a-button @click="fetchData"><ReloadOutlined /> 刷新</a-button>
       </div>
     </div>

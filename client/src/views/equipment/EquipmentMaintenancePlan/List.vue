@@ -13,6 +13,7 @@ import {
   approveEquipmentMaintenancePlan, withdrawEquipmentMaintenancePlan
 } from '@/api/equipment/equipmentLife'
 import { getEquipments } from '@/api/equipment/equipment'
+import { getFactories } from '@/api/system/factory'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
@@ -34,6 +35,8 @@ interface MaintenancePlan {
   completion_remark: string
   remark: string
   approval_status: string
+  factory_id?: number | null
+  factory_short?: string
 }
 
 // 查询参数
@@ -42,6 +45,14 @@ const filterPlanStatus = ref('')
 const filterMaintenanceType = ref('')
 const filterDateFrom = ref<any>(null)
 const filterDateTo = ref<any>(null)
+const filterFactoryId = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 const customFetch = async (params: any) => {
   return getEquipmentMaintenancePlans({
@@ -50,7 +61,8 @@ const customFetch = async (params: any) => {
     plan_status: filterPlanStatus.value || undefined,
     maintenance_type: filterMaintenanceType.value || undefined,
     date_from: filterDateFrom.value ? dayjs(filterDateFrom.value).format('YYYY-MM-DD') : undefined,
-    date_to: filterDateTo.value ? dayjs(filterDateTo.value).format('YYYY-MM-DD') : undefined
+    date_to: filterDateTo.value ? dayjs(filterDateTo.value).format('YYYY-MM-DD') : undefined,
+    factory_id: filterFactoryId.value
   })
 }
 
@@ -90,7 +102,8 @@ const form = reactive({
   responsible_person: '',
   plan_status: '待执行',
   completion_remark: '',
-  remark: ''
+  remark: '',
+  factory_id: null as number | null
 })
 const formPlannedDate = ref<any>(null)
 const formActualDate = ref<any>(null)
@@ -151,7 +164,8 @@ const handleEdit = (record: MaintenancePlan) => {
     responsible_person: record.responsible_person || '',
     plan_status: record.plan_status,
     completion_remark: record.completion_remark || '',
-    remark: record.remark || ''
+    remark: record.remark || '',
+    factory_id: (record as any).factory_id ?? null
   })
   formPlannedDate.value = record.planned_date ? dayjs(record.planned_date) : null
   formActualDate.value = record.actual_date ? dayjs(record.actual_date) : null
@@ -268,7 +282,8 @@ const handleExport = async () => {
   try {
     const res = await exportEquipmentMaintenancePlans({
       equipment_number: filterEquipmentNumber.value || undefined,
-      plan_status: filterPlanStatus.value || undefined
+      plan_status: filterPlanStatus.value || undefined,
+      factory_id: filterFactoryId.value
     })
     const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const link = document.createElement('a')
@@ -303,6 +318,7 @@ const handleReset = () => {
   filterMaintenanceType.value = ''
   filterDateFrom.value = null
   filterDateTo.value = null
+  filterFactoryId.value = undefined
   pagination.current = 1
   fetchData()
 }
@@ -311,6 +327,7 @@ onMounted(() => {
   loadColumnPreference()
   fetchEquipments()
   fetchData()
+  loadFactories()
 })
 </script>
 
@@ -354,6 +371,12 @@ onMounted(() => {
           </a-select>
           <a-date-picker v-model:value="filterDateFrom" placeholder="开始日期" />
           <a-date-picker v-model:value="filterDateTo" placeholder="结束日期" />
+          <a-select
+            v-model:value="filterFactoryId" placeholder="全部工厂" allow-clear
+            style="width:120px" @change="handleSearch" v-if="factoryList.length > 0"
+          >
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
           <a-button @click="handleReset">
             <template #icon><ReloadOutlined /></template>
             重置
@@ -483,6 +506,11 @@ onMounted(() => {
         </a-form-item>
         <a-form-item label="备注">
           <a-textarea v-model:value="form.remark" :rows="2" placeholder="请输入备注" />
+        </a-form-item>
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="form.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
         </a-form-item>
       </a-form>
     </a-modal>

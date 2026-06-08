@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 
-export function getWorkReports(params?: { page?: number; limit?: number; search?: string; approval_status?: string; process_task_number?: string }) {
+export function getWorkReports(params?: { page?: number; limit?: number; search?: string; approval_status?: string; process_task_number?: string; factory_id?: number }) {
   return request.get('/work-reports', { params })
 }
 
@@ -16,8 +16,8 @@ export function deleteWorkReport(wrNumber: string) {
   return request.delete(`/work-reports/${encodeURIComponent(wrNumber)}`)
 }
 
-export function exportWorkReports(search?: string) {
-  return request.get('/work-reports/export', { params: { search }, responseType: 'blob' })
+export function exportWorkReports(params?: { search?: string; factory_id?: number }) {
+  return request.get('/work-reports/export', { params, responseType: 'blob' })
 }
 
 export function importWorkReports(formData: FormData) {
@@ -41,8 +41,8 @@ export function getEmployees() {
 }
 
 // 连续报工 - 按生产单获取工序任务及报工统计
-export function getTasksByOrder(orderNo: string) {
-  return request.get(`/process-tasks/by-order/${encodeURIComponent(orderNo)}`)
+export function getTasksByOrder(orderNo: string, factoryId?: number) {
+  return request.get(`/process-tasks/by-order/${encodeURIComponent(orderNo)}`, { params: factoryId ? { factory_id: factoryId } : {} })
 }
 
 // 连续报工 - 快速报工

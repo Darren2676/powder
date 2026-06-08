@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons-vue'
 import { createVNode } from 'vue'
 import { getMRPRuns, getMRPRunDetail, cancelMRPRun, deleteMRPRun } from '@/api/planning/mrp'
+import { getFactories } from '@/api/system/factory'
 import { useModalDrag } from '@/composables/useModalDrag'
 
 const router = useRouter()
@@ -21,6 +22,18 @@ const filterForm = reactive({
   page: 1,
   limit: 20
 })
+
+// 工厂筛选
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) {
+      factoryList.value = res.data.items || []
+    }
+  } catch (e) { /* ignore */ }
+}
 
 // 详情弹窗
 const detailVisible = ref(false)
@@ -78,7 +91,7 @@ const updateFilteredDetails = () => {
 const loadList = async () => {
   loading.value = true
   try {
-    const res: any = await getMRPRuns(filterForm)
+    const res: any = await getMRPRuns({ ...filterForm, factory_id: factoryFilter.value || undefined })
     const data = res.data
     runList.value = (data?.items || []).map((r: any) => ({ ...r, key: r.mrp_run_number }))
     total.value = data?.pagination?.total || 0
@@ -158,7 +171,7 @@ const goToMRP = () => {
   router.push('/mrp')
 }
 
-onMounted(() => { loadList() })
+onMounted(() => { loadList(); loadFactories() })
 </script>
 
 <template>
@@ -171,6 +184,9 @@ onMounted(() => { loadList() })
             <a-select-option value="已计算">已计算</a-select-option>
             <a-select-option value="已确认">已确认</a-select-option>
             <a-select-option value="已取消">已取消</a-select-option>
+          </a-select>
+          <a-select v-model:value="factoryFilter" placeholder="工厂" allow-clear style="width: 100px" @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
           </a-select>
           <a-input v-model:value="filterForm.search" placeholder="搜索运算编号" allow-clear style="width: 180px" @press-enter="handleSearch">
             <template #prefix><SearchOutlined /></template>
@@ -239,6 +255,7 @@ onMounted(() => { loadList() })
         <template v-if="detailRun">
           <a-descriptions :column="4" size="small" bordered style="margin-bottom: 12px">
             <a-descriptions-item label="运算编号">{{ detailRun.mrp_run_number }}</a-descriptions-item>
+            <a-descriptions-item label="工厂">{{ detailRun.factory_short || detailRun.factory_name || '-' }}</a-descriptions-item>
             <a-descriptions-item label="状态">
               <a-tag :color="detailRun.run_status === '已确认' ? 'green' : detailRun.run_status === '已取消' ? 'red' : 'orange'">
                 {{ detailRun.run_status }}

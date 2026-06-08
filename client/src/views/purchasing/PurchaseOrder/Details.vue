@@ -7,6 +7,7 @@ import { createReceivingNotice } from '@/api/purchasing/receivingNotice'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
+import { getFactories } from '@/api/system/factory'
 import { generateExportFilename } from '@/utils/exportFilename'
 import dayjs from 'dayjs'
 
@@ -17,6 +18,16 @@ const filterReceiveStatus = ref<string[]>([])
 const filterApprovalStatus = ref<string[]>([])
 const selectedRowKeys = ref<number[]>([])
 const exportLoading = ref(false)
+
+// 工厂筛选
+const factoryList = ref<any[]>([])
+const filterFactory = ref<number | undefined>(undefined)
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,
@@ -35,6 +46,7 @@ const pagination = reactive({
 })
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '行号', dataIndex: 'line_number', key: 'line_number', width: 60, resizable: true },
   { title: '物料编码', dataIndex: 'item_number', key: 'item_number', width: 130, resizable: true },
   { title: '物料名称', dataIndex: 'item_name', key: 'item_name', width: 160, resizable: true },
@@ -168,7 +180,8 @@ const fetchData = async () => {
       limit: pagination.pageSize,
       search: searchText.value,
       receive_status: filterReceiveStatus.value.length ? filterReceiveStatus.value.join(',') : '',
-      approval_status: filterApprovalStatus.value.length ? filterApprovalStatus.value.join(',') : ''
+      approval_status: filterApprovalStatus.value.length ? filterApprovalStatus.value.join(',') : '',
+      factory_id: filterFactory.value
     })
     if (res?.success) {
       dataSource.value = res.data.items || []
@@ -219,6 +232,7 @@ const handleExportSelected = async () => {
 
 onMounted(async () => {
   await loadColumnPreference()
+  loadFactories()
   fetchData()
 })
 </script>
@@ -228,6 +242,9 @@ onMounted(async () => {
     <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; overflow-x: auto">
       <h3 style="margin: 0; white-space: nowrap; flex-shrink: 0">采购订单明细</h3>
       <div style="display: flex; gap: 6px; align-items: center; flex-wrap: nowrap">
+        <a-select v-model:value="filterFactory" placeholder="工厂" allow-clear style="width:120px;flex-shrink:0" size="small" @change="fetchData">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+        </a-select>
         <a-input-search
           v-model:value="searchText"
           placeholder="搜索订单号/物料/供应商"

@@ -5,7 +5,7 @@ import request from '@/utils/request'
 export function getPurchaseInvoices(params?: {
   page?: number; limit?: number; search?: string;
   approval_status?: string; supplier_number?: string;
-  start_date?: string; end_date?: string
+  start_date?: string; end_date?: string; factory_id?: number
 }) {
   return request.get('/purchase-invoices', { params })
 }

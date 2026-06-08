@@ -104,7 +104,8 @@ export const productionInboundFinished = async (
         warehouse_number: b.warehouse_number, warehouse_name: b.warehouse_name,
         quantity: inboundQty, before_quantity: beforeQty, after_quantity: afterQty,
         batch_number: batchNo, operator, remark: b.remark || '',
-        quality_status: '合格品', accounting_period: accountingPeriod
+        quality_status: '合格品', accounting_period: accountingPeriod,
+        factory_id: _factoryId
       }, transaction);
 
       // 5. 更新生产单入库状态（以末道报工正品数为基准，而非计划数量）
@@ -180,7 +181,7 @@ export const productionInboundFinished = async (
       totalQty += inboundQty;
 
       await sequelize.query(
-        "INSERT INTO production_inbound_order_detail (inbound_order_number, line_number, production_order_number, item_number, item_name, specifications, basic_unit, product_drawing_number, batch_number, planned_quantity, inbound_quantity, quality_status, transaction_number, production_date, remark, creation_date) VALUES (:inbound_order_number, :line_number, :production_order_number, :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number, :batch_number, :planned_quantity, :inbound_quantity, N'合格品', :transaction_number, :production_date, :remark, GETDATE())",
+        "INSERT INTO production_inbound_order_detail (inbound_order_number, line_number, production_order_number, item_number, item_name, specifications, basic_unit, product_drawing_number, batch_number, planned_quantity, inbound_quantity, quality_status, transaction_number, remark, creation_date) VALUES (:inbound_order_number, :line_number, :production_order_number, :item_number, :item_name, :specifications, :basic_unit, :product_drawing_number, :batch_number, :planned_quantity, :inbound_quantity, N'合格品', :transaction_number, :remark, GETDATE())",
         {
           replacements: {
             inbound_order_number: inboundOrderNo, line_number: lineNum,
@@ -192,7 +193,6 @@ export const productionInboundFinished = async (
             planned_quantity: Number(item.planned_quantity) || 0,
             inbound_quantity: inboundQty,
             transaction_number: transactionNumbers[i] || '',
-            production_date: item.production_date || null,
             remark: b.remark || ''
           }, transaction
         }
@@ -200,13 +200,14 @@ export const productionInboundFinished = async (
     }
 
     await sequelize.query(
-      'INSERT INTO production_inbound_order (inbound_order_number, warehouse_number, warehouse_name, total_quantity, total_items, remark, accounting_period, operator, inbound_date, creation_date) VALUES (:inbound_order_number, :warehouse_number, :warehouse_name, :total_quantity, :total_items, :remark, :accounting_period, :operator, GETDATE(), GETDATE())',
+      'INSERT INTO production_inbound_order (inbound_order_number, warehouse_number, warehouse_name, total_quantity, total_items, remark, accounting_period, operator, inbound_date, creation_date, factory_id) VALUES (:inbound_order_number, :warehouse_number, :warehouse_name, :total_quantity, :total_items, :remark, :accounting_period, :operator, GETDATE(), GETDATE(), :factory_id)',
       {
         replacements: {
           inbound_order_number: inboundOrderNo,
           warehouse_number: b.warehouse_number, warehouse_name: b.warehouse_name,
           total_quantity: totalQty, total_items: lineNum,
-          remark: b.remark || '', accounting_period: accountingPeriod, operator
+          remark: b.remark || '', accounting_period: accountingPeriod, operator,
+          factory_id: _factoryId
         }, transaction
       }
     );
@@ -232,7 +233,8 @@ export const shippingOutbound = async (
     accounting_period?: string; remark?: string;
   },
   operator: string,
-  factoryCode: string = ''
+  factoryCode: string = '',
+  _factoryId: number | null = null
 ) => {
   const b = params;
   if (!b.items || !Array.isArray(b.items) || b.items.length === 0) {
@@ -455,13 +457,14 @@ export const shippingOutbound = async (
 
       // 插入发货单主表
       await sequelize.query(
-        "INSERT INTO shipping_order (shipping_order_number, customer_number, customer_name, warehouse_number, warehouse_name, shipping_date, status, remark, creation_man, creation_date, accounting_period) VALUES (:shipping_order_number, :customer_number, :customer_name, :warehouse_number, :warehouse_name, GETDATE(), N'已发货', :remark, :creation_man, GETDATE(), :accounting_period)",
+        "INSERT INTO shipping_order (shipping_order_number, customer_number, customer_name, warehouse_number, warehouse_name, shipping_date, status, remark, creation_man, creation_date, accounting_period, factory_id) VALUES (:shipping_order_number, :customer_number, :customer_name, :warehouse_number, :warehouse_name, GETDATE(), N'已发货', :remark, :creation_man, GETDATE(), :accounting_period, :factory_id)",
         {
           replacements: {
             shipping_order_number: shippingOrderNumber,
             customer_number: customerNumber, customer_name: customerName,
             warehouse_number: b.warehouse_number, warehouse_name: b.warehouse_name,
-            remark: b.remark || '', creation_man: operator, accounting_period: outboundAP
+            remark: b.remark || '', creation_man: operator, accounting_period: outboundAP,
+            factory_id: _factoryId
           }, transaction
         }
       );

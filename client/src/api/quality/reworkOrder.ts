@@ -12,5 +12,5 @@ export const completeRework = (id: string, data?: any) =>
 export const reworkReInspect = (id: string, data: any) =>
   request.post(`/quality/rework-orders/${encodeURIComponent(id)}/re-inspect`, data)
 
-export const exportReworkOrders = () =>
-  request.get('/quality/rework-orders/export/list', { responseType: 'blob' })
+export const exportReworkOrders = (factory_id?: number) =>
+  request.get('/quality/rework-orders/export/list', { params: factory_id ? { factory_id } : {}, responseType: 'blob' })

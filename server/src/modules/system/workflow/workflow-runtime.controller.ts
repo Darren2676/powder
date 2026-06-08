@@ -6,6 +6,7 @@
 import { Request, Response, NextFunction } from 'express'
 import sequelize from '../../../config/database'
 import { success, paginate } from '../../../utils/response.util'
+import { getFactoryId } from '../../../utils/factoryWhere.util'
 import {
   startWorkflow,
   processTask,
@@ -51,7 +52,7 @@ export const startWorkflowForRecord = async (req: Request, res: Response, next: 
     const result = await startWorkflow(b.module, b.recordId, {
       id: user.id,
       username: user.username
-    })
+    }, getFactoryId(req) ?? undefined)
 
     if (result.success) {
       res.json(success({ instanceId: result.instanceId }, result.message))
@@ -80,7 +81,8 @@ export const processWorkflowTask = async (req: Request, res: Response, next: Nex
       parseInt(taskId, 10),
       b.action,
       { id: user.id, username: user.username },
-      b.remark
+      b.remark,
+      getFactoryId(req) ?? undefined
     )
 
     if (result.success) {
@@ -103,7 +105,8 @@ export const withdrawWorkflowInstance = async (req: Request, res: Response, next
 
     const result = await withdrawWorkflow(
       parseInt(instanceId, 10),
-      { id: user.id, username: user.username }
+      { id: user.id, username: user.username },
+      getFactoryId(req) ?? undefined
     )
 
     if (result.success) {

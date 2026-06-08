@@ -161,9 +161,11 @@ export const getSalesPersonShippingReport = async (req: Request, res: Response, 
                d.order_quantity, d.shipped_quantity, d.shipping_status,
                d.unit_price, d.total_amount,
                CONVERT(VARCHAR(10), d.delivery_date, 120) as delivery_date,
-               d.refunded_quantity
+               d.refunded_quantity,
+               f.factory_name, f.factory_short
         FROM sales_order h
         INNER JOIN sales_order_detail d ON d.sales_order_number = h.sales_order_number
+        LEFT JOIN factory f ON h.factory_id = f.id
         ${detailWhere}
         ORDER BY h.head_of_sales, h.sales_order_number, d.line_number
       `, { replacements: detailReplacements });
@@ -239,15 +241,18 @@ export const exportSalesPersonShippingReport = async (req: Request, res: Respons
              d.order_quantity, d.shipped_quantity, d.shipping_status,
              d.unit_price, d.total_amount,
              CONVERT(VARCHAR(10), d.delivery_date, 120) as delivery_date,
-             d.refunded_quantity
+             d.refunded_quantity,
+             f.factory_name, f.factory_short
       FROM sales_order h
       INNER JOIN sales_order_detail d ON d.sales_order_number = h.sales_order_number
+      LEFT JOIN factory f ON h.factory_id = f.id
       ${whereClause}
       ORDER BY h.head_of_sales, h.sales_order_number, d.line_number
     `, { replacements });
 
     const exportData = detailRows.map((d: any) => ({
       head_of_sales: d.head_of_sales,
+      factory_short: d.factory_short || d.factory_name || '',
       sales_order_number: d.sales_order_number,
       customer_name: d.customer_name,
       order_date: d.order_date,
@@ -268,13 +273,13 @@ export const exportSalesPersonShippingReport = async (req: Request, res: Respons
     }));
 
     const fields = [
-      'head_of_sales', 'sales_order_number', 'customer_name', 'order_date', 'order_status',
+      'head_of_sales', 'factory_short', 'sales_order_number', 'customer_name', 'order_date', 'order_status',
       'line_number', 'item_number', 'item_name', 'specifications', 'basic_unit',
       'order_quantity', 'shipped_quantity', 'unshipped_quantity', 'shipping_status',
       'unit_price', 'total_amount', 'delivery_date', 'refunded_quantity'
     ];
     const headers = [
-      '销售负责人', '订单编号', '客户名称', '订单日期', '订单状态',
+      '销售负责人', '工厂', '订单编号', '客户名称', '订单日期', '订单状态',
       '行号', '物料编号', '物料名称', '规格', '单位',
       '订单数量', '已发数量', '未发数量', '发货状态',
       '单价', '金额', '交货日期', '退货数量'

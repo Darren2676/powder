@@ -20,7 +20,9 @@ import { getFactoryId, getFactoryCode } from '../../../utils/factoryWhere.util';
 export const list = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const _factoryId = getFactoryId(req);
-    const result = await getBackflushTasks({ ...req.query, _factoryId: _factoryId ?? undefined });
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const result = await getBackflushTasks({ ...req.query, _factoryId: effectiveFactoryId ?? undefined });
     res.json(success(result));
   } catch (err) { next(err); }
 };
@@ -33,6 +35,10 @@ export const detail = async (req: Request, res: Response, next: NextFunction) =>
     if (!result) {
       throw new BusinessError(404, '倒冲任务不存在');
     }
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null && result.task.factory_id !== _factoryId) {
+      throw new BusinessError(404, '倒冲任务不存在');
+    }
     res.json(success(result));
   } catch (err) { next(err); }
 };
@@ -41,7 +47,8 @@ export const detail = async (req: Request, res: Response, next: NextFunction) =>
 export const summary = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const orderNo = (req.params.orderNo as string) || '';
-    const result = await getBackflushSummary(orderNo);
+    const _factoryId = getFactoryId(req);
+    const result = await getBackflushSummary(orderNo, _factoryId);
     res.json(success(result));
   } catch (err) { next(err); }
 };
@@ -50,6 +57,15 @@ export const summary = async (req: Request, res: Response, next: NextFunction) =
 export const retry = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const id = parseInt(req.params.id as string, 10);
+    const _factoryId = getFactoryId(req);
+    // 防越权：先检查该任务是否属于当前工厂
+    if (_factoryId !== null) {
+      const [chk]: any = await sequelize.query(
+        'SELECT id FROM backflush_task WHERE id = :id AND factory_id = :_factoryId',
+        { replacements: { id, _factoryId } }
+      );
+      if (chk.length === 0) throw new BusinessError(404, '倒冲任务不存在');
+    }
     const operator = (req as any).user?.username || '';
     const result = await manualRetryDeduction(id, operator);
     res.json(success(result, '重试完成'));
@@ -65,14 +81,15 @@ export const generate = async (req: Request, res: Response, next: NextFunction) 
     }
     const username = (req as any).user?.username || '';
     const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const results: any[] = [];
 
     await withTransaction(async (transaction) => {
       for (const orderNo of production_order_numbers) {
         const [orders]: any = await sequelize.query(
-          `SELECT production_order_number, item_number, item_name, specifications, basic_unit, planned_quantity
-           FROM production_order WHERE production_order_number = :orderNo`,
-          { replacements: { orderNo }, transaction }
+          `SELECT production_order_number, item_number, item_name, specifications, basic_unit, planned_quantity, factory_id
+           FROM production_order WHERE production_order_number = :orderNo${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+          { replacements: { orderNo, ...(_factoryId !== null ? { _factoryId } : {}) }, transaction }
         );
         if (orders.length === 0) continue;
         const order = orders[0];
@@ -119,8 +136,14 @@ export const updateAutoWeigh = async (req: Request, res: Response, next: NextFun
     const placeholders = ids.map((_: any, i: number) => `:id${i}`).join(',');
     const replacements: any = { val: auto_weigh };
     ids.forEach((id: number, i: number) => { replacements[`id${i}`] = id; });
+    const _factoryId = getFactoryId(req);
+    let factoryCond = '';
+    if (_factoryId !== null) {
+      factoryCond = ' AND factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
+    }
     await sequelize.query(
-      `UPDATE backflush_task SET auto_weigh = :val WHERE id IN (${placeholders})`,
+      `UPDATE backflush_task SET auto_weigh = :val WHERE id IN (${placeholders})${factoryCond}`,
       { replacements }
     );
     res.json(success({ updatedCount: ids.length }, '更新成功'));
@@ -130,12 +153,15 @@ export const updateAutoWeigh = async (req: Request, res: Response, next: NextFun
 // ==================== 导出Excel ====================
 export const exportExcel = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await getBackflushTasks({ ...req.query, page: 1, pageSize: 10000 });
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const result = await getBackflushTasks({ ...req.query, page: 1, pageSize: 10000, _factoryId: effectiveFactoryId ?? undefined });
     const rows = result.rows || [];
 
     const headers = ['任务编号', '生产单号', '产品编号', '产品名称', '工序号', '工序名称',
       '物料编号', '物料名称', '物料类型', 'BOM用量', '需求量', '已扣减量', '扣减状态',
-      '仓库编号', '仓库名称', '错误信息', '创建时间'];
+      '仓库编号', '仓库名称', '错误信息', '所属工厂', '创建时间'];
     const csvRows = [headers.join(',')];
     for (const row of rows) {
       csvRows.push([
@@ -145,6 +171,7 @@ export const exportExcel = async (req: Request, res: Response, next: NextFunctio
         row.bom_actual_quantity, row.required_quantity, row.deducted_quantity,
         row.deduction_status, row.warehouse_number, row.warehouse_name,
         (row.error_message || '').replace(/[,\n]/g, ' '),
+        row.factory_short || row.factory_name || '',
         row.creation_date
       ].map(v => `"${v || ''}"`).join(','));
     }

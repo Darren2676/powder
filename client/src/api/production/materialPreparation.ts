@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 
-export function getMaterialPreparations(params?: { page?: number; limit?: number; search?: string; preparation_status?: string; approval_status?: string }) {
+export function getMaterialPreparations(params?: { page?: number; limit?: number; search?: string; preparation_status?: string; approval_status?: string; factory_id?: number }) {
   return request.get('/material-preparations', { params })
 }
 
@@ -32,7 +32,7 @@ export function generateByProcess(productionOrderNumbers: string[]) {
   return request.post('/material-preparations/generate-by-process', { production_order_numbers: productionOrderNumbers })
 }
 
-export function getOrdersForGenerate(params?: { page?: number; limit?: number; search?: string }) {
+export function getOrdersForGenerate(params?: { page?: number; limit?: number; search?: string; factory_id?: number }) {
   return request.get('/material-preparations/orders-for-generate', { params })
 }
 
@@ -47,5 +47,5 @@ export function updatePreparationDetails(prepNumber: string, details: any[]) {
 export const updateDetailAutoWeigh = (preparationNumber: string, ids: number[], autoWeigh: string) =>
   request({ url: `/material-preparations/${encodeURIComponent(preparationNumber)}/details-auto-weigh`, method: 'PATCH', data: { ids, auto_weigh: autoWeigh } })
 
-export const getDetailsByOrder = (params?: { production_order_number?: string; auto_weigh?: string; page?: number; limit?: number }) =>
+export const getDetailsByOrder = (params?: { production_order_number?: string; auto_weigh?: string; page?: number; limit?: number; factory_id?: number }) =>
   request.get('/material-preparations/details-by-order', { params })

@@ -4,11 +4,13 @@ import { success } from '../../../utils/response.util';
 import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 function buildWhere(req: Request, dateField: string, extraClause = '') {
-  const { start_date, end_date, search } = req.query;
+  const { start_date, end_date, search, factory_id } = req.query;
   let where = `WHERE si.stock_in_type = N'报废入库'${extraClause}`;
   const reps: any = {};
   const _factoryId = getFactoryId(req);
-  if (_factoryId !== null) { where += ` AND si.factory_id = :_factoryId`; reps._factoryId = _factoryId; }
+  const queryFactoryId = factory_id ? parseInt(factory_id as string) : null;
+  const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+  if (effectiveFactoryId !== null) { where += ` AND si.factory_id = :_factoryId`; reps._factoryId = effectiveFactoryId; }
   if (start_date) { where += ` AND si.${dateField} >= :start_date`; reps.start_date = start_date; }
   if (end_date) { where += ` AND si.${dateField} <= :end_date`; reps.end_date = end_date; }
   if (search) { where += ` AND (si.stock_in_number LIKE :search OR si.warehouse_name LIKE :search)`; reps.search = `%${search}%`; }
@@ -83,15 +85,17 @@ export const getScrapOrderTableData = async (req: Request, res: Response, next: 
         SELECT si.stock_in_number, si.warehouse_number, si.warehouse_name,
                si.stock_in_date, si.approval_status, si.operator,
                si.remark, si.creation_date,
+               f.factory_short,
                COUNT(sid.line_number) AS item_count,
                ISNULL(SUM(sid.stock_in_quantity), 0) AS total_qty,
                ROW_NUMBER() OVER (ORDER BY si.creation_date DESC) AS _row_num
         FROM stock_in si
         LEFT JOIN stock_in_detail sid ON si.stock_in_number = sid.stock_in_number
+        LEFT JOIN factory f ON si.factory_id = f.id
         ${where}
         GROUP BY si.stock_in_number, si.warehouse_number, si.warehouse_name,
                  si.stock_in_date, si.approval_status, si.operator,
-                 si.remark, si.creation_date
+                 si.remark, si.creation_date, f.factory_short
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: reps });
 

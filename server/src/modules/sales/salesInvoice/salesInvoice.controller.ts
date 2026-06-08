@@ -52,7 +52,7 @@ async function recalcShippingDetailInvoiceStatus(detailIds: number[], t?: any) {
     else if (invoiced_qty > 0) status = '部分开票';
 
     await sequelize.query(
-      `UPDATE shipping_order_detail SET invoice_status = N'${status}' WHERE id = :detailId`,
+      `UPDATE shipping_order_detail SET invoice_status = :status WHERE id = :detailId`,
       { replacements: { status, detailId }, transaction: t }
     );
   }
@@ -83,7 +83,7 @@ async function recalcSalesDetailInvoiceStatus(salesDetailIds: number[], t?: any)
     else if (invoiced_qty > 0) status = '部分开票';
 
     await sequelize.query(
-      `UPDATE sales_order_detail SET invoice_status = N'${status}' WHERE id = :detailId`,
+      `UPDATE sales_order_detail SET invoice_status = :status WHERE id = :detailId`,
       { replacements: { status, detailId }, transaction: t }
     );
   }
@@ -131,8 +131,11 @@ export const getSalesInvoices = async (req: Request, res: Response, next: NextFu
 
     const countSql = `SELECT COUNT(*) as total FROM sales_invoice si ${whereClause}`;
     const dataSql = `SELECT * FROM (
-      SELECT si.*, ROW_NUMBER() OVER (ORDER BY si.created_at DESC) AS _row_num
-      FROM sales_invoice si ${whereClause}
+      SELECT si.*, f.factory_name, f.factory_short,
+             ROW_NUMBER() OVER (ORDER BY si.created_at DESC) AS _row_num
+      FROM sales_invoice si
+      LEFT JOIN factory f ON si.factory_id = f.id
+      ${whereClause}
     ) t WHERE _row_num BETWEEN :offset AND :offset + :limit - 1`;
 
     const replacements: any = { offset: (page - 1) * limit + 1, limit, search: `%${search}%`, approval_status, customer_number, start_date, end_date };
@@ -148,8 +151,14 @@ export const getSalesInvoices = async (req: Request, res: Response, next: NextFu
 export const getSalesInvoiceDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND si.factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [headerRows]: any = await sequelize.query(
-      `SELECT * FROM sales_invoice WHERE invoice_number = :id`, { replacements: { id } }
+      `SELECT si.*, f.factory_name, f.factory_short FROM sales_invoice si
+       LEFT JOIN factory f ON si.factory_id = f.id
+       WHERE si.invoice_number = :id${factoryCond}`,
+      { replacements: { id, ...factoryReps } }
     );
     if (headerRows.length === 0) { res.status(404).json({ success: false, message: '发票不存在' }); return; }
 
@@ -283,7 +292,7 @@ export const updateSalesInvoice = async (req: Request, res: Response, next: Next
           amount_without_tax = :amount_without_tax, tax_amount = :tax_amount,
           amount_with_tax = :amount_with_tax, currency_code = :currency_code,
           remark = :remark, updated_at = GETDATE()
-        WHERE invoice_number = :id
+        WHERE invoice_number = :id${factoryCond}
       `, {
         replacements: {
           id, invoice_code: b.invoice_code || '', invoice_no: b.invoice_no || '',
@@ -294,7 +303,8 @@ export const updateSalesInvoice = async (req: Request, res: Response, next: Next
           bank_account_number: b.bank_account_number || '', invoice_date: b.invoice_date || null,
           tax_rate: b.tax_rate || 0, amount_without_tax: b.amount_without_tax || 0,
           tax_amount: b.tax_amount || 0, amount_with_tax: b.amount_with_tax || 0,
-          currency_code: b.currency_code || 'CNY', remark: b.remark || ''
+          currency_code: b.currency_code || 'CNY', remark: b.remark || '',
+          ...factoryReps
         },
         transaction: t
       });
@@ -465,15 +475,18 @@ export const getAvailableShippingDetails = async (req: Request, res: Response, n
 export const getInvoicesByShippingDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { detailId } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND si.factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [rows]: any = await sequelize.query(`
       SELECT si.invoice_number, si.invoice_code, si.invoice_no, si.invoice_type,
         si.invoice_date, si.customer_name, si.amount_with_tax, si.approval_status,
         sil.invoice_quantity, sil.unit_price, sil.amount_without_tax, sil.tax_rate, sil.tax_amount
       FROM sales_invoice_line sil
       INNER JOIN sales_invoice si ON si.invoice_number = sil.invoice_number
-      WHERE sil.shipping_detail_id = :detailId
+      WHERE sil.shipping_detail_id = :detailId${factoryCond}
       ORDER BY si.invoice_date DESC
-    `, { replacements: { detailId } });
+    `, { replacements: { detailId, ...factoryReps } });
     res.json(success(rows));
   } catch (err) { next(err); }
 };
@@ -482,6 +495,9 @@ export const getInvoicesByShippingDetail = async (req: Request, res: Response, n
 export const getInvoicesBySalesDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { detailId } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND si.factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [rows]: any = await sequelize.query(`
       SELECT si.invoice_number, si.invoice_code, si.invoice_no, si.invoice_type,
         si.invoice_date, si.customer_name, si.amount_with_tax, si.approval_status,
@@ -489,9 +505,9 @@ export const getInvoicesBySalesDetail = async (req: Request, res: Response, next
         sil.amount_without_tax, sil.tax_rate, sil.tax_amount
       FROM sales_invoice_line sil
       INNER JOIN sales_invoice si ON si.invoice_number = sil.invoice_number
-      WHERE sil.sales_detail_id = :detailId
+      WHERE sil.sales_detail_id = :detailId${factoryCond}
       ORDER BY si.invoice_date DESC
-    `, { replacements: { detailId } });
+    `, { replacements: { detailId, ...factoryReps } });
     res.json(success(rows));
   } catch (err) { next(err); }
 };

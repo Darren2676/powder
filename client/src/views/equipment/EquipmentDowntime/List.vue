@@ -11,6 +11,7 @@ import {
   withdrawEquipmentDowntime
 } from '@/api/equipment/equipmentLife'
 import { getEquipments } from '@/api/equipment/equipment'
+import { getFactories } from '@/api/system/factory'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
@@ -33,6 +34,8 @@ interface DowntimeRecord {
   performed_by: string
   remark: string
   approval_status: string
+  factory_id?: number | null
+  factory_short?: string
 }
 
 // 查询参数
@@ -41,6 +44,14 @@ const filterDowntimeType = ref('')
 const filterDateFrom = ref<any>(null)
 const filterDateTo = ref<any>(null)
 const searchText = ref('')
+const filterFactoryId = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 const customFetch = async (params: any) => {
   return getEquipmentDowntimes({
@@ -49,7 +60,8 @@ const customFetch = async (params: any) => {
     downtime_type: filterDowntimeType.value || undefined,
     date_from: filterDateFrom.value ? dayjs(filterDateFrom.value).format('YYYY-MM-DD') : undefined,
     date_to: filterDateTo.value ? dayjs(filterDateTo.value).format('YYYY-MM-DD') : undefined,
-    search: searchText.value || undefined
+    search: searchText.value || undefined,
+    factory_id: filterFactoryId.value
   })
 }
 
@@ -81,7 +93,8 @@ const form = reactive({
   replaced_parts: '',
   cost: 0,
   performed_by: '',
-  remark: ''
+  remark: '',
+  factory_id: null as number | null
 })
 const formStartTime = ref<any>(null)
 const formEndTime = ref<any>(null)
@@ -137,7 +150,8 @@ const handleEdit = (record: DowntimeRecord) => {
     replaced_parts: record.replaced_parts || '',
     cost: record.cost || 0,
     performed_by: record.performed_by || '',
-    remark: record.remark || ''
+    remark: record.remark || '',
+    factory_id: (record as any).factory_id ?? null
   })
   formStartTime.value = record.start_time ? dayjs(record.start_time) : null
   formEndTime.value = record.end_time ? dayjs(record.end_time) : null
@@ -192,7 +206,8 @@ const handleExport = async () => {
   try {
     const res = await exportEquipmentDowntimes({
       equipment_number: filterEquipmentNumber.value || undefined,
-      downtime_type: filterDowntimeType.value || undefined
+      downtime_type: filterDowntimeType.value || undefined,
+      factory_id: filterFactoryId.value
     })
     const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const link = document.createElement('a')
@@ -227,6 +242,7 @@ const handleReset = () => {
   filterDateFrom.value = null
   filterDateTo.value = null
   searchText.value = ''
+  filterFactoryId.value = undefined
   pagination.current = 1
   fetchData()
 }
@@ -235,6 +251,7 @@ onMounted(() => {
   loadColumnPreference()
   fetchEquipments()
   fetchData()
+  loadFactories()
 })
 </script>
 
@@ -272,6 +289,12 @@ onMounted(() => {
           <a-date-picker v-model:value="filterDateFrom" placeholder="开始日期" />
           <a-date-picker v-model:value="filterDateTo" placeholder="结束日期" />
           <a-input-search v-model:value="searchText" placeholder="搜索故障原因/处理方式" style="width: 200px" allow-clear @search="handleSearch" @pressEnter="handleSearch" />
+          <a-select
+            v-model:value="filterFactoryId" placeholder="全部工厂" allow-clear
+            style="width:120px" @change="handleSearch" v-if="factoryList.length > 0"
+          >
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
           <a-button @click="handleReset">
             <template #icon><ReloadOutlined /></template>
             重置
@@ -397,6 +420,11 @@ onMounted(() => {
         </a-form-item>
         <a-form-item label="备注">
           <a-textarea v-model:value="form.remark" :rows="2" placeholder="请输入备注" />
+        </a-form-item>
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="form.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
         </a-form-item>
       </a-form>
     </a-modal>

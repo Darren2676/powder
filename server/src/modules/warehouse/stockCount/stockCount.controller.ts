@@ -52,47 +52,63 @@ export const getList = async (req: Request, res: Response, next: NextFunction) =
     let whereClause = 'WHERE 1=1';
     const replacements: any = { offset, offsetEnd };
 
+    // 多工厂数据隔离
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ` AND sc.factory_id = :_factoryId`;
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     if (search) {
-      whereClause += ` AND (count_number LIKE :search OR warehouse_name LIKE :search OR count_man LIKE :search)`;
+      whereClause += ` AND (sc.count_number LIKE :search OR sc.warehouse_name LIKE :search OR sc.count_man LIKE :search)`;
       replacements.search = `%${search}%`;
     }
     if (status) {
-      whereClause += ` AND status = :status`;
+      whereClause += ` AND sc.status = :status`;
       replacements.status = status;
     }
     if (warehouse_number) {
-      whereClause += ` AND warehouse_number = :warehouse_number`;
+      whereClause += ` AND sc.warehouse_number = :warehouse_number`;
       replacements.warehouse_number = warehouse_number;
     }
     if (count_period) {
-      whereClause += ` AND count_period = :count_period`;
+      whereClause += ` AND sc.count_period = :count_period`;
       replacements.count_period = count_period;
     }
 
     const [countResult]: any = await sequelize.query(
-      `SELECT COUNT(*) as total FROM stock_count ${whereClause}`, { replacements }
+      `SELECT COUNT(*) as total FROM stock_count sc ${whereClause}`, { replacements }
     );
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY creation_date DESC, id DESC) AS _row_num
-        FROM stock_count ${whereClause}
+        SELECT sc.*, ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name,
+               ROW_NUMBER() OVER (ORDER BY sc.creation_date DESC, sc.id DESC) AS _row_num
+        FROM stock_count sc
+        LEFT JOIN factory f ON sc.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
 
-    // 状态统计
+    // 状态统计（参数化 factory_id）
+    let statsReplacements: any = {
+      current_period: new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0')
+    };
+    let statsWhere = '';
+    if (effectiveFactoryId !== null) {
+      statsWhere = 'WHERE factory_id = :_statsFactoryId';
+      statsReplacements._statsFactoryId = effectiveFactoryId;
+    }
     const [stats]: any = await sequelize.query(`
       SELECT
         SUM(CASE WHEN status = N'盘点中' THEN 1 ELSE 0 END) as counting,
         SUM(CASE WHEN status = N'待复核' THEN 1 ELSE 0 END) as pending_review,
         SUM(CASE WHEN status = N'待确认' THEN 1 ELSE 0 END) as pending_confirm,
         SUM(CASE WHEN status = N'已完成' AND count_period = :current_period THEN 1 ELSE 0 END) as completed_this_month
-      FROM stock_count
-    `, {
-      replacements: {
-        current_period: new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0')
-      }
-    });
+      FROM stock_count ${statsWhere}
+    `, { replacements: statsReplacements });
 
     res.json(success({
       items,
@@ -109,9 +125,15 @@ export const getDetail = async (req: Request, res: Response, next: NextFunction)
   try {
     const { count_number } = req.params;
 
+    // 多工厂防越权
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryRepl: any = { count_number };
+    if (_factoryId !== null) factoryRepl._factoryId = _factoryId;
+
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM stock_count WHERE count_number = :count_number`,
-      { replacements: { count_number } }
+      `SELECT * FROM stock_count WHERE count_number = :count_number${factoryCond}`,
+      { replacements: factoryRepl }
     );
 
     if (!headers.length) {
@@ -393,9 +415,15 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
     const b = req.body;
 
     // 校验状态
+    // 多工厂防越权
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryRepl: any = { count_number };
+    if (_factoryId !== null) factoryRepl._factoryId = _factoryId;
+
     const [headers]: any = await sequelize.query(
-      `SELECT status FROM stock_count WHERE count_number = :count_number`,
-      { replacements: { count_number } }
+      `SELECT status FROM stock_count WHERE count_number = :count_number${factoryCond}`,
+      { replacements: factoryRepl }
     );
     if (!headers.length) {
       return res.status(404).json({ success: false, message: '盘点单不存在' });
@@ -971,40 +999,53 @@ export const reportSummary = async (req: Request, res: Response, next: NextFunct
   try {
     const { start_period, end_period, warehouse_number } = req.query;
 
-    let whereClause = `WHERE status = N'已完成'`;
+    let whereClause = `WHERE sc.status = N'已完成'`;
     const replacements: any = {};
 
+    // 多工厂数据隔离
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ` AND sc.factory_id = :_factoryId`;
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     if (start_period) {
-      whereClause += ` AND count_period >= :start_period`;
+      whereClause += ` AND sc.count_period >= :start_period`;
       replacements.start_period = start_period;
     }
     if (end_period) {
-      whereClause += ` AND count_period <= :end_period`;
+      whereClause += ` AND sc.count_period <= :end_period`;
       replacements.end_period = end_period;
     }
     if (warehouse_number) {
-      whereClause += ` AND warehouse_number = :warehouse_number`;
+      whereClause += ` AND sc.warehouse_number = :warehouse_number`;
       replacements.warehouse_number = warehouse_number;
     }
 
     const [items]: any = await sequelize.query(`
-      SELECT count_number, count_period, warehouse_name, count_type,
-        total_items, total_batches, matched_batches, surplus_batches, shortage_batches,
-        total_surplus_qty, total_shortage_qty,
-        CASE WHEN total_batches > 0 THEN CAST(matched_batches * 100.0 / total_batches AS DECIMAL(5,1)) ELSE 0 END as accuracy_rate,
-        count_man, reviewer, confirmed_by, confirmed_date
-      FROM stock_count ${whereClause}
-      ORDER BY count_period DESC, creation_date DESC
+      SELECT sc.count_number, sc.count_period, sc.warehouse_name, sc.count_type,
+        sc.total_items, sc.total_batches, sc.matched_batches, sc.surplus_batches, sc.shortage_batches,
+        sc.total_surplus_qty, sc.total_shortage_qty,
+        CASE WHEN sc.total_batches > 0 THEN CAST(sc.matched_batches * 100.0 / sc.total_batches AS DECIMAL(5,1)) ELSE 0 END as accuracy_rate,
+        sc.count_man, sc.reviewer, sc.confirmed_by, sc.confirmed_date,
+        ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name
+      FROM stock_count sc
+      LEFT JOIN factory f ON sc.factory_id = f.id
+      ${whereClause}
+      ORDER BY sc.count_period DESC, sc.creation_date DESC
     `, { replacements });
 
     // KPI汇总
     const [kpi]: any = await sequelize.query(`
       SELECT
         COUNT(*) as total_count,
-        CASE WHEN SUM(total_batches) > 0 THEN CAST(SUM(matched_batches) * 100.0 / SUM(total_batches) AS DECIMAL(5,1)) ELSE 0 END as avg_accuracy,
-        SUM(total_surplus_qty) as total_surplus,
-        SUM(total_shortage_qty) as total_shortage
-      FROM stock_count ${whereClause}
+        CASE WHEN SUM(sc.total_batches) > 0 THEN CAST(SUM(sc.matched_batches) * 100.0 / SUM(sc.total_batches) AS DECIMAL(5,1)) ELSE 0 END as avg_accuracy,
+        SUM(sc.total_surplus_qty) as total_surplus,
+        SUM(sc.total_shortage_qty) as total_shortage
+      FROM stock_count sc
+      ${whereClause}
     `, { replacements });
 
     res.json(success({ items, kpi: kpi[0] || {} }));
@@ -1022,6 +1063,15 @@ export const reportDiffDetail = async (req: Request, res: Response, next: NextFu
 
     let whereClause = `WHERE d.difference_quantity != 0 AND h.status = N'已完成'`;
     const replacements: any = { offset, offsetEnd };
+
+    // 多工厂数据隔离
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ` AND h.factory_id = :_factoryId`;
+      replacements._factoryId = effectiveFactoryId;
+    }
 
     if (count_number) {
       whereClause += ` AND d.count_number = :count_number`;
@@ -1064,9 +1114,11 @@ export const reportDiffDetail = async (req: Request, res: Response, next: NextFu
         SELECT d.count_number, h.count_period, h.warehouse_name, d.item_number, d.item_name,
           d.specifications, d.basic_unit, d.batch_number, d.system_quantity, d.actual_quantity,
           d.difference_quantity, d.count_status, d.quality_status, d.remark, h.count_man, h.confirmed_date,
+          ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name,
           ROW_NUMBER() OVER (ORDER BY h.count_period DESC, d.count_number, d.line_number) AS _row_num
         FROM stock_count_detail d
         INNER JOIN stock_count h ON h.count_number = d.count_number
+        LEFT JOIN factory f ON h.factory_id = f.id
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
@@ -1085,24 +1137,34 @@ export const reportTrend = async (req: Request, res: Response, next: NextFunctio
   try {
     const { months = 12, warehouse_number } = req.query;
 
-    let whereClause = `WHERE status = N'已完成'`;
+    let whereClause = `WHERE sc.status = N'已完成'`;
     const replacements: any = {};
 
+    // 多工厂数据隔离
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ` AND sc.factory_id = :_factoryId`;
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     if (warehouse_number) {
-      whereClause += ` AND warehouse_number = :warehouse_number`;
+      whereClause += ` AND sc.warehouse_number = :warehouse_number`;
       replacements.warehouse_number = warehouse_number;
     }
 
     const [items]: any = await sequelize.query(`
-      SELECT TOP ${Number(months)} count_period,
-        SUM(total_surplus_qty) as surplus_qty,
-        SUM(total_shortage_qty) as shortage_qty,
-        SUM(total_surplus_qty) - SUM(total_shortage_qty) as net_diff,
-        CASE WHEN SUM(total_batches) > 0 THEN CAST(SUM(matched_batches) * 100.0 / SUM(total_batches) AS DECIMAL(5,1)) ELSE 100 END as accuracy_rate,
+      SELECT TOP ${Number(months)} sc.count_period,
+        SUM(sc.total_surplus_qty) as surplus_qty,
+        SUM(sc.total_shortage_qty) as shortage_qty,
+        SUM(sc.total_surplus_qty) - SUM(sc.total_shortage_qty) as net_diff,
+        CASE WHEN SUM(sc.total_batches) > 0 THEN CAST(SUM(sc.matched_batches) * 100.0 / SUM(sc.total_batches) AS DECIMAL(5,1)) ELSE 100 END as accuracy_rate,
         COUNT(*) as count_times
-      FROM stock_count ${whereClause}
-      GROUP BY count_period
-      ORDER BY count_period DESC
+      FROM stock_count sc
+      ${whereClause}
+      GROUP BY sc.count_period
+      ORDER BY sc.count_period DESC
     `, { replacements });
 
     res.json(success(items.reverse()));
@@ -1126,16 +1188,25 @@ export const exportSelected = async (req: Request, res: Response, next: NextFunc
     ids.forEach((id: any, i: number) => { replacements[`id${i}`] = id; });
     const placeholders = ids.map((_: any, i: number) => `:id${i}`).join(', ');
 
+    // 多工厂防越权：导出时按工厂过滤
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      replacements._exportFactoryId = _factoryId;
+    }
+    const exportFactoryCond = _factoryId !== null ? ` AND sc.factory_id = :_exportFactoryId` : '';
+
     const [items]: any = await sequelize.query(
       `SELECT count_number, count_period, warehouse_name, count_type, status,
         total_batches, matched_batches, surplus_batches, shortage_batches,
         total_surplus_qty, total_shortage_qty,
         count_man, reviewer, confirmed_by,
+        ISNULL(f.factory_short, f.factory_name) as factory_display,
         CONVERT(VARCHAR(19), created_time, 120) as created_time,
         CONVERT(VARCHAR(19), completed_time, 120) as completed_time
-       FROM stock_count
-       WHERE id IN (${placeholders})
-       ORDER BY creation_date DESC, id DESC`,
+       FROM stock_count sc
+       LEFT JOIN factory f ON sc.factory_id = f.id
+       WHERE sc.id IN (${placeholders})${exportFactoryCond}
+       ORDER BY sc.creation_date DESC, sc.id DESC`,
       { replacements }
     );
 
@@ -1143,13 +1214,13 @@ export const exportSelected = async (req: Request, res: Response, next: NextFunc
       'count_number', 'count_period', 'warehouse_name', 'count_type', 'status',
       'total_batches', 'matched_batches', 'surplus_batches', 'shortage_batches',
       'total_surplus_qty', 'total_shortage_qty',
-      'count_man', 'reviewer', 'confirmed_by', 'created_time', 'completed_time'
+      'count_man', 'reviewer', 'confirmed_by', 'factory_display', 'created_time', 'completed_time'
     ];
     const headers = [
       '盘点单号', '盘点期间', '仓库', '类型', '状态',
       '批次数', '相符', '盘盈', '盘亏',
       '盘盈数量', '盘亏数量',
-      '盘点人', '复核人', '确认人', '新建时间', '完成时间'
+      '盘点人', '复核人', '确认人', '所属工厂', '新建时间', '完成时间'
     ];
 
     exportToExcel(items, fields, headers, 'stock_count_selected', res);

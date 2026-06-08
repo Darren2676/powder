@@ -39,26 +39,30 @@ export const getExpenseClaims = async (req: Request, res: Response, next: NextFu
     const conditions: string[] = [];
     const replacements: any = { offset, offsetEnd: offset + limit };
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
-      conditions.push('factory_id = :_factoryId');
-      replacements._factoryId = _factoryId;
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      conditions.push('h.factory_id = :_factoryId');
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (search) {
-      conditions.push('(claim_number LIKE :search OR applicant_name LIKE :search OR purpose LIKE :search)');
+      conditions.push('(h.claim_number LIKE :search OR h.applicant_name LIKE :search OR h.purpose LIKE :search)');
       replacements.search = `%${search}%`;
     }
-    if (status) { conditions.push('approval_status = :status'); replacements.status = status; }
-    if (claimType) { conditions.push('claim_type = :ct'); replacements.ct = claimType; }
+    if (status) { conditions.push('h.approval_status = :status'); replacements.status = status; }
+    if (claimType) { conditions.push('h.claim_type = :ct'); replacements.ct = claimType; }
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
     const [countResult]: any = await sequelize.query(
-      `SELECT COUNT(*) AS total FROM expense_claim ${whereClause}`, { replacements }
+      `SELECT COUNT(*) AS total FROM expense_claim h ${whereClause}`, { replacements }
     );
     const [items]: any = await sequelize.query(
       `SELECT * FROM (
-         SELECT *, ROW_NUMBER() OVER (ORDER BY created_at DESC, id DESC) AS _row_num
-         FROM expense_claim ${whereClause}
+         SELECT h.*, f.factory_short, ROW_NUMBER() OVER (ORDER BY h.created_at DESC, h.id DESC) AS _row_num
+         FROM expense_claim h
+         LEFT JOIN factory f ON h.factory_id = f.id
+         ${whereClause}
        ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd`, { replacements }
     );
     const cleanItems = items.map((item: any) => { const { _row_num, ...rest } = item; return rest; });
@@ -82,10 +86,10 @@ export const getExpenseClaimDetail = async (req: Request, res: Response, next: N
     const id = req.params.id as string;
     const isNumericId = /^\d+$/.test(id);
     const _factoryId = getFactoryId(req);
-    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryCond = _factoryId !== null ? ' AND h.factory_id = :_factoryId' : '';
     const whereClause = isNumericId
-      ? `SELECT * FROM expense_claim WHERE id = :id${factoryCond}`
-      : `SELECT * FROM expense_claim WHERE claim_number = :id${factoryCond}`;
+      ? `SELECT h.*, f.factory_short FROM expense_claim h LEFT JOIN factory f ON h.factory_id = f.id WHERE h.id = :id${factoryCond}`
+      : `SELECT h.*, f.factory_short FROM expense_claim h LEFT JOIN factory f ON h.factory_id = f.id WHERE h.claim_number = :id${factoryCond}`;
     const [headers]: any = await sequelize.query(whereClause, { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } });
     if (!headers.length) { res.status(404).json({ success: false, message: '报销单不存在' }); return; }
 
@@ -235,9 +239,9 @@ export const updateExpenseClaim = async (req: Request, res: Response, next: Next
     try {
       await sequelize.query(
         `UPDATE expense_claim SET claim_type = :type, department = :dept, purpose = :purpose,
-            advance_amount = :advance, remark = :remark, updated_by = :ub, updated_at = GETDATE()
+            advance_amount = :advance, remark = :remark, factory_id = :factory_id, updated_by = :ub, updated_at = GETDATE()
           WHERE claim_number = :cn`,
-        { replacements: { cn, type: b.claim_type || (claim as any).claim_type, dept: b.department || (claim as any).department || null, purpose: b.purpose || (claim as any).purpose || null, advance: b.advance_amount ?? (claim as any).advance_amount ?? 0, remark: b.remark || (claim as any).remark || null, ub: username }, transaction }
+        { replacements: { cn, type: b.claim_type || (claim as any).claim_type, dept: b.department || (claim as any).department || null, purpose: b.purpose || (claim as any).purpose || null, advance: b.advance_amount ?? (claim as any).advance_amount ?? 0, remark: b.remark || (claim as any).remark || null, factory_id: b.factory_id || null, ub: username }, transaction }
       );
 
       // 重写明细
@@ -284,7 +288,9 @@ export const deleteExpenseClaim = async (req: Request, res: Response, next: Next
     const claim = await findClaimByIdParam(id);
     if (!claim) { res.status(404).json({ success: false, message: '报销单不存在' }); return; }
     if (claim.approval_status !== '草稿') { res.status(400).json({ success: false, message: '仅草稿可删除' }); return; }
-    await sequelize.query('DELETE FROM expense_claim WHERE id = :id', { replacements: { id: claim.id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    await sequelize.query(`DELETE FROM expense_claim WHERE id = :id${factoryCond}`, { replacements: { id: claim.id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } });
     res.json(success(null, '删除成功'));
   } catch (err) { next(err); }
 };

@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { PrinterOutlined, DownloadOutlined } from '@ant-design/icons-vue'
 import { getCompletedScrapStockCounts, getScrapMonthlyReport } from '@/api/warehouse/scrapDisposal'
+import { getFactories } from '@/api/system/factory'
 import dayjs from 'dayjs'
 import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'
@@ -13,9 +14,19 @@ const selectedCountNumber = ref('')
 const reportData = ref<any>(null)
 const dataSource = ref<any[]>([])
 
+// ==================== 工厂筛选 ====================
+const factoryList = ref<any[]>([])
+const filterFactory = ref<number | undefined>(undefined)
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
+
 const fetchStockCounts = async () => {
   try {
-    const res: any = await getCompletedScrapStockCounts()
+    const res: any = await getCompletedScrapStockCounts({ factory_id: filterFactory.value || undefined })
     stockCountOptions.value = res?.data || []
   } catch (e) {}
 }
@@ -29,7 +40,7 @@ const fetchReport = async () => {
   if (!selectedCountNumber.value) return
   loading.value = true
   try {
-    const res: any = await getScrapMonthlyReport({ count_number: selectedCountNumber.value })
+    const res: any = await getScrapMonthlyReport({ count_number: selectedCountNumber.value, factory_id: filterFactory.value || undefined })
     if (res?.success) {
       reportData.value = res.data
       dataSource.value = res.data?.items || []
@@ -328,7 +339,7 @@ const handlePrint = () => {
   }
 }
 
-onMounted(() => { fetchStockCounts() })
+onMounted(() => { fetchStockCounts(); loadFactories() })
 </script>
 
 <template>
@@ -337,6 +348,17 @@ onMounted(() => { fetchStockCounts() })
     <div style="margin-bottom: 16px">
       <div style="display: flex; align-items: center; gap: 12px; flex-wrap: nowrap">
         <span style="font-size: 18px; font-weight: 600; white-space: nowrap; flex-shrink: 0">报废仓月度报表</span>
+        <a-select
+          v-model:value="filterFactory"
+          placeholder="工厂"
+          style="min-width: 120px; flex: 0 1 150px"
+          allow-clear
+          @change="() => { fetchStockCounts(); selectedCountNumber = ''; reportData = null; dataSource = [] }"
+        >
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">
+            {{ f.factory_short || f.factory_name }}
+          </a-select-option>
+        </a-select>
         <span style="font-weight: 500; white-space: nowrap; flex-shrink: 0">基础盘点单:</span>
         <a-select
           v-model:value="selectedCountNumber"

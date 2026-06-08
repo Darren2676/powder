@@ -4,6 +4,17 @@
     <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;overflow-x:auto">
       <span style="font-size:18px;font-weight:600;white-space:nowrap;flex-shrink:0">有效期管理报告</span>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:nowrap">
+        <a-select
+          v-model:value="filterFactory"
+          placeholder="工厂"
+          allow-clear
+          style="width:120px"
+          @change="fetchData"
+        >
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">
+            {{ f.factory_short || f.factory_name }}
+          </a-select-option>
+        </a-select>
         <a-select v-model:value="filterWarehouse" placeholder="仓库" allow-clear style="width:160px" @change="fetchData">
           <a-select-option v-for="w in warehouseOptions" :key="w.warehouse_number" :value="w.warehouse_number">{{ w.warehouse_name }}</a-select-option>
         </a-select>
@@ -50,16 +61,19 @@ import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { getShelfLifeReport } from '@/api/warehouse/shelfLifeReport'
 import { getWarehouses } from '@/api/master-data/warehouse'
+import { getFactories } from '@/api/system/factory'
 
 const searchText = ref('')
 const filterWarehouse = ref<string | undefined>(undefined)
 const filterItemType = ref<string | undefined>(undefined)
 const filterExpireStatus = ref<string | undefined>(undefined)
+const filterFactory = ref<number | undefined>(undefined)
 const loading = ref(false)
 const tableData = ref<any[]>([])
 const pagination = reactive({ current: 1, pageSize: 20, total: 0 })
 
 const warehouseOptions = ref<any[]>([])
+const factoryList = ref<any[]>([])
 
 const columns = [
   { title: '工厂', dataIndex: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
@@ -84,6 +98,7 @@ const fetchData = async () => {
       item_type: filterItemType.value || undefined,
       expire_status: filterExpireStatus.value || undefined,
       search: searchText.value || undefined,
+      factory_id: filterFactory.value || undefined,
     })
     tableData.value = res.data.items || []
     pagination.total = res.data.total || 0
@@ -102,6 +117,7 @@ const handleReset = () => {
   filterWarehouse.value = undefined
   filterItemType.value = undefined
   filterExpireStatus.value = undefined
+  filterFactory.value = undefined
   pagination.current = 1
   fetchData()
 }
@@ -113,5 +129,12 @@ const loadWarehouses = async () => {
   } catch { warehouseOptions.value = [] }
 }
 
-onMounted(() => { fetchData(); loadWarehouses() })
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
+
+onMounted(() => { fetchData(); loadWarehouses(); loadFactories() })
 </script>

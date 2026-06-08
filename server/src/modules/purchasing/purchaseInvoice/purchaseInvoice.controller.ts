@@ -121,12 +121,16 @@ export const getPurchaseInvoices = async (req: Request, res: Response, next: Nex
     if (start_date) whereClause += ` AND pi.invoice_date >= :start_date`;
     if (end_date) whereClause += ` AND pi.invoice_date < DATEADD(day, 1, CAST(:end_date AS DATE))`;
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) { whereClause += ` AND pi.factory_id = :_factoryId`; replacements._factoryId = _factoryId; }
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) { whereClause += ` AND pi.factory_id = :_factoryId`; replacements._factoryId = effectiveFactoryId; }
 
     const countSql = `SELECT COUNT(*) as total FROM purchase_invoice pi ${whereClause}`;
     const dataSql = `SELECT * FROM (
-      SELECT pi.*, ROW_NUMBER() OVER (ORDER BY pi.created_at DESC) AS _row_num
-      FROM purchase_invoice pi ${whereClause}
+      SELECT pi.*, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY pi.created_at DESC) AS _row_num
+      FROM purchase_invoice pi
+      LEFT JOIN factory f ON pi.factory_id = f.id
+      ${whereClause}
     ) t WHERE _row_num BETWEEN :offset AND :offset + :limit - 1`;
     const [countResult]: any = await sequelize.query(countSql, { replacements });
     const [rows]: any = await sequelize.query(dataSql, { replacements });
@@ -404,6 +408,11 @@ export const getAvailableStockInDetails = async (req: Request, res: Response, ne
     const supplier_number = (req.query.supplier_number as string) || '';
     if (!supplier_number) { res.json(success([])); return; }
 
+    const _factoryId = getFactoryId(req);
+    let factoryCond = '';
+    const factoryReps: any = {};
+    if (_factoryId !== null) { factoryCond = ' AND si.factory_id = :_factoryId'; factoryReps._factoryId = _factoryId; }
+
     const [rows]: any = await sequelize.query(`
       SELECT sid.id, sid.stock_in_number, sid.purchase_order_number,
         sid.purchase_detail_id, sid.item_number, sid.item_name,
@@ -422,8 +431,9 @@ export const getAvailableStockInDetails = async (req: Request, res: Response, ne
       WHERE si.supplier_number = :supplier_number
         AND si.approval_status = N'已入库'
         AND sid.qualified_quantity - ISNULL(inv.invoiced_qty, 0) > 0
+        ${factoryCond}
       ORDER BY sid.stock_in_number, sid.line_number
-    `, { replacements: { supplier_number, exclude_invoice: (req.query.exclude_invoice as string) || '' } });
+    `, { replacements: { supplier_number, exclude_invoice: (req.query.exclude_invoice as string) || '', ...factoryReps } });
 
     res.json(success(rows));
   } catch (err) { next(err); }
@@ -470,11 +480,13 @@ export const exportPurchaseInvoices = async (req: Request, res: Response, next: 
     const search = (req.query.search as string) || '';
     let whereClause = 'WHERE 1=1';
     const replacements: any = { search: `%${search}%` };
-    if (search) whereClause += ` AND (invoice_number LIKE :search OR supplier_name LIKE :search OR invoice_code LIKE :search OR invoice_no LIKE :search)`;
+    if (search) whereClause += ` AND (pi.invoice_number LIKE :search OR pi.supplier_name LIKE :search OR pi.invoice_code LIKE :search OR pi.invoice_no LIKE :search)`;
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) { whereClause += ` AND factory_id = :_factoryId`; replacements._factoryId = _factoryId; }
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) { whereClause += ` AND pi.factory_id = :_factoryId`; replacements._factoryId = effectiveFactoryId; }
     const [rows]: any = await sequelize.query(
-      `SELECT * FROM purchase_invoice ${whereClause} ORDER BY created_at DESC`,
+      `SELECT pi.*, f.factory_short as factory_short_name FROM purchase_invoice pi LEFT JOIN factory f ON pi.factory_id = f.id ${whereClause} ORDER BY pi.created_at DESC`,
       { replacements }
     );
     res.json(success(rows, '导出成功'));

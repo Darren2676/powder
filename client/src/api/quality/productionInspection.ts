@@ -21,5 +21,5 @@ export const defectHandling = (id: string, data: any) =>
 export const deleteProductionInspection = (id: string) =>
   request.delete(`/quality/production-inspections/${encodeURIComponent(id)}`)
 
-export const exportProductionInspections = () =>
-  request.get('/quality/production-inspections/export', { responseType: 'blob' })
+export const exportProductionInspections = (factory_id?: number) =>
+  request.get('/quality/production-inspections/export', { params: factory_id ? { factory_id } : {}, responseType: 'blob' })

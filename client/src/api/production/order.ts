@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 
-export function getOrders(params?: { page?: number; limit?: number; search?: string; status?: string; approval_status?: string; production_number?: string; item_number?: string; equipment_number?: string; production_date?: string; schedule_id?: string }) {
+export function getOrders(params?: { page?: number; limit?: number; search?: string; status?: string; approval_status?: string; production_number?: string; item_number?: string; equipment_number?: string; production_date?: string; schedule_id?: string; factory_id?: number }) {
   return request.get('/orders', { params })
 }
 
@@ -36,7 +36,7 @@ export function dispatchOrders(items: Array<any>) {
   return request.post('/orders/dispatch', { items })
 }
 
-export function getGanttData(params?: { startDate?: string; endDate?: string; equipmentNumber?: string; search?: string }) {
+export function getGanttData(params?: { startDate?: string; endDate?: string; equipmentNumber?: string; search?: string; factory_id?: number }) {
   return request.get('/orders/gantt', { params })
 }
 

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 报废仓处置控制器
  *
  * 提供报废仓库存查询和报废出库处置功能。
@@ -33,6 +33,15 @@ export const getScrapInventory = async (req: Request, res: Response, next: NextF
     let whereClause = 'WHERE bi.warehouse_number = :wn AND bi.quantity > 0';
     const replacements: any = { wn: warehouseNumber };
 
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ' AND bi.factory_id = :_factoryId';
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     if (search) {
       whereClause += ` AND (bi.item_number LIKE :search OR bi.item_name LIKE :search)`;
       replacements.search = `%${search}%`;
@@ -53,10 +62,13 @@ export const getScrapInventory = async (req: Request, res: Response, next: NextF
           COUNT(bi.id) as batch_count,
           MIN(bi.inbound_date) as earliest_inbound,
           MAX(bi.inbound_date) as latest_inbound,
+          ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name as factory_name_val,
           ROW_NUMBER() OVER (ORDER BY MAX(bi.inbound_date) DESC) AS _row_num
         FROM finished_batch_inventory bi
+        LEFT JOIN factory f ON bi.factory_id = f.id
         ${whereClause}
-        GROUP BY bi.item_number, bi.item_name, bi.specifications, bi.basic_unit
+        GROUP BY bi.item_number, bi.item_name, bi.specifications, bi.basic_unit,
+                 ISNULL(f.factory_short, f.factory_name), f.factory_name
       ) t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
 
@@ -86,13 +98,17 @@ export const getScrapBatchDetail = async (req: Request, res: Response, next: Nex
       return;
     }
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [batches]: any = await sequelize.query(`
       SELECT batch_number, item_number, item_name, specifications, basic_unit,
         quantity, initial_quantity, inbound_date, status
       FROM finished_batch_inventory
-      WHERE item_number = :item_number AND warehouse_number = :wn AND quantity > 0
+      WHERE item_number = :item_number AND warehouse_number = :wn AND quantity > 0${factoryCond}
       ORDER BY inbound_date ASC, id ASC
-    `, { replacements: { item_number, wn: scrapWh[0].warehouse_number } });
+    `, { replacements: { item_number, wn: scrapWh[0].warehouse_number, ...factoryReps } });
 
     res.json(success({ items: batches, warehouse: scrapWh[0] }));
   } catch (err) { next(err); }
@@ -207,14 +223,25 @@ export const getScrapDisposalList = async (req: Request, res: Response, next: Ne
       replacements.status = status;
     }
 
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ` AND h.factory_id = :_factoryId`;
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
       `SELECT COUNT(*) as total FROM scrap_disposal h ${whereClause}`, { replacements }
     );
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT h.*, ROW_NUMBER() OVER (ORDER BY h.creation_date DESC, h.id DESC) AS _row_num
-        FROM scrap_disposal h ${whereClause}
+        SELECT h.*, ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name as factory_name_val,
+               ROW_NUMBER() OVER (ORDER BY h.creation_date DESC, h.id DESC) AS _row_num
+        FROM scrap_disposal h LEFT JOIN factory f ON h.factory_id = f.id
+        ${whereClause}
       ) t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
 
@@ -235,9 +262,14 @@ export const getScrapDisposalDetail = async (req: Request, res: Response, next: 
   try {
     const { disposal_number } = req.params;
 
+    // 多工厂防越权
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM scrap_disposal WHERE disposal_number = :dn`,
-      { replacements: { dn: disposal_number } }
+      `SELECT * FROM scrap_disposal WHERE disposal_number = :dn${factoryCond}`,
+      { replacements: { dn: disposal_number, ...factoryReps } }
     );
     if (!headers.length) {
       res.status(404).json({ success: false, message: '处置单不存在' });

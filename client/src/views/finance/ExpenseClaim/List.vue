@@ -13,6 +13,7 @@ import {
   checkWorkflowActive,
 } from '@/api/finance/expenseClaim'
 import { getActiveDepartments } from '@/api/system/department'
+import { getFactories } from '@/api/system/factory'
 import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -37,15 +38,27 @@ interface ExpenseClaim {
   approval_status?: string
   current_step?: number
   purpose?: string
+  factory_id?: number | null
+  factory_short?: string
 }
 
 const filterStatus = ref<string | undefined>(undefined)
 const filterClaimType = ref<string | undefined>(undefined)
+const filterFactoryId = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 const fetchListWrapper = (params: any) => {
   const merged: any = { ...params }
   if (filterStatus.value) merged.approval_status = filterStatus.value
   if (filterClaimType.value) merged.claim_type = filterClaimType.value
+  if (filterFactoryId.value !== undefined && filterFactoryId.value !== null) merged.factory_id = filterFactoryId.value
   return getExpenseClaims(merged)
 }
 
@@ -58,6 +71,7 @@ const {
 const handleReset = () => {
   filterStatus.value = undefined
   filterClaimType.value = undefined
+  filterFactoryId.value = undefined
   searchText.value = ''
   pagination.current = 1
   fetchData()
@@ -72,6 +86,8 @@ const defaultDataColumns: any[] = [
   { title: '部门', dataIndex: 'department', key: 'department', width: 120, resizable: true },
   { title: '总额', dataIndex: 'total_amount', key: 'total_amount', width: 120, resizable: true, align: 'right' as const },
   { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 100, resizable: true },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true,
+    customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '当前步骤', dataIndex: 'current_step', key: 'current_step', width: 100, resizable: true },
   { title: '事由', dataIndex: 'purpose', key: 'purpose', width: 200, resizable: true, ellipsis: true },
 ]
@@ -93,6 +109,7 @@ const createForm = ref({
   purpose: '',
   advance_amount: 0,
   remark: '',
+  factory_id: null as number | null,
 })
 
 const resetCreateForm = () => {
@@ -102,6 +119,7 @@ const resetCreateForm = () => {
     purpose: '',
     advance_amount: 0,
     remark: '',
+    factory_id: null,
   }
 }
 
@@ -311,6 +329,7 @@ onMounted(() => {
   fetchData()
   fetchClaimTypes()
   loadDepartments()
+  loadFactories()
 })
 </script>
 
@@ -335,6 +354,12 @@ onMounted(() => {
             style="width: 120px" @change="handleSearch"
           >
             <a-select-option v-for="t in CLAIM_TYPE_OPTIONS" :key="t" :value="t">{{ t }}</a-select-option>
+          </a-select>
+          <a-select
+            v-model:value="filterFactoryId" placeholder="全部工厂" allow-clear
+            style="width:120px" @change="handleSearch" v-if="factoryList.length > 0"
+          >
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
           </a-select>
           <a-button type="primary" @click="handleSearch">
             <template #icon><SearchOutlined /></template>搜索
@@ -423,6 +448,11 @@ onMounted(() => {
         </a-form-item>
         <a-form-item label="预支金额">
           <a-input-number v-model:value="createForm.advance_amount" :min="0" :precision="2" style="width: 100%" />
+        </a-form-item>
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="createForm.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
         </a-form-item>
         <a-form-item label="备注">
           <a-textarea v-model:value="createForm.remark" :rows="2" />

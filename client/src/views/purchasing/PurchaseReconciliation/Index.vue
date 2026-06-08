@@ -9,6 +9,7 @@ import {
   getPurchaseReconciliationPage, updatePurchaseReconciliationStatus, getPurchaseReconciliationPrintData,
   getPurchaseOrderReconciliationPage, updatePurchaseOrderReconciliationStatus, getPurchaseOrderReconciliationPrintData
 } from '@/api/purchasing/purchaseReconciliation'
+import { getFactories } from '@/api/system/factory'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import dayjs from 'dayjs'
@@ -18,6 +19,14 @@ const loading = ref(false)
 const dataSource = ref<any[]>([])
 const searchText = ref('')
 const filterRecStatus = ref<string>('')
+const filterFactory = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 const selectedRowKeys = ref<number[]>([])
 const markLoading = ref(false)
 const printLoading = ref(false)
@@ -58,6 +67,8 @@ const pagination = reactive({
 
 // ===== 入库单明细列定义 =====
 const stockInDefaultColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true,
+    customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '对账状态', dataIndex: 'reconciliation_status', key: 'reconciliation_status', width: 100, resizable: true },
   { title: '入库单号', dataIndex: 'stock_in_number', key: 'stock_in_number', width: 160, resizable: true },
   { title: '入库状态', dataIndex: 'stock_in_status', key: 'stock_in_status', width: 90, resizable: true },
@@ -77,6 +88,8 @@ const stockInDefaultColumns: any[] = [
 
 // ===== 采购订单明细列定义 =====
 const purchaseOrderDefaultColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true,
+    customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '对账状态', dataIndex: 'reconciliation_status', key: 'reconciliation_status', width: 100, resizable: true },
   { title: '采购订单号', dataIndex: 'purchase_order_number', key: 'purchase_order_number', width: 160, resizable: true },
   { title: '订单状态', dataIndex: 'order_status', key: 'order_status', width: 90, resizable: true },
@@ -132,7 +145,8 @@ const fetchData = async () => {
       page: pagination.current,
       limit: pagination.pageSize,
       search: searchText.value,
-      reconciliationStatus: filterRecStatus.value
+      reconciliationStatus: filterRecStatus.value,
+      factory_id: filterFactory.value
     }
     let res: any
     if (activeTab.value === 'stockIn') {
@@ -240,7 +254,7 @@ const handlePrintStatement = async () => {
 const doPrint = () => { window.print() }
 
 onMounted(async () => {
-  await Promise.all([loadStockInColPref(), loadPOColPref()])
+  await Promise.all([loadStockInColPref(), loadPOColPref(), loadFactories()])
   fetchData()
 })
 </script>
@@ -269,6 +283,17 @@ onMounted(async () => {
         <a-select-option value="">全部</a-select-option>
         <a-select-option value="已对账">已对账</a-select-option>
         <a-select-option value="未对账">未对账</a-select-option>
+      </a-select>
+      <a-select
+        v-model:value="filterFactory"
+        placeholder="所属工厂"
+        style="min-width: 120px"
+        allow-clear
+        @change="handleSearch"
+      >
+        <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">
+          {{ f.factory_short || f.factory_name }}
+        </a-select-option>
       </a-select>
       <a-button @click="fetchData"><ReloadOutlined /> 刷新</a-button>
       <a-tooltip title="列设置"><a-button @click="activeTab === 'stockIn' ? openStockInColSetting() : openPOColSetting()"><SettingOutlined /></a-button></a-tooltip>

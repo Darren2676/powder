@@ -113,13 +113,14 @@ export const createMaterialTransaction = async (
     quantity: number; before_quantity: number; after_quantity: number;
     batch_number: string; supplier_number?: string; supplier_name?: string;
     operator: string; remark: string; accounting_period?: string;
+    factory_id?: number | null;
   },
   transaction?: Transaction
 ) => {
   const ap = params.accounting_period || new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
   await sequelize.query(
-    "INSERT INTO material_inventory_transaction (transaction_number, transaction_type, source_type, source_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, before_quantity, after_quantity, batch_number, supplier_number, supplier_name, operator, operation_date, remark, creation_date, accounting_period) VALUES (:transaction_number, :transaction_type, :source_type, :source_number, :item_number, :item_name, :item_type, :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity, :batch_number, :supplier_number, :supplier_name, :operator, GETDATE(), :remark, GETDATE(), :accounting_period)",
-    { replacements: { ...params, supplier_number: params.supplier_number || '', supplier_name: params.supplier_name || '', accounting_period: ap }, transaction }
+    "INSERT INTO material_inventory_transaction (transaction_number, transaction_type, source_type, source_number, item_number, item_name, item_type, specifications, basic_unit, warehouse_number, warehouse_name, quantity, before_quantity, after_quantity, batch_number, supplier_number, supplier_name, operator, operation_date, remark, creation_date, accounting_period, factory_id) VALUES (:transaction_number, :transaction_type, :source_type, :source_number, :item_number, :item_name, :item_type, :specifications, :basic_unit, :warehouse_number, :warehouse_name, :quantity, :before_quantity, :after_quantity, :batch_number, :supplier_number, :supplier_name, :operator, GETDATE(), :remark, GETDATE(), :accounting_period, :factory_id)",
+    { replacements: { ...params, supplier_number: params.supplier_number || '', supplier_name: params.supplier_name || '', accounting_period: ap, factory_id: params.factory_id || null }, transaction }
   );
 };
 

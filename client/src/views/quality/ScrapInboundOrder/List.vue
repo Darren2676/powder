@@ -12,6 +12,7 @@ import {
 } from '@/api/quality/scrapInboundOrder'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval } from '@/api/system/approval'
 import { getItems } from '@/api/master-data/itemMaster'
+import { getFactories } from '@/api/system/factory'
 import { useOpenAccountingPeriods } from '@/composables/useOpenAccountingPeriods'
 import dayjs from 'dayjs'
 
@@ -24,6 +25,8 @@ const loading = ref(false)
 const dataSource = ref<any[]>([])
 const searchText = ref('')
 const filterStatus = ref<string | undefined>(undefined)
+const filterFactory = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
 const pagination = reactive({ current: 1, pageSize: 15, total: 0 })
 const stats = ref<any>({})
 
@@ -47,11 +50,20 @@ const itemSearchLoading = ref(false)
 const itemSearchResults = ref<any[]>([])
 let itemSearchTimer: any = null
 
+// 加载工厂列表
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data?.items || [] }
+  } catch (e) { /* ignore */ }
+}
+
 // ==================== 列定义 ====================
 const columns = [
   { title: '行号', key: 'rowIndex', width: 55, fixed: 'left' as const },
   { title: '入库单号', dataIndex: 'stock_in_number', key: 'stock_in_number', width: 160 },
   { title: '仓库', dataIndex: 'warehouse_name', key: 'warehouse_name', width: 110 },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name_val || record.factory_name || '-' },
   { title: '会计期间', dataIndex: 'accounting_period', key: 'accounting_period', width: 90 },
   { title: '入库日期', dataIndex: 'stock_in_date', key: 'stock_in_date', width: 110 },
   { title: '审批状态', key: 'approval_status', width: 100 },
@@ -89,7 +101,8 @@ const fetchList = async () => {
       page: pagination.current,
       limit: pagination.pageSize,
       search: searchText.value || undefined,
-      approval_status: filterStatus.value || undefined
+      approval_status: filterStatus.value || undefined,
+      factory_id: filterFactory.value || undefined
     })
     dataSource.value = res.data.items || []
     pagination.total = res.data.pagination?.total || 0
@@ -100,7 +113,7 @@ const fetchList = async () => {
 
 const handleSearch = () => { pagination.current = 1; fetchList() }
 const handleReset = () => {
-  searchText.value = ''; filterStatus.value = undefined
+  searchText.value = ''; filterStatus.value = undefined; filterFactory.value = undefined
   pagination.current = 1; fetchList()
 }
 const handleTableChange = (pag: any) => {
@@ -289,7 +302,7 @@ const formatDateTime = (date: string) => {
   return dayjs(date).format('YYYY-MM-DD HH:mm')
 }
 
-onMounted(() => { fetchOpenPeriods(); fetchList() })
+onMounted(() => { fetchOpenPeriods(); fetchList(); loadFactories() })
 </script>
 
 <template>
@@ -334,6 +347,9 @@ onMounted(() => { fetchOpenPeriods(); fetchList() })
             <a-select-option value="草稿">草稿</a-select-option>
             <a-select-option value="待审批">待审批</a-select-option>
             <a-select-option value="已审批">已审批</a-select-option>
+          </a-select>
+          <a-select v-model:value="filterFactory" placeholder="工厂" style="width: 120px" allowClear @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
           </a-select>
           <a-button @click="handleReset"><ReloadOutlined />重置</a-button>
           <a-button type="primary" @click="openCreate"><PlusOutlined />新建</a-button>

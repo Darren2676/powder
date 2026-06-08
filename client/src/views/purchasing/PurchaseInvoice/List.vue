@@ -20,6 +20,7 @@ import dayjs from 'dayjs'
 
 // ==================== 供应商选项 ====================
 import { getSuppliers } from '@/api/master-data/supplier'
+import { getFactories } from '@/api/system/factory'
 const supplierOptions = ref<any[]>([])
 const supplierLoading = ref(false)
 const loadSuppliers = async (search?: string) => {
@@ -33,8 +34,17 @@ const loadSuppliers = async (search?: string) => {
 
 // ==================== 列表 ====================
 const filterApprovalStatus = ref('')
+const factoryList = ref<any[]>([])
+const filterFactory = ref<number | undefined>(undefined)
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 const getInvoicesWithFilter = (params: any) => {
   if (filterApprovalStatus.value) params.approval_status = filterApprovalStatus.value
+  if (filterFactory.value) params.factory_id = filterFactory.value
   return getPurchaseInvoices(params)
 }
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getInvoicesWithFilter)
@@ -381,6 +391,7 @@ const lineColumns = [
 onMounted(async () => {
   await loadColumnPreference()
   fetchData()
+  loadFactories()
 })
 </script>
 
@@ -400,6 +411,9 @@ onMounted(async () => {
         >
           <template #prefix><SearchOutlined /></template>
         </a-input-search>
+        <a-select v-model:value="filterFactory" placeholder="工厂" style="width: 120px" allow-clear @change="handleSearch">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+        </a-select>
         <a-select v-model:value="filterApprovalStatus" placeholder="审批状态" style="width: 120px" allow-clear @change="handleSearch">
           <a-select-option value="草稿">草稿</a-select-option>
           <a-select-option value="已审批">已审批</a-select-option>

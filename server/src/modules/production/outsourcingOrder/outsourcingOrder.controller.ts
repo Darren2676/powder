@@ -147,8 +147,11 @@ export const updateOutsourcingOrder = async (req: Request, res: Response, next: 
   try {
     const { id } = req.params;
     const b = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
-    const [check]: any = await sequelize.query(`SELECT approval_status, planned_quantity FROM outsourcing_order WHERE outsourcing_order_number = :id`, { replacements: { id } });
+    const [check]: any = await sequelize.query(`SELECT approval_status, planned_quantity FROM outsourcing_order WHERE outsourcing_order_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!check.length) { res.status(404).json({ success: false, message: '委外订单不存在' }); return; }
     if (check[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许编辑' }); return; }
 
@@ -161,7 +164,7 @@ export const updateOutsourcingOrder = async (req: Request, res: Response, next: 
         unit_price = :unit_price, total_amount = :total_amount,
         order_date = :order_date, expected_return_date = :expected_return_date,
         remark = :remark
-      WHERE outsourcing_order_number = :id`,
+      WHERE outsourcing_order_number = :id${factoryCond}`,
       {
         replacements: {
           id,
@@ -171,7 +174,8 @@ export const updateOutsourcingOrder = async (req: Request, res: Response, next: 
           total_amount: unitPrice * plannedQty,
           order_date: b.order_date || '',
           expected_return_date: b.expected_return_date || '',
-          remark: b.remark || ''
+          remark: b.remark || '',
+          ...factoryReps
         }
       }
     );
@@ -200,12 +204,15 @@ export const deleteOutsourcingOrder = async (req: Request, res: Response, next: 
 export const sendOut = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [rows]: any = await sequelize.query(`SELECT approval_status, order_status FROM outsourcing_order WHERE outsourcing_order_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    const [rows]: any = await sequelize.query(`SELECT approval_status, order_status FROM outsourcing_order WHERE outsourcing_order_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!rows.length) { res.status(404).json({ success: false, message: '委外订单不存在' }); return; }
     if (rows[0].approval_status !== '已审批') { res.status(403).json({ success: false, message: '只有已审批的订单才能发出' }); return; }
     if (rows[0].order_status !== '待发出') { res.status(403).json({ success: false, message: '只有待发出状态的订单才能发出' }); return; }
 
-    await sequelize.query(`UPDATE outsourcing_order SET order_status = N'已发出' WHERE outsourcing_order_number = :id`, { replacements: { id } });
+    await sequelize.query(`UPDATE outsourcing_order SET order_status = N'已发出' WHERE outsourcing_order_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     res.json(success(null, '委外订单已发出'));
   } catch (err) { next(err); }
 };
@@ -218,9 +225,12 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
     const recvQty = parseFloat(received_quantity);
     if (!recvQty || recvQty <= 0) { res.status(400).json({ success: false, message: '收货数量必须大于0' }); return; }
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const [rows]: any = await sequelize.query(
-      `SELECT * FROM outsourcing_order WHERE outsourcing_order_number = :id`,
-      { replacements: { id } }
+      `SELECT * FROM outsourcing_order WHERE outsourcing_order_number = :id${factoryCond}`,
+      { replacements: { id, ...factoryReps } }
     );
     if (!rows.length) { res.status(404).json({ success: false, message: '委外订单不存在' }); return; }
     const order = rows[0];
@@ -237,8 +247,8 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
       // 仅更新委外订单的received_quantity，不改order_status和completed_quantity
       // order_status 和 completed_quantity 在质检合格回收入库时才更新
       await sequelize.query(
-        `UPDATE outsourcing_order SET received_quantity = :newReceived, actual_return_date = :actualDate WHERE outsourcing_order_number = :id`,
-        { replacements: { id, newReceived, actualDate: now }, transaction }
+        `UPDATE outsourcing_order SET received_quantity = :newReceived, actual_return_date = :actualDate WHERE outsourcing_order_number = :id${factoryCond}`,
+        { replacements: { id, newReceived, actualDate: now, ...factoryReps }, transaction }
       );
 
       // 注意：不回写 process_task.completed_quantity
@@ -257,11 +267,14 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
 export const closeOutsourcingOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [rows]: any = await sequelize.query(`SELECT order_status FROM outsourcing_order WHERE outsourcing_order_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    const [rows]: any = await sequelize.query(`SELECT order_status FROM outsourcing_order WHERE outsourcing_order_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!rows.length) { res.status(404).json({ success: false, message: '委外订单不存在' }); return; }
     if (rows[0].order_status === '已关闭') { res.status(403).json({ success: false, message: '订单已关闭' }); return; }
 
-    await sequelize.query(`UPDATE outsourcing_order SET order_status = N'已关闭' WHERE outsourcing_order_number = :id`, { replacements: { id } });
+    await sequelize.query(`UPDATE outsourcing_order SET order_status = N'已关闭' WHERE outsourcing_order_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     res.json(success(null, '委外订单已关闭'));
   } catch (err) { next(err); }
 };

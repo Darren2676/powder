@@ -8,8 +8,8 @@ import { BusinessError } from '@/shared/errors/BusinessError';
 import { splitOrdersCore, dispatchOrdersCore, dispatchAndGenerateCore } from '@/services/orderDispatch.service';
 import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
-const fields = ['production_order_number', 'production_number', 'item_number', 'item_name', 'basic_unit', 'specifications', 'product_drawing_number', 'rubber_compound_number', 'batch_production_quota', 'planned_quantity', 'equipment_number', 'equipment_name', 'mould_number', 'formed_part_specifications', 'formed_part_unit_consumption', 'actual_cavity_count', 'actual_hole_count', 'actual_daily_output', 'production_date', 'schedule_id', 'planned_completion_time', 'plan_status', 'completion_status', 'inbound_status', 'remark'];
-const headers = ['生产单编号', '生产计划编号', '产品编号', '产品名称', '基本单位', '规格', '产品图号', '胶料编号', '班产定额', '计划数量', '设备编号', '设备名称', '模具编号', '成型件规格', '成型件单耗', '实际模腔数', '实际模穴数', '实际班产', '生产日期', '班次', '计划完成时间', '状态', '完成状态', '入库状态', '备注'];
+const fields = ['production_order_number', 'production_number', 'item_number', 'item_name', 'basic_unit', 'specifications', 'product_drawing_number', 'rubber_compound_number', 'batch_production_quota', 'planned_quantity', 'equipment_number', 'equipment_name', 'mould_number', 'formed_part_specifications', 'formed_part_unit_consumption', 'actual_cavity_count', 'actual_hole_count', 'actual_daily_output', 'production_date', 'schedule_id', 'planned_completion_time', 'plan_status', 'completion_status', 'inbound_status', 'remark', 'factory_id'];
+const headers = ['生产单编号', '生产计划编号', '产品编号', '产品名称', '基本单位', '规格', '产品图号', '胶料编号', '班产定额', '计划数量', '设备编号', '设备名称', '模具编号', '成型件规格', '成型件单耗', '实际模腔数', '实际模穴数', '实际班产', '生产日期', '班次', '计划完成时间', '状态', '完成状态', '入库状态', '备注', '所属工厂'];
 
 export const getOrders = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -28,43 +28,52 @@ export const getOrders = async (req: Request, res: Response, next: NextFunction)
     const conditions: string[] = [];
     const replacements: any = {};
 
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      conditions.push(`po.factory_id = :_factoryId`);
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     if (search) {
-      conditions.push(`(production_order_number LIKE :search OR production_number LIKE :search OR item_number LIKE :search OR item_name LIKE :search OR plan_status LIKE :search)`);
+      conditions.push(`(po.production_order_number LIKE :search OR po.production_number LIKE :search OR po.item_number LIKE :search OR po.item_name LIKE :search OR po.plan_status LIKE :search)`);
       replacements.search = `%${search}%`;
     }
 
     if (status) {
-      conditions.push(`plan_status = :status`);
+      conditions.push(`po.plan_status = :status`);
       replacements.status = status;
     }
 
     if (approval_status) {
-      conditions.push(`approval_status = :approval_status`);
+      conditions.push(`po.approval_status = :approval_status`);
       replacements.approval_status = approval_status;
     }
 
     if (production_number) {
-      conditions.push(`production_number LIKE :production_number`);
+      conditions.push(`po.production_number LIKE :production_number`);
       replacements.production_number = `%${production_number}%`;
     }
 
     if (item_number) {
-      conditions.push(`item_number LIKE :item_number`);
+      conditions.push(`po.item_number LIKE :item_number`);
       replacements.item_number = `%${item_number}%`;
     }
 
     if (equipment_number) {
-      conditions.push(`equipment_number LIKE :equipment_number`);
+      conditions.push(`po.equipment_number LIKE :equipment_number`);
       replacements.equipment_number = `%${equipment_number}%`;
     }
 
     if (production_date) {
-      conditions.push(`CONVERT(VARCHAR(10), production_date, 120) = :production_date`);
+      conditions.push(`CONVERT(VARCHAR(10), po.production_date, 120) = :production_date`);
       replacements.production_date = production_date;
     }
 
     if (schedule_id) {
-      conditions.push(`schedule_id = :schedule_id`);
+      conditions.push(`po.schedule_id = :schedule_id`);
       replacements.schedule_id = schedule_id;
     }
 
@@ -72,15 +81,17 @@ export const getOrders = async (req: Request, res: Response, next: NextFunction)
       whereClause = `WHERE ${conditions.join(' AND ')}`;
     }
 
-    const countSql = `SELECT COUNT(*) as total FROM production_order ${whereClause}`;
+    const countSql = `SELECT COUNT(*) as total FROM production_order po ${whereClause}`;
     const [countResult]: any = await sequelize.query(countSql, { replacements });
     const total = countResult[0].total;
 
-    const selectCols = 'production_order_number, production_number, item_number, item_name, basic_unit, specifications, product_drawing_number, rubber_compound_number, batch_production_quota, planned_quantity, equipment_number, equipment_name, mould_number, formed_part_specifications, formed_part_unit_consumption, actual_cavity_count, actual_hole_count, actual_daily_output, production_date, schedule_id, planned_completion_time, plan_status, completion_status, inbound_status, remark, approval_status';
+    const selectCols = 'po.production_order_number, po.production_number, po.item_number, po.item_name, po.basic_unit, po.specifications, po.product_drawing_number, po.rubber_compound_number, po.batch_production_quota, po.planned_quantity, po.equipment_number, po.equipment_name, po.mould_number, po.formed_part_specifications, po.formed_part_unit_consumption, po.actual_cavity_count, po.actual_hole_count, po.actual_daily_output, po.production_date, po.schedule_id, po.planned_completion_time, po.plan_status, po.completion_status, po.inbound_status, po.remark, po.approval_status, ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name, po.factory_id';
     const dataSql = `
       SELECT * FROM (
-        SELECT ${selectCols}, ROW_NUMBER() OVER (ORDER BY production_order_number DESC) AS _row_num
-        FROM production_order ${whereClause}
+        SELECT ${selectCols}, ROW_NUMBER() OVER (ORDER BY po.production_order_number DESC) AS _row_num
+        FROM production_order po
+        LEFT JOIN factory f ON po.factory_id = f.id
+        ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `;
@@ -152,8 +163,8 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
     if (b.production_number) {
       try {
         await sequelize.query(
-          `UPDATE Production_plan SET plan_status = N'已加入任务' WHERE production_number = :pn AND plan_status = N'待加入任务'`,
-          { replacements: { pn: b.production_number } }
+          `UPDATE Production_plan SET plan_status = N'已加入任务' WHERE production_number = :pn AND plan_status = N'待加入任务'${_factoryId !== null ? ' AND factory_id = :_factoryId2' : ''}`,
+          { replacements: { pn: b.production_number, ...(_factoryId !== null ? { _factoryId2: _factoryId } : {}) } }
         );
       } catch (e) { /* 非关键操作，静默忽略 */ }
     }
@@ -167,7 +178,10 @@ export const createOrder = async (req: Request, res: Response, next: NextFunctio
 export const updateOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [chk]: any = await sequelize.query(`SELECT approval_status FROM production_order WHERE production_order_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    const [chk]: any = await sequelize.query(`SELECT approval_status FROM production_order WHERE production_order_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许编辑' }); return; }
     const b = req.body;
 
@@ -194,8 +208,9 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
         schedule_id = :schedule_id,
         planned_completion_time = :planned_completion_time,
         plan_status = :plan_status,
-        remark = :remark
-      WHERE production_order_number = :id
+        remark = :remark,
+        factory_id = :factory_id
+      WHERE production_order_number = :id${factoryCond}
     `;
 
     await sequelize.query(updateSql, {
@@ -211,7 +226,8 @@ export const updateOrder = async (req: Request, res: Response, next: NextFunctio
         actual_daily_output: b.actual_daily_output || null,
         production_date: b.production_date || null,
         schedule_id: b.schedule_id || null,
-        planned_completion_time: b.planned_completion_time, plan_status: b.plan_status, remark: b.remark
+        planned_completion_time: b.planned_completion_time, plan_status: b.plan_status, remark: b.remark,
+        factory_id: b.factory_id || null, ...factoryReps
       }
     });
 
@@ -266,8 +282,8 @@ export const deleteOrder = async (req: Request, res: Response, next: NextFunctio
         // 成品工单已无剩余时即回退计划状态（采购申请在MRP重算时作为供给自动扣减，不会重复生成）
         if (otherOrders.length === 0) {
           await sequelize.query(
-            `UPDATE Production_plan SET plan_status = N'待加入任务', mrp_status = NULL WHERE production_number = :pn AND plan_status = N'已加入任务'`,
-            { replacements: { pn: productionNumber }, transaction }
+            `UPDATE Production_plan SET plan_status = N'待加入任务', mrp_status = NULL WHERE production_number = :pn AND plan_status = N'已加入任务'${_factoryId !== null ? ' AND factory_id = :_factoryId2' : ''}`,
+            { replacements: { pn: productionNumber, ...(_factoryId !== null ? { _factoryId2: _factoryId } : {}) }, transaction }
           );
         }
       }
@@ -285,7 +301,13 @@ export const deleteOrder = async (req: Request, res: Response, next: NextFunctio
 
 export const exportOrders = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [items]: any = await sequelize.query(`SELECT ${fields.join(', ')} FROM production_order ORDER BY production_order_number DESC`);
+    const search = (req.query.search as string) || '';
+    const _factoryId = getFactoryId(req);
+    let where = '';
+    const replacements: any = {};
+    if (search) { where += ` AND production_order_number LIKE :search`; replacements.search = `%${search}%`; }
+    if (_factoryId !== null) { where += ` AND factory_id = :_factoryId`; replacements._factoryId = _factoryId; }
+    const [items]: any = await sequelize.query(`SELECT ${fields.join(', ')} FROM production_order WHERE 1=1${where} ORDER BY production_order_number DESC`, { replacements });
     exportToExcel(items, fields, headers, 'orders', res);
   } catch (err) { next(err); }
 };
@@ -297,14 +319,16 @@ export const importOrders = async (req: Request, res: Response, next: NextFuncti
     if (rows.length === 0) { res.status(400).json({ success: false, message: 'Excel文件内容为空' }); return; }
     let imported = 0;
     const updatedPlans = new Set<string>();
+    const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     for (const item of rows) {
       try {
         if (!item.production_order_number) {
-          item.production_order_number = await generateOrderNumber();
+          item.production_order_number = await generateOrderNumber(factoryCode);
         }
         const [existing]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM production_order WHERE production_order_number = :production_order_number`, { replacements: { production_order_number: item.production_order_number } });
         if (existing[0].cnt > 0) {
-          await sequelize.query(`UPDATE production_order SET production_number = :production_number, item_number = :item_number, item_name = :item_name, basic_unit = :basic_unit, specifications = :specifications, product_drawing_number = :product_drawing_number, rubber_compound_number = :rubber_compound_number, batch_production_quota = :batch_production_quota, planned_quantity = :planned_quantity, planned_completion_time = :planned_completion_time, plan_status = :plan_status, remark = :remark WHERE production_order_number = :production_order_number`, { replacements: item });
+          await sequelize.query(`UPDATE production_order SET production_number = :production_number, item_number = :item_number, item_name = :item_name, basic_unit = :basic_unit, specifications = :specifications, product_drawing_number = :product_drawing_number, rubber_compound_number = :rubber_compound_number, batch_production_quota = :batch_production_quota, planned_quantity = :planned_quantity, planned_completion_time = :planned_completion_time, plan_status = :plan_status, remark = :remark, factory_id = :factory_id WHERE production_order_number = :production_order_number`, { replacements: item });
         } else {
           await sequelize.query(`INSERT INTO production_order (${fields.join(', ')}) VALUES (${fields.map(f => ':' + f).join(', ')})`, { replacements: item });
         }
@@ -320,8 +344,8 @@ export const importOrders = async (req: Request, res: Response, next: NextFuncti
         const r2: any = {};
         planList.forEach((p, i) => { r2[`p${i}`] = p; });
         await sequelize.query(
-          `UPDATE Production_plan SET plan_status = N'已加入任务' WHERE production_number IN (${ph}) AND plan_status = N'待加入任务'`,
-          { replacements: r2 }
+          `UPDATE Production_plan SET plan_status = N'已加入任务' WHERE production_number IN (${ph}) AND plan_status = N'待加入任务'${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+          { replacements: { ...r2, ...(_factoryId !== null ? { _factoryId } : {}) } }
         );
       } catch (e) { /* 非关键操作 */ }
     }
@@ -347,7 +371,7 @@ export const importFromPlan = async (req: Request, res: Response, next: NextFunc
     production_numbers.forEach((pn: string, i: number) => { replacements[`pn${i}`] = pn; });
 
     const [plans]: any = await sequelize.query(
-      `SELECT production_number, item_number, item_name, basic_unit, specifications, product_drawing_number, rubber_compound_number, batch_production_quota, planned_quantity, planned_completion_time, plan_status, remark FROM Production_plan WHERE production_number IN (${placeholders})`,
+      `SELECT production_number, item_number, item_name, basic_unit, specifications, product_drawing_number, rubber_compound_number, batch_production_quota, planned_quantity, planned_completion_time, plan_status, remark, factory_id FROM Production_plan WHERE production_number IN (${placeholders})`,
       { replacements }
     );
 
@@ -356,8 +380,25 @@ export const importFromPlan = async (req: Request, res: Response, next: NextFunc
       return;
     }
 
+    // 多工厂隔离校验：如果当前工厂有 factory_id，则过滤掉不匹配的计划
+    if (_factoryId !== null) {
+      const crossFactoryPlans = plans.filter((p: any) => p.factory_id !== _factoryId);
+      if (crossFactoryPlans.length > 0 && plans.every((p: any) => p.factory_id !== _factoryId)) {
+        // 所有计划都不属于当前工厂 → 拒绝
+        res.status(403).json({ success: false, message: '不能导入其他工厂的计划' });
+        return;
+      }
+    }
+    const validPlans = _factoryId !== null
+      ? plans.filter((p: any) => p.factory_id === _factoryId)
+      : plans;
+    if (validPlans.length === 0) {
+      res.status(403).json({ success: false, message: '不能导入其他工厂的计划' });
+      return;
+    }
+
     let imported = 0;
-    for (const plan of plans) {
+    for (const plan of validPlans) {
       try {
         // 检查是否已存在对应的生产单（按计划编号+物料编号匹配，避免子件生产单误判）
         const [existCheck]: any = await sequelize.query(
@@ -396,12 +437,16 @@ export const importFromPlan = async (req: Request, res: Response, next: NextFunc
 
     res.json(success({ imported, totalCount: plans.length }, `成功从计划导入 ${imported} 条生产单`));
 
-    // 将已导入的计划状态从"待加入任务"更新为"已加入任务"
+    // 将已导入的计划状态从“待加入任务”更新为“已加入任务”
     if (imported > 0) {
       try {
+        const planPlaceholders = validPlans.map((_: any, i: number) => `:pp${i}`).join(', ');
+        const planReps: any = {};
+        validPlans.forEach((p: any, i: number) => { planReps[`pp${i}`] = p.production_number; });
+        if (_factoryId !== null) planReps._factoryId = _factoryId;
         await sequelize.query(
-          `UPDATE Production_plan SET plan_status = N'已加入任务' WHERE production_number IN (${placeholders}) AND plan_status = N'待加入任务'`,
-          { replacements }
+          `UPDATE Production_plan SET plan_status = N'已加入任务' WHERE production_number IN (${planPlaceholders}) AND plan_status = N'待加入任务'${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`,
+          { replacements: planReps }
         );
       } catch (e) {}
     }
@@ -581,6 +626,15 @@ export const getGanttData = async (req: Request, res: Response, next: NextFuncti
     let where = `WHERE RTRIM(LTRIM(equipment_number)) != '' AND production_date IS NOT NULL`;
     const replacements: any = {};
 
+    // 多工厂过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      where += ` AND factory_id = :_factoryId`;
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     if (startDate) {
       where += ` AND production_date >= :startDate`;
       replacements.startDate = startDate;
@@ -696,10 +750,15 @@ export const updateGanttTask = async (req: Request, res: Response, next: NextFun
     const { id } = req.params;
     const { production_date, planned_completion_time, equipment_number, equipment_name, schedule_id, planned_quantity } = req.body;
 
+    // 多工厂隔离
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     // 校验任务状态
     const [rows]: any = await sequelize.query(
-      `SELECT plan_status FROM production_order WHERE production_order_number = :id`,
-      { replacements: { id } }
+      `SELECT plan_status FROM production_order WHERE production_order_number = :id${factoryCond}`,
+      { replacements: { id, ...factoryReps } }
     );
     if (rows.length === 0) {
       res.status(404).json({ success: false, message: '生产单不存在' });
@@ -747,8 +806,8 @@ export const updateGanttTask = async (req: Request, res: Response, next: NextFun
     }
 
     await sequelize.query(
-      `UPDATE production_order SET ${setClause.join(', ')} WHERE production_order_number = :id`,
-      { replacements }
+      `UPDATE production_order SET ${setClause.join(', ')} WHERE production_order_number = :id${factoryCond}`,
+      { replacements: { ...replacements, ...factoryReps } }
     );
 
     res.json(success(null, '排期调整已保存'));
@@ -768,10 +827,19 @@ export const getPrintData = async (req: Request, res: Response, next: NextFuncti
 
     const production_order_numbers = b.production_order_numbers;
 
+    // 多工厂隔离：过滤不属于当前工厂的生产单
+    const _factoryId = getFactoryId(req);
+
     const results: any[] = [];
 
     for (const orderNum of production_order_numbers) {
       // 1. 查询生产单基本信息（JOIN item_master 获取 item_type）
+      let factoryCond = '';
+      const printReps: any = { orderNum };
+      if (_factoryId !== null) {
+        factoryCond = ' AND po.factory_id = :_factoryId';
+        printReps._factoryId = _factoryId;
+      }
       const [orders]: any = await sequelize.query(
         `SELECT po.production_order_number, po.production_number, po.item_number, po.item_name, po.basic_unit,
           po.specifications, po.product_drawing_number, po.rubber_compound_number, po.batch_production_quota,
@@ -782,8 +850,8 @@ export const getPrintData = async (req: Request, res: Response, next: NextFuncti
           im.item_type
         FROM production_order po
         LEFT JOIN item_master im ON po.item_number = im.item_number
-        WHERE po.production_order_number = :orderNum`,
-        { replacements: { orderNum } }
+        WHERE po.production_order_number = :orderNum${factoryCond}`,
+        { replacements: printReps }
       );
       if (!orders.length) continue;
       const order = orders[0];

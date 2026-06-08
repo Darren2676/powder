@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { SearchOutlined, PrinterOutlined, DownloadOutlined } from '@ant-design/icons-vue'
 import { getCompletedStockCounts, getMonthlyReport } from '@/api/warehouse/finishedGoods'
+import { getFactories } from '@/api/system/factory'
 import { useOpenAccountingPeriods } from '@/composables/useOpenAccountingPeriods'
 import dayjs from 'dayjs'
 import ExcelJS from 'exceljs'
@@ -14,11 +15,27 @@ const selectedCountNumber = ref('')
 const reportData = ref<any>(null)
 const dataSource = ref<any[]>([])
 
+// 工厂筛选
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
+
 const { fetchOpenPeriods, getDefaultPeriod } = useOpenAccountingPeriods()
 
 const fetchStockCounts = async () => {
+  // 切换工厂时清空已选盘点单和报表
+  selectedCountNumber.value = ''
+  reportData.value = null
+  dataSource.value = []
   try {
-    const res: any = await getCompletedStockCounts()
+    const params: any = {}
+    if (factoryFilter.value) params.factory_id = factoryFilter.value
+    const res: any = await getCompletedStockCounts(params)
     stockCountOptions.value = res?.data || []
 
     // 自动选中当前会计期间对应的成品仓盘点单
@@ -43,7 +60,10 @@ const fetchReport = async () => {
   if (!selectedCountNumber.value) return
   loading.value = true
   try {
-    const res: any = await getMonthlyReport({ count_number: selectedCountNumber.value })
+    const res: any = await getMonthlyReport({
+      count_number: selectedCountNumber.value,
+      factory_id: factoryFilter.value || undefined
+    })
     if (res?.success) {
       reportData.value = res.data
       dataSource.value = res.data?.items || []
@@ -355,7 +375,10 @@ const handlePrint = () => {
   }
 }
 
-onMounted(() => { fetchStockCounts() })
+onMounted(() => {
+  loadFactories()
+  fetchStockCounts()
+})
 </script>
 
 <template>
@@ -364,6 +387,9 @@ onMounted(() => { fetchStockCounts() })
     <div style="margin-bottom: 16px">
       <div style="display: flex; align-items: center; gap: 12px; flex-wrap: nowrap">
         <span style="font-size: 18px; font-weight: 600; white-space: nowrap; flex-shrink: 0">成品仓月度报表</span>
+        <a-select v-model:value="factoryFilter" placeholder="工厂" allow-clear style="width: 120px" @change="fetchStockCounts">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+        </a-select>
         <span style="font-weight: 500; white-space: nowrap; flex-shrink: 0">基础盘点单:</span>
         <a-select
           v-model:value="selectedCountNumber"

@@ -12,6 +12,7 @@ import {
   PercentageOutlined
 } from '@ant-design/icons-vue'
 import { getYieldRateReport } from '@/api/quality/qualityReport'
+import { getFactories } from '@/api/system/factory'
 
 // ==================== 状态 ====================
 
@@ -20,6 +21,15 @@ const dataSource = ref<any[]>([])
 const searchText = ref('')
 const dateRange = ref<[dayjs.Dayjs, dayjs.Dayjs] | null>(null)
 const planStatusFilter = ref<string | undefined>(undefined)
+const filterFactoryId = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories()
+    if (res?.success) factoryList.value = res.data || []
+  } catch { /* ignore */ }
+}
 
 const pagination = reactive({
   current: 1,
@@ -45,6 +55,7 @@ const statsData = reactive({
 
 const columns = [
   { title: '生产单号', dataIndex: 'production_order_number', key: 'production_order_number', width: 160, fixed: 'left' as const },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, align: 'center' as const },
   { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 110 },
   { title: '产品名称', dataIndex: 'item_name', key: 'item_name', width: 120 },
   { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 180, ellipsis: true },
@@ -77,6 +88,7 @@ const fetchData = async (page = 1, pageSize = pagination.pageSize) => {
       params.end_date = dateRange.value[1].format('YYYY-MM-DD')
     }
     if (planStatusFilter.value) params.plan_status = planStatusFilter.value
+    if (filterFactoryId.value) params.factory_id = filterFactoryId.value
 
     const res: any = await getYieldRateReport(params)
     if (res?.success) {
@@ -114,6 +126,7 @@ const handleReset = () => {
   searchText.value = ''
   dateRange.value = null
   planStatusFilter.value = undefined
+  filterFactoryId.value = undefined
   fetchData(1)
 }
 
@@ -155,6 +168,7 @@ const getPlanStatusColor = (status: string) => {
 // ==================== 初始化 ====================
 
 onMounted(() => {
+  loadFactories()
   fetchData()
 })
 </script>
@@ -192,6 +206,17 @@ onMounted(() => {
             <a-select-option v-for="opt in planStatusOptions" :key="opt.value" :value="opt.value">
               {{ opt.label }}
             </a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item v-if="factoryList.length > 0" label="工厂" style="margin-bottom: 0;">
+          <a-select
+            v-model:value="filterFactoryId"
+            placeholder="全部工厂"
+            style="width: 140px;"
+            allow-clear
+            @change="handleSearch"
+          >
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item style="margin-bottom: 0;">

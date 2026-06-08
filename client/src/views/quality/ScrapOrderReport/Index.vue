@@ -7,6 +7,7 @@ import {
   ClockCircleOutlined, CheckCircleOutlined, EyeOutlined
 } from '@ant-design/icons-vue'
 import { getScrapOrderKPI, getScrapOrderChartData, getScrapOrderTableData } from '@/api/quality/scrapOrderReport'
+import { getFactories } from '@/api/system/factory'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart, PieChart, LineChart } from 'echarts/charts'
@@ -25,6 +26,14 @@ const chartData = ref<any>({})
 const tableData = ref<any[]>([])
 const detailVisible = ref(false)
 const detailData = ref<any>(null)
+const filterFactoryId = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 const pagination = reactive({
   current: 1, pageSize: 20, total: 0,
@@ -34,6 +43,8 @@ const pagination = reactive({
 })
 
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true,
+    customRender: ({ record }: any) => record.factory_short || '-' },
   { title: '报废单号', dataIndex: 'stock_in_number', key: 'stock_in_number', width: 160 },
   { title: '仓库', dataIndex: 'warehouse_name', key: 'warehouse_name', width: 100 },
   { title: '报废日期', dataIndex: 'stock_in_date', key: 'stock_in_date', width: 110 },
@@ -46,6 +57,7 @@ const columns = [
 
 const getParams = () => {
   const params: any = {}
+  if (filterFactoryId.value !== undefined && filterFactoryId.value !== null) params.factory_id = filterFactoryId.value
   if (searchText.value) params.search = searchText.value
   if (dateRange.value) {
     params.start_date = dateRange.value[0].format('YYYY-MM-DD')
@@ -143,13 +155,18 @@ const statusColor = (s: string) => {
   return 'default'
 }
 
-onMounted(() => { fetchKPI(); fetchChartData(); fetchTableData() })
+onMounted(() => { loadFactories(); fetchKPI(); fetchChartData(); fetchTableData() })
 </script>
 
 <template>
   <div style="padding: 0;">
     <a-card size="small" :bordered="false" style="margin-bottom: 16px;">
       <a-form layout="inline" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+        <a-form-item label="所属工厂" style="margin-bottom: 0;" v-if="factoryList.length > 0">
+          <a-select v-model:value="filterFactoryId" placeholder="全部工厂" allow-clear style="width: 140px;" @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
+        </a-form-item>
         <a-form-item label="搜索" style="margin-bottom: 0;">
           <a-input-search v-model:value="searchText" placeholder="报废单号/仓库名称" style="width: 220px;" allow-clear @search="handleSearch" />
         </a-form-item>

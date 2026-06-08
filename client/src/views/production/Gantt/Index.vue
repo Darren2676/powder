@@ -7,6 +7,7 @@ import 'dhtmlx-gantt/codebase/dhtmlxgantt.css'
 import { getGanttData, updateGanttTask } from '@/api/production/order'
 import { getEquipments } from '@/api/equipment/equipment'
 import { getSchedules } from '@/api/master-data/schedule'
+import { getFactories } from '@/api/system/factory'
 import dayjs from 'dayjs'
 import {
   ReloadOutlined,
@@ -32,6 +33,8 @@ const dateRange = ref<[any, any]>([
 // 筛选条件
 const filterEquipment = ref<string | undefined>(undefined)
 const filterItemNumber = ref('')
+const filterFactory = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
 
 // 数据
 const scheduleList = ref<any[]>([])
@@ -111,7 +114,8 @@ const fetchData = async () => {
       startDate,
       endDate,
       equipmentNumber: filterEquipment.value,
-      search: filterItemNumber.value || undefined
+      search: filterItemNumber.value || undefined,
+      factory_id: filterFactory.value || undefined
     })
     if (res.success) {
       ganttData.value = res.data.data || []
@@ -355,9 +359,17 @@ const initGantt = () => {
   gantt.init(ganttContainer.value)
 }
 
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
+
 onMounted(async () => {
   await loadSchedules()
   await loadEquipments()
+  await loadFactories()
   initGantt()
   await fetchData()
 })
@@ -391,6 +403,22 @@ watch(() => route.path, (newPath) => {
         <span class="toolbar-stat">{{ stats.totalTasks }} 个任务</span>
       </div>
       <div class="toolbar-right">
+        <a-select
+          v-model:value="filterFactory"
+          size="small"
+          style="width: 120px"
+          placeholder="选择工厂"
+          allow-clear
+          @change="fetchData"
+        >
+          <a-select-option
+            v-for="f in factoryList"
+            :key="f.id"
+            :value="f.id"
+          >
+            {{ f.factory_short || f.factory_name }}
+          </a-select-option>
+        </a-select>
         <a-select
           v-model:value="filterEquipment"
           size="small"

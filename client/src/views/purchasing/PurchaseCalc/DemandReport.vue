@@ -7,11 +7,23 @@ import {
 } from '@ant-design/icons-vue'
 import { demandReport, generatePurchaseReq } from '@/api/purchasing/purchaseCalc'
 import { getMfgBomHeaders } from '@/api/master-data/mfgBom'
+import { getFactories } from '@/api/system/factory'
 
 defineOptions({ name: 'PurchaseCalcDemandReport' })
 
 const loading = ref(false)
 const generateLoading = ref(false)
+
+// Factory filter
+const factoryList = ref<any[]>([])
+const filterFactory = ref<number | undefined>(undefined)
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
+loadFactories()
 
 // BOM selector
 const bomSearch = ref('')
@@ -62,7 +74,8 @@ const onRunReport = async () => {
   try {
     const res = await demandReport({
       mfg_bom_number: selectedBomId.value,
-      planned_quantity: plannedQuantity.value
+      planned_quantity: plannedQuantity.value,
+      factory_id: filterFactory.value
     })
     demandData.value = (res.data?.items || []).map((item: any, idx: number) => ({
       ...item,
@@ -101,6 +114,7 @@ const onGeneratePurchaseReq = () => {
         const res = await generatePurchaseReq({
           mfg_bom_number: selectedBomId.value,
           planned_quantity: plannedQuantity.value,
+          factory_id: filterFactory.value,
           items: shortageItems.map(item => ({
             material_number: item.material_number,
             material_name: item.material_name,
@@ -149,6 +163,13 @@ const columns = [
       </template>
 
       <a-row :gutter="16" style="margin-bottom: 16px;">
+        <a-col :span="4">
+          <a-form-item label="工厂" :label-col="{ span: 8 }" :wrapper-col="{ span: 16 }">
+            <a-select v-model:value="filterFactory" placeholder="工厂" style="width: 100%" allow-clear>
+              <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+            </a-select>
+          </a-form-item>
+        </a-col>
         <a-col :span="8">
           <a-form-item label="设计BOM" :label-col="{ span: 6 }" :wrapper-col="{ span: 18 }">
             <a-select

@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, DownloadOutlined, UploadOutlined, HistoryOutlined, DownOutlined, CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, InboxOutlined, SettingOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons-vue'
 import { getMaterialPreparations, deleteMaterialPreparation, exportMaterialPreparations, importMaterialPreparations, generateFromOrder, getOrdersForGenerate, getPreparationDetails, updatePreparationDetails, updateDetailAutoWeigh } from '@/api/production/materialPreparation'
+import { getFactories } from '@/api/system/factory'
 import { useAuthStore } from '@/store/auth'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
@@ -31,6 +32,9 @@ interface MaterialPreparation {
   remark: string
   creation_date: string
   creation_man: string
+  factory_id?: number | null
+  factory_short?: string
+  factory_name?: string
 }
 
 interface PreparationDetail {
@@ -65,10 +69,13 @@ interface PreparationDetail {
 
 const prepStatusFilter = ref<string | undefined>(undefined)
 const approvalFilter = ref<string | undefined>(undefined)
-const { loading, dataSource, searchText, selectedRowKeys, pagination, fetchData: fetchList, handleTableChange, handleSearch, handleReset } = useTableList(getMaterialPreparations)
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const { loading, dataSource, searchText, selectedRowKeys, pagination, fetchData: fetchList, handleTableChange, handleSearch, handleReset: _handleReset } = useTableList(getMaterialPreparations)
 
 // Override fetchData to pass extra filters
-const fetchData = () => fetchList({ preparation_status: prepStatusFilter.value || undefined, approval_status: approvalFilter.value || undefined })
+const fetchData = () => fetchList({ preparation_status: prepStatusFilter.value || undefined, approval_status: approvalFilter.value || undefined, factory_id: factoryFilter.value || undefined })
+const handleReset = () => { factoryFilter.value = undefined; prepStatusFilter.value = undefined; approvalFilter.value = undefined; _handleReset() }
 
 const authStore = useAuthStore()
 const approvalLogVisible = ref(false)
@@ -239,7 +246,8 @@ const fetchOrderData = async () => {
     const res = await getOrdersForGenerate({
       page: orderPagination.current,
       limit: orderPagination.pageSize,
-      search: orderSearchText.value || undefined
+      search: orderSearchText.value || undefined,
+      factory_id: factoryFilter.value || undefined
     })
     if (res.success) {
       orderDataSource.value = res.data.items
@@ -377,7 +385,14 @@ const handleDetailAutoWeigh = async (value: 'Y' | 'N') => {
   } catch { message.error('更新失败') }
 }
 
-onMounted(async () => { await loadColumnPreference(); fetchData() })
+onMounted(async () => { await loadColumnPreference(); loadFactories(); fetchData() })
+
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 // ==================== 批量审批操作 ====================
 const batchLoading = ref(false)
@@ -427,6 +442,9 @@ const handleBatchAction = (action: string) => {
             @search="handleSearch"
             @pressEnter="handleSearch"
           />
+          <a-select v-model:value="factoryFilter" placeholder="全部工厂" allow-clear style="width: 120px" @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
           <span class="mp-label">备料状态：</span>
           <a-select v-model:value="prepStatusFilter" placeholder="全部" allow-clear style="width: 110px" @change="handleSearch">
             <a-select-option value="未领料">未领料</a-select-option>

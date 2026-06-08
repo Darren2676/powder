@@ -20,9 +20,11 @@ export const getScrapInboundOrders = async (req: Request, res: Response) => {
     let whereClause = `WHERE h.stock_in_type = N'报废入库'`;
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += ` AND h.factory_id = :_factoryId`;
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (search) {
@@ -42,6 +44,7 @@ export const getScrapInboundOrders = async (req: Request, res: Response) => {
         SUM(CASE WHEN h.approval_status = N'待审批' THEN 1 ELSE 0 END) as pending_count,
         SUM(CASE WHEN h.approval_status = N'已审批' THEN 1 ELSE 0 END) as approved_count
       FROM stock_in h
+      LEFT JOIN factory f ON h.factory_id = f.id
       ${whereClause.replace('OR d.item_number LIKE :search OR d.item_name LIKE :search', '')}
     `, { replacements: { ...replacements, search: search || undefined } });
 
@@ -51,9 +54,11 @@ export const getScrapInboundOrders = async (req: Request, res: Response) => {
         SELECT DISTINCT h.stock_in_number, h.warehouse_number, h.warehouse_name,
           h.stock_in_type, h.stock_in_date, h.approval_status, h.accounting_period,
           h.operator, h.remark, h.creation_date, h.creation_man,
+          ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name as factory_name_val,
           ROW_NUMBER() OVER (ORDER BY h.creation_date DESC) AS _row_num
         FROM stock_in h
         LEFT JOIN stock_in_detail d ON h.stock_in_number = d.stock_in_number
+        LEFT JOIN factory f ON h.factory_id = f.id
         ${whereClause}
       ) t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd

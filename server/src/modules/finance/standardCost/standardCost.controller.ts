@@ -35,9 +35,11 @@ export const getStandardCosts = async (req: Request, res: Response, next: NextFu
     const conditions: string[] = [];
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       conditions.push(`h.factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (search) {
@@ -198,7 +200,7 @@ export const updateStandardCost = async (req: Request, res: Response, next: Next
         UPDATE standard_cost_header SET
           cost_list_name = :cost_list_name,
           effective_date = :effective_date, expiration_date = :expiration_date,
-          remark = :remark
+          remark = :remark, factory_id = :factory_id
         WHERE cost_list_number = :id
       `, {
         replacements: {
@@ -206,7 +208,8 @@ export const updateStandardCost = async (req: Request, res: Response, next: Next
           cost_list_name: b.cost_list_name || '',
           effective_date: b.effective_date || null,
           expiration_date: b.expiration_date || null,
-          remark: b.remark || ''
+          remark: b.remark || '',
+          factory_id: b.factory_id || null
         },
         transaction
       });
@@ -282,8 +285,8 @@ export const deleteStandardCost = async (req: Request, res: Response, next: Next
 };
 
 // ==================== 导出 ====================
-const exportFields = ['cost_list_number', 'cost_list_name', 'item_number', 'item_name', 'item_class_name', 'specifications', 'basic_unit', 'material_type', 'standard_cost', 'actual_cost', 'drawing_number', 'version', 'remark', 'approval_status'];
-const exportHeaders = ['价目表编号', '价目表名称', '物料编号', '物料名称', '物料分类', '规格', '基本单位', '材质', '标准成本单价', '实际成本', '图号', '版本', '备注', '审批状态'];
+const exportFields = ['cost_list_number', 'cost_list_name', 'item_number', 'item_name', 'item_class_name', 'specifications', 'basic_unit', 'material_type', 'standard_cost', 'actual_cost', 'drawing_number', 'version', 'remark', 'approval_status', 'factory_short'];
+const exportHeaders = ['价目表编号', '价目表名称', '物料编号', '物料名称', '物料分类', '规格', '基本单位', '材质', '标准成本单价', '实际成本', '图号', '版本', '备注', '审批状态', '工厂'];
 
 export const exportStandardCosts = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -302,9 +305,10 @@ export const exportStandardCosts = async (req: Request, res: Response, next: Nex
       SELECT h.cost_list_number, h.cost_list_name,
              d.item_number, d.item_name, d.item_class_name, d.specifications, d.basic_unit,
              d.material_type, d.standard_cost, d.actual_cost, d.drawing_number, d.version, d.remark,
-             h.approval_status
+             h.approval_status, f.factory_short
       FROM standard_cost_header h
       INNER JOIN standard_cost_detail d ON d.cost_list_number = h.cost_list_number
+      LEFT JOIN factory f ON h.factory_id = f.id
       ${whereClause}
       ORDER BY h.cost_list_number, d.line_number
     `, { replacements });

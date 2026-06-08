@@ -4,11 +4,13 @@ import { success } from '../../../utils/response.util';
 import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 function buildWhere(req: Request) {
-  const { start_date, end_date, search } = req.query;
+  const { start_date, end_date, search, factory_id } = req.query;
   let where = 'WHERE 1=1';
   const reps: any = {};
   const _factoryId = getFactoryId(req);
-  if (_factoryId !== null) { where += ` AND sd.factory_id = :_factoryId`; reps._factoryId = _factoryId; }
+  const queryFactoryId = factory_id ? parseInt(factory_id as string) : null;
+  const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+  if (effectiveFactoryId !== null) { where += ` AND sd.factory_id = :_factoryId`; reps._factoryId = effectiveFactoryId; }
   if (start_date) { where += ` AND sd.creation_date >= :start_date`; reps.start_date = start_date; }
   if (end_date) { where += ` AND sd.creation_date <= :end_date`; reps.end_date = end_date; }
   if (search) { where += ` AND (sd.disposal_number LIKE :search OR sd.disposal_reason LIKE :search)`; reps.search = `%${search}%`; }
@@ -93,10 +95,12 @@ export const getScrapDisposalTableData = async (req: Request, res: Response, nex
                sd.operator, sd.creation_date,
                sd.confirmed_by, sd.confirmed_date, sd.confirm_remark,
                sd.remark,
+               f.factory_short,
                (SELECT ISNULL(SUM(sdd.quantity), 0) FROM scrap_disposal_detail sdd
                 WHERE sdd.disposal_number = sd.disposal_number) AS total_qty,
                ROW_NUMBER() OVER (ORDER BY sd.creation_date DESC) AS _row_num
         FROM scrap_disposal sd
+        LEFT JOIN factory f ON sd.factory_id = f.id
         ${where}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: reps });

@@ -5,6 +5,7 @@ import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined
 import { getMoulds, createMould, updateMould, deleteMould, exportMoulds, importMoulds, approveMould, withdrawMould, updateMouldStrokes, updateMouldLifeSettings, scrapMould } from '@/api/equipment/mould'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getMfgBomHeaders } from '@/api/master-data/mfgBom'
+import { getFactories } from '@/api/system/factory'
 import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -29,6 +30,7 @@ interface Mould {
   actual_production_number: string
   equipment_type: string
   mfg_bom_number: string
+  factory_id?: number | null
 }
 
 interface MouldRow extends Mould {
@@ -49,6 +51,8 @@ interface MouldRow extends Mould {
   last_maintenance_date: string | null
   next_maintenance_date: string | null
   maintenance_cycle_days: number
+  factory_id?: number | null
+  factory_short?: string
 }
 
 interface Product {
@@ -56,7 +60,31 @@ interface Product {
   item_name: string
 }
 
-const { loading, dataSource, searchText, selectedRowKeys, pagination, rowSelection, fetchData, handleTableChange, handleSearch, handleReset } = useTableList<MouldRow>(getMoulds)
+const fetchMouldsWrapper = (params: any) => {
+  const merged = { ...params }
+  if (filterFactoryId.value !== undefined && filterFactoryId.value !== null) merged.factory_id = filterFactoryId.value
+  return getMoulds(merged)
+}
+
+const { loading, dataSource, searchText, selectedRowKeys, pagination, rowSelection, fetchData, handleTableChange, handleSearch } = useTableList<MouldRow>(fetchMouldsWrapper)
+
+// 重写 handleReset 以清除工厂筛选
+const handleReset = () => {
+  filterFactoryId.value = undefined
+  searchText.value = ''
+  pagination.current = 1
+  fetchData()
+}
+
+// 工厂筛选
+const filterFactoryId = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 // 产品搜索
 const productOptions = ref<Product[]>([])
@@ -147,7 +175,8 @@ const emptyForm = (): Mould => ({
   design_production_number: '',
   actual_production_number: '',
   equipment_type: '',
-  mfg_bom_number: ''
+  mfg_bom_number: '',
+  factory_id: null as any,
 })
 
 const editModalVisible = ref(false)
@@ -228,8 +257,10 @@ const handleEdit = (record: MouldRow) => {
   }
   const form = emptyForm()
   for (const key of Object.keys(form) as (keyof Mould)[]) {
-    (form as any)[key] = (record as any)[key] || ''
+    (form as any)[key] = (record as any)[key] ?? ''
   }
+  // 回填 factory_id
+  form.factory_id = (record as any).factory_id ?? null
   // product_item_number 可能来自 record.product_item_number 或 record.product_number
   if (!form.product_item_number && record.product_number) {
     form.product_item_number = record.product_number
@@ -418,7 +449,7 @@ const fileInputRef = ref<HTMLInputElement>()
 
 const handleExport = async () => {
   try {
-    const res = await exportMoulds(searchText.value || undefined)
+    const res = await exportMoulds(searchText.value || undefined, filterFactoryId.value)
     const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
@@ -500,6 +531,7 @@ watch(() => [editForm.actual_cavities_number, editForm.actual_operation_frequenc
 onMounted(() => {
   loadColumnPreference()
   fetchData()
+  loadFactories()
 })
 </script>
 
@@ -516,6 +548,12 @@ onMounted(() => {
             @search="handleSearch"
             @pressEnter="handleSearch"
           />
+          <a-select
+            v-model:value="filterFactoryId" placeholder="全部工厂" allow-clear
+            style="width:120px" @change="handleSearch" v-if="factoryList.length > 0"
+          >
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
           <a-button @click="handleReset">
             <template #icon><ReloadOutlined /></template>
             重置
@@ -694,6 +732,11 @@ onMounted(() => {
             @search="handleMfgBomSearch"
           />
         </a-form-item>
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="editForm.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
+        </a-form-item>
       </a-form>
     </a-modal>
 
@@ -773,6 +816,11 @@ onMounted(() => {
             :filter-option="false"
             @search="handleMfgBomSearch"
           />
+        </a-form-item>
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="createForm.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
         </a-form-item>
       </a-form>
     </a-modal>

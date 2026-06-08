@@ -671,15 +671,21 @@ export const manualRetryDeduction = async (taskId: number, operator: string) => 
   });
 };
 
-export const getBackflushSummary = async (productionOrderNumber: string) => {
+export const getBackflushSummary = async (productionOrderNumber: string, _factoryId?: number | null) => {
+  let factoryCond = '';
+  const reps: any = { pon: productionOrderNumber };
+  if (_factoryId != null) {
+    factoryCond = ' AND factory_id = :_factoryId';
+    reps._factoryId = _factoryId;
+  }
   const [summaryRows]: any = await sequelize.query(
     `SELECT deduction_status, COUNT(*) as cnt,
             SUM(required_quantity) as total_required,
             SUM(deducted_quantity) as total_deducted
      FROM backflush_task
-     WHERE production_order_number = :pon
+     WHERE production_order_number = :pon${factoryCond}
      GROUP BY deduction_status`,
-    { replacements: { pon: productionOrderNumber } }
+    { replacements: reps }
   );
   return summaryRows;
 };

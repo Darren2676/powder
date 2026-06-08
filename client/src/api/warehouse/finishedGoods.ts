@@ -12,7 +12,7 @@ export function getInventoryDetail(params: { item_number: string; warehouse_numb
 
 // ==================== 入库管理 ====================
 
-export function getPendingInbound(params?: { page?: number; limit?: number; search?: string }) {
+export function getPendingInbound(params?: { page?: number; limit?: number; search?: string; factory_id?: number }) {
   return request.get('/finished-goods/pending-inbound', { params })
 }
 
@@ -22,7 +22,7 @@ export function productionInbound(data: any) {
 
 // ==================== 出库管理 ====================
 
-export function getPendingOutbound(params?: { page?: number; limit?: number; search?: string }) {
+export function getPendingOutbound(params?: { page?: number; limit?: number; search?: string; factory_id?: number }) {
   return request.get('/finished-goods/pending-outbound', { params })
 }
 
@@ -32,7 +32,7 @@ export function shippingOutbound(data: any) {
 
 // ==================== 库存流水 ====================
 
-export function getTransactionList(params?: { page?: number; limit?: number; search?: string; transaction_type?: string; source_type?: string; status?: string }) {
+export function getTransactionList(params?: { page?: number; limit?: number; search?: string; transaction_type?: string; source_type?: string; status?: string; factory_id?: number }) {
   return request.get('/finished-goods/transactions', { params })
 }
 
@@ -66,7 +66,7 @@ export function updateFinishedGoodsSafetyStock(data: { item_number: string; ware
 
 // ==================== 退货入库 ====================
 
-export function getPendingReturnInbound(params?: { page?: number; limit?: number; search?: string }) {
+export function getPendingReturnInbound(params?: { page?: number; limit?: number; search?: string; factory_id?: number }) {
   return request.get('/finished-goods/return-inbound/pending', { params })
 }
 
@@ -80,17 +80,17 @@ export function returnInbound(return_order_number: string, data: any) {
 
 // ==================== 月度出入库报表 ====================
 
-export function getCompletedStockCounts() {
-  return request.get('/finished-goods/completed-stock-counts')
+export function getCompletedStockCounts(params?: { factory_id?: number }) {
+  return request.get('/finished-goods/completed-stock-counts', { params })
 }
 
-export function getMonthlyReport(params: { count_number: string }) {
+export function getMonthlyReport(params: { count_number: string; factory_id?: number }) {
   return request.get('/finished-goods/monthly-report', { params })
 }
 
 // ==================== 生产入库单 ====================
 
-export function getInboundOrderList(params?: { page?: number; limit?: number; search?: string }) {
+export function getInboundOrderList(params?: { page?: number; limit?: number; search?: string; factory_id?: number }) {
   return request.get('/finished-goods/inbound-orders', { params })
 }
 

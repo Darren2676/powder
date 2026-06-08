@@ -160,7 +160,8 @@ const fetchSoImportData = async () => {
           (d.source_number || '').toLowerCase().includes(s) ||
           (d.customer_name || '').toLowerCase().includes(s) ||
           (d.item_number || '').toLowerCase().includes(s) ||
-          (d.item_name || '').toLowerCase().includes(s)
+          (d.item_name || '').toLowerCase().includes(s) ||
+          (d.factory_short || '').toLowerCase().includes(s)
         )
       }
       soImportData.value = data

@@ -36,10 +36,12 @@ export const getEquipments = async (req: Request, res: Response, next: NextFunct
 
     // 多工厂数据隔离过滤
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       const factoryCondition = `e.factory_id = :_factoryId`;
       whereClause = whereClause ? whereClause + ` AND ${factoryCondition}` : `WHERE ${factoryCondition}`;
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     const countSql = `SELECT COUNT(*) as total FROM equipment e ${whereClause}`;
@@ -292,10 +294,11 @@ export const updateEquipment = async (req: Request, res: Response, next: NextFun
         equipment_type = :equipment_type,
         equipment_model = :equipment_model,
         manufacture_date = :manufacture_date,
-        remark = :remark
+        remark = :remark,
+        factory_id = :factory_id
       WHERE equipment_number = :id`,
       {
-        replacements: { id, new_number: numberChanged ? newId : id, equipment_name: b.equipment_name, record_date: b.record_date, equipment_type: b.equipment_type, equipment_model: b.equipment_model, manufacture_date: b.manufacture_date, remark: b.remark }
+        replacements: { id, new_number: numberChanged ? newId : id, equipment_name: b.equipment_name, record_date: b.record_date, equipment_type: b.equipment_type, equipment_model: b.equipment_model, manufacture_date: b.manufacture_date, remark: b.remark, factory_id: b.factory_id || null }
       }
     );
 
@@ -336,11 +339,26 @@ export const exportEquipments = async (req: Request, res: Response, next: NextFu
     let whereClause = '';
     const replacements: any = {};
     if (search) {
-      whereClause = `WHERE equipment_number LIKE :search OR equipment_name LIKE :search`;
+      whereClause = `WHERE (e.equipment_number LIKE :search OR e.equipment_name LIKE :search)`;
       replacements.search = `%${search}%`;
     }
-    const [items]: any = await sequelize.query(`SELECT ${fields.join(', ')} FROM equipment ${whereClause} ORDER BY equipment_number`, { replacements });
-    exportToExcel(items, fields, headers, 'equipments', res);
+
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      const factoryCond = `e.factory_id = :_factoryId`;
+      whereClause = whereClause ? whereClause + ` AND ${factoryCond}` : `WHERE ${factoryCond}`;
+      replacements._factoryId = effectiveFactoryId;
+    }
+
+    const [items]: any = await sequelize.query(
+      `SELECT e.${fields.join(', e.')}, f.factory_short FROM equipment e LEFT JOIN factory f ON e.factory_id = f.id ${whereClause} ORDER BY e.equipment_number`,
+      { replacements }
+    );
+    const exportFields = ['factory_short', ...fields];
+    const exportHeaders = ['工厂', ...headers];
+    exportToExcel(items, exportFields, exportHeaders, 'equipments', res);
   } catch (err) { next(err); }
 };
 
@@ -355,7 +373,7 @@ export const importEquipments = async (req: Request, res: Response, next: NextFu
       try {
         const [existing]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM equipment WHERE equipment_number = :equipment_number`, { replacements: { equipment_number: item.equipment_number } });
         if (existing[0].cnt > 0) {
-          await sequelize.query(`UPDATE equipment SET equipment_name = :equipment_name, record_date = :record_date, equipment_type = :equipment_type, equipment_model = :equipment_model, manufacture_date = :manufacture_date, remark = :remark WHERE equipment_number = :equipment_number`, { replacements: item });
+          await sequelize.query(`UPDATE equipment SET equipment_name = :equipment_name, record_date = :record_date, equipment_type = :equipment_type, equipment_model = :equipment_model, manufacture_date = :manufacture_date, remark = :remark, factory_id = :factory_id WHERE equipment_number = :equipment_number`, { replacements: { ...item, factory_id: item.factory_id || null } });
         } else {
           await sequelize.query(`INSERT INTO equipment (${fields.join(', ')}, factory_id) VALUES (${fields.map(f => ':' + f).join(', ')}, :factory_id)`, { replacements: { ...item, factory_id: _factoryId } });
         }

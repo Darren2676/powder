@@ -13,6 +13,7 @@ export function getQualitySummary(params?: {
   start_date?: string
   end_date?: string
   item_number?: string
+  factory_id?: number
 }) {
   return request.get('/quality/quality-report/summary', { params })
 }
@@ -22,6 +23,7 @@ export function getDefectAnalysis(params?: {
   end_date?: string
   item_number?: string
   defect_class_name?: string
+  factory_id?: number
 }) {
   return request.get('/quality/quality-report/defect-analysis', { params })
 }
@@ -30,6 +32,7 @@ export function getProcessQuality(params?: {
   start_date?: string
   end_date?: string
   standard_process_name?: string
+  factory_id?: number
 }) {
   return request.get('/quality/quality-report/process-quality', { params })
 }
@@ -42,6 +45,7 @@ export function getProductQualitySummary(params?: {
   search?: string
   start_date?: string
   end_date?: string
+  factory_id?: number
 }) {
   return request.get('/quality/quality-report/product-summary', { params })
 }
@@ -56,6 +60,7 @@ export function getYieldRateReport(params?: {
   end_date?: string
   item_number?: string
   plan_status?: string
+  factory_id?: number
 }) {
   return request.get('/quality/quality-report/yield-rate', { params })
 }
@@ -70,6 +75,7 @@ export function getProductionOrderQualityPivot(params?: {
   end_date?: string
   item_number?: string
   plan_status?: string
+  factory_id?: number
 }) {
   return request.get('/quality/quality-report/production-order-pivot', { params })
 }
@@ -99,6 +105,7 @@ export function getPurchaseInspections(params?: {
   inspect_status?: string
   start_date?: string
   end_date?: string
+  factory_id?: number
 }) {
   return request.get('/quality/quality-report/purchase-inspections', { params })
 }
@@ -145,6 +152,7 @@ export function getPurchaseInspectionSummary(params?: {
   start_date?: string
   end_date?: string
   supplier_number?: string
+  factory_id?: number
 }) {
   return request.get('/quality/quality-report/purchase-inspection-summary', { params })
 }

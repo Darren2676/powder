@@ -7,6 +7,7 @@ import {
   UnorderedListOutlined, ExclamationCircleOutlined, EyeOutlined
 } from '@ant-design/icons-vue'
 import { getScrapInventoryKPI, getScrapInventoryChartData, getScrapInventoryTableData } from '@/api/quality/scrapInventoryReport'
+import { getFactories } from '@/api/system/factory'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart, PieChart } from 'echarts/charts'
@@ -24,6 +25,14 @@ const chartData = ref<any>({})
 const tableData = ref<any[]>([])
 const detailVisible = ref(false)
 const detailData = ref<any>(null)
+const filterFactoryId = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 const pagination = reactive({
   current: 1, pageSize: 20, total: 0,
@@ -43,16 +52,22 @@ const columns = [
   { title: '最近入库', dataIndex: 'latest_inbound', key: 'latest_inbound', width: 110 },
 ]
 
+const getParams = () => {
+  const params: any = {}
+  if (filterFactoryId.value !== undefined && filterFactoryId.value !== null) params.factory_id = filterFactoryId.value
+  return params
+}
+
 const fetchKPI = async () => {
-  try { const res: any = await getScrapInventoryKPI(); if (res?.success) Object.assign(statsData, res.data) } catch { /* ignore */ }
+  try { const res: any = await getScrapInventoryKPI(getParams()); if (res?.success) Object.assign(statsData, res.data) } catch { /* ignore */ }
 }
 const fetchChartData = async () => {
-  try { const res: any = await getScrapInventoryChartData(); if (res?.success) chartData.value = res.data } catch { /* ignore */ }
+  try { const res: any = await getScrapInventoryChartData(getParams()); if (res?.success) chartData.value = res.data } catch { /* ignore */ }
 }
 const fetchTableData = async (page = 1, pageSize = pagination.pageSize) => {
   loading.value = true
   try {
-    const params: any = { page, limit: pageSize }
+    const params = { ...getParams(), page, limit: pageSize }
     if (searchText.value) params.search = searchText.value
     const res: any = await getScrapInventoryTableData(params)
     if (res?.success) { tableData.value = res.data.items || []; pagination.total = res.data.total || 0; pagination.current = page; pagination.pageSize = pageSize }
@@ -102,13 +117,18 @@ const backlogBarOption = computed(() => {
   }
 })
 
-onMounted(() => { fetchKPI(); fetchChartData(); fetchTableData() })
+onMounted(() => { loadFactories(); fetchKPI(); fetchChartData(); fetchTableData() })
 </script>
 
 <template>
   <div style="padding: 0;">
     <a-card size="small" :bordered="false" style="margin-bottom: 16px;">
       <a-form layout="inline" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+        <a-form-item label="所属工厂" style="margin-bottom: 0;" v-if="factoryList.length > 0">
+          <a-select v-model:value="filterFactoryId" placeholder="全部工厂" allow-clear style="width: 140px;" @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
+        </a-form-item>
         <a-form-item label="搜索" style="margin-bottom: 0;">
           <a-input-search v-model:value="searchText" placeholder="物料编号/物料名称" style="width: 220px;" allow-clear @search="handleSearch" />
         </a-form-item>

@@ -2,7 +2,7 @@ import request from '@/utils/request'
 
 // ==================== 物料库存 ====================
 
-export function getInventoryList(params?: { page?: number; limit?: number; search?: string; warehouse_number?: string; item_type?: string }) {
+export function getInventoryList(params?: { page?: number; limit?: number; search?: string; warehouse_number?: string; item_type?: string; factory_id?: number }) {
   return request.get('/material-warehouse/inventory', { params })
 }
 
@@ -34,13 +34,13 @@ export function adjustInventory(data: any) {
 
 // ==================== 流水记录 ====================
 
-export function getTransactionList(params?: { page?: number; limit?: number; search?: string; transaction_type?: string; source_type?: string; item_type?: string }) {
+export function getTransactionList(params?: { page?: number; limit?: number; search?: string; transaction_type?: string; source_type?: string; item_type?: string; factory_id?: number }) {
   return request.get('/material-warehouse/transactions', { params })
 }
 
 // ==================== 安全库存 ====================
 
-export function getSafetyStockAlerts(params?: { page?: number; limit?: number }) {
+export function getSafetyStockAlerts(params?: { page?: number; limit?: number; factory_id?: number }) {
   return request.get('/material-warehouse/alerts', { params })
 }
 
@@ -60,25 +60,25 @@ export function getWarehouseOptions() {
 
 // ==================== 原料仓月度报表 ====================
 
-export function getCompletedMaterialStockCounts() {
-  return request.get('/material-warehouse/completed-material-stock-counts')
+export function getCompletedMaterialStockCounts(params?: { factory_id?: number }) {
+  return request.get('/material-warehouse/completed-material-stock-counts', { params })
 }
 
-export function getMaterialMonthlyReport(params: { count_number: string }) {
+export function getMaterialMonthlyReport(params: { count_number: string; factory_id?: number }) {
   return request.get('/material-warehouse/material-monthly-report', { params })
 }
 
-export function getMaterialMonthlyReportByPeriod(params: { warehouse_number: string; accounting_period: string; count_number?: string }) {
+export function getMaterialMonthlyReportByPeriod(params: { warehouse_number: string; accounting_period: string; count_number?: string; factory_id?: number }) {
   return request.get('/material-warehouse/material-monthly-report-by-period', { params })
 }
 
-export function getStockCountsByWarehouse(params: { warehouse_number: string }) {
+export function getStockCountsByWarehouse(params: { warehouse_number: string; factory_id?: number }) {
   return request.get('/material-warehouse/stock-counts-by-warehouse', { params })
 }
 
 // ==================== 半成品生产入库单 ====================
 
-export function getSemiInboundOrderList(params?: { page?: number; limit?: number; search?: string }) {
+export function getSemiInboundOrderList(params?: { page?: number; limit?: number; search?: string; factory_id?: number }) {
   return request.get('/material-warehouse/semi-inbound-orders', { params })
 }
 
@@ -102,7 +102,7 @@ export function getMaterialBatchOptionsBulk(data: { items: Array<{ item_number: 
 
 // ==================== 采购退货出库 ====================
 
-export function getReturnOutboundList(params?: { page?: number; limit?: number; search?: string; return_status?: string }) {
+export function getReturnOutboundList(params?: { page?: number; limit?: number; search?: string; return_status?: string; factory_id?: number }) {
   return request.get('/material-warehouse/return-outbound', { params })
 }
 

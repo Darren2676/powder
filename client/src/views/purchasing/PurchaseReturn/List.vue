@@ -11,6 +11,7 @@ import { useTableList } from '@/composables/useTableList'
 import { useModalDrag } from '@/composables/useModalDrag'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
+import { getFactories } from '@/api/system/factory'
 
 // 弹窗拖拽
 const { modalStyle, onDragStart, resetDrag } = useModalDrag()
@@ -19,6 +20,16 @@ const { modalStyle, onDragStart, resetDrag } = useModalDrag()
 const filterApproval = ref('')
 const poOptions = ref<any[]>([])
 const warehouseOptions = ref<any[]>([])
+
+// 工厂筛选
+const factoryList = ref<any[]>([])
+const filterFactory = ref<number | undefined>(undefined)
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 const modalVisible = ref(false)
 const isView = ref(false)
@@ -74,7 +85,8 @@ const fetchList = async () => {
   try {
     const res: any = await getPurchaseReturns({
       page: pagination.current, limit: pagination.pageSize,
-      search: searchText.value, approval_status: filterApproval.value
+      search: searchText.value, approval_status: filterApproval.value,
+      factory_id: filterFactory.value
     })
     const d = res.data
     dataList.value = d?.items || []
@@ -98,7 +110,7 @@ const loadDropdowns = async () => {
 const route = useRoute()
 
 onMounted(async () => {
-  loadColumnPreference(); fetchList(); await loadDropdowns()
+  loadColumnPreference(); fetchList(); await loadDropdowns(); loadFactories()
   // 从采购订单页面跳转过来时自动打开新建弹窗并预填订单号
   const poFromQuery = (route.query.po as string) || ''
   if (poFromQuery) {
@@ -305,6 +317,9 @@ const canExchangeStockIn = (record: any) => record.return_type === '退货换货
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h2 style="margin:0">采购退货</h2>
       <div style="display:flex;gap:8px;align-items:center">
+        <a-select v-model:value="filterFactory" placeholder="工厂" allow-clear style="width:120px" @change="fetchList()">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+        </a-select>
         <a-input-search v-model:value="searchText" placeholder="搜索退货单号/订单号/供应商" style="width:280px" @search="handleSearch" allow-clear />
         <a-select v-model:value="filterApproval" placeholder="审批状态" style="width:120px" allow-clear @change="fetchList()">
           <a-select-option value="草稿">草稿</a-select-option>

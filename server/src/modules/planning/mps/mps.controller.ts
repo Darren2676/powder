@@ -8,11 +8,16 @@ import { getFactoryCode, getFactoryId } from '@/utils/factoryWhere.util';
 export const calculateMPS = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { start_date, end_date, customer_number } = req.query;
+    const _factoryId = getFactoryId(req);
 
     // ---------- 1. 已审批预测剩余需求(按物料汇总) ----------
     let forecastWhere = `WHERE f.approval_status = N'已审批' AND fd.remaining_quantity > 0`;
     const forecastReplacements: any = {};
 
+    if (_factoryId !== null) {
+      forecastWhere += ` AND f.factory_id = :_factoryId`;
+      forecastReplacements._factoryId = _factoryId;
+    }
     if (start_date) {
       forecastWhere += ` AND fd.end_date >= :start_date`;
       forecastReplacements.start_date = start_date;
@@ -39,6 +44,10 @@ export const calculateMPS = async (req: Request, res: Response, next: NextFuncti
     let orderWhere = `WHERE h.approval_status = N'已审批' AND d.shipping_status IN (N'未申请', N'未发货', N'部分发货') AND (d.production_status IS NULL OR d.production_status NOT IN (N'待排产', N'计划中', N'待生产', N'生产中'))`;
     const orderReplacements: any = {};
 
+    if (_factoryId !== null) {
+      orderWhere += ` AND h.factory_id = :_factoryId`;
+      orderReplacements._factoryId = _factoryId;
+    }
     if (start_date) {
       orderWhere += ` AND (d.delivery_date >= :start_date OR h.delivery_date >= :start_date)`;
       orderReplacements.start_date = start_date;
@@ -127,13 +136,17 @@ export const calculateMPS = async (req: Request, res: Response, next: NextFuncti
     const itemPlaceholders = itemNumbers.map((_, i) => `:item_${i}`).join(', ');
     const itemReplacements: any = {};
     itemNumbers.forEach((num, i) => { itemReplacements[`item_${i}`] = num; });
+    if (_factoryId !== null) {
+      itemReplacements._factoryId = _factoryId;
+    }
+    const factoryInventoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
 
     const [inventoryRows]: any = await sequelize.query(`
       SELECT item_number,
              SUM(quantity) AS on_hand,
              SUM(ISNULL(safety_stock_quantity, 0)) AS safety_stock
       FROM finished_goods_inventory
-      WHERE item_number IN (${itemPlaceholders})
+      WHERE item_number IN (${itemPlaceholders})${factoryInventoryCond}
       GROUP BY item_number
     `, { replacements: itemReplacements });
 
@@ -152,6 +165,7 @@ export const calculateMPS = async (req: Request, res: Response, next: NextFuncti
       INNER JOIN purchase_order h ON h.purchase_order_number = d.purchase_order_number
       WHERE h.approval_status = N'已审批'
         AND d.item_number IN (${itemPlaceholders})
+        ${_factoryId !== null ? ' AND h.factory_id = :_factoryId' : ''}
       GROUP BY d.item_number
     `, { replacements: itemReplacements });
 
@@ -172,6 +186,7 @@ export const calculateMPS = async (req: Request, res: Response, next: NextFuncti
       WHERE pp.approval_status = N'已审批'
         AND pp.plan_status NOT IN (N'已完成', N'已关闭')
         AND pp.item_number IN (${itemPlaceholders})
+        ${_factoryId !== null ? ' AND pp.factory_id = :_factoryId' : ''}
       GROUP BY pp.item_number
     `, { replacements: itemReplacements });
 
@@ -245,6 +260,7 @@ export const calculateMPS = async (req: Request, res: Response, next: NextFuncti
 export const importToPlan = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.items || !Array.isArray(b.items) || b.items.length === 0) {
       res.status(400).json({ success: false, message: '请选择至少一条MPS结果' });
@@ -271,11 +287,11 @@ export const importToPlan = async (req: Request, res: Response, next: NextFuncti
           INSERT INTO Production_plan (production_number, item_number, item_name, basic_unit, specifications,
             product_drawing_number, rubber_compound_number, batch_production_quota,
             planned_quantity, shifts_number, planned_completion_time, plan_status, remark, approval_status,
-            source_order_number, source_line_number)
+            source_order_number, source_line_number, factory_id)
           VALUES (:production_number, :item_number, :item_name, :basic_unit, :specifications,
             :product_drawing_number, :rubber_compound_number, :batch_production_quota,
             :planned_quantity, :shifts_number, :planned_completion_time, N'待加入任务', :remark, N'草稿',
-            N'MPS', NULL)
+            N'MPS', NULL, :factory_id)
         `, {
           replacements: {
             production_number,
@@ -290,6 +306,7 @@ export const importToPlan = async (req: Request, res: Response, next: NextFuncti
             shifts_number,
             planned_completion_time: item.planned_completion_time || null,
             remark: `MPS计算导入, 净需求: ${item.net_demand}`,
+            factory_id: _factoryId,
           },
           transaction
         });
@@ -338,7 +355,19 @@ export const getDemandSources = async (req: Request, res: Response, next: NextFu
       return;
     }
 
+    const _factoryId = getFactoryId(req);
+
     // 查询销售订单明细
+    let orderWhere = `WHERE d.item_number = :item_number
+        AND d.shipping_status IN (N'未申请', N'未发货', N'部分发货')
+        AND (d.production_status IS NULL OR d.production_status = N'未加入计划')
+        AND h.approval_status = N'已审批'`;
+    const orderReplacements: any = { item_number };
+    if (_factoryId !== null) {
+      orderWhere += `\n        AND h.factory_id = :_factoryId`;
+      orderReplacements._factoryId = _factoryId;
+    }
+
     const [orderItems]: any = await sequelize.query(`
       SELECT d.id as detail_id, d.sales_order_number as source_number, d.line_number,
              d.item_number, d.item_name, d.specifications, d.basic_unit,
@@ -349,19 +378,28 @@ export const getDemandSources = async (req: Request, res: Response, next: NextFu
              d.remark as detail_remark,
              d.customer_item_number, d.customer_item_description,
              h.customer_number, h.customer_name, h.delivery_date as header_delivery_date,
+             h.factory_id, ISNULL(f.factory_short, f.factory_name) as factory_short,
              ISNULL(pe.rubber_compound_number, '') as rubber_compound_number,
              ISNULL(pe.batch_production_quota, '') as batch_production_quota
       FROM sales_order_detail d
       INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number
+      LEFT JOIN factory f ON h.factory_id = f.id
       LEFT JOIN product_ext pe ON pe.item_number = d.item_number
-      WHERE d.item_number = :item_number
-        AND d.shipping_status IN (N'未申请', N'未发货', N'部分发货')
-        AND (d.production_status IS NULL OR d.production_status = N'未加入计划')
-        AND h.approval_status = N'已审批'
+      ${orderWhere}
       ORDER BY h.sales_order_number DESC, d.line_number
-    `, { replacements: { item_number } });
+    `, { replacements: orderReplacements });
 
     // 查询销售预测明细
+    let forecastWhere = `WHERE d.item_number = :item_number
+        AND d.status = N'未开始'
+        AND h.approval_status = N'已审批'
+        AND d.remaining_quantity > 0`;
+    const forecastReplacements: any = { item_number };
+    if (_factoryId !== null) {
+      forecastWhere += `\n        AND h.factory_id = :_factoryId`;
+      forecastReplacements._factoryId = _factoryId;
+    }
+
     const [forecastItems]: any = await sequelize.query(`
       SELECT d.id as detail_id, d.forecast_number as source_number, d.line_number,
              d.item_number, d.item_name, d.specifications, d.basic_unit,
@@ -370,17 +408,16 @@ export const getDemandSources = async (req: Request, res: Response, next: NextFu
              d.remark as detail_remark,
              d.customer_item_number, d.customer_item_description,
              h.customer_number, h.customer_name,
+             h.factory_id, ISNULL(f.factory_short, f.factory_name) as factory_short,
              ISNULL(pe.rubber_compound_number, '') as rubber_compound_number,
              ISNULL(pe.batch_production_quota, '') as batch_production_quota
       FROM sales_forecast_detail d
       INNER JOIN sales_forecast h ON h.forecast_number = d.forecast_number
+      LEFT JOIN factory f ON h.factory_id = f.id
       LEFT JOIN product_ext pe ON pe.item_number = d.item_number
-      WHERE d.item_number = :item_number
-        AND d.status = N'未开始'
-        AND h.approval_status = N'已审批'
-        AND d.remaining_quantity > 0
+      ${forecastWhere}
       ORDER BY h.forecast_number DESC, d.line_number
-    `, { replacements: { item_number } });
+    `, { replacements: forecastReplacements });
 
     // 合并为统一列表
     const results: any[] = [];
@@ -399,6 +436,7 @@ export const getDemandSources = async (req: Request, res: Response, next: NextFu
 export const importFromDemandSources = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const factoryCode = await getFactoryCode(req);
+    const _factoryId = getFactoryId(req);
     const b = req.body;
     if (!b.items || !Array.isArray(b.items) || b.items.length === 0) {
       res.status(400).json({ success: false, message: '请选择至少一条记录' });
@@ -424,11 +462,11 @@ export const importFromDemandSources = async (req: Request, res: Response, next:
           INSERT INTO Production_plan (production_number, item_number, item_name, basic_unit, specifications,
             product_drawing_number, rubber_compound_number, batch_production_quota,
             planned_quantity, shifts_number, planned_completion_time, plan_status, remark, approval_status,
-            source_order_number, source_line_number, customer_item_number, customer_item_description)
+            source_order_number, source_line_number, customer_item_number, customer_item_description, factory_id)
           VALUES (:production_number, :item_number, :item_name, :basic_unit, :specifications,
             :product_drawing_number, :rubber_compound_number, :batch_production_quota,
             :planned_quantity, :shifts_number, :planned_completion_time, N'待加入任务', :remark, N'草稿',
-            :source_order_number, :source_line_number, :customer_item_number, :customer_item_description)
+            :source_order_number, :source_line_number, :customer_item_number, :customer_item_description, :factory_id)
         `, {
           replacements: {
             production_number,
@@ -446,7 +484,8 @@ export const importFromDemandSources = async (req: Request, res: Response, next:
             source_order_number: item.source_number || '',
             source_line_number: item.line_number || null,
             customer_item_number: item.customer_item_number || '',
-            customer_item_description: item.customer_item_description || ''
+            customer_item_description: item.customer_item_description || '',
+            factory_id: _factoryId,
           },
           transaction
         });
@@ -510,10 +549,12 @@ export const getSalesOrdersForMpsImport = async (req: Request, res: Response, ne
              d.order_quantity - ISNULL(d.shipped_quantity, 0) as unshipped_quantity,
              d.remark as detail_remark,
              h.customer_number, h.customer_name, h.delivery_date as header_delivery_date,
+             h.factory_id, ISNULL(f.factory_short, f.factory_name) as factory_short,
              ISNULL(pe.rubber_compound_number, '') as rubber_compound_number,
              ISNULL(pe.batch_production_quota, '') as batch_production_quota
       FROM sales_order_detail d
       INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number
+      LEFT JOIN factory f ON h.factory_id = f.id
       LEFT JOIN product_ext pe ON pe.item_number = d.item_number
       ${whereClause}
       ORDER BY h.sales_order_number DESC, d.line_number

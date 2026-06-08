@@ -10,8 +10,8 @@ import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 const selectCols = 'work_report_number, process_task_number, production_order_number, step_number, standard_process_name, item_number, item_name, specifications, basic_unit, work_center_number, work_center_name, planned_quantity, qualified_quantity, unqualified_quantity, total_quantity, cumulative_quantity, report_date, schedules_id, schedules_name, team_number, team_name, operator_number, operator_name, actual_start_time, actual_end_time, actual_hours, unqualified_reason, defect_class_number, defect_class_name, defect_number, defect_name, approval_status, remark, creation_date, creation_man';
 
-const exportFields = ['work_report_number', 'process_task_number', 'production_order_number', 'step_number', 'standard_process_name', 'item_name', 'qualified_quantity', 'unqualified_quantity', 'total_quantity', 'cumulative_quantity', 'report_date', 'schedules_name', 'operator_name', 'work_center_name', 'approval_status', 'creation_date', 'creation_man', 'remark'];
-const exportHeaders = ['报工单编号', '工序任务编号', '生产单编号', '工序序号', '工序名称', '产品名称', '合格数量', '不合格数量', '总产出', '累计完成', '报工日期', '班次', '操作员', '工作中心', '审批状态', '创建日期', '创建人', '备注'];
+const exportFields = ['work_report_number', 'process_task_number', 'production_order_number', 'step_number', 'standard_process_name', 'item_name', 'qualified_quantity', 'unqualified_quantity', 'total_quantity', 'cumulative_quantity', 'report_date', 'schedules_name', 'operator_name', 'work_center_name', 'approval_status', 'factory_id', 'creation_date', 'creation_man', 'remark'];
+const exportHeaders = ['报工单编号', '工序任务编号', '生产单编号', '工序序号', '工序名称', '产品名称', '合格数量', '不合格数量', '总产出', '累计完成', '报工日期', '班次', '操作员', '工作中心', '审批状态', '所属工厂', '创建日期', '创建人', '备注'];
 
 // ==================== 获取列表 ====================
 export const getWorkReports = async (req: Request, res: Response, next: NextFunction) => {
@@ -26,28 +26,34 @@ export const getWorkReports = async (req: Request, res: Response, next: NextFunc
     const replacements: any = {};
 
     if (search) {
-      conditions.push(`(work_report_number LIKE :search OR process_task_number LIKE :search OR production_order_number LIKE :search OR item_name LIKE :search OR operator_name LIKE :search)`);
+      conditions.push(`(wr.work_report_number LIKE :search OR wr.process_task_number LIKE :search OR wr.production_order_number LIKE :search OR wr.item_name LIKE :search OR wr.operator_name LIKE :search)`);
       replacements.search = `%${search}%`;
     }
-    if (approval_status) { conditions.push(`approval_status = :approval_status`); replacements.approval_status = approval_status; }
-    if (process_task_number) { conditions.push(`process_task_number = :process_task_number`); replacements.process_task_number = process_task_number; }
+    if (approval_status) { conditions.push(`wr.approval_status = :approval_status`); replacements.approval_status = approval_status; }
+    if (process_task_number) { conditions.push(`wr.process_task_number = :process_task_number`); replacements.process_task_number = process_task_number; }
 
+    // 多工厂数据隔离：显式 factory_id query param 支持 HQ 用户筛选
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
-      conditions.push(`factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      conditions.push(`wr.factory_id = :_factoryId`);
+      replacements._factoryId = effectiveFactoryId;
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM work_report ${whereClause}`, { replacements });
+    const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM work_report wr ${whereClause}`, { replacements });
     const total = countResult[0].total;
 
     const offset = (page - 1) * limit;
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT ${selectCols}, ROW_NUMBER() OVER (ORDER BY work_report_number DESC) AS _row_num
-        FROM work_report ${whereClause}
+        SELECT wr.*, ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name,
+        ROW_NUMBER() OVER (ORDER BY wr.work_report_number DESC) AS _row_num
+        FROM work_report wr
+        LEFT JOIN factory f ON wr.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
 
@@ -129,9 +135,15 @@ export const deleteWorkReport = async (req: Request, res: Response, next: NextFu
 export const exportWorkReports = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const _factoryId = getFactoryId(req);
-    const factoryWhere = _factoryId !== null ? 'WHERE factory_id = :_factoryId' : '';
-    const factoryReplacements: any = _factoryId !== null ? { _factoryId } : {};
-    const [items]: any = await sequelize.query(`SELECT ${exportFields.join(', ')} FROM work_report ${factoryWhere} ORDER BY work_report_number DESC`, { replacements: factoryReplacements });
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    let factoryWhere = '';
+    const factoryReplacements: any = {};
+    if (effectiveFactoryId !== null) {
+      factoryWhere = 'WHERE wr.factory_id = :_factoryId';
+      factoryReplacements._factoryId = effectiveFactoryId;
+    }
+    const [items]: any = await sequelize.query(`SELECT wr.work_report_number, wr.process_task_number, wr.production_order_number, wr.step_number, wr.standard_process_name, wr.item_name, wr.qualified_quantity, wr.unqualified_quantity, wr.total_quantity, wr.cumulative_quantity, wr.report_date, wr.schedules_name, wr.operator_name, wr.work_center_name, wr.approval_status, ISNULL(f.factory_short, f.factory_name) as factory_id, wr.creation_date, wr.creation_man, wr.remark FROM work_report wr LEFT JOIN factory f ON wr.factory_id = f.id ${factoryWhere} ORDER BY wr.work_report_number DESC`, { replacements: factoryReplacements });
     exportToExcel(items, exportFields, exportHeaders, 'work_reports', res);
   } catch (err) { next(err); }
 };
@@ -260,6 +272,19 @@ export const undoPreview = async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
+    // 多工厂防越权：校验生产单所属工厂
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      const [orderChk]: any = await sequelize.query(
+        `SELECT factory_id FROM production_order WHERE production_order_number = :orderNo`,
+        { replacements: { orderNo: production_order_number } }
+      );
+      if (orderChk.length === 0 || orderChk[0].factory_id !== _factoryId) {
+        res.status(404).json({ success: false, message: '生产单不存在' });
+        return;
+      }
+    }
+
     // 1. 查询该生产单所有工序
     const [allSteps]: any = await sequelize.query(
       `SELECT process_task_number, step_number, standard_process_name, task_status, completed_quantity FROM process_task WHERE production_order_number = :orderNo ORDER BY step_number ASC`,
@@ -354,6 +379,19 @@ export const undoExecute = async (req: Request, res: Response, next: NextFunctio
     if (target_step_number == null || target_step_number === undefined) {
       res.status(400).json({ success: false, message: '目标工序号不能为空' });
       return;
+    }
+
+    // 多工厂防越权：校验生产单所属工厂
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      const [orderChk]: any = await sequelize.query(
+        `SELECT factory_id FROM production_order WHERE production_order_number = :orderNo`,
+        { replacements: { orderNo: production_order_number } }
+      );
+      if (orderChk.length === 0 || orderChk[0].factory_id !== _factoryId) {
+        res.status(404).json({ success: false, message: '生产单不存在' });
+        return;
+      }
     }
 
     // ========== 前置检查1: 入库状态 ==========
@@ -498,10 +536,12 @@ export const undoExecute = async (req: Request, res: Response, next: NextFunctio
       }
 
       // 重置目标工序到末道所有工序的 inspect_status
+      const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+      const factoryReps = _factoryId !== null ? { _factoryId } : {};
       await sequelize.query(
         `UPDATE process_task SET inspect_status = NULL 
-         WHERE production_order_number = :orderNo AND step_number >= :targetStep`,
-        { replacements: { orderNo: production_order_number, targetStep: target_step_number } }
+         WHERE production_order_number = :orderNo AND step_number >= :targetStep${factoryCond}`,
+        { replacements: { orderNo: production_order_number, targetStep: target_step_number, ...factoryReps } }
       );
     }
 

@@ -51,9 +51,11 @@ export const getReceivingNotices = async (req: Request, res: Response, next: Nex
     }
 
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       conditions.push(`factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -68,8 +70,10 @@ export const getReceivingNotices = async (req: Request, res: Response, next: Nex
       SELECT * FROM (
         SELECT receiving_number, purchase_order_number, supplier_number, supplier_name, delivery_note,
                receiving_date, operator, approval_status, remark, creation_date, creation_man,
+               ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name,
                ROW_NUMBER() OVER (ORDER BY creation_date DESC, receiving_number DESC) AS _row_num
-        FROM purchase_receiving_notice ${whereClause}
+        FROM purchase_receiving_notice LEFT JOIN factory f ON purchase_receiving_notice.factory_id = f.id
+        ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
@@ -91,8 +95,14 @@ export const getReceivingNotices = async (req: Request, res: Response, next: Nex
 export const getReceivingNoticeDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+
+    // 多工厂防越权
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM purchase_receiving_notice WHERE receiving_number = :id`, { replacements: { id } }
+      `SELECT * FROM purchase_receiving_notice WHERE receiving_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '收货通知不存在' }); return; }
     const [details]: any = await sequelize.query(
@@ -418,6 +428,8 @@ async function generateStockInNumber(factoryCode: string = ''): Promise<string> 
 
 // ==================== 入库确认内核（内联） ====================
 async function executeConfirmStockIn(siNumber: string, operator: string, factoryCode: string = '', _factoryId: number | null = null, transaction: any) {
+  const podFactoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+  const podFactoryReps = _factoryId !== null ? { _factoryId } : {};
   const [siHeader]: any = await sequelize.query(
     `SELECT * FROM stock_in WHERE stock_in_number = :id`, { replacements: { id: siNumber }, transaction }
   );
@@ -576,8 +588,8 @@ async function executeConfirmStockIn(siNumber: string, operator: string, factory
             WHEN received_quantity + :qty >= order_quantity THEN N'已到货'
             ELSE N'部分到货'
           END
-        WHERE id = :detailId
-      `, { replacements: { qty: qualifiedQty, detailId: d.purchase_detail_id }, transaction });
+        WHERE id = :detailId${podFactoryCond}
+      `, { replacements: { qty: qualifiedQty, detailId: d.purchase_detail_id, ...podFactoryReps }, transaction });
     }
   }
 
@@ -591,8 +603,8 @@ async function executeConfirmStockIn(siNumber: string, operator: string, factory
     const anyReceived = poDetails.some((r: any) => r.receive_status !== '未到货');
     const newStatus = allReceived ? '已完成' : (anyReceived ? '执行中' : '待执行');
     await sequelize.query(
-      `UPDATE purchase_order SET order_status = :newStatus WHERE purchase_order_number = :pon`,
-      { replacements: { newStatus, pon: header.purchase_order_number }, transaction }
+      `UPDATE purchase_order SET order_status = :newStatus WHERE purchase_order_number = :pon${podFactoryCond}`,
+      { replacements: { newStatus, pon: header.purchase_order_number, ...podFactoryReps }, transaction }
     );
     // 尝试配置驱动的自动完成
     await checkAndAutoComplete('purchase_order', header.purchase_order_number, transaction);

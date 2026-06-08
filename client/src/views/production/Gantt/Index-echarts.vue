@@ -15,6 +15,7 @@ import {
 } from 'echarts/components'
 import { getGanttData } from '@/api/production/order'
 import { getSchedules } from '@/api/master-data/schedule'
+import { getFactories } from '@/api/system/factory'
 import dayjs from 'dayjs'
 import {
   ReloadOutlined,
@@ -62,6 +63,8 @@ interface EquipmentGroup {
 const loading = ref(false)
 const equipments = ref<EquipmentGroup[]>([])
 const scheduleList = ref<any[]>([])
+const factoryList = ref<any[]>([])
+const filterFactory = ref<number | undefined>(undefined)
 const ganttChartRef = ref<any>(null)
 const isFullscreen = ref(false)
 const route = useRoute()
@@ -99,7 +102,7 @@ const fetchData = async () => {
   try {
     const startDate = dayjs(dateRange.value[0]).format('YYYY-MM-DD')
     const endDate = dayjs(dateRange.value[1]).format('YYYY-MM-DD')
-    const res = await getGanttData({ startDate, endDate })
+    const res = await getGanttData({ startDate, endDate, factory_id: filterFactory.value || undefined })
     if (res.success) {
       equipments.value = res.data.equipments || []
     }
@@ -108,6 +111,13 @@ const fetchData = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
 }
 
 const loadSchedules = async () => {
@@ -419,6 +429,7 @@ const stats = computed(() => {
 
 onMounted(async () => {
   await loadSchedules()
+  await loadFactories()
   await fetchData()
 })
 
@@ -448,6 +459,22 @@ watch(() => route.path, (newPath) => {
         <span class="toolbar-stat">{{ stats.totalTasks }} 个任务</span>
       </div>
       <div class="toolbar-right">
+        <a-select
+          v-model:value="filterFactory"
+          size="small"
+          style="width: 120px"
+          placeholder="选择工厂"
+          allow-clear
+          @change="fetchData"
+        >
+          <a-select-option
+            v-for="f in factoryList"
+            :key="f.id"
+            :value="f.id"
+          >
+            {{ f.factory_short || f.factory_name }}
+          </a-select-option>
+        </a-select>
         <a-button size="small" @click="goPrev"><LeftOutlined /></a-button>
         <a-button size="small" @click="goThisWeek">本周</a-button>
         <a-button size="small" @click="goThisMonth">本月</a-button>

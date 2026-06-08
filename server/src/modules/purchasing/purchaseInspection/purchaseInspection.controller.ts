@@ -289,9 +289,11 @@ export const getPurchaseInspections = async (req: Request, res: Response, next: 
     }
 
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += ' AND qi.factory_id = :_factoryId';
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     // 计数
@@ -317,8 +319,10 @@ export const getPurchaseInspections = async (req: Request, res: Response, next: 
           qi.batch_number, qi.defect_class_name, qi.defect_name, qi.defect_reason_name,
           qi.defect_handling, qi.handling_quantity,
           qi.remark, qi.creation_date, qi.creation_man,
+          f.factory_short, f.factory_name,
           ROW_NUMBER() OVER (ORDER BY qi.creation_date DESC) AS _row_num
         FROM purchase_quality_inspection qi
+        LEFT JOIN factory f ON qi.factory_id = f.id
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
@@ -446,6 +450,9 @@ export const getPurchaseInspectionDetail = async (req: Request, res: Response, n
 export const updatePurchaseInspection = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { inspection_number } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const {
       qualified_quantity,
       unqualified_quantity,
@@ -493,7 +500,7 @@ export const updatePurchaseInspection = async (req: Request, res: Response, next
         defect_reason_name = :defect_reason_name,
         inspector_name = :inspector_name,
         remark = :remark
-      WHERE inspection_number = :inspection_number
+      WHERE inspection_number = :inspection_number${factoryCond}
     `, {
       replacements: {
         inspection_number,
@@ -504,7 +511,8 @@ export const updatePurchaseInspection = async (req: Request, res: Response, next
         defect_name: headerDefectName,
         defect_reason_name: headerDefectReason,
         inspector_name: inspector_name || '',
-        remark: remark || ''
+        remark: remark || '',
+        ...factoryReps
       }
     });
 
@@ -517,14 +525,15 @@ export const updatePurchaseInspection = async (req: Request, res: Response, next
               actual_value = :actual_value,
               is_qualified = :is_qualified,
               remark = :remark
-            WHERE id = :id AND inspection_number = :inspection_number
+            WHERE id = :id AND inspection_number = :inspection_number${factoryCond}
           `, {
             replacements: {
               id: d.id,
               inspection_number,
               actual_value: d.actual_value || '',
               is_qualified: d.is_qualified || '',
-              remark: d.remark || ''
+              remark: d.remark || '',
+              ...factoryReps
             }
           });
         }
@@ -573,6 +582,9 @@ export const completePurchaseInspection = async (req: Request, res: Response, ne
   try {
     const { inspection_number } = req.params;
     const { inspect_result, qualified_quantity, unqualified_quantity, inspector_name, defects } = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     if (!inspect_result) {
       res.status(400).json({ success: false, message: '检验结论不能为空' });
@@ -605,14 +617,15 @@ export const completePurchaseInspection = async (req: Request, res: Response, ne
         inspect_result = :inspect_result,
         qualified_quantity = :qualified_quantity,
         unqualified_quantity = :unqualified_quantity${inspectorUpdateField}
-      WHERE inspection_number = :inspection_number
+      WHERE inspection_number = :inspection_number${factoryCond}
     `, {
       replacements: {
         inspection_number,
         inspect_result,
         qualified_quantity: qualified_quantity || 0,
         unqualified_quantity: unqualified_quantity || 0,
-        ...(inspector_name ? { inspector_name } : {})
+        ...(inspector_name ? { inspector_name } : {}),
+        ...factoryReps
       }
     });
 
@@ -680,6 +693,8 @@ export const completePurchaseInspection = async (req: Request, res: Response, ne
         try {
           const factoryCode = await getFactoryCode(req);
           const _factoryId = getFactoryId(req);
+          const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+          const factoryReps = _factoryId !== null ? { _factoryId } : {};
           // 查询待检仓中的批次库存
           const batchNoToSearch = insp.batch_number || '';
           const [batchRows]: any = await sequelize.query(`
@@ -875,8 +890,8 @@ export const completePurchaseInspection = async (req: Request, res: Response, ne
                         WHEN received_quantity + :qty >= order_quantity THEN N'已到货'
                         ELSE N'部分到货'
                       END
-                    WHERE id = :detailId
-                  `, { replacements: { qty: writeQty, detailId: sidRows[0].purchase_detail_id } });
+                    WHERE id = :detailId AND factory_id = :_factoryId
+                  `, { replacements: { qty: writeQty, detailId: sidRows[0].purchase_detail_id, _factoryId } });
 
                   const [siHeaderRows]: any = await sequelize.query(`
                     SELECT purchase_order_number FROM stock_in WHERE stock_in_number = :sin
@@ -892,8 +907,8 @@ export const completePurchaseInspection = async (req: Request, res: Response, ne
                       const anyReceived = poDetails.some((r: any) => r.receive_status !== '未到货');
                       const newStatus = allReceived ? '已完成' : (anyReceived ? '执行中' : '待执行');
                       await sequelize.query(
-                        `UPDATE purchase_order SET order_status = :newStatus WHERE purchase_order_number = :pon`,
-                        { replacements: { newStatus, pon } }
+                        `UPDATE purchase_order SET order_status = :newStatus WHERE purchase_order_number = :pon${factoryCond}`,
+                        { replacements: { newStatus, pon, ...factoryReps } }
                       );
                       await checkAndAutoComplete('purchase_order', pon, null as any);
                     }
@@ -952,9 +967,11 @@ export const getPurchaseInspectionSummary = async (req: Request, res: Response, 
     }
 
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += ' AND qi.factory_id = :_factoryId';
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     // 按供应商汇总
@@ -1036,11 +1053,14 @@ export const getPurchaseInspectionSummary = async (req: Request, res: Response, 
 export const cancelDefectHandlingPurchaseInspection = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { inspection_number } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     // 查询检验单
     const [inspRows]: any = await sequelize.query(
-      `SELECT * FROM purchase_quality_inspection WHERE inspection_number = :inspection_number`,
-      { replacements: { inspection_number } }
+      `SELECT * FROM purchase_quality_inspection WHERE inspection_number = :inspection_number${factoryCond}`,
+      { replacements: { inspection_number, ...factoryReps } }
     );
 
     if (!inspRows.length) {
@@ -1081,14 +1101,14 @@ export const cancelDefectHandlingPurchaseInspection = async (req: Request, res: 
 
       // 2. 清除检验单的缺陷处理标记和NC单号
       await sequelize.query(
-        `UPDATE purchase_quality_inspection SET defect_handling = N'', nonconforming_number = N'' WHERE inspection_number = :inspection_number`,
-        { replacements: { inspection_number }, transaction }
+        `UPDATE purchase_quality_inspection SET defect_handling = N'', nonconforming_number = N'' WHERE inspection_number = :inspection_number${factoryCond}`,
+        { replacements: { inspection_number, ...factoryReps }, transaction }
       );
 
       // 3. 清除缺陷明细行的处理方式
       await sequelize.query(
-        `UPDATE purchase_inspection_defect SET defect_handling = N'' WHERE inspection_number = :inspection_number`,
-        { replacements: { inspection_number }, transaction }
+        `UPDATE purchase_inspection_defect SET defect_handling = N'' WHERE inspection_number = :inspection_number${factoryCond}`,
+        { replacements: { inspection_number, ...factoryReps }, transaction }
       );
 
       await transaction.commit();
@@ -1104,13 +1124,15 @@ export const defectHandlingPurchaseInspection = async (req: Request, res: Respon
   try {
     const factoryCode = await getFactoryCode(req);
     const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const { inspection_number } = req.params;
 
     // 查询检验单
     const [inspRows]: any = await sequelize.query(`
       SELECT * FROM purchase_quality_inspection
-      WHERE inspection_number = :inspection_number
-    `, { replacements: { inspection_number } });
+      WHERE inspection_number = :inspection_number${factoryCond}
+    `, { replacements: { inspection_number, ...factoryReps } });
 
     if (!inspRows.length) {
       res.status(404).json({ success: false, message: '检验单不存在' });
@@ -1149,9 +1171,9 @@ export const defectHandlingPurchaseInspection = async (req: Request, res: Respon
           if (item.id && item.defect_handling) {
             await sequelize.query(`
               UPDATE purchase_inspection_defect SET defect_handling = :defect_handling
-              WHERE id = :id AND inspection_number = :inspection_number
+              WHERE id = :id AND inspection_number = :inspection_number${factoryCond}
             `, {
-              replacements: { id: item.id, inspection_number, defect_handling: item.defect_handling },
+              replacements: { id: item.id, inspection_number, defect_handling: item.defect_handling, ...factoryReps },
               transaction
             });
           }
@@ -1194,15 +1216,15 @@ export const defectHandlingPurchaseInspection = async (req: Request, res: Respon
 
       // 标记检验单缺陷处理为“待处理”
       await sequelize.query(
-        `UPDATE purchase_quality_inspection SET defect_handling = N'待处理' WHERE inspection_number = :inspection_number`,
-        { replacements: { inspection_number }, transaction }
+        `UPDATE purchase_quality_inspection SET defect_handling = N'待处理' WHERE inspection_number = :inspection_number${factoryCond}`,
+        { replacements: { inspection_number, ...factoryReps }, transaction }
       );
 
       // 回写 nonconforming_number 到检验单（取第一个NC单号）
       if (ncNumbers.length > 0) {
         await sequelize.query(
-          `UPDATE purchase_quality_inspection SET nonconforming_number = :ncNumber WHERE inspection_number = :inspection_number`,
-          { replacements: { ncNumber: ncNumbers[0], inspection_number }, transaction }
+          `UPDATE purchase_quality_inspection SET nonconforming_number = :ncNumber WHERE inspection_number = :inspection_number${factoryCond}`,
+          { replacements: { ncNumber: ncNumbers[0], inspection_number, ...factoryReps }, transaction }
         );
       }
 

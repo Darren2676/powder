@@ -22,10 +22,12 @@ export const getProgressSummary = async (req: Request, res: Response, next: Next
     if (dateTo) replacements.dateTo = dateTo;
 
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
-      replacements._factoryId = _factoryId;
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      replacements._factoryId = effectiveFactoryId;
     }
-    const factoryCond = _factoryId !== null ? 'AND po.factory_id = :_factoryId' : '';
+    const factoryCond = effectiveFactoryId !== null ? 'AND po.factory_id = :_factoryId' : '';
 
     // 1. KPI卡片
     const [kpiResult]: any = await sequelize.query(`
@@ -167,6 +169,15 @@ export const getProgressOrders = async (req: Request, res: Response, next: NextF
     const conditions: string[] = [`po.approval_status = N'已审批'`];
     const replacements: any = {};
 
+    // 多工厂过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      conditions.push(`po.factory_id = :_factoryId`);
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     if (search) {
       conditions.push(`(po.production_order_number LIKE :search OR po.item_number LIKE :search OR po.item_name LIKE :search)`);
       replacements.search = `%${search}%`;
@@ -204,8 +215,11 @@ export const getProgressOrders = async (req: Request, res: Response, next: NextF
                ISNULL(po.inbound_quantity, 0) as inbound_quantity,
                ISNULL(po.inbound_status, N'未入库') as inbound_status,
                po.production_date, po.equipment_name,
+               ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name, po.factory_id,
                ROW_NUMBER() OVER (ORDER BY po.production_date DESC, po.production_order_number DESC) AS _row_num
-        FROM production_order po ${whereClause}
+        FROM production_order po
+        LEFT JOIN factory f ON po.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
 

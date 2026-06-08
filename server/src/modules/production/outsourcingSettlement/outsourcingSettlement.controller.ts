@@ -140,11 +140,14 @@ export const createOutsourcingSettlement = async (req: Request, res: Response, n
 export const approveSettlement = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [check]: any = await sequelize.query(`SELECT status FROM outsourcing_settlement WHERE settlement_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    const [check]: any = await sequelize.query(`SELECT status FROM outsourcing_settlement WHERE settlement_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!check.length) { res.status(404).json({ success: false, message: '委外结算单不存在' }); return; }
     if (check[0].status !== '草稿') { res.status(403).json({ success: false, message: '只能审核草稿状态的结算单' }); return; }
 
-    await sequelize.query(`UPDATE outsourcing_settlement SET status = N'已审核' WHERE settlement_number = :id`, { replacements: { id } });
+    await sequelize.query(`UPDATE outsourcing_settlement SET status = N'已审核' WHERE settlement_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     res.json(success(null, '审核成功'));
   } catch (err) { next(err); }
 };
@@ -154,6 +157,9 @@ export const recordPayment = async (req: Request, res: Response, next: NextFunct
   try {
     const { id } = req.params;
     const b = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
     if (!b.paid_amount || parseFloat(b.paid_amount) <= 0) {
       res.status(400).json({ success: false, message: '付款金额必须大于0' });
@@ -161,8 +167,8 @@ export const recordPayment = async (req: Request, res: Response, next: NextFunct
     }
 
     const [check]: any = await sequelize.query(`
-      SELECT * FROM outsourcing_settlement WHERE settlement_number = :id
-    `, { replacements: { id } });
+      SELECT * FROM outsourcing_settlement WHERE settlement_number = :id${factoryCond}
+    `, { replacements: { id, ...factoryReps } });
     
     if (!check.length) { res.status(404).json({ success: false, message: '委外结算单不存在' }); return; }
     if (check[0].status !== '已审核') { res.status(403).json({ success: false, message: '只能对已审核的结算单付款' }); return; }
@@ -184,12 +190,13 @@ export const recordPayment = async (req: Request, res: Response, next: NextFunct
         UPDATE outsourcing_settlement SET
           paid_amount = :paid_amount,
           payment_status = :payment_status
-        WHERE settlement_number = :id
+        WHERE settlement_number = :id${factoryCond}
       `, {
         replacements: {
           id,
           paid_amount: newPaid,
-          payment_status: paymentStatus
+          payment_status: paymentStatus,
+          ...factoryReps
         },
         transaction
       });
@@ -198,8 +205,8 @@ export const recordPayment = async (req: Request, res: Response, next: NextFunct
       if (paymentStatus === '已付款') {
         await sequelize.query(`
           UPDATE outsourcing_settlement SET status = N'已结算'
-          WHERE settlement_number = :id
-        `, { replacements: { id }, transaction });
+          WHERE settlement_number = :id${factoryCond}
+        `, { replacements: { id, ...factoryReps }, transaction });
 
         // 更新委外订单的结算状态
         const [orderCheck]: any = await sequelize.query(`
@@ -219,12 +226,13 @@ export const recordPayment = async (req: Request, res: Response, next: NextFunct
             UPDATE outsourcing_order 
             SET settlement_quantity = :qty,
                 settlement_status = :status
-            WHERE outsourcing_order_number = :order_number
+            WHERE outsourcing_order_number = :order_number${factoryCond}
           `, {
             replacements: {
               qty: newSettledQty,
               status: settlementStatus,
-              order_number: check[0].outsourcing_order_number
+              order_number: check[0].outsourcing_order_number,
+              ...factoryReps
             },
             transaction
           });
@@ -233,8 +241,8 @@ export const recordPayment = async (req: Request, res: Response, next: NextFunct
           if (settlementStatus === '已结算') {
             await sequelize.query(`
               UPDATE outsourcing_order SET order_status = N'已完成'
-              WHERE outsourcing_order_number = :order_number
-            `, { replacements: { order_number: check[0].outsourcing_order_number }, transaction });
+              WHERE outsourcing_order_number = :order_number${factoryCond}
+            `, { replacements: { order_number: check[0].outsourcing_order_number, ...factoryReps }, transaction });
           }
         }
       }

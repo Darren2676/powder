@@ -43,6 +43,13 @@
             <a-select-option value="已完成">已完成</a-select-option>
           </a-select>
         </a-col>
+        <a-col :span="3">
+          <a-select v-model:value="filterFactory" placeholder="选择工厂" allow-clear size="small" style="width: 100%;" @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">
+              {{ f.factory_short || f.factory_name }}
+            </a-select-option>
+          </a-select>
+        </a-col>
         <a-col>
           <a-button type="primary" :loading="exportLoading" size="small" @click="handleExport">
             <DownloadOutlined /> 导出
@@ -162,6 +169,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { DownloadOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getPlanMaterialCost, getPlanMaterialCostSummary, exportPlanMaterialCost } from '@/api/planning/planMaterialCost'
+import { getFactories } from '@/api/system/factory'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 
@@ -170,6 +178,8 @@ const loading = ref(false)
 const exportLoading = ref(false)
 const searchText = ref('')
 const filterStatus = ref<string | undefined>(undefined)
+const filterFactory = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
 const planData = ref<any[]>([])
 const detailMap = ref<Record<string, Record<string, any[]>>>({})
 const ordersMap = ref<Record<string, string[]>>({})
@@ -198,6 +208,8 @@ const defaultPlanColumns = [
   { title: '产品名称', dataIndex: 'item_name', key: 'item_name', width: 160, resizable: true },
   { title: '计划数量', dataIndex: 'planned_quantity', key: 'planned_quantity', width: 100, resizable: true },
   { title: '计划状态', dataIndex: 'plan_status', key: 'plan_status', width: 110, resizable: true },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true,
+    customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '关联生产单', dataIndex: 'order_count', key: 'order_count', width: 100, resizable: true },
   { title: '材料成本合计', dataIndex: 'material_cost_total', key: 'material_cost_total', width: 130, resizable: true },
   { title: '单位产品成本', dataIndex: 'unit_cost_avg', key: 'unit_cost_avg', width: 120, resizable: true },
@@ -256,6 +268,7 @@ const fetchData = async () => {
       limit: pagination.pageSize,
       search: searchText.value || undefined,
       plan_status: filterStatus.value || undefined,
+      factory_id: filterFactory.value || undefined,
     })
     const d = res.data
     planData.value = d.items || []
@@ -274,7 +287,7 @@ const fetchData = async () => {
 
 const fetchSummary = async () => {
   try {
-    const res = await getPlanMaterialCostSummary()
+    const res = await getPlanMaterialCostSummary({ factory_id: filterFactory.value || undefined })
     if (res.data) {
       summaryData.value = res.data
     }
@@ -308,6 +321,7 @@ const handleExport = async () => {
     const res = await exportPlanMaterialCost({
       search: searchText.value || undefined,
       plan_status: filterStatus.value || undefined,
+      factory_id: filterFactory.value || undefined,
     })
     const blob = new Blob([res.data as any], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const url = window.URL.createObjectURL(blob)
@@ -327,7 +341,15 @@ const handleExport = async () => {
 onMounted(() => {
   loadPlanPref()
   loadDetailPref()
+  loadFactories()
   fetchData()
   fetchSummary()
 })
+
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 </script>

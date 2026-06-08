@@ -12,37 +12,45 @@ import { onWorkReportApproved, onWorkReportReversed } from '@/services/workRepor
 import { consumeForecastOnOrderApproval, recoverForecastOnOrderReversal } from '@/services/forecast.service';
 import { onSalesOrderApproved, onSalesOrderReversed } from '@/services/salesOrderSync.service';
 import { onStockInApproved, onStockInReversed } from '@/modules/warehouse/stockIn/scrapInventoryHandler';
+import { onPlanReversed } from '@/modules/planning/plan/plan.controller';
 import { withTransaction } from '@/shared/db/withTransaction';
 import { createLogger } from '@/config/logger';
 
 const log = createLogger('approval');
 
+/** 工厂隔离缺失时输出告警日志 */
+const warnNoFactoryId = (module: string, recordId: string, config: { hasFactoryId?: boolean }, factory_id?: number | null) => {
+  if (factory_id == null && config.hasFactoryId) {
+    log.warn({ module, recordId }, '审批操作缺少factory_id，工厂隔离未生效');
+  }
+};
+
 // ==================== Module Registry ====================
-const moduleConfig: Record<string, { tableName: string; primaryKey: string; displayName: string }> = {
-  'routing_header':  { tableName: 'routing_header',  primaryKey: 'process_route_number',   displayName: '工艺路线' },
-  'expense_claim':   { tableName: 'expense_claim',   primaryKey: 'claim_number',              displayName: '报销单' },
-  'Production_plan': { tableName: 'Production_plan',  primaryKey: 'production_number',      displayName: '生产计划' },
-  'bom_header':      { tableName: 'bom_header',       primaryKey: 'bom_number',             displayName: 'BOM物料清单' },
-  'production_order': { tableName: 'production_order', primaryKey: 'production_order_number', displayName: '生产单' },
-  'process_task':     { tableName: 'process_task',     primaryKey: 'process_task_number',     displayName: '工序任务单' },
-  'material_preparation': { tableName: 'material_preparation', primaryKey: 'preparation_number', displayName: '备料单' },
-  'work_report': { tableName: 'work_report', primaryKey: 'work_report_number', displayName: '报工单' },
-  'sales_order': { tableName: 'sales_order', primaryKey: 'sales_order_number', displayName: '销售订单' },
-  'purchase_req': { tableName: 'purchase_req', primaryKey: 'purchase_req_number', displayName: '采购申请单' },
-  'purchase_order': { tableName: 'purchase_order', primaryKey: 'purchase_order_number', displayName: '采购订单' },
-  'stock_in': { tableName: 'stock_in', primaryKey: 'stock_in_number', displayName: '入库单' },
-  'sales_forecast': { tableName: 'sales_forecast', primaryKey: 'forecast_number', displayName: '销售预测' },
-  'return_order': { tableName: 'return_order', primaryKey: 'return_order_number', displayName: '退货单' },
-  'mfg_bom_header': { tableName: 'mfg_bom_header', primaryKey: 'mfg_bom_number', displayName: '制造BOM' },
-  'purchase_price_list': { tableName: 'purchase_price_list', primaryKey: 'price_list_number', displayName: '采购价目表' },
-  'sales_price_list': { tableName: 'sales_price_list', primaryKey: 'price_list_number', displayName: '销售价目表' },
-  'outsourcing_order': { tableName: 'outsourcing_order', primaryKey: 'outsourcing_order_number', displayName: '委外订单' },
-  'outsourcing_req': { tableName: 'outsourcing_req', primaryKey: 'outsourcing_req_number', displayName: '工序委外申请' },
-  'piece_rate_price_header': { tableName: 'piece_rate_price_header', primaryKey: 'price_list_number', displayName: '计件单价表' },
-  'standard_cost_header': { tableName: 'standard_cost_header', primaryKey: 'cost_list_number', displayName: '标准成本单价表' },
-  'piece_rate_wage_header': { tableName: 'piece_rate_wage_header', primaryKey: 'wage_number', displayName: '计件工资表' },
-  'sample_request': { tableName: 'sample_request', primaryKey: 'request_number', displayName: '样品申请' },
-  'process_parameter_header': { tableName: 'process_parameter_header', primaryKey: 'parameter_number', displayName: '工艺参数' }
+const moduleConfig: Record<string, { tableName: string; primaryKey: string; displayName: string; hasFactoryId?: boolean }> = {
+  'routing_header':  { tableName: 'routing_header',  primaryKey: 'process_route_number',   displayName: '工艺路线', hasFactoryId: false },
+  'expense_claim':   { tableName: 'expense_claim',   primaryKey: 'claim_number',              displayName: '报销单', hasFactoryId: true },
+  'Production_plan': { tableName: 'Production_plan',  primaryKey: 'production_number',      displayName: '生产计划', hasFactoryId: true },
+  'bom_header':      { tableName: 'bom_header',       primaryKey: 'bom_number',             displayName: 'BOM物料清单', hasFactoryId: false },
+  'production_order': { tableName: 'production_order', primaryKey: 'production_order_number', displayName: '生产单', hasFactoryId: true },
+  'process_task':     { tableName: 'process_task',     primaryKey: 'process_task_number',     displayName: '工序任务单', hasFactoryId: true },
+  'material_preparation': { tableName: 'material_preparation', primaryKey: 'preparation_number', displayName: '备料单', hasFactoryId: false },
+  'work_report': { tableName: 'work_report', primaryKey: 'work_report_number', displayName: '报工单', hasFactoryId: true },
+  'sales_order': { tableName: 'sales_order', primaryKey: 'sales_order_number', displayName: '销售订单', hasFactoryId: true },
+  'purchase_req': { tableName: 'purchase_req', primaryKey: 'purchase_req_number', displayName: '采购申请单', hasFactoryId: true },
+  'purchase_order': { tableName: 'purchase_order', primaryKey: 'purchase_order_number', displayName: '采购订单', hasFactoryId: true },
+  'stock_in': { tableName: 'stock_in', primaryKey: 'stock_in_number', displayName: '入库单', hasFactoryId: true },
+  'sales_forecast': { tableName: 'sales_forecast', primaryKey: 'forecast_number', displayName: '销售预测', hasFactoryId: true },
+  'return_order': { tableName: 'return_order', primaryKey: 'return_order_number', displayName: '退货单', hasFactoryId: true },
+  'mfg_bom_header': { tableName: 'mfg_bom_header', primaryKey: 'mfg_bom_number', displayName: '制造BOM', hasFactoryId: false },
+  'purchase_price_list': { tableName: 'purchase_price_list', primaryKey: 'price_list_number', displayName: '采购价目表', hasFactoryId: true },
+  'sales_price_list': { tableName: 'sales_price_list', primaryKey: 'price_list_number', displayName: '销售价目表', hasFactoryId: true },
+  'outsourcing_order': { tableName: 'outsourcing_order', primaryKey: 'outsourcing_order_number', displayName: '委外订单', hasFactoryId: true },
+  'outsourcing_req': { tableName: 'outsourcing_req', primaryKey: 'outsourcing_req_number', displayName: '工序委外申请', hasFactoryId: true },
+  'piece_rate_price_header': { tableName: 'piece_rate_price_header', primaryKey: 'price_list_number', displayName: '计件单价表', hasFactoryId: false },
+  'standard_cost_header': { tableName: 'standard_cost_header', primaryKey: 'cost_list_number', displayName: '标准成本单价表', hasFactoryId: true },
+  'piece_rate_wage_header': { tableName: 'piece_rate_wage_header', primaryKey: 'wage_number', displayName: '计件工资表', hasFactoryId: true },
+  'sample_request': { tableName: 'sample_request', primaryKey: 'request_number', displayName: '样品申请', hasFactoryId: true },
+  'process_parameter_header': { tableName: 'process_parameter_header', primaryKey: 'parameter_number', displayName: '工艺参数', hasFactoryId: false }
 };
 
 export const getModuleConfig = (module: string) => {
@@ -172,7 +180,7 @@ registerApprovalHandler('sales_order', {
 // implementation in the module's service file and update the registration here.
 registerApprovalHandler('routing_header', { onApprove: noopCallback('routing_header', 'onApprove'), onReverse: noopCallback('routing_header', 'onReverse') });
 registerApprovalHandler('expense_claim', { onApprove: noopCallback('expense_claim', 'onApprove'), onReverse: noopCallback('expense_claim', 'onReverse') });
-registerApprovalHandler('Production_plan', { onApprove: noopCallback('Production_plan', 'onApprove'), onReverse: noopCallback('Production_plan', 'onReverse') });
+registerApprovalHandler('Production_plan', { onApprove: noopCallback('Production_plan', 'onApprove'), onReverse: onPlanReversed });
 registerApprovalHandler('bom_header', { onApprove: noopCallback('bom_header', 'onApprove'), onReverse: noopCallback('bom_header', 'onReverse') });
 registerApprovalHandler('production_order', { onApprove: noopCallback('production_order', 'onApprove'), onReverse: noopCallback('production_order', 'onReverse') });
 registerApprovalHandler('process_task', { onApprove: noopCallback('process_task', 'onApprove'), onReverse: noopCallback('process_task', 'onReverse') });
@@ -194,17 +202,22 @@ registerApprovalHandler('sample_request', { onApprove: noopCallback('sample_requ
 
 // ==================== Submit for Approval ====================
 export const submitForApprovalCore = async (params: {
-  module: string; recordId: string; userId: number; username: string; remark?: string;
+  module: string; recordId: string; userId: number; username: string; remark?: string; factory_id?: number;
 }): Promise<{ usedWorkflow: boolean; instanceId?: string }> => {
-  const { module, recordId, userId, username, remark } = params;
+  const { module, recordId, userId, username, remark, factory_id } = params;
   const config = getModuleConfig(module);
   if (!config) throw new BusinessError(400, '无效的模块标识');
   if (!recordId) throw new BusinessError(400, '记录ID不能为空');
 
+  // 多工厂隔离条件
+  const factoryCond = (factory_id != null && config.hasFactoryId) ? ' AND factory_id = :factory_id' : '';
+  const factoryReps = (factory_id != null && config.hasFactoryId) ? { factory_id } : {};
+  warnNoFactoryId(module, recordId, config, factory_id);
+
   // Check if module has active workflow definition — if yes, delegate to workflow engine
   const useWorkflow = await hasActiveWorkflow(module);
   if (useWorkflow) {
-    const result = await startWorkflow(module, recordId, { id: userId, username });
+    const result = await startWorkflow(module, recordId, { id: userId, username }, factory_id);
     if (result.success) {
       // Also insert approval_log for compatibility
       await sequelize.query(
@@ -221,14 +234,14 @@ export const submitForApprovalCore = async (params: {
   return await withTransaction(async (transaction) => {
     // Check current status with optimistic lock
     const [rows]: any = await sequelize.query(
-      `UPDATE ${config.tableName} SET approval_status = N'待审批' WHERE ${config.primaryKey} = :record_id AND approval_status = N'草稿'`,
-      { replacements: { record_id: recordId }, transaction }
+      `UPDATE ${config.tableName} SET approval_status = N'待审批' WHERE ${config.primaryKey} = :record_id AND approval_status = N'草稿'${factoryCond}`,
+      { replacements: { record_id: recordId, ...factoryReps }, transaction }
     );
     const affected = (rows as any)?.length !== undefined ? (rows as any).length : ((rows as any)?.rowCount ?? (rows as any)?.[0]?.affectedRows ?? 1);
     // MSSQL returns metadata; check via re-query
     const [check]: any = await sequelize.query(
-      `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id`,
-      { replacements: { record_id: recordId }, transaction }
+      `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id${factoryCond}`,
+      { replacements: { record_id: recordId, ...factoryReps }, transaction }
     );
     if (!check.length) throw new BusinessError(404, '记录不存在');
     if (check[0].approval_status !== '待审批') throw new BusinessError(400, '当前状态不允许提交审批，只有草稿状态可以提交');
@@ -257,22 +270,26 @@ export const submitForApprovalCore = async (params: {
 
 // ==================== Approve ====================
 export const approveCore = async (params: {
-  module: string; recordId: string; userId: number; username: string; remark?: string;
+  module: string; recordId: string; userId: number; username: string; remark?: string; factory_id?: number;
 }): Promise<void> => {
-  const { module, recordId, userId, username, remark } = params;
+  const { module, recordId, userId, username, remark, factory_id } = params;
   const config = getModuleConfig(module);
   if (!config) throw new BusinessError(400, '无效的模块标识');
   if (!recordId) throw new BusinessError(400, '记录ID不能为空');
 
+  const factoryCond = (factory_id != null && config.hasFactoryId) ? ' AND factory_id = :factory_id' : '';
+  const factoryReps = (factory_id != null && config.hasFactoryId) ? { factory_id } : {};
+  warnNoFactoryId(module, recordId, config, factory_id);
+
   await withTransaction(async (transaction) => {
     // Update with optimistic lock
     await sequelize.query(
-      `UPDATE ${config.tableName} SET approval_status = N'已审批' WHERE ${config.primaryKey} = :record_id AND approval_status = N'待审批'`,
-      { replacements: { record_id: recordId }, transaction }
+      `UPDATE ${config.tableName} SET approval_status = N'已审批' WHERE ${config.primaryKey} = :record_id AND approval_status = N'待审批'${factoryCond}`,
+      { replacements: { record_id: recordId, ...factoryReps }, transaction }
     );
     const [check]: any = await sequelize.query(
-      `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id`,
-      { replacements: { record_id: recordId }, transaction }
+      `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id${factoryCond}`,
+      { replacements: { record_id: recordId, ...factoryReps }, transaction }
     );
     if (!check.length) throw new BusinessError(404, '记录不存在');
     if (check[0].approval_status !== '已审批') throw new BusinessError(400, '当前状态不允许审批，只有待审批状态可以审批');
@@ -304,21 +321,25 @@ export const approveCore = async (params: {
 
 // ==================== Reverse Approval ====================
 export const reverseApprovalCore = async (params: {
-  module: string; recordId: string; userId: number; username: string; remark?: string;
+  module: string; recordId: string; userId: number; username: string; remark?: string; factory_id?: number;
 }): Promise<void> => {
-  const { module, recordId, userId, username, remark } = params;
+  const { module, recordId, userId, username, remark, factory_id } = params;
   const config = getModuleConfig(module);
   if (!config) throw new BusinessError(400, '无效的模块标识');
   if (!recordId) throw new BusinessError(400, '记录ID不能为空');
 
+  const factoryCond = (factory_id != null && config.hasFactoryId) ? ' AND factory_id = :factory_id' : '';
+  const factoryReps = (factory_id != null && config.hasFactoryId) ? { factory_id } : {};
+  warnNoFactoryId(module, recordId, config, factory_id);
+
   await withTransaction(async (transaction) => {
     await sequelize.query(
-      `UPDATE ${config.tableName} SET approval_status = N'草稿' WHERE ${config.primaryKey} = :record_id AND approval_status = N'已审批'`,
-      { replacements: { record_id: recordId }, transaction }
+      `UPDATE ${config.tableName} SET approval_status = N'草稿' WHERE ${config.primaryKey} = :record_id AND approval_status = N'已审批'${factoryCond}`,
+      { replacements: { record_id: recordId, ...factoryReps }, transaction }
     );
     const [check]: any = await sequelize.query(
-      `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id`,
-      { replacements: { record_id: recordId }, transaction }
+      `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id${factoryCond}`,
+      { replacements: { record_id: recordId, ...factoryReps }, transaction }
     );
     if (!check.length) throw new BusinessError(404, '记录不存在');
     if (check[0].approval_status !== ORDER_STATUS.DRAFT) throw new BusinessError(400, '当前状态不允许反审，只有已审批状态可以反审');
@@ -370,12 +391,16 @@ export const reverseApprovalCore = async (params: {
 
 // ==================== Withdraw ====================
 export const withdrawCore = async (params: {
-  module: string; recordId: string; userId: number; username: string;
+  module: string; recordId: string; userId: number; username: string; factory_id?: number;
 }): Promise<void> => {
-  const { module, recordId, userId, username } = params;
+  const { module, recordId, userId, username, factory_id } = params;
   const config = getModuleConfig(module);
   if (!config) throw new BusinessError(400, '无效的模块标识');
   if (!recordId) throw new BusinessError(400, '记录ID不能为空');
+
+  const factoryCond = (factory_id != null && config.hasFactoryId) ? ' AND factory_id = :factory_id' : '';
+  const factoryReps = (factory_id != null && config.hasFactoryId) ? { factory_id } : {};
+  warnNoFactoryId(module, recordId, config, factory_id);
 
   // Verify the current user is the submitter
   const [submitLog]: any = await sequelize.query(
@@ -388,12 +413,12 @@ export const withdrawCore = async (params: {
 
   await withTransaction(async (transaction) => {
     await sequelize.query(
-      `UPDATE ${config.tableName} SET approval_status = N'草稿' WHERE ${config.primaryKey} = :record_id AND approval_status = N'待审批'`,
-      { replacements: { record_id: recordId }, transaction }
+      `UPDATE ${config.tableName} SET approval_status = N'草稿' WHERE ${config.primaryKey} = :record_id AND approval_status = N'待审批'${factoryCond}`,
+      { replacements: { record_id: recordId, ...factoryReps }, transaction }
     );
     const [check]: any = await sequelize.query(
-      `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id`,
-      { replacements: { record_id: recordId }, transaction }
+      `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id${factoryCond}`,
+      { replacements: { record_id: recordId, ...factoryReps }, transaction }
     );
     if (!check.length) throw new BusinessError(404, '记录不存在');
     if (check[0].approval_status !== ORDER_STATUS.DRAFT) throw new BusinessError(400, '当前状态不允许撤回，只有待审批状态可以撤回');
@@ -407,12 +432,16 @@ export const withdrawCore = async (params: {
 
 // ==================== Batch Submit ====================
 export const batchSubmitCore = async (params: {
-  module: string; recordIds: string[]; userId: number; username: string;
+  module: string; recordIds: string[]; userId: number; username: string; factory_id?: number;
 }): Promise<{ succeeded: string[]; failed: { recordId: string; message: string }[] }> => {
-  const { module, recordIds, userId, username } = params;
+  const { module, recordIds, userId, username, factory_id } = params;
   const config = getModuleConfig(module);
   if (!config) throw new BusinessError(400, '无效的模块标识');
   if (!Array.isArray(recordIds) || recordIds.length === 0) throw new BusinessError(400, 'record_ids 不能为空');
+
+  const factoryCond = (factory_id != null && config.hasFactoryId) ? ' AND factory_id = :factory_id' : '';
+  const factoryReps = (factory_id != null && config.hasFactoryId) ? { factory_id } : {};
+  warnNoFactoryId(module, '', config, factory_id);
 
   const results: { succeeded: string[]; failed: { recordId: string; message: string }[] } = { succeeded: [], failed: [] };
 
@@ -422,7 +451,7 @@ export const batchSubmitCore = async (params: {
   for (const recordId of recordIds) {
     try {
       if (useWorkflow) {
-        const result = await startWorkflow(module, recordId, { id: userId, username });
+        const result = await startWorkflow(module, recordId, { id: userId, username }, factory_id);
         if (result.success) {
           await sequelize.query(
             `INSERT INTO approval_log (module, record_id, action, from_status, to_status, operator_id, operator_name, remark) VALUES (:module, :record_id, 'submit', N'草稿', N'审批中', :operator_id, :operator_name, N'批量提交')`,
@@ -435,12 +464,12 @@ export const batchSubmitCore = async (params: {
       } else {
         await withTransaction(async (transaction) => {
           await sequelize.query(
-            `UPDATE ${config.tableName} SET approval_status = N'待审批' WHERE ${config.primaryKey} = :record_id AND approval_status = N'草稿'`,
-            { replacements: { record_id: recordId }, transaction }
+            `UPDATE ${config.tableName} SET approval_status = N'待审批' WHERE ${config.primaryKey} = :record_id AND approval_status = N'草稿'${factoryCond}`,
+            { replacements: { record_id: recordId, ...factoryReps }, transaction }
           );
           const [check]: any = await sequelize.query(
-            `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id`,
-            { replacements: { record_id: recordId }, transaction }
+            `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id${factoryCond}`,
+            { replacements: { record_id: recordId, ...factoryReps }, transaction }
           );
           if (!check.length) throw new BusinessError(404, '记录不存在');
           if (check[0].approval_status !== '待审批') throw new BusinessError(400, '状态不是草稿，无法提交');
@@ -479,12 +508,16 @@ export const batchSubmitCore = async (params: {
 
 // ==================== Batch Approve ====================
 export const batchApproveCore = async (params: {
-  module: string; recordIds: string[]; userId: number; username: string;
+  module: string; recordIds: string[]; userId: number; username: string; factory_id?: number;
 }): Promise<{ succeeded: string[]; failed: { recordId: string; message: string }[] }> => {
-  const { module, recordIds, userId, username } = params;
+  const { module, recordIds, userId, username, factory_id } = params;
   const config = getModuleConfig(module);
   if (!config) throw new BusinessError(400, '无效的模块标识');
   if (!Array.isArray(recordIds) || recordIds.length === 0) throw new BusinessError(400, 'record_ids 不能为空');
+
+  const factoryCond = (factory_id != null && config.hasFactoryId) ? ' AND factory_id = :factory_id' : '';
+  const factoryReps = (factory_id != null && config.hasFactoryId) ? { factory_id } : {};
+  warnNoFactoryId(module, '', config, factory_id);
 
   const results: { succeeded: string[]; failed: { recordId: string; message: string }[] } = { succeeded: [], failed: [] };
 
@@ -492,12 +525,12 @@ export const batchApproveCore = async (params: {
     try {
       await withTransaction(async (transaction) => {
         await sequelize.query(
-          `UPDATE ${config.tableName} SET approval_status = N'已审批' WHERE ${config.primaryKey} = :record_id AND approval_status = N'待审批'`,
-          { replacements: { record_id: recordId }, transaction }
+          `UPDATE ${config.tableName} SET approval_status = N'已审批' WHERE ${config.primaryKey} = :record_id AND approval_status = N'待审批'${factoryCond}`,
+          { replacements: { record_id: recordId, ...factoryReps }, transaction }
         );
         const [check]: any = await sequelize.query(
-          `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id`,
-          { replacements: { record_id: recordId }, transaction }
+          `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id${factoryCond}`,
+          { replacements: { record_id: recordId, ...factoryReps }, transaction }
         );
         if (!check.length) throw new BusinessError(404, '记录不存在');
         if (check[0].approval_status !== '已审批') throw new BusinessError(400, '状态不是待审批，无法审批');
@@ -527,12 +560,16 @@ export const batchApproveCore = async (params: {
 
 // ==================== Batch Withdraw ====================
 export const batchWithdrawCore = async (params: {
-  module: string; recordIds: string[]; userId: number; username: string;
+  module: string; recordIds: string[]; userId: number; username: string; factory_id?: number;
 }): Promise<{ succeeded: string[]; failed: { recordId: string; message: string }[] }> => {
-  const { module, recordIds, userId, username } = params;
+  const { module, recordIds, userId, username, factory_id } = params;
   const config = getModuleConfig(module);
   if (!config) throw new BusinessError(400, '无效的模块标识');
   if (!Array.isArray(recordIds) || recordIds.length === 0) throw new BusinessError(400, 'record_ids 不能为空');
+
+  const factoryCond = (factory_id != null && config.hasFactoryId) ? ' AND factory_id = :factory_id' : '';
+  const factoryReps = (factory_id != null && config.hasFactoryId) ? { factory_id } : {};
+  warnNoFactoryId(module, '', config, factory_id);
 
   const results: { succeeded: string[]; failed: { recordId: string; message: string }[] } = { succeeded: [], failed: [] };
 
@@ -549,12 +586,12 @@ export const batchWithdrawCore = async (params: {
     try {
       await withTransaction(async (transaction) => {
         await sequelize.query(
-          `UPDATE ${config.tableName} SET approval_status = N'草稿' WHERE ${config.primaryKey} = :record_id AND approval_status = N'待审批'`,
-          { replacements: { record_id: recordId }, transaction }
+          `UPDATE ${config.tableName} SET approval_status = N'草稿' WHERE ${config.primaryKey} = :record_id AND approval_status = N'待审批'${factoryCond}`,
+          { replacements: { record_id: recordId, ...factoryReps }, transaction }
         );
         const [check]: any = await sequelize.query(
-          `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id`,
-          { replacements: { record_id: recordId }, transaction }
+          `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id${factoryCond}`,
+          { replacements: { record_id: recordId, ...factoryReps }, transaction }
         );
         if (!check.length) throw new BusinessError(404, '记录不存在');
         if (check[0].approval_status !== ORDER_STATUS.DRAFT) throw new BusinessError(400, '状态不是待审批，无法撤回');
@@ -579,12 +616,16 @@ export const batchWithdrawCore = async (params: {
 
 // ==================== Batch Reverse ====================
 export const batchReverseCore = async (params: {
-  module: string; recordIds: string[]; userId: number; username: string;
+  module: string; recordIds: string[]; userId: number; username: string; factory_id?: number;
 }): Promise<{ succeeded: string[]; failed: { recordId: string; message: string }[] }> => {
-  const { module, recordIds, userId, username } = params;
+  const { module, recordIds, userId, username, factory_id } = params;
   const config = getModuleConfig(module);
   if (!config) throw new BusinessError(400, '无效的模块标识');
   if (!Array.isArray(recordIds) || recordIds.length === 0) throw new BusinessError(400, 'record_ids 不能为空');
+
+  const factoryCond = (factory_id != null && config.hasFactoryId) ? ' AND factory_id = :factory_id' : '';
+  const factoryReps = (factory_id != null && config.hasFactoryId) ? { factory_id } : {};
+  warnNoFactoryId(module, '', config, factory_id);
 
   const results: { succeeded: string[]; failed: { recordId: string; message: string }[] } = { succeeded: [], failed: [] };
 
@@ -592,12 +633,12 @@ export const batchReverseCore = async (params: {
     try {
       await withTransaction(async (transaction) => {
         await sequelize.query(
-          `UPDATE ${config.tableName} SET approval_status = N'草稿' WHERE ${config.primaryKey} = :record_id AND approval_status = N'已审批'`,
-          { replacements: { record_id: recordId }, transaction }
+          `UPDATE ${config.tableName} SET approval_status = N'草稿' WHERE ${config.primaryKey} = :record_id AND approval_status = N'已审批'${factoryCond}`,
+          { replacements: { record_id: recordId, ...factoryReps }, transaction }
         );
         const [check]: any = await sequelize.query(
-          `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id`,
-          { replacements: { record_id: recordId }, transaction }
+          `SELECT approval_status FROM ${config.tableName} WHERE ${config.primaryKey} = :record_id${factoryCond}`,
+          { replacements: { record_id: recordId, ...factoryReps }, transaction }
         );
         if (!check.length) throw new BusinessError(404, '记录不存在');
         if (check[0].approval_status !== ORDER_STATUS.DRAFT) throw new BusinessError(400, '状态不是已审批，无法反审');
@@ -627,9 +668,9 @@ export const batchReverseCore = async (params: {
 
 // ==================== Get Pending Approvals ====================
 export const getPendingApprovalsCore = async (params: {
-  page: number; limit: number; statusFilter: string;
+  page: number; limit: number; statusFilter: string; factory_id?: number;
 }): Promise<{ items: any[]; total: number; page: number; limit: number }> => {
-  const { page, limit, statusFilter } = params;
+  const { page, limit, statusFilter, factory_id } = params;
 
   const allItems: any[] = [];
 
@@ -644,8 +685,11 @@ export const getPendingApprovalsCore = async (params: {
         statusCondition = `WHERE approval_status IN (N'待审批', N'已审批')`;
       }
 
+      // 多工厂隔离
+      const facCond = (factory_id != null && config.hasFactoryId) ? ` AND factory_id = ${factory_id}` : '';
+
       const [rows]: any = await sequelize.query(
-        `SELECT ${config.primaryKey} as record_id, approval_status FROM ${config.tableName} ${statusCondition}`
+        `SELECT ${config.primaryKey} as record_id, approval_status FROM ${config.tableName} ${statusCondition}${facCond}`
       );
 
       for (const row of rows) {

@@ -93,37 +93,42 @@ export const getPlansForMrp = async (req: Request, res: Response, next: NextFunc
     const start_date = (req.query.start_date as string) || '';
     const end_date = (req.query.end_date as string) || '';
 
-    const conditions: string[] = [`approval_status = N'已审批'`, `plan_status = N'待加入任务'`, `mrp_status IS NULL`];
+    const conditions: string[] = [`pp.approval_status = N'已审批'`, `pp.plan_status = N'待加入任务'`, `pp.mrp_status IS NULL`];
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
-      conditions.push(`factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+    // 前端传 factory_id（HQ全量模式优先使用查询参数）
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      conditions.push(`pp.factory_id = :_factoryId`);
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (search) {
-      conditions.push(`(production_number LIKE :search OR item_number LIKE :search OR item_name LIKE :search)`);
+      conditions.push(`(pp.production_number LIKE :search OR pp.item_number LIKE :search OR pp.item_name LIKE :search)`);
       replacements.search = `%${search}%`;
     }
     if (start_date) {
-      conditions.push(`planned_completion_time >= :start_date`);
+      conditions.push(`pp.planned_completion_time >= :start_date`);
       replacements.start_date = start_date;
     }
     if (end_date) {
-      conditions.push(`planned_completion_time <= :end_date`);
+      conditions.push(`pp.planned_completion_time <= :end_date`);
       replacements.end_date = end_date;
     }
 
     const whereClause = 'WHERE ' + conditions.join(' AND ');
 
     const [items]: any = await sequelize.query(`
-      SELECT production_number, item_number, item_name, basic_unit, specifications,
-             product_drawing_number, rubber_compound_number, batch_production_quota,
-             planned_quantity, shifts_number, planned_completion_time, plan_status,
-             source_order_number, remark
-      FROM Production_plan
+      SELECT pp.production_number, pp.item_number, pp.item_name, pp.basic_unit, pp.specifications,
+             pp.product_drawing_number, pp.rubber_compound_number, pp.batch_production_quota,
+             pp.planned_quantity, pp.shifts_number, pp.planned_completion_time, pp.plan_status,
+             pp.source_order_number, pp.remark,
+             ISNULL(f.factory_short, f.factory_name) as factory_short, pp.factory_id
+      FROM Production_plan pp
+      LEFT JOIN factory f ON pp.factory_id = f.id
       ${whereClause}
-      ORDER BY planned_completion_time ASC, production_number DESC
+      ORDER BY pp.planned_completion_time ASC, pp.production_number DESC
     `, { replacements });
 
     res.json(success(items, '获取可MRP计划列表成功'));
@@ -148,12 +153,16 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
       const factoryCode = await getFactoryCode(req);
       // 1. 查询选中的生产计划
       const { placeholders: planPH, replacements: planRepl } = buildInClause(production_numbers, 'pn');
+      const _factoryId = getFactoryId(req);
+      const factoryCondition = _factoryId !== null ? 'AND factory_id = :_factoryId' : '';
+      const planReplacements: any = { ...planRepl };
+      if (_factoryId !== null) planReplacements._factoryId = _factoryId;
       const [plans]: any = await sequelize.query(`
         SELECT production_number, item_number, item_name, basic_unit, specifications,
                product_drawing_number, planned_quantity, planned_completion_time
         FROM Production_plan
-        WHERE production_number IN (${planPH}) AND approval_status = N'已审批'
-      `, { replacements: planRepl, transaction });
+        WHERE production_number IN (${planPH}) AND approval_status = N'已审批' ${factoryCondition}
+      `, { replacements: planReplacements, transaction });
 
       if (plans.length === 0) {
         await transaction.rollback();
@@ -168,7 +177,6 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
       const creation_man = (req as any).user?.username || '';
 
       // 3. 创建 mrp_run 头记录
-      const _factoryId = getFactoryId(req);
       await sequelize.query(`
         INSERT INTO mrp_run (mrp_run_number, run_date, run_by, run_status, plan_count, remark, creation_date, creation_man, factory_id)
         VALUES (:mrp_run_number, GETDATE(), :run_by, N'已计算', :plan_count, '', :creation_date, :creation_man, :factory_id)
@@ -180,8 +188,8 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
       // 4. 创建 mrp_run_plan 关联记录
       for (const plan of plans) {
         await sequelize.query(`
-          INSERT INTO mrp_run_plan (mrp_run_number, production_number, item_number, item_name, planned_quantity, planned_completion_time)
-          VALUES (:mrp_run_number, :production_number, :item_number, :item_name, :planned_quantity, :planned_completion_time)
+          INSERT INTO mrp_run_plan (mrp_run_number, production_number, item_number, item_name, planned_quantity, planned_completion_time, factory_id)
+          VALUES (:mrp_run_number, :production_number, :item_number, :item_name, :planned_quantity, :planned_completion_time, :factory_id)
         `, {
           replacements: {
             mrp_run_number,
@@ -189,7 +197,8 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
             item_number: plan.item_number,
             item_name: plan.item_name || '',
             planned_quantity: plan.planned_quantity,
-            planned_completion_time: plan.planned_completion_time || null
+            planned_completion_time: plan.planned_completion_time || null,
+            factory_id: req.body.factory_id || _factoryId
           },
           transaction
         });
@@ -275,13 +284,13 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
                 item_number, item_name, specifications, basic_unit, item_type, business_scope, mfg_bom_number,
                 gross_requirement, on_hand_inventory, wip_quantity, in_transit_po, pending_pr, safety_stock,
                 net_requirement, planned_start_date, planned_due_date, lead_time_days,
-                action_type, result_status, produce_quantity, purchase_quantity, bom_path
+                action_type, result_status, produce_quantity, purchase_quantity, bom_path, factory_id
               ) VALUES (
                 :mrp_run_number, :source_production_number, 0, NULL,
                 :item_number, :item_name, :specifications, :basic_unit, :item_type, :business_scope, :mfg_bom_number,
                 :gross_requirement, 0, 0, 0, 0, 0,
                 :net_requirement, :planned_start_date, :planned_due_date, :lead_time_days,
-                N'生产', N'待确认', :net_requirement, 0, :bom_path
+                N'生产', N'待确认', :net_requirement, 0, :bom_path, :factory_id
               )
             `, {
               replacements: {
@@ -299,7 +308,8 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
                 planned_start_date: startDate,
                 planned_due_date: entry.due_date,
                 lead_time_days: leadTime,
-                bom_path: (entry.bom_path || '').substring(0, 500)
+                bom_path: (entry.bom_path || '').substring(0, 500),
+                factory_id: req.body.factory_id || _factoryId
               },
               transaction
             });
@@ -493,13 +503,13 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
               item_number, item_name, specifications, basic_unit, item_type, business_scope, mfg_bom_number,
               gross_requirement, on_hand_inventory, wip_quantity, in_transit_po, pending_pr, safety_stock,
               net_requirement, planned_start_date, planned_due_date, lead_time_days,
-              action_type, result_status, produce_quantity, purchase_quantity, bom_path
+              action_type, result_status, produce_quantity, purchase_quantity, bom_path, factory_id
             ) VALUES (
               :mrp_run_number, :source_production_number, :bom_level, :parent_item_number,
               :item_number, :item_name, :specifications, :basic_unit, :item_type, :business_scope, :mfg_bom_number,
               :gross_requirement, :on_hand_inventory, :wip_quantity, :in_transit_po, :pending_pr, :safety_stock,
               :net_requirement, :planned_start_date, :planned_due_date, :lead_time_days,
-              :action_type, N'待确认', :produce_quantity, :purchase_quantity, :bom_path
+              :action_type, N'待确认', :produce_quantity, :purchase_quantity, :bom_path, :factory_id
             )
           `, {
             replacements: {
@@ -527,7 +537,8 @@ export const runMRP = async (req: Request, res: Response, next: NextFunction) =>
               action_type: actionType,
               produce_quantity: actionType === '采购' ? 0 : netReq,
               purchase_quantity: actionType === '采购' ? netReq : 0,
-              bom_path: demand.bom_paths.join(' | ').substring(0, 500)
+              bom_path: demand.bom_paths.join(' | ').substring(0, 500),
+              factory_id: req.body.factory_id || _factoryId
             },
             transaction
           });
@@ -597,39 +608,45 @@ export const getMRPRuns = async (req: Request, res: Response, next: NextFunction
     const conditions: string[] = [];
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
-      conditions.push(`factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+    // 前端传 factory_id（HQ全量模式优先使用查询参数）
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      conditions.push(`mr.factory_id = :_factoryId`);
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (search) {
-      conditions.push(`(mrp_run_number LIKE :search OR run_by LIKE :search)`);
+      conditions.push(`(mr.mrp_run_number LIKE :search OR mr.run_by LIKE :search)`);
       replacements.search = `%${search}%`;
     }
     if (run_status) {
-      conditions.push(`run_status = :run_status`);
+      conditions.push(`mr.run_status = :run_status`);
       replacements.run_status = run_status;
     }
 
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
     const [countResult]: any = await sequelize.query(
-      `SELECT COUNT(*) as total FROM mrp_run ${whereClause}`, { replacements }
+      `SELECT COUNT(*) as total FROM mrp_run mr ${whereClause}`, { replacements }
     );
     const total = countResult[0].total;
     const offset = (page - 1) * limit;
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT id, mrp_run_number, run_status, plan_count,
-               result_count AS detail_count,
-               production_order_count, purchase_req_count,
-               run_date AS created_at,
-               confirmed_at,
-               run_by AS created_by,
-               remark,
-               ROW_NUMBER() OVER (ORDER BY run_date DESC) AS _row_num
-        FROM mrp_run ${whereClause}
+        SELECT mr.id, mr.mrp_run_number, mr.run_status, mr.plan_count,
+               mr.result_count AS detail_count,
+               mr.production_order_count, mr.purchase_req_count,
+               mr.run_date AS created_at,
+               mr.confirmed_at,
+               mr.run_by AS created_by,
+               mr.remark,
+               ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name, mr.factory_id,
+               ROW_NUMBER() OVER (ORDER BY mr.run_date DESC) AS _row_num
+        FROM mrp_run mr
+        LEFT JOIN factory f ON mr.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
 
@@ -648,8 +665,12 @@ export const getMRPRunDetail = async (req: Request, res: Response, next: NextFun
   try {
     const { id } = req.params;
     const _factoryId = getFactoryId(req);
-    const [headers]: any = await sequelize.query(
-      `SELECT * FROM mrp_run WHERE mrp_run_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } }
+    const [headers]: any = await sequelize.query(`
+      SELECT mr.*, ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name
+      FROM mrp_run mr
+      LEFT JOIN factory f ON mr.factory_id = f.id
+      WHERE mr.mrp_run_number = :id${_factoryId !== null ? ' AND mr.factory_id = :_factoryId' : ''}
+    `, { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } }
     );
     if (!headers.length) {
       res.status(404).json({ success: false, message: 'MRP运行记录不存在' });
@@ -924,11 +945,13 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
       });
 
       // 更新源生产计划的 mrp_status
+      const mrpFactoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+      const mrpFactoryReps = _factoryId !== null ? { _factoryId } : {};
       await sequelize.query(`
         UPDATE Production_plan SET mrp_status = N'已分解'
         WHERE production_number IN (SELECT DISTINCT production_number FROM mrp_run_plan WHERE mrp_run_number = :mrp_run_number)
-          AND mrp_status IS NULL
-      `, { replacements: { mrp_run_number }, transaction });
+          AND mrp_status IS NULL${mrpFactoryCond}
+      `, { replacements: { mrp_run_number, ...mrpFactoryReps }, transaction });
 
       // 将源计划行导入生产单管理（与"从计划导入"功能相同）
       let planImportCount = 0;
@@ -992,8 +1015,8 @@ export const executeMRP = async (req: Request, res: Response, next: NextFunction
         await sequelize.query(`
           UPDATE Production_plan SET plan_status = N'已加入任务'
           WHERE production_number IN (SELECT DISTINCT production_number FROM mrp_run_plan WHERE mrp_run_number = :mrp_run_number)
-            AND plan_status = N'待加入任务'
-        `, { replacements: { mrp_run_number }, transaction });
+            AND plan_status = N'待加入任务'${mrpFactoryCond}
+        `, { replacements: { mrp_run_number, ...mrpFactoryReps }, transaction });
       }
 
       await transaction.commit();

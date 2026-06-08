@@ -3,12 +3,21 @@ import { ref, reactive, createVNode, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { SearchOutlined, ReloadOutlined, EyeOutlined, UndoOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { getSemiInboundOrderList, getSemiInboundOrderDetail, withdrawSemiInboundOrder } from '@/api/warehouse/materialWarehouse'
+import { getFactories } from '@/api/system/factory'
 import { useModalDrag } from '@/composables/useModalDrag'
 import dayjs from 'dayjs'
 
 const loading = ref(false)
 const dataSource = ref<any[]>([])
 const searchText = ref('')
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 
 const pagination = reactive({
   current: 1,
@@ -21,6 +30,7 @@ const pagination = reactive({
 })
 
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '入库单号', dataIndex: 'inbound_order_number', key: 'inbound_order_number', width: 180 },
   { title: '仓库', dataIndex: 'warehouse_name', key: 'warehouse_name', width: 130 },
   { title: '入库项数', dataIndex: 'total_items', key: 'total_items', width: 90, align: 'center' as const },
@@ -44,7 +54,8 @@ const fetchData = async () => {
     const res: any = await getSemiInboundOrderList({
       page: pagination.current,
       limit: pagination.pageSize,
-      search: searchText.value
+      search: searchText.value,
+      factory_id: factoryFilter.value || undefined
     })
     if (res?.success) {
       dataSource.value = res.data.items || []
@@ -134,6 +145,7 @@ const handleView = async (record: any) => {
 
 onMounted(() => {
   fetchData()
+  loadFactories()
 })
 </script>
 
@@ -142,6 +154,9 @@ onMounted(() => {
     <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; overflow-x: auto">
       <span style="font-size: 18px; font-weight: 600; white-space: nowrap; flex-shrink: 0">半成品生产入库单</span>
       <div style="display: flex; gap: 8px; align-items: center; flex-wrap: nowrap">
+        <a-select v-model:value="factoryFilter" placeholder="选择工厂" style="width:130px" allow-clear @change="handleSearch">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+        </a-select>
         <a-input-search
           v-model:value="searchText"
           placeholder="搜索入库单号/仓库/操作人"

@@ -70,6 +70,8 @@ export const confirmReturnStockin = async (req: Request, res: Response, next: Ne
     try {
       const factoryCode = await getFactoryCode(req);
       const _factoryId = getFactoryId(req);
+      const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+      const factoryReps = _factoryId !== null ? { _factoryId } : {};
       const operator = (req as any).user?.username || '';
       const warehouseFrom = check[0].warehouse_from; // 待检仓
       const warehouseTo = check[0].warehouse_to;     // 下道工序线边仓
@@ -237,13 +239,13 @@ export const confirmReturnStockin = async (req: Request, res: Response, next: Ne
         const plannedQty = parseFloat(orderCheck[0].planned_quantity) || 0;
         const orderStatus = newQualifiedQty >= plannedQty ? '已完成' : '部分收回';
         await sequelize.query(
-          `UPDATE outsourcing_order SET qualified_quantity = :qty, order_status = :status WHERE outsourcing_order_number = :orderNumber`,
-          { replacements: { qty: newQualifiedQty, status: orderStatus, orderNumber: check[0].outsourcing_order_number }, transaction }
+          `UPDATE outsourcing_order SET qualified_quantity = :qty, order_status = :status WHERE outsourcing_order_number = :orderNumber${factoryCond}`,
+          { replacements: { qty: newQualifiedQty, status: orderStatus, orderNumber: check[0].outsourcing_order_number, ...factoryReps }, transaction }
         );
       }
 
       // 更新入库单状态
-      await sequelize.query(`UPDATE outsourcing_return_stockin SET status = N'已入库', stockin_date = GETDATE() WHERE stockin_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`UPDATE outsourcing_return_stockin SET status = N'已入库', stockin_date = GETDATE() WHERE stockin_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
 
       await transaction.commit();
       res.json(success(null, '入库确认成功，库存已更新'));

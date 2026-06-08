@@ -16,7 +16,7 @@ export function updateEquipmentMaintenanceSettings(id: string, data: { maintenan
 }
 
 // 停机记录
-export function getEquipmentDowntimes(params?: { page?: number; limit?: number; equipment_number?: string; downtime_type?: string; date_from?: string; date_to?: string; search?: string }) {
+export function getEquipmentDowntimes(params?: { page?: number; limit?: number; equipment_number?: string; downtime_type?: string; date_from?: string; date_to?: string; search?: string; factory_id?: number }) {
   return request.get('/equipment-downtime', { params })
 }
 
@@ -32,7 +32,7 @@ export function deleteEquipmentDowntime(id: number) {
   return request.delete(`/equipment-downtime/${id}`)
 }
 
-export function exportEquipmentDowntimes(params?: { equipment_number?: string; downtime_type?: string }) {
+export function exportEquipmentDowntimes(params?: { equipment_number?: string; downtime_type?: string; factory_id?: number }) {
   return request.get('/equipment-downtime/export', { params, responseType: 'blob' })
 }
 
@@ -45,7 +45,7 @@ export function withdrawEquipmentDowntime(id: number) {
 }
 
 // 保养计划
-export function getEquipmentMaintenancePlans(params?: { page?: number; limit?: number; equipment_number?: string; plan_status?: string; maintenance_type?: string; date_from?: string; date_to?: string }) {
+export function getEquipmentMaintenancePlans(params?: { page?: number; limit?: number; equipment_number?: string; plan_status?: string; maintenance_type?: string; date_from?: string; date_to?: string; factory_id?: number }) {
   return request.get('/equipment-maintenance-plan', { params })
 }
 
@@ -77,7 +77,7 @@ export function autoGenerateMaintenancePlans() {
   return request.post('/equipment-maintenance-plan/auto-generate')
 }
 
-export function exportEquipmentMaintenancePlans(params?: { equipment_number?: string; plan_status?: string }) {
+export function exportEquipmentMaintenancePlans(params?: { equipment_number?: string; plan_status?: string; factory_id?: number }) {
   return request.get('/equipment-maintenance-plan/export', { params, responseType: 'blob' })
 }
 
@@ -90,7 +90,7 @@ export function withdrawEquipmentMaintenancePlan(id: number) {
 }
 
 // OEE
-export function getEquipmentOees(params?: { page?: number; limit?: number; equipment_number?: string; date_from?: string; date_to?: string }) {
+export function getEquipmentOees(params?: { page?: number; limit?: number; equipment_number?: string; date_from?: string; date_to?: string; factory_id?: number }) {
   return request.get('/equipment-oee', { params })
 }
 
@@ -102,7 +102,7 @@ export function deleteEquipmentOee(id: number) {
   return request.delete(`/equipment-oee/${id}`)
 }
 
-export function getOeeDashboard(params?: { date_from?: string; date_to?: string; equipment_number?: string }) {
+export function getOeeDashboard(params?: { date_from?: string; date_to?: string; equipment_number?: string; factory_id?: number }) {
   return request.get('/equipment-oee/dashboard', { params })
 }
 

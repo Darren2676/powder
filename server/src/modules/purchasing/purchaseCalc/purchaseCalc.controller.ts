@@ -56,6 +56,8 @@ async function flattenMfgBomForPurchase(bomNumber: string, parentMultiplier: num
 export const demandReport = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.body.factory_id ? parseInt(req.body.factory_id) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
     const { mfg_bom_number, planned_quantity } = req.body;
     if (!mfg_bom_number || !planned_quantity) {
       res.status(400).json({ success: false, message: '请提供设计BOM编号和计划产量' });
@@ -63,9 +65,11 @@ export const demandReport = async (req: Request, res: Response, next: NextFuncti
     }
 
     // 1. 获取设计BOM基准数量
+    const factoryCond = effectiveFactoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps: any = effectiveFactoryId !== null ? { _factoryId: effectiveFactoryId } : {};
     const [headers]: any = await sequelize.query(
-      `SELECT base_quantity FROM mfg_bom_header WHERE mfg_bom_number = :id`,
-      { replacements: { id: mfg_bom_number } }
+      `SELECT base_quantity FROM mfg_bom_header WHERE mfg_bom_number = :id${factoryCond}`,
+      { replacements: { id: mfg_bom_number, ...factoryReps } }
     );
     if (!headers.length) {
       res.status(404).json({ success: false, message: '设计BOM不存在' });
@@ -104,8 +108,8 @@ export const demandReport = async (req: Request, res: Response, next: NextFuncti
       matNumbers.forEach((m: string, i: number) => { matReplacements[`m${i}`] = m; });
 
       const [invRows]: any = await sequelize.query(
-        `SELECT mi.item_number, SUM(mi.quantity) as on_hand, MAX(mi.quantity) as stock FROM material_inventory mi WHERE mi.item_number IN (${placeholders}) GROUP BY mi.item_number`,
-        { replacements: { ...matReplacements } }
+        `SELECT mi.item_number, SUM(mi.quantity) as on_hand, MAX(mi.quantity) as stock FROM material_inventory mi WHERE mi.item_number IN (${placeholders})${effectiveFactoryId !== null ? ' AND mi.factory_id = :_factoryId' : ''} GROUP BY mi.item_number`,
+        { replacements: { ...matReplacements, ...factoryReps } }
       );
       for (const row of invRows) {
         inventoryMap[row.item_number] = {
@@ -147,6 +151,8 @@ export const demandReport = async (req: Request, res: Response, next: NextFuncti
 export const generatePurchaseReq = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.body.factory_id ? parseInt(req.body.factory_id) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
     const { mfg_bom_number, items } = req.body;
     if (!items || !Array.isArray(items) || items.length === 0) {
       res.status(400).json({ success: false, message: '请提供需要采购的物料明细' });
@@ -189,7 +195,7 @@ export const generatePurchaseReq = async (req: Request, res: Response, next: Nex
           requester: creation_man,
           source_number: mfg_bom_number || '',
           remark: `来源设计BOM: ${mfg_bom_number || ''}`,
-          factory_id: _factoryId,
+          factory_id: effectiveFactoryId || _factoryId,
           creation_date,
           creation_man
         },

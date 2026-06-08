@@ -3,6 +3,7 @@ import { ref, computed, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, SearchOutlined, DownloadOutlined, EyeOutlined, RedoOutlined, SettingOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { getBackflushTasks, getBackflushTaskDetail, retryDeduction, exportBackflushTasks } from '@/api/production/backflushTask'
+import { getFactories } from '@/api/system/factory'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 
@@ -35,6 +36,9 @@ interface BackflushTask {
   remark: string
   creation_date: string
   creation_man: string
+  factory_id?: number | null
+  factory_short?: string
+  factory_name?: string
 }
 
 interface DeductionLog {
@@ -58,6 +62,8 @@ const loading = ref(false)
 const dataSource = ref<BackflushTask[]>([])
 const searchText = ref('')
 const statusFilter = ref<string | undefined>(undefined)
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
 const pagination = reactive({ current: 1, pageSize: 20, total: 0, showSizeChanger: true, showTotal: (total: number) => `共 ${total} 条` })
 
 const deductionStatusColors: Record<string, string> = {
@@ -74,6 +80,7 @@ const fetchData = async () => {
       pageSize: pagination.pageSize,
       keyword: searchText.value || undefined,
       deduction_status: statusFilter.value || undefined,
+      factory_id: factoryFilter.value || undefined,
     })
     if (res.success && res.data) {
       dataSource.value = res.data.rows || []
@@ -93,6 +100,7 @@ const handleSearch = () => { pagination.current = 1; fetchData() }
 const handleReset = () => {
   searchText.value = ''
   statusFilter.value = undefined
+  factoryFilter.value = undefined
   pagination.current = 1
   fetchData()
 }
@@ -173,6 +181,7 @@ const handleExport = async () => {
     const res = await exportBackflushTasks({
       keyword: searchText.value || undefined,
       deduction_status: statusFilter.value || undefined,
+      factory_id: factoryFilter.value || undefined,
     })
     const blob = new Blob([res.data], { type: 'text/csv; charset=utf-8' })
     const link = document.createElement('a')
@@ -184,8 +193,16 @@ const handleExport = async () => {
   } catch { message.error('导出失败') }
 }
 
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) factoryList.value = res.data.items || []
+  } catch { /* ignore */ }
+}
+
 onMounted(() => {
   loadColumnPreference()
+  loadFactories()
   fetchData()
 })
 </script>
@@ -200,6 +217,9 @@ onMounted(() => {
           <a-select-option value="待扣减">待扣减</a-select-option>
           <a-select-option value="部分扣减">部分扣减</a-select-option>
           <a-select-option value="已完成">已完成</a-select-option>
+        </a-select>
+        <a-select v-model:value="factoryFilter" placeholder="全部工厂" allow-clear style="width: 120px" @change="handleSearch">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
         </a-select>
         <a-button @click="handleSearch"><template #icon><SearchOutlined /></template>查询</a-button>
         <a-button @click="handleReset"><template #icon><ReloadOutlined /></template>重置</a-button>

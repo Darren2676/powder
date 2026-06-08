@@ -3,7 +3,7 @@ import request from '@/utils/request'
 // ==================== 入库单明细行级别对账 ====================
 
 export function getPurchaseReconciliationPage(params?: {
-  page?: number; limit?: number; search?: string; reconciliationStatus?: string
+  page?: number; limit?: number; search?: string; reconciliationStatus?: string; factory_id?: number
 }) {
   return request.get('/stock-ins/reconciliation/page', { params })
 }
@@ -19,7 +19,7 @@ export function getPurchaseReconciliationPrintData(detailIds: number[]) {
 // ==================== 采购订单明细行级别对账 ====================
 
 export function getPurchaseOrderReconciliationPage(params?: {
-  page?: number; limit?: number; search?: string; reconciliationStatus?: string
+  page?: number; limit?: number; search?: string; reconciliationStatus?: string; factory_id?: number
 }) {
   return request.get('/purchase-orders/reconciliation/page', { params })
 }

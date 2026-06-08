@@ -15,9 +15,11 @@ export const getPlanMaterialCost = async (req: Request, res: Response, next: Nex
     const conditions: string[] = [];
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       conditions.push(`pp.factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (search) {
@@ -51,6 +53,7 @@ export const getPlanMaterialCost = async (req: Request, res: Response, next: Nex
       SELECT * FROM (
         SELECT pp.production_number, pp.item_number, pp.item_name,
                pp.planned_quantity, pp.plan_status,
+               ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name, pp.factory_id,
                COUNT(DISTINCT po.production_order_number) as order_count,
                SUM(s.material_cost) as material_cost_total,
                COUNT(*) as material_count,
@@ -60,8 +63,10 @@ export const getPlanMaterialCost = async (req: Request, res: Response, next: Nex
         FROM Production_plan pp
         INNER JOIN production_order po ON po.production_number = pp.production_number
         INNER JOIN production_material_cost_snapshot s ON s.production_order_number = po.production_order_number
+        LEFT JOIN factory f ON pp.factory_id = f.id
         WHERE 1=1 ${whereClause}
-        GROUP BY pp.production_number, pp.item_number, pp.item_name, pp.planned_quantity, pp.plan_status
+        GROUP BY pp.production_number, pp.item_number, pp.item_name, pp.planned_quantity, pp.plan_status,
+                 f.factory_short, f.factory_name, pp.factory_id
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
@@ -151,8 +156,10 @@ export const getPlanMaterialCost = async (req: Request, res: Response, next: Nex
 export const getPlanMaterialCostSummary = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const _factoryId = getFactoryId(req);
-    const factoryWhere = _factoryId !== null ? 'WHERE pp.factory_id = :_factoryId' : '';
-    const factoryReplacements: any = _factoryId !== null ? { _factoryId } : {};
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryWhere = effectiveFactoryId !== null ? 'WHERE pp.factory_id = :_factoryId' : '';
+    const factoryReplacements: any = effectiveFactoryId !== null ? { _factoryId: effectiveFactoryId } : {};
     const [summaryRows]: any = await sequelize.query(`
       SELECT
         COUNT(DISTINCT pp.production_number) as total_plans,
@@ -194,9 +201,11 @@ export const exportPlanMaterialCost = async (req: Request, res: Response, next: 
     const conditions: string[] = [];
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       conditions.push(`pp.factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (search) {
@@ -213,6 +222,7 @@ export const exportPlanMaterialCost = async (req: Request, res: Response, next: 
     const [detailRows]: any = await sequelize.query(`
       SELECT pp.production_number as plan_number, pp.item_number, pp.item_name,
              pp.planned_quantity, pp.plan_status,
+             ISNULL(f.factory_short, f.factory_name) as factory_short, pp.factory_id,
              po.production_order_number,
              s.preparation_number, s.issue_number,
              s.material_number, s.material_name, s.material_type, s.unit,
@@ -224,6 +234,7 @@ export const exportPlanMaterialCost = async (req: Request, res: Response, next: 
       FROM production_material_cost_snapshot s
       INNER JOIN production_order po ON po.production_order_number = s.production_order_number
       INNER JOIN Production_plan pp ON pp.production_number = po.production_number
+      LEFT JOIN factory f ON pp.factory_id = f.id
       WHERE 1=1 ${whereClause}
       ORDER BY pp.production_number, po.production_order_number, s.preparation_number, s.step_number, s.material_number
     `, { replacements });
@@ -234,6 +245,7 @@ export const exportPlanMaterialCost = async (req: Request, res: Response, next: 
       item_name: d.item_name,
       planned_quantity: d.planned_quantity,
       plan_status: d.plan_status,
+      factory_id: d.factory_short || d.factory_name || '',
       production_order_number: d.production_order_number,
       preparation_number: d.preparation_number,
       issue_number: d.issue_number,
@@ -252,14 +264,14 @@ export const exportPlanMaterialCost = async (req: Request, res: Response, next: 
     }));
 
     const fields = [
-      'plan_number', 'item_number', 'item_name', 'planned_quantity', 'plan_status',
+      'plan_number', 'item_number', 'item_name', 'planned_quantity', 'plan_status', 'factory_id',
       'production_order_number', 'preparation_number', 'issue_number',
       'material_number', 'material_name', 'material_type', 'unit',
       'issued_quantity', 'standard_cost', 'material_cost', 'cost_list_number',
       'step_number', 'work_center_name', 'source_type', 'snapshot_date'
     ];
     const headers = [
-      '计划编号', '产品编号', '产品名称', '计划数量', '计划状态',
+      '计划编号', '产品编号', '产品名称', '计划数量', '计划状态', '所属工厂',
       '生产单编号', '备料单号', '领料单号',
       '物料编号', '物料名称', '物料类型', '单位',
       '领料数量', '标准成本单价', '材料成本', '成本表编号',

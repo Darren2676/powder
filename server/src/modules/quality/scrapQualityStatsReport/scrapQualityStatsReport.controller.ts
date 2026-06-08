@@ -4,11 +4,13 @@ import { success } from '../../../utils/response.util';
 import { getFactoryId } from '../../../utils/factoryWhere.util';
 
 function buildWhere(req: Request, dateField = 'handling_date') {
-  const { start_date, end_date, search } = req.query;
+  const { start_date, end_date, search, factory_id } = req.query;
   let where = 'WHERE 1=1';
   const reps: any = {};
   const _factoryId = getFactoryId(req);
-  if (_factoryId !== null) { where += ` AND np.factory_id = :_factoryId`; reps._factoryId = _factoryId; }
+  const queryFactoryId = factory_id ? parseInt(factory_id as string) : null;
+  const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+  if (effectiveFactoryId !== null) { where += ` AND np.factory_id = :_factoryId`; reps._factoryId = effectiveFactoryId; }
   if (start_date) { where += ` AND np.${dateField} >= :start_date`; reps.start_date = start_date; }
   if (end_date) { where += ` AND np.${dateField} <= :end_date`; reps.end_date = end_date; }
   if (search) {
@@ -104,8 +106,10 @@ export const getScrapQualityStatsTableData = async (req: Request, res: Response,
                np.unqualified_quantity, np.scrap_quantity,
                np.handling_method, np.handling_status, np.handling_date,
                np.stock_in_number, np.remark,
+               f.factory_short,
                ROW_NUMBER() OVER (ORDER BY np.handling_date DESC, np.nonconforming_number DESC) AS _row_num
         FROM nonconforming_product np
+        LEFT JOIN factory f ON np.factory_id = f.id
         ${scrapWhere}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: reps });

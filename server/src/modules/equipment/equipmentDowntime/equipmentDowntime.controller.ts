@@ -52,9 +52,11 @@ export const getEquipmentDowntimes = async (req: Request, res: Response, next: N
 
     // 多工厂数据隔离过滤
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += ' AND ed.factory_id = :_factoryId';
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     const [countResult]: any = await sequelize.query(
@@ -164,8 +166,8 @@ export const updateEquipmentDowntime = async (req: Request, res: Response, next:
       b.duration_minutes = Math.round((end.getTime() - start.getTime()) / 60000);
     }
 
-    const setClauses = fields.map(f => `${f} = :${f}`).join(', ');
-    const replacements: any = { id };
+    const setClauses = fields.map(f => `${f} = :${f}`).join(', ') + ', factory_id = :factory_id';
+    const replacements: any = { id, factory_id: b.factory_id || null };
     for (const f of fields) {
       if (f === 'cost') {
         replacements[f] = b[f] !== undefined ? b[f] : 0;
@@ -185,7 +187,9 @@ export const updateEquipmentDowntime = async (req: Request, res: Response, next:
 export const deleteEquipmentDowntime = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    await sequelize.query(`DELETE FROM equipment_downtime WHERE id = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    await sequelize.query(`DELETE FROM equipment_downtime WHERE id = :id${factoryCond}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } });
     res.json(success(null, '删除停机记录成功'));
   } catch (err) { next(err); }
 };
@@ -199,11 +203,21 @@ export const exportEquipmentDowntimes = async (req: Request, res: Response, next
     if (equipmentNumber) { whereClause += ' AND ed.equipment_number = :equipmentNumber'; replacements.equipmentNumber = equipmentNumber; }
     if (downtimeType) { whereClause += ' AND ed.downtime_type = :downtimeType'; replacements.downtimeType = downtimeType; }
 
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ' AND ed.factory_id = :_factoryId';
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     const [items]: any = await sequelize.query(
-      `SELECT ed.*, e.equipment_name FROM equipment_downtime ed LEFT JOIN equipment e ON ed.equipment_number = e.equipment_number ${whereClause} ORDER BY ed.start_time DESC`,
+      `SELECT ed.*, e.equipment_name, f.factory_short FROM equipment_downtime ed LEFT JOIN equipment e ON ed.equipment_number = e.equipment_number LEFT JOIN factory f ON ed.factory_id = f.id ${whereClause} ORDER BY ed.start_time DESC`,
       { replacements }
     );
-    exportToExcel(items, fields, headers, 'equipment_downtimes', res);
+    const exportFields = ['factory_short', ...fields];
+    const exportHeaders = ['工厂', ...headers];
+    exportToExcel(items, exportFields, exportHeaders, 'equipment_downtimes', res);
   } catch (err) { next(err); }
 };
 

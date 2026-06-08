@@ -2,7 +2,7 @@ import request from '@/utils/request'
 
 // ==================== Header ====================
 
-export function getPurchaseReqs(params?: { page?: number; limit?: number; search?: string; approval_status?: string; order_status?: string }) {
+export function getPurchaseReqs(params?: { page?: number; limit?: number; search?: string; approval_status?: string; order_status?: string; factory_id?: number }) {
   return request.get('/purchase-reqs', { params })
 }
 
@@ -22,11 +22,11 @@ export function deletePurchaseReq(id: string) {
   return request.delete(`/purchase-reqs/${encodeURIComponent(id)}`)
 }
 
-export function exportPurchaseReqs(search?: string) {
-  return request.get('/purchase-reqs/export', { params: { search }, responseType: 'blob' })
+export function exportPurchaseReqs(search?: string, factory_id?: number) {
+  return request.get('/purchase-reqs/export', { params: { search, factory_id }, responseType: 'blob' })
 }
 
-export function getPurchaseReqDetailsPage(params?: { page?: number; limit?: number; search?: string; status?: string }) {
+export function getPurchaseReqDetailsPage(params?: { page?: number; limit?: number; search?: string; status?: string; factory_id?: number }) {
   return request.get('/purchase-reqs/details-page', { params })
 }
 

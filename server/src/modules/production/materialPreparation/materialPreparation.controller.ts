@@ -12,8 +12,8 @@ const headerSelectCols = 'preparation_number, production_order_number, productio
 
 const detailSelectCols = 'id, preparation_number, line_number, material_number, material_name, material_type, unit, bom_standard_quantity, bom_wastage_rate, bom_actual_quantity, required_quantity, adjusted_quantity, issued_quantity, step_number, work_center_number, work_center_name, is_key_material, substitute_group, substitute_priority, supply_type, default_warehouse, bom_path, standard_process_name, auto_weigh, remark';
 
-const exportFields = ['preparation_number', 'production_order_number', 'item_number', 'item_name', 'specifications', 'planned_quantity', 'bom_number', 'bom_version', 'total_material_types', 'preparation_status', 'approval_status', 'creation_date', 'creation_man', 'remark'];
-const exportHeaders = ['备料单编号', '生产单编号', '产品编号', '产品名称', '规格', '计划数量', 'BOM编号', 'BOM版本', '物料种类', '备料状态', '审批状态', '创建日期', '创建人', '备注'];
+const exportFields = ['preparation_number', 'production_order_number', 'item_number', 'item_name', 'specifications', 'planned_quantity', 'bom_number', 'bom_version', 'total_material_types', 'preparation_status', 'approval_status', 'creation_date', 'creation_man', 'factory_id', 'remark'];
+const exportHeaders = ['备料单编号', '生产单编号', '产品编号', '产品名称', '规格', '计划数量', 'BOM编号', 'BOM版本', '物料种类', '备料状态', '审批状态', '创建日期', '创建人', '所属工厂', '备注'];
 
 // 自动生成备料单编号: MP-YYYYMMDD-NNN
 const generatePrepNumber = async (factoryCode: string = ''): Promise<string> => {
@@ -48,36 +48,44 @@ export const getMaterialPreparations = async (req: Request, res: Response, next:
     const replacements: any = {};
 
     if (search) {
-      conditions.push(`(preparation_number LIKE :search OR production_order_number LIKE :search OR item_number LIKE :search OR item_name LIKE :search OR bom_number LIKE :search)`);
+      conditions.push(`(mp.preparation_number LIKE :search OR mp.production_order_number LIKE :search OR mp.item_number LIKE :search OR mp.item_name LIKE :search OR mp.bom_number LIKE :search)`);
       replacements.search = `%${search}%`;
     }
     if (preparation_status) {
-      conditions.push(`preparation_status = :preparation_status`);
+      conditions.push(`mp.preparation_status = :preparation_status`);
       replacements.preparation_status = preparation_status;
     }
     if (approval_status) {
-      conditions.push(`approval_status = :approval_status`);
+      conditions.push(`mp.approval_status = :approval_status`);
       replacements.approval_status = approval_status;
     }
 
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
-      conditions.push(`factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      conditions.push(`mp.factory_id = :_factoryId`);
+      replacements._factoryId = effectiveFactoryId;
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const [countResult]: any = await sequelize.query(
-      `SELECT COUNT(*) as total FROM material_preparation ${whereClause}`, { replacements }
+      `SELECT COUNT(*) as total FROM material_preparation mp ${whereClause}`, { replacements }
     );
     const total = countResult[0].total;
 
     const offset = (page - 1) * limit;
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT ${headerSelectCols}, ROW_NUMBER() OVER (ORDER BY preparation_number DESC) AS _row_num
-        FROM material_preparation ${whereClause}
+        SELECT mp.preparation_number, mp.production_order_number, mp.production_number, mp.item_number, mp.item_name, mp.specifications,
+               mp.basic_unit, mp.bom_number, mp.bom_version, mp.planned_quantity, mp.bom_base_quantity, mp.total_material_types,
+               mp.preparation_status, mp.approval_status, mp.remark, mp.creation_date, mp.creation_man,
+               ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name, mp.factory_id,
+               ROW_NUMBER() OVER (ORDER BY mp.preparation_number DESC) AS _row_num
+        FROM material_preparation mp
+        LEFT JOIN factory f ON mp.factory_id = f.id
+        ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
@@ -107,8 +115,8 @@ export const createMaterialPreparation = async (req: Request, res: Response, nex
     const now = dayjs().format('YYYY/MM/DD HH:mm');
 
     await sequelize.query(`
-      INSERT INTO material_preparation (preparation_number, production_order_number, production_number, item_number, item_name, specifications, basic_unit, bom_number, bom_version, planned_quantity, bom_base_quantity, total_material_types, preparation_status, approval_status, remark, creation_date, creation_man)
-      VALUES (:preparation_number, :production_order_number, :production_number, :item_number, :item_name, :specifications, :basic_unit, :bom_number, :bom_version, :planned_quantity, :bom_base_quantity, :total_material_types, N'未领料', N'草稿', :remark, :creation_date, :creation_man)
+      INSERT INTO material_preparation (preparation_number, production_order_number, production_number, item_number, item_name, specifications, basic_unit, bom_number, bom_version, planned_quantity, bom_base_quantity, total_material_types, preparation_status, approval_status, remark, creation_date, creation_man, factory_id)
+      VALUES (:preparation_number, :production_order_number, :production_number, :item_number, :item_name, :specifications, :basic_unit, :bom_number, :bom_version, :planned_quantity, :bom_base_quantity, :total_material_types, N'未领料', N'草稿', :remark, :creation_date, :creation_man, :factory_id)
     `, {
       replacements: {
         preparation_number,
@@ -125,7 +133,8 @@ export const createMaterialPreparation = async (req: Request, res: Response, nex
         total_material_types: b.total_material_types || 0,
         remark: b.remark || '',
         creation_date: now,
-        creation_man: user?.username || ''
+        creation_man: user?.username || '',
+        factory_id: b.factory_id || null
       }
     });
 
@@ -155,8 +164,9 @@ export const updateMaterialPreparation = async (req: Request, res: Response, nex
         bom_version = :bom_version,
         planned_quantity = :planned_quantity,
         bom_base_quantity = :bom_base_quantity,
-        remark = :remark
-      WHERE preparation_number = :id
+        remark = :remark,
+        factory_id = :factory_id
+      WHERE preparation_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}
     `, {
       replacements: {
         id,
@@ -170,7 +180,9 @@ export const updateMaterialPreparation = async (req: Request, res: Response, nex
         bom_version: b.bom_version || '',
         planned_quantity: b.planned_quantity || 0,
         bom_base_quantity: b.bom_base_quantity || 1,
-        remark: b.remark || ''
+        remark: b.remark || '',
+        factory_id: b.factory_id || null,
+        ...(_factoryId !== null ? { _factoryId } : {})
       }
     });
 
@@ -187,7 +199,7 @@ export const deleteMaterialPreparation = async (req: Request, res: Response, nex
     if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return; }
     // 同时删除明细
     await sequelize.query(`DELETE FROM material_preparation_detail WHERE preparation_number = :id`, { replacements: { id } });
-    await sequelize.query(`DELETE FROM material_preparation WHERE preparation_number = :id`, { replacements: { id } });
+    await sequelize.query(`DELETE FROM material_preparation WHERE preparation_number = :id${_factoryId !== null ? ' AND factory_id = :_factoryId' : ''}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } });
     res.json(success(null, '删除备料单成功'));
   } catch (err) { next(err); }
 };
@@ -196,7 +208,20 @@ export const deleteMaterialPreparation = async (req: Request, res: Response, nex
 export const exportMaterialPreparations = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const _factoryId = getFactoryId(req);
-    const [items]: any = await sequelize.query(`SELECT ${exportFields.join(', ')} FROM material_preparation ${_factoryId !== null ? 'WHERE factory_id = :_factoryId' : ''} ORDER BY preparation_number DESC`, { replacements: _factoryId !== null ? { _factoryId } : {} });
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? 'WHERE mp.factory_id = :_factoryId' : '';
+    const expReps: any = effectiveFactoryId !== null ? { _factoryId: effectiveFactoryId } : {};
+    const [items]: any = await sequelize.query(`
+      SELECT mp.preparation_number, mp.production_order_number, mp.item_number, mp.item_name,
+             mp.specifications, mp.planned_quantity, mp.bom_number, mp.bom_version,
+             mp.total_material_types, mp.preparation_status, mp.approval_status,
+             mp.creation_date, mp.creation_man,
+             ISNULL(f.factory_short, f.factory_name) as factory_id,
+             mp.remark
+      FROM material_preparation mp
+      LEFT JOIN factory f ON mp.factory_id = f.id
+      ${factoryCond} ORDER BY mp.preparation_number DESC`, { replacements: expReps });
     exportToExcel(items, exportFields, exportHeaders, 'material_preparations', res);
   } catch (err) { next(err); }
 };
@@ -220,9 +245,9 @@ export const importMaterialPreparations = async (req: Request, res: Response, ne
         );
         if (existing[0].cnt > 0) continue;
         await sequelize.query(`
-          INSERT INTO material_preparation (preparation_number, production_order_number, item_number, item_name, specifications, planned_quantity, bom_number, bom_version, total_material_types, preparation_status, approval_status, creation_date, creation_man, remark)
-          VALUES (:preparation_number, :production_order_number, :item_number, :item_name, :specifications, :planned_quantity, :bom_number, :bom_version, :total_material_types, :preparation_status, :approval_status, :creation_date, :creation_man, :remark)
-        `, { replacements: { ...item, planned_quantity: item.planned_quantity || 0, total_material_types: item.total_material_types || 0, preparation_status: item.preparation_status || '未领料', approval_status: item.approval_status || ORDER_STATUS.DRAFT } });
+          INSERT INTO material_preparation (preparation_number, production_order_number, item_number, item_name, specifications, planned_quantity, bom_number, bom_version, total_material_types, preparation_status, approval_status, creation_date, creation_man, remark, factory_id)
+          VALUES (:preparation_number, :production_order_number, :item_number, :item_name, :specifications, :planned_quantity, :bom_number, :bom_version, :total_material_types, :preparation_status, :approval_status, :creation_date, :creation_man, :remark, :factory_id)
+        `, { replacements: { ...item, planned_quantity: item.planned_quantity || 0, total_material_types: item.total_material_types || 0, preparation_status: item.preparation_status || '未领料', approval_status: item.approval_status || ORDER_STATUS.DRAFT, factory_id: item.factory_id || null } });
         imported++;
       } catch (e) {}
     }
@@ -351,7 +376,7 @@ export const generateFromOrder = async (req: Request, res: Response, next: NextF
     for (const orderNo of production_order_numbers) {
       // 1. 查询生产单
       const [orders]: any = await sequelize.query(
-        `SELECT production_order_number, production_number, item_number, item_name, specifications, basic_unit, planned_quantity, approval_status FROM production_order WHERE production_order_number = :orderNo`,
+        `SELECT production_order_number, production_number, item_number, item_name, specifications, basic_unit, planned_quantity, approval_status, factory_id FROM production_order WHERE production_order_number = :orderNo`,
         { replacements: { orderNo } }
       );
       if (orders.length === 0) { results.skipped.push({ orderNo, reason: '生产单不存在' }); results.skippedCount++; continue; }
@@ -445,8 +470,8 @@ export const generateFromOrder = async (req: Request, res: Response, next: NextF
 
       // 9. 创建主表记录
       await sequelize.query(`
-        INSERT INTO material_preparation (preparation_number, production_order_number, production_number, item_number, item_name, specifications, basic_unit, bom_number, bom_version, planned_quantity, bom_base_quantity, total_material_types, preparation_status, approval_status, remark, creation_date, creation_man)
-        VALUES (:preparation_number, :production_order_number, :production_number, :item_number, :item_name, :specifications, :basic_unit, :bom_number, :bom_version, :planned_quantity, :bom_base_quantity, :total_material_types, N'未领料', N'草稿', '', :creation_date, :creation_man)
+        INSERT INTO material_preparation (preparation_number, production_order_number, production_number, item_number, item_name, specifications, basic_unit, bom_number, bom_version, planned_quantity, bom_base_quantity, total_material_types, preparation_status, approval_status, remark, creation_date, creation_man, factory_id)
+        VALUES (:preparation_number, :production_order_number, :production_number, :item_number, :item_name, :specifications, :basic_unit, :bom_number, :bom_version, :planned_quantity, :bom_base_quantity, :total_material_types, N'未领料', N'草稿', '', :creation_date, :creation_man, :factory_id)
       `, {
         replacements: {
           preparation_number: prepNumber,
@@ -462,7 +487,8 @@ export const generateFromOrder = async (req: Request, res: Response, next: NextF
           bom_base_quantity: bomBaseQty,
           total_material_types: flatList.length,
           creation_date: now,
-          creation_man: user?.username || ''
+          creation_man: user?.username || '',
+          factory_id: order.factory_id || null
         }
       });
 
@@ -518,7 +544,7 @@ export const generateByProcess = async (req: Request, res: Response, next: NextF
     for (const orderNo of production_order_numbers) {
       // 1. 查询生产单
       const [orders]: any = await sequelize.query(
-        `SELECT production_order_number, production_number, item_number, item_name, specifications, basic_unit, planned_quantity, approval_status FROM production_order WHERE production_order_number = :orderNo`,
+        `SELECT production_order_number, production_number, item_number, item_name, specifications, basic_unit, planned_quantity, approval_status, factory_id FROM production_order WHERE production_order_number = :orderNo`,
         { replacements: { orderNo } }
       );
       if (orders.length === 0) { results.skipped.push({ orderNo, reason: '生产单不存在' }); results.skippedCount++; continue; }
@@ -679,8 +705,8 @@ export const generateByProcess = async (req: Request, res: Response, next: NextF
 
       // 12. 创建主表记录
       await sequelize.query(`
-        INSERT INTO material_preparation (preparation_number, production_order_number, production_number, item_number, item_name, specifications, basic_unit, bom_number, bom_version, planned_quantity, bom_base_quantity, total_material_types, preparation_status, approval_status, remark, creation_date, creation_man)
-        VALUES (:preparation_number, :production_order_number, :production_number, :item_number, :item_name, :specifications, :basic_unit, :bom_number, :bom_version, :planned_quantity, :bom_base_quantity, :total_material_types, N'未领料', N'草稿', '', :creation_date, :creation_man)
+        INSERT INTO material_preparation (preparation_number, production_order_number, production_number, item_number, item_name, specifications, basic_unit, bom_number, bom_version, planned_quantity, bom_base_quantity, total_material_types, preparation_status, approval_status, remark, creation_date, creation_man, factory_id)
+        VALUES (:preparation_number, :production_order_number, :production_number, :item_number, :item_name, :specifications, :basic_unit, :bom_number, :bom_version, :planned_quantity, :bom_base_quantity, :total_material_types, N'未领料', N'草稿', '', :creation_date, :creation_man, :factory_id)
       `, {
         replacements: {
           preparation_number: prepNumber,
@@ -696,7 +722,8 @@ export const generateByProcess = async (req: Request, res: Response, next: NextF
           bom_base_quantity: bomBaseQty,
           total_material_types: flatList.length,
           creation_date: now,
-          creation_man: user?.username || ''
+          creation_man: user?.username || '',
+          factory_id: order.factory_id || null
         }
       });
 
@@ -764,6 +791,15 @@ export const getOrdersForGenerate = async (req: Request, res: Response, next: Ne
 
     let whereClause = `WHERE approval_status = N'已审批'`;
     const replacements: any = {};
+
+    // 多工厂过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ` AND factory_id = :_factoryId`;
+      replacements._factoryId = effectiveFactoryId;
+    }
 
     const planStatus = req.query.plan_status as string;
     if (planStatus) {
@@ -929,10 +965,16 @@ export const getProcessPrepStatus = async (req: Request, res: Response, next: Ne
   try {
     const orderNo = req.params.orderNo;
 
+    // 多工厂防越权
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const statusReps: any = { orderNo };
+    if (_factoryId !== null) statusReps._factoryId = _factoryId;
+
     // 1. 查询生产单基本信息
     const [orders]: any = await sequelize.query(
-      `SELECT production_order_number, production_number, item_number, item_name, specifications, basic_unit, planned_quantity, plan_status, approval_status FROM production_order WHERE production_order_number = :orderNo`,
-      { replacements: { orderNo } }
+      `SELECT production_order_number, production_number, item_number, item_name, specifications, basic_unit, planned_quantity, plan_status, approval_status FROM production_order WHERE production_order_number = :orderNo${factoryCond}`,
+      { replacements: statusReps }
     );
     if (!orders.length) {
       res.status(404).json({ success: false, message: '生产单不存在' });
@@ -942,8 +984,8 @@ export const getProcessPrepStatus = async (req: Request, res: Response, next: Ne
 
     // 2. 查询该生产单的备料单
     const [preps]: any = await sequelize.query(
-      `SELECT preparation_number, preparation_status, approval_status FROM material_preparation WHERE production_order_number = :orderNo`,
-      { replacements: { orderNo } }
+      `SELECT preparation_number, preparation_status, approval_status FROM material_preparation WHERE production_order_number = :orderNo${factoryCond}`,
+      { replacements: statusReps }
     );
 
     // 3. 查询所有工序任务
@@ -1087,6 +1129,15 @@ export const getDetailsByOrder = async (req: Request, res: Response, next: NextF
     let whereClause = 'WHERE h.production_order_number = :pon';
     const replacements: any = { pon: production_order_number };
 
+    // 多工厂防越权
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ' AND h.factory_id = :_factoryId';
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     if (auto_weigh) {
       whereClause += ' AND d.auto_weigh = :aw';
       replacements.aw = auto_weigh;
@@ -1096,6 +1147,7 @@ export const getDetailsByOrder = async (req: Request, res: Response, next: NextF
       `SELECT COUNT(*) as total
        FROM material_preparation_detail d
        INNER JOIN material_preparation h ON h.preparation_number = d.preparation_number
+       LEFT JOIN factory f ON h.factory_id = f.id
        ${whereClause}`,
       { replacements }
     );
@@ -1109,9 +1161,11 @@ export const getDetailsByOrder = async (req: Request, res: Response, next: NextF
                d.issued_quantity, d.step_number, d.standard_process_name,
                d.work_center_number, d.work_center_name, d.auto_weigh, d.remark,
                h.production_order_number, h.item_number, h.item_name, h.preparation_status, h.approval_status,
+               ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name, h.factory_id,
                ROW_NUMBER() OVER (ORDER BY d.step_number, d.line_number) AS _rn
         FROM material_preparation_detail d
         INNER JOIN material_preparation h ON h.preparation_number = d.preparation_number
+        LEFT JOIN factory f ON h.factory_id = f.id
         ${whereClause}
       ) t WHERE _rn > :offset AND _rn <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });

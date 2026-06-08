@@ -13,6 +13,7 @@ import { SearchOutlined, ReloadOutlined,
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { getProgressSummary, getProgressOrders } from '@/api/production/progressDashboard'
+import { getFactories } from '@/api/system/factory'
 
 use([CanvasRenderer, PieChart, BarChart, LineChart, TitleComponent, TooltipComponent, LegendComponent, GridComponent])
 
@@ -37,6 +38,8 @@ const pagination = ref({ total: 0, current: 1, pageSize: 15 })
 const searchKeyword = ref('')
 const planStatusFilter = ref('')
 const inboundStatusFilter = ref('')
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
 
 const planStatusOptions = [
   { value: '', label: '全部状态' },
@@ -135,6 +138,7 @@ const fetchSummary = async () => {
       params.dateFrom = dateRange.value[0].format('YYYY-MM-DD')
       params.dateTo = dateRange.value[1].format('YYYY-MM-DD')
     }
+    if (factoryFilter.value) params.factory_id = factoryFilter.value
     const res: any = await getProgressSummary(params)
     const d = res.data
     kpi.value = d.kpi || {}
@@ -160,6 +164,7 @@ const fetchOrders = async () => {
       params.dateFrom = dateRange.value[0].format('YYYY-MM-DD')
       params.dateTo = dateRange.value[1].format('YYYY-MM-DD')
     }
+    if (factoryFilter.value) params.factory_id = factoryFilter.value
     const res: any = await getProgressOrders(params)
     orders.value = res.data.items || []
     pagination.value.total = res.data.pagination?.total || 0
@@ -192,6 +197,8 @@ const inboundStatusColor: Record<string, string> = {
 
 const columns = [
   { title: '生产单号', dataIndex: 'production_order_number', width: 150, fixed: 'left' as const },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80,
+    customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '产品编号', dataIndex: 'item_number', width: 120 },
   { title: '产品名称', dataIndex: 'item_name', width: 150, ellipsis: true },
   { title: '计划量', dataIndex: 'planned_quantity', width: 90, align: 'right' as const },
@@ -204,9 +211,17 @@ const columns = [
 ]
 
 onMounted(() => {
+  loadFactories()
   fetchSummary()
   fetchOrders()
 })
+
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 </script>
 
 <template>
@@ -214,6 +229,9 @@ onMounted(() => {
     <!-- 日期范围选择器（顶部） -->
     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-top: 8px;">
       <span style="font-weight: 600; font-size: 15px;">生产工单仪表板</span>
+      <Select v-model:value="factoryFilter" placeholder="全部工厂" allow-clear style="width: 130px;" @change="fetchSummary(); if (activeTab === 'detail') fetchOrders()">
+        <Select.Option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</Select.Option>
+      </Select>
       <RangePicker v-model:value="dateRange" @change="handleDateChange" style="width: 260px;" />
       <Button @click="fetchSummary(); fetchOrders()"><ReloadOutlined /> 刷新</Button>
     </div>

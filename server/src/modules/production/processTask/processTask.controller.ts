@@ -11,8 +11,8 @@ import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
 
 const selectCols = 'process_task_number, production_order_number, production_number, process_route_number, step_number, item_number, item_name, specifications, basic_unit, planned_quantity, completed_quantity, standard_process_number, standard_process_name, work_center_number, work_center_name, process_material_input_number, process_material_input_quantity, process_material_input_unit, material_wastage_rate, excess_reporting_ratio, ingredient_addition_method, planned_start_time, planned_end_time, actual_start_time, actual_end_time, task_status, inspect_status, inspect_type, inspect_plan_name, inspect_spec_name, inspector_number, inspector_name, attachment_info, technical_requirement, approval_status, remark, creation_date, creation_man';
 
-const exportFields = ['process_task_number', 'production_order_number', 'production_number', 'step_number', 'standard_process_number', 'standard_process_name', 'item_number', 'item_name', 'specifications', 'basic_unit', 'planned_quantity', 'completed_quantity', 'work_center_number', 'work_center_name', 'task_status', 'inspect_status', 'inspect_type', 'inspect_plan_name', 'inspect_spec_name', 'inspector_number', 'inspector_name', 'attachment_info', 'technical_requirement', 'approval_status', 'remark'];
-const exportHeaders = ['工序任务编号', '生产单编号', '生产计划编号', '工序序号', '标准工序编号', '标准工序名称', '产品编号', '产品名称', '规格', '单位', '计划数量', '已完成数量', '工作中心编号', '工作中心名称', '任务状态', '检验状态', '检验类型', '检验方案', '检验规范', '检验人编号', '检验人', '附件信息', '技术要求', '审批状态', '备注'];
+const exportFields = ['process_task_number', 'production_order_number', 'production_number', 'step_number', 'standard_process_number', 'standard_process_name', 'item_number', 'item_name', 'specifications', 'basic_unit', 'planned_quantity', 'completed_quantity', 'work_center_number', 'work_center_name', 'task_status', 'inspect_status', 'inspect_type', 'inspect_plan_name', 'inspect_spec_name', 'inspector_number', 'inspector_name', 'attachment_info', 'technical_requirement', 'approval_status', 'factory_id', 'remark'];
+const exportHeaders = ['工序任务编号', '生产单编号', '生产计划编号', '工序序号', '标准工序编号', '标准工序名称', '产品编号', '产品名称', '规格', '单位', '计划数量', '已完成数量', '工作中心编号', '工作中心名称', '任务状态', '检验状态', '检验类型', '检验方案', '检验规范', '检验人编号', '检验人', '附件信息', '技术要求', '审批状态', '所属工厂', '备注'];
 
 // 获取列表
 export const getProcessTasks = async (req: Request, res: Response, next: NextFunction) => {
@@ -28,40 +28,45 @@ export const getProcessTasks = async (req: Request, res: Response, next: NextFun
     const replacements: any = {};
 
     if (search) {
-      conditions.push(`(process_task_number LIKE :search OR production_order_number LIKE :search OR item_number LIKE :search OR item_name LIKE :search OR standard_process_name LIKE :search OR work_center_name LIKE :search)`);
+      conditions.push(`(pt.process_task_number LIKE :search OR pt.production_order_number LIKE :search OR pt.item_number LIKE :search OR pt.item_name LIKE :search OR pt.standard_process_name LIKE :search OR pt.work_center_name LIKE :search)`);
       replacements.search = `%${search}%`;
     }
     if (task_status) {
-      conditions.push(`task_status = :task_status`);
+      conditions.push(`pt.task_status = :task_status`);
       replacements.task_status = task_status;
     }
     if (approval_status) {
-      conditions.push(`approval_status = :approval_status`);
+      conditions.push(`pt.approval_status = :approval_status`);
       replacements.approval_status = approval_status;
     }
     if (production_order_number) {
-      conditions.push(`production_order_number = :production_order_number`);
+      conditions.push(`pt.production_order_number = :production_order_number`);
       replacements.production_order_number = production_order_number;
     }
 
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
-      conditions.push(`factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      conditions.push(`pt.factory_id = :_factoryId`);
+      replacements._factoryId = effectiveFactoryId;
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const [countResult]: any = await sequelize.query(
-      `SELECT COUNT(*) as total FROM process_task ${whereClause}`, { replacements }
+      `SELECT COUNT(*) as total FROM process_task pt ${whereClause}`, { replacements }
     );
     const total = countResult[0].total;
 
     const offset = (page - 1) * limit;
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT ${selectCols}, ROW_NUMBER() OVER (ORDER BY process_task_number DESC) AS _row_num
-        FROM process_task ${whereClause}
+        SELECT ${selectCols}, ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name, pt.factory_id,
+               ROW_NUMBER() OVER (ORDER BY pt.process_task_number DESC) AS _row_num
+        FROM process_task pt
+        LEFT JOIN factory f ON pt.factory_id = f.id
+        ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
@@ -138,7 +143,9 @@ export const createProcessTask = async (req: Request, res: Response, next: NextF
 export const updateProcessTask = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [chk]: any = await sequelize.query(`SELECT approval_status FROM process_task WHERE process_task_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const [chk]: any = await sequelize.query(`SELECT approval_status FROM process_task WHERE process_task_number = :id${factoryCond}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } });
     if (!chk.length) { res.status(404).json({ success: false, message: '工序任务不存在' }); return; }
     if (chk[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许编辑' }); return; }
 
@@ -171,7 +178,7 @@ export const updateProcessTask = async (req: Request, res: Response, next: NextF
         attachment_info = :attachment_info,
         technical_requirement = :technical_requirement,
         remark = :remark
-      WHERE process_task_number = :id
+      WHERE process_task_number = :id${factoryCond}
     `, {
       replacements: {
         id,
@@ -201,7 +208,7 @@ export const updateProcessTask = async (req: Request, res: Response, next: NextF
         attachment_info: b.attachment_info || '',
         technical_requirement: b.technical_requirement || '',
         remark: b.remark || ''
-      }
+      , ...(_factoryId !== null ? { _factoryId } : {}) }
     });
 
     res.json(success(null, '更新工序任务成功'));
@@ -212,9 +219,11 @@ export const updateProcessTask = async (req: Request, res: Response, next: NextF
 export const deleteProcessTask = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [chk]: any = await sequelize.query(`SELECT approval_status FROM process_task WHERE process_task_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const [chk]: any = await sequelize.query(`SELECT approval_status FROM process_task WHERE process_task_number = :id${factoryCond}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } });
     if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return; }
-    await sequelize.query(`DELETE FROM process_task WHERE process_task_number = :id`, { replacements: { id } });
+    await sequelize.query(`DELETE FROM process_task WHERE process_task_number = :id${factoryCond}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } });
     res.json(success(null, '删除工序任务成功'));
   } catch (err) { next(err); }
 };
@@ -231,11 +240,14 @@ export const batchDeleteProcessTasks = async (req: Request, res: Response, next:
     const succeeded: string[] = [];
     const failed: { record_id: string; message: string }[] = [];
 
+    const _factoryId = getFactoryId(req);
+
     for (const id of ids) {
       try {
+        const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
         const [chk]: any = await sequelize.query(
-          `SELECT approval_status FROM process_task WHERE process_task_number = :id`,
-          { replacements: { id } }
+          `SELECT approval_status FROM process_task WHERE process_task_number = :id${factoryCond}`,
+          { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } }
         );
         if (!chk.length) {
           failed.push({ record_id: id, message: '记录不存在' });
@@ -245,7 +257,7 @@ export const batchDeleteProcessTasks = async (req: Request, res: Response, next:
           failed.push({ record_id: id, message: '已提交审批或已审批的记录不允许删除' });
           continue;
         }
-        await sequelize.query(`DELETE FROM process_task WHERE process_task_number = :id`, { replacements: { id } });
+        await sequelize.query(`DELETE FROM process_task WHERE process_task_number = :id${factoryCond}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId } : {}) } });
         succeeded.push(id);
       } catch (e: any) {
         failed.push({ record_id: id, message: e.message || '删除失败' });
@@ -259,7 +271,16 @@ export const batchDeleteProcessTasks = async (req: Request, res: Response, next:
 // 导出
 export const exportProcessTasks = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [items]: any = await sequelize.query(`SELECT ${exportFields.join(', ')} FROM process_task ORDER BY process_task_number DESC`);
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    let factoryCond = '';
+    const reps: any = {};
+    if (effectiveFactoryId !== null) {
+      factoryCond = 'WHERE pt.factory_id = :_factoryId';
+      reps._factoryId = effectiveFactoryId;
+    }
+    const [items]: any = await sequelize.query(`SELECT pt.process_task_number, pt.production_order_number, pt.production_number, pt.step_number, pt.standard_process_number, pt.standard_process_name, pt.item_number, pt.item_name, pt.specifications, pt.basic_unit, pt.planned_quantity, pt.completed_quantity, pt.work_center_number, pt.work_center_name, pt.task_status, pt.inspect_status, pt.inspect_type, pt.inspect_plan_name, pt.inspect_spec_name, pt.inspector_number, pt.inspector_name, pt.attachment_info, pt.technical_requirement, pt.approval_status, ISNULL(f.factory_short, f.factory_name) as factory_id, pt.remark FROM process_task pt LEFT JOIN factory f ON pt.factory_id = f.id ${factoryCond} ORDER BY pt.process_task_number DESC`, { replacements: reps });
     exportToExcel(items, exportFields, exportHeaders, 'process_tasks', res);
   } catch (err) { next(err); }
 };
@@ -333,10 +354,14 @@ export const getTasksByOrder = async (req: Request, res: Response, next: NextFun
       return;
     }
 
-    // 1. 查询生产单基本信息
+    // 1. 查询生产单基本信息（含工厂信息）
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? ' AND po.factory_id = :_factoryId' : '';
     const [orders]: any = await sequelize.query(
-      `SELECT production_order_number, production_number, item_number, item_name, specifications, basic_unit, planned_quantity, plan_status, equipment_number, equipment_name, mould_number, production_date, schedule_id, actual_daily_output, approval_status FROM production_order WHERE production_order_number = :orderNo`,
-      { replacements: { orderNo } }
+      `SELECT po.production_order_number, po.production_number, po.item_number, po.item_name, po.specifications, po.basic_unit, po.planned_quantity, po.plan_status, po.equipment_number, po.equipment_name, po.mould_number, po.production_date, po.schedule_id, po.actual_daily_output, po.approval_status, po.factory_id, ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name FROM production_order po LEFT JOIN factory f ON po.factory_id = f.id WHERE po.production_order_number = :orderNo${factoryCond}`,
+      { replacements: { orderNo, ...(effectiveFactoryId !== null ? { _factoryId: effectiveFactoryId } : {}) } }
     );
     if (orders.length === 0) {
       res.status(404).json({ success: false, message: `生产单 ${orderNo} 不存在` });
@@ -470,6 +495,15 @@ export const getOrdersForGenerate = async (req: Request, res: Response, next: Ne
       replacements.search = `%${search}%`;
     }
 
+    // 多工厂数据隔离
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ' AND factory_id = :_factoryId';
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
       `SELECT COUNT(*) as total FROM production_order ${whereClause}`, { replacements }
     );
@@ -535,6 +569,13 @@ export const getOrdersForReport = async (req: Request, res: Response, next: Next
     if (search) {
       whereClause += ` AND (production_order_number LIKE :search OR item_number LIKE :search OR item_name LIKE :search)`;
       replacements.search = `%${search}%`;
+    }
+
+    // 多工厂数据隔离
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      whereClause += ' AND factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
     }
 
     const [countResult]: any = await sequelize.query(

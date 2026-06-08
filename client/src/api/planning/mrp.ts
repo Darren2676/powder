@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 
-export function getPlansForMrp(params?: { search?: string; start_date?: string; end_date?: string }) {
+export function getPlansForMrp(params?: { search?: string; start_date?: string; end_date?: string; factory_id?: number }) {
   return request.get('/mrp/plans-for-mrp', { params })
 }
 
@@ -8,7 +8,7 @@ export function runMRP(data: { production_numbers: string[] }) {
   return request.post('/mrp/run', data)
 }
 
-export function getMRPRuns(params?: { page?: number; limit?: number; search?: string; run_status?: string }) {
+export function getMRPRuns(params?: { page?: number; limit?: number; search?: string; run_status?: string; factory_id?: number }) {
   return request.get('/mrp', { params })
 }
 

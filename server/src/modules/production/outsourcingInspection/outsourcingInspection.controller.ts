@@ -104,8 +104,11 @@ export const updateInspectionResult = async (req: Request, res: Response, next: 
   try {
     const { id } = req.params;
     const b = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
-    const [check]: any = await sequelize.query(`SELECT * FROM outsourcing_inspection WHERE inspection_number = :id`, { replacements: { id } });
+    const [check]: any = await sequelize.query(`SELECT * FROM outsourcing_inspection WHERE inspection_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!check.length) { res.status(404).json({ success: false, message: '委外质检单不存在' }); return; }
     if (check[0].inspection_status === '已完成') { res.status(403).json({ success: false, message: '已完成的质检单不允许修改' }); return; }
 
@@ -121,7 +124,7 @@ export const updateInspectionResult = async (req: Request, res: Response, next: 
         defect_description = :defect_description,
         handling_method = :handling_method,
         remark = :remark
-      WHERE inspection_number = :id
+      WHERE inspection_number = :id${factoryCond}
     `, {
       replacements: {
         id,
@@ -132,7 +135,8 @@ export const updateInspectionResult = async (req: Request, res: Response, next: 
         unqualified_quantity: b.unqualified_quantity || 0,
         defect_description: b.defect_description || '',
         handling_method: b.handling_method || '',
-        remark: b.remark || ''
+        remark: b.remark || '',
+        ...factoryReps
       }
     });
 
@@ -160,13 +164,15 @@ export const completeInspection = async (req: Request, res: Response, next: Next
     try {
       const factoryCode = await getFactoryCode(req);
       const _factoryId = getFactoryId(req);
+      const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+      const factoryReps = _factoryId !== null ? { _factoryId } : {};
       const operator = (req as any).user?.username || '';
 
       // 1. 更新质检单状态
       await sequelize.query(`
         UPDATE outsourcing_inspection SET inspection_status = N'已完成'
-        WHERE inspection_number = :id
-      `, { replacements: { id }, transaction });
+        WHERE inspection_number = :id${factoryCond}
+      `, { replacements: { id, ...factoryReps }, transaction });
 
       // 2. 更新收回单的质检状态
       await sequelize.query(`
@@ -174,13 +180,14 @@ export const completeInspection = async (req: Request, res: Response, next: Next
           inspection_status = :inspection_result,
           qualified_quantity = :qualified_quantity,
           unqualified_quantity = :unqualified_quantity
-        WHERE receipt_number = :receipt_number
+        WHERE receipt_number = :receipt_number${factoryCond}
       `, {
         replacements: {
           inspection_result: inspectionResult,
           qualified_quantity: check[0].qualified_quantity,
           unqualified_quantity: check[0].unqualified_quantity,
-          receipt_number: check[0].receipt_number
+          receipt_number: check[0].receipt_number,
+          ...factoryReps
         },
         transaction
       });
@@ -439,8 +446,8 @@ export const completeInspection = async (req: Request, res: Response, next: Next
             const plannedQty = parseFloat(order.planned_quantity) || 0;
             const orderStatus = newQualifiedQty >= plannedQty ? '已完成' : '部分收回';
             await sequelize.query(
-              `UPDATE outsourcing_order SET qualified_quantity = :qty, order_status = :status WHERE outsourcing_order_number = :orderNumber`,
-              { replacements: { qty: newQualifiedQty, status: orderStatus, orderNumber }, transaction }
+              `UPDATE outsourcing_order SET qualified_quantity = :qty, order_status = :status WHERE outsourcing_order_number = :orderNumber${factoryCond}`,
+              { replacements: { qty: newQualifiedQty, status: orderStatus, orderNumber, ...factoryReps }, transaction }
             );
           }
         }

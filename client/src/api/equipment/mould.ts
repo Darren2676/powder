@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 
-export function getMoulds(params?: { page?: number; limit?: number; search?: string }) {
+export function getMoulds(params?: { page?: number; limit?: number; search?: string; factory_id?: number }) {
   return request.get('/moulds', { params })
 }
 
@@ -16,8 +16,8 @@ export function deleteMould(id: string) {
   return request.delete(`/moulds/${encodeURIComponent(id)}`)
 }
 
-export function exportMoulds(search?: string) {
-  return request.get('/moulds/export', { params: { search }, responseType: 'blob' })
+export function exportMoulds(search?: string, factory_id?: number) {
+  return request.get('/moulds/export', { params: { search, factory_id }, responseType: 'blob' })
 }
 
 export function importMoulds(formData: FormData) {

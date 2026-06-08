@@ -10,6 +10,7 @@ import {
   getOeeDashboard, calculateOeeFromProduction
 } from '@/api/equipment/equipmentLife'
 import { getEquipments } from '@/api/equipment/equipment'
+import { getFactories } from '@/api/system/factory'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
 
@@ -31,12 +32,24 @@ interface OeeRecord {
   oee_rate: number
   data_source: string
   remark: string
+  factory_id?: number | null
+  factory_short?: string
 }
 
 // 查询参数
 const filterEquipmentNumber = ref('')
 const filterDateFrom = ref<any>(dayjs().subtract(30, 'day'))
 const filterDateTo = ref<any>(dayjs())
+
+// 工厂筛选
+const filterFactoryId = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 // 仪表盘数据
 const dashboardData = ref<any>(null)
@@ -48,7 +61,8 @@ const fetchDashboard = async () => {
     const res = await getOeeDashboard({
       date_from: filterDateFrom.value ? dayjs(filterDateFrom.value).format('YYYY-MM-DD') : undefined,
       date_to: filterDateTo.value ? dayjs(filterDateTo.value).format('YYYY-MM-DD') : undefined,
-      equipment_number: filterEquipmentNumber.value || undefined
+      equipment_number: filterEquipmentNumber.value || undefined,
+      factory_id: filterFactoryId.value
     })
     if (res.success) {
       dashboardData.value = res.data
@@ -63,7 +77,8 @@ const customFetch = async (params: any) => {
     ...params,
     equipment_number: filterEquipmentNumber.value || undefined,
     date_from: filterDateFrom.value ? dayjs(filterDateFrom.value).format('YYYY-MM-DD') : undefined,
-    date_to: filterDateTo.value ? dayjs(filterDateTo.value).format('YYYY-MM-DD') : undefined
+    date_to: filterDateTo.value ? dayjs(filterDateTo.value).format('YYYY-MM-DD') : undefined,
+    factory_id: filterFactoryId.value
   })
 }
 
@@ -92,7 +107,8 @@ const form = reactive({
   actual_output: 0,
   good_output: 0,
   data_source: '手动',
-  remark: ''
+  remark: '',
+  factory_id: null as number | null
 })
 const formRecordDate = ref<any>(dayjs())
 
@@ -114,6 +130,8 @@ const handleCalculate = async () => {
 const columns = [
   { title: '设备编号', dataIndex: 'equipment_number', key: 'equipment_number', width: 120 },
   { title: '设备名称', dataIndex: 'equipment_name', key: 'equipment_name', width: 140 },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80,
+    customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '日期', dataIndex: 'record_date', key: 'record_date', width: 110 },
   { title: '班次', dataIndex: 'shift_id', key: 'shift_id', width: 70 },
   { title: '计划时间', dataIndex: 'planned_time_minutes', key: 'planned_time_minutes', width: 90 },
@@ -127,7 +145,7 @@ const columns = [
 ]
 
 const handleCreate = () => {
-  Object.assign(form, { equipment_number: '', record_date: '', shift_id: '', planned_time_minutes: 1440, downtime_minutes: 0, actual_run_minutes: 0, ideal_output: 0, actual_output: 0, good_output: 0, data_source: '手动', remark: '' })
+  Object.assign(form, { equipment_number: '', record_date: '', shift_id: '', planned_time_minutes: 1440, downtime_minutes: 0, actual_run_minutes: 0, ideal_output: 0, actual_output: 0, good_output: 0, data_source: '手动', remark: '', factory_id: null })
   formRecordDate.value = dayjs()
   modalVisible.value = true
 }
@@ -177,6 +195,7 @@ const rateColor = (val: number) => {
 const handleSearch = () => { pagination.current = 1; fetchData(); fetchDashboard() }
 const handleReset = () => {
   filterEquipmentNumber.value = ''
+  filterFactoryId.value = undefined
   filterDateFrom.value = dayjs().subtract(30, 'day')
   filterDateTo.value = dayjs()
   pagination.current = 1
@@ -185,6 +204,7 @@ const handleReset = () => {
 }
 
 onMounted(() => {
+  loadFactories()
   fetchEquipments()
   fetchDashboard()
   fetchData()
@@ -203,6 +223,11 @@ onMounted(() => {
         </a-select>
         <a-date-picker v-model:value="filterDateFrom" placeholder="开始日期" />
         <a-date-picker v-model:value="filterDateTo" placeholder="结束日期" />
+        <a-select v-if="factoryList.length > 0" v-model:value="filterFactoryId" placeholder="所属工厂" allow-clear style="width: 150px">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">
+            {{ f.factory_short || f.factory_name }}
+          </a-select-option>
+        </a-select>
         <a-button type="primary" @click="handleSearch">查询</a-button>
         <a-button @click="handleReset">
           <template #icon><ReloadOutlined /></template>
@@ -356,6 +381,13 @@ onMounted(() => {
       width="640px"
     >
       <a-form :label-col="{ span: 5 }" :wrapper-col="{ span: 17 }">
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="form.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">
+              {{ f.factory_short || f.factory_name }}
+            </a-select-option>
+          </a-select>
+        </a-form-item>
         <a-form-item label="设备编号" required>
           <a-select v-model:value="form.equipment_number" placeholder="请选择设备" show-search :filter-option="(input: string, option: any) => option.label?.toLowerCase().includes(input.toLowerCase())">
             <a-select-option v-for="eq in equipmentList" :key="eq.equipment_number" :value="eq.equipment_number" :label="eq.equipment_number + ' - ' + eq.equipment_name">

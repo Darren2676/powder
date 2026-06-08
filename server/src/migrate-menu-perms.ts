@@ -49,7 +49,6 @@ async function migrate() {
       { name: '检验规范', code: 'inspection-spec-management', parent_code: 'quality', menu_key: 'inspection-spec-management', icon: 'AuditOutlined', sort: 1 },
       { name: '质量数据管理', code: 'quality-data-management', parent_code: 'quality', menu_key: 'quality-data-management', icon: 'DatabaseOutlined', sort: 2 },
       { name: '质量报表', code: 'quality-report-menu', parent_code: 'quality', menu_key: 'quality-report-menu', icon: 'PieChartOutlined', sort: 3 },
-      { name: '新核云', code: 'xhy-dev', parent_code: 'quality', menu_key: 'xhy-dev', icon: 'CloudOutlined', sort: 4 },
       // 集团管理子菜单
       { name: '总部汇总报表', code: 'hq-reports', parent_code: 'group', menu_key: 'hq-reports', icon: 'BarChartOutlined', sort: 1 },
     ];
@@ -162,13 +161,6 @@ async function migrate() {
       { name: '质量特性', code: 'quality-characteristics', parent_code: 'quality-data-management', menu_key: 'quality-characteristics', route: '/quality-characteristics', sort: 4 },
       // 质量报表 (quality-report-menu)
       { name: '按产品质量汇总', code: 'product-quality-summary', parent_code: 'quality-report-menu', menu_key: 'product-quality-summary', route: '/product-quality-summary', sort: 2 },
-      // 新核云 (xhy-dev)
-      { name: '检验记录', code: 'xhy-inspect', parent_code: 'xhy-dev', menu_key: 'xhy-inspect', route: '/xhy-inspect', sort: 1 },
-      { name: '检验明细行', code: 'xhy-inspect-lines', parent_code: 'xhy-dev', menu_key: 'xhy-inspect-lines', route: '/xhy-inspect-lines', sort: 2 },
-      { name: '检验报工汇总', code: 'xhy-inspect-summary', parent_code: 'xhy-dev', menu_key: 'xhy-inspect-summary', route: '/xhy-inspect-summary', sort: 3 },
-      { name: '包装质量报表', code: 'xhy-packaging-quality', parent_code: 'xhy-dev', menu_key: 'xhy-packaging-quality', route: '/xhy-packaging-quality', sort: 4 },
-      { name: '库存查询', code: 'xhy-inventory', parent_code: 'xhy-dev', menu_key: 'xhy-inventory', route: '/xhy-inventory', sort: 5 },
-      { name: '出入库记录', code: 'xhy-inventory-txn', parent_code: 'xhy-dev', menu_key: 'xhy-inventory-txn', route: '/xhy-inventory-txn', sort: 6 },
       // 系统设置
       { name: '角色管理', code: 'roles', parent_code: 'system', menu_key: 'roles', route: '/roles', sort: 2 },
       { name: '权限菜单管理', code: 'permissions', parent_code: 'system', menu_key: 'permissions', route: '/permissions', sort: 3 },
@@ -283,8 +275,6 @@ async function migrate() {
       // quality > quality-report-menu
       { code: 'quality-report', new_parent_code: 'quality-report-menu', new_sort: 1 },
       { code: 'purchase-inspection', new_parent_code: 'quality-report-menu', new_sort: 3 },
-      // quality > xhy-dev
-      { code: 'batch-trace', new_parent_code: 'quality', new_sort: 5 },
       // finance: 只保留会计期间 (sales-prices和purchase-prices移走)
       { code: 'sales-prices', new_parent_code: 'order-management', new_sort: 9 },
       // sample-requests 移动到样品申请子菜单下

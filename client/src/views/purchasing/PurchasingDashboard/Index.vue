@@ -18,6 +18,7 @@ import {
   getPurchaseOrderRecentList,
   getPurchaseOrderDeliveryTrend
 } from '@/api/purchasing/purchasingDashboard'
+import { getFactories } from '@/api/system/factory'
 import dayjs from 'dayjs'
 import {
   ShoppingCartOutlined,
@@ -47,6 +48,16 @@ const supplierChartOption = ref({})
 const trendChartOption = ref({})
 const deliveryChartOption = ref({})
 const recentOrders = ref<any[]>([])
+
+// ==================== 工厂筛选 ====================
+const factoryList = ref<any[]>([])
+const filterFactory = ref<number | undefined>(undefined)
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 const recentColumns = [
   { title: '订单编号', dataIndex: 'purchase_order_number', key: 'purchase_order_number', width: 180 },
   { title: '供应商名称', dataIndex: 'supplier_name', key: 'supplier_name', width: 160 },
@@ -79,13 +90,14 @@ const orderStatusColorMap: Record<string, string> = {
 const fetchData = async () => {
   loading.value = true
   try {
+    const factoryParams = filterFactory.value ? { factory_id: filterFactory.value } : {};
     const results = await Promise.allSettled([
-      getPurchaseOrderStats(),
-      getPurchaseOrderStatusDistribution(),
-      getPurchaseOrderSupplierRanking(),
-      getPurchaseOrderMonthlyTrend(),
-      getPurchaseOrderRecentList(),
-      getPurchaseOrderDeliveryTrend()
+      getPurchaseOrderStats(factoryParams),
+      getPurchaseOrderStatusDistribution(factoryParams),
+      getPurchaseOrderSupplierRanking(factoryParams),
+      getPurchaseOrderMonthlyTrend(factoryParams),
+      getPurchaseOrderRecentList(factoryParams),
+      getPurchaseOrderDeliveryTrend(factoryParams)
     ])
 
     const statsRes: any = results[0].status === 'fulfilled' ? results[0].value : null
@@ -310,13 +322,24 @@ const fetchData = async () => {
   }
 }
 
-onMounted(() => { fetchData() })
+onMounted(() => { fetchData(); loadFactories() })
 </script>
 
 <template>
   <div class="dashboard-container">
     <div class="dashboard-header">
       <h2 class="dashboard-title">采购订单仪表板</h2>
+      <a-select
+        v-model:value="filterFactory"
+        placeholder="工厂"
+        allow-clear
+        style="width: 140px; margin-left: 12px"
+        @change="fetchData"
+      >
+        <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">
+          {{ f.factory_short || f.factory_name }}
+        </a-select-option>
+      </a-select>
     </div>
     <a-tabs v-model:activeKey="activeTab" type="card">
       <a-tab-pane key="overview" tab="仪表板概览">

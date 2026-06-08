@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 
-export function getPlans(params?: { page?: number; limit?: number; search?: string; approval_status?: string; mrp_status?: string; plan_status?: string }) {
+export function getPlans(params?: { page?: number; limit?: number; search?: string; approval_status?: string; mrp_status?: string; plan_status?: string; factory_id?: number }) {
   return request.get('/plans', { params })
 }
 

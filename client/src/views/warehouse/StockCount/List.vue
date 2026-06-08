@@ -14,6 +14,7 @@ import {
   exportStockCountSelected
 } from '@/api/warehouse/stockCount'
 import { getWarehouseOptions } from '@/api/warehouse/finishedGoods'
+import { getFactories } from '@/api/system/factory'
 import { getItemOptions } from '@/api/warehouse/materialWarehouse'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
@@ -23,16 +24,42 @@ import { useModalDrag } from '@/composables/useModalDrag'
 
 
 
-const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getStockCountList)
+const { loading, dataSource, searchText, pagination, fetchData: _fetchData, handleTableChange, handleSearch: _handleSearch, handleReset: _handleReset } = useTableList(getStockCountList)
 const { modalStyle: editModalStyle, onDragStart: editDragStart, resetDrag: editResetDrag } = useModalDrag()
 
 const filterStatus = ref('')
 const filterWarehouse = ref('')
 const filterPeriod = ref('')
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 const warehouseOptions = ref<any[]>([])
 const stats = ref<any>({})
 
 const statusOptions = ['盘点中', '待复核', '待确认', '已完成', '已作废']
+
+// 带筛选参数的 fetchData
+const fetchData = () => _fetchData({
+  status: filterStatus.value || undefined,
+  warehouse_number: filterWarehouse.value || undefined,
+  count_period: filterPeriod.value || undefined,
+  factory_id: factoryFilter.value || undefined
+})
+const handleSearch = () => { pagination.current = 1; fetchData() }
+const handleReset = () => {
+  searchText.value = ''
+  filterStatus.value = ''
+  filterWarehouse.value = ''
+  filterPeriod.value = ''
+  factoryFilter.value = undefined
+  pagination.current = 1
+  _handleReset()
+}
 
 // ==================== 行选择与导出 ====================
 const selectedRowKeys = ref<number[]>([])
@@ -423,6 +450,7 @@ const handleDelete = (record: any) => {
 
 onMounted(() => {
   fetchWarehouseOptions()
+  loadFactories()
   fetchData()
 })
 </script>
@@ -443,6 +471,9 @@ onMounted(() => {
         >
           <template #prefix><SearchOutlined /></template>
         </a-input-search>
+        <a-select v-model:value="factoryFilter" placeholder="工厂" allow-clear style="width: 120px" @change="handleSearch">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+        </a-select>
         <a-select v-model:value="filterWarehouse" placeholder="仓库" allow-clear style="width: 140px" @change="handleSearch">
           <a-select-option v-for="w in warehouseOptions" :key="w.warehouse_number" :value="w.warehouse_number">
             {{ w.warehouse_name }}

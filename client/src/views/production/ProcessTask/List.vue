@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, PlusOutlined, DownloadOutlined, UploadOutlined, ImportOutlined, HistoryOutlined, DownOutlined, CheckCircleOutlined, CloseCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getProcessTasks, createProcessTask, updateProcessTask, deleteProcessTask, batchDeleteProcessTasks, exportProcessTasks, importProcessTasks, generateFromOrder, getOrdersForGenerate } from '@/api/production/processTask'
+import { getFactories } from '@/api/system/factory'
 import { useAuthStore } from '@/store/auth'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
@@ -44,6 +45,9 @@ interface ProcessTask {
   remark: string
   creation_date: string
   creation_man: string
+  factory_id?: number | null
+  factory_short?: string
+  factory_name?: string
 }
 
 
@@ -51,6 +55,8 @@ interface ProcessTask {
 
 const activeTaskStatus = ref('')
 const approvalFilter = ref('')
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
 const authStore = useAuthStore()
 const approvalLogVisible = ref(false)
 const approvalLogRecordId = ref('')
@@ -136,7 +142,9 @@ const calcProgress = (record: ProcessTask) => {
   return pct + '%'
 }
 
-const { loading, dataSource, searchText, pagination, selectedRowKeys, rowSelection, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getProcessTasks)
+const { loading, dataSource, searchText, pagination, selectedRowKeys, rowSelection, fetchData: fetchList, handleTableChange, handleSearch, handleReset: _handleReset } = useTableList(getProcessTasks)
+const fetchData = () => fetchList({ task_status: activeTaskStatus.value || undefined, approval_status: approvalFilter.value || undefined, factory_id: factoryFilter.value || undefined })
+const handleReset = () => { activeTaskStatus.value = ''; approvalFilter.value = ''; factoryFilter.value = undefined; _handleReset() }
 
 const createModalVisible = ref(false)
 const createLoading = ref(false)
@@ -257,7 +265,7 @@ const fileInputRef = ref<HTMLInputElement>()
 
 const handleExport = async () => {
   try {
-    const res = await exportProcessTasks(searchText.value || undefined)
+    const res = await exportProcessTasks({ search: searchText.value || undefined, factory_id: factoryFilter.value || undefined })
     const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
@@ -322,7 +330,8 @@ const fetchOrderData = async () => {
     const res = await getOrdersForGenerate({
       page: orderPagination.current,
       limit: orderPagination.pageSize,
-      search: orderSearchText.value || undefined
+      search: orderSearchText.value || undefined,
+      factory_id: factoryFilter.value || undefined
     })
     if (res.success) {
       orderDataSource.value = res.data.items
@@ -372,7 +381,14 @@ const formatDate = (date: string | null) => {
   return dayjs(date).format('YYYY-MM-DD')
 }
 
-onMounted(async () => { await loadColumnPreference(); fetchData() })
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) factoryList.value = res.data.items || []
+  } catch { /* ignore */ }
+}
+
+onMounted(async () => { await loadColumnPreference(); loadFactories(); fetchData() })
 
 // ==================== 批量审批操作 ====================
 const batchLoading = ref(false)
@@ -425,6 +441,9 @@ const handleBatchAction = (action: string) => {
             <a-select-option value="草稿">草稿</a-select-option>
             <a-select-option value="待审批">待审批</a-select-option>
             <a-select-option value="已审批">已审批</a-select-option>
+          </a-select>
+          <a-select v-model:value="factoryFilter" placeholder="全部工厂" allow-clear style="width: 120px" @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
           </a-select>
           <a-button @click="handleReset">
             <template #icon><ReloadOutlined /></template>

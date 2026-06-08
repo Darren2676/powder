@@ -166,6 +166,7 @@ const {
 // === 明细列定义 ===
 const defaultDetailColumns = [
   { title: '订单编号', dataIndex: 'sales_order_number', key: 'sales_order_number', width: 160, resizable: true },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 160, resizable: true },
   { title: '订单日期', dataIndex: 'order_date', key: 'order_date', width: 100, resizable: true },
   { title: '订单状态', dataIndex: 'order_status', key: 'order_status', width: 80, resizable: true },

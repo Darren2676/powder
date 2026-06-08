@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, DownloadOutlined, UploadOutlined, HistoryOutlined, DownOutlined, CheckCircleOutlined, CloseCircleOutlined, EyeOutlined, InboxOutlined, SettingOutlined, PartitionOutlined } from '@ant-design/icons-vue'
 import { getMaterialPreparations, deleteMaterialPreparation, exportMaterialPreparations, importMaterialPreparations, generateByProcess, getOrdersForGenerate, getPreparationDetails, updatePreparationDetails } from '@/api/production/materialPreparation'
+import { getFactories } from '@/api/system/factory'
 import { useAuthStore } from '@/store/auth'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
@@ -30,6 +31,9 @@ interface MaterialPreparation {
   remark: string
   creation_date: string
   creation_man: string
+  factory_id?: number | null
+  factory_short?: string
+  factory_name?: string
 }
 
 interface PreparationDetail {
@@ -64,6 +68,8 @@ const dataSource = ref<MaterialPreparation[]>([])
 const searchText = ref('')
 const prepStatusFilter = ref('')
 const approvalFilter = ref('')
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
 const authStore = useAuthStore()
 const approvalLogVisible = ref(false)
 const approvalLogRecordId = ref('')
@@ -92,6 +98,7 @@ const pagination = reactive({
 })
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '备料单编号', dataIndex: 'preparation_number', key: 'preparation_number', width: 170, resizable: true },
   { title: '生产单编号', dataIndex: 'production_order_number', key: 'production_order_number', width: 160, resizable: true },
   { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 120, resizable: true },
@@ -123,7 +130,8 @@ const fetchData = async () => {
       limit: pagination.pageSize,
       search: searchText.value || undefined,
       preparation_status: prepStatusFilter.value || undefined,
-      approval_status: approvalFilter.value || undefined
+      approval_status: approvalFilter.value || undefined,
+      factory_id: factoryFilter.value || undefined
     })
     if (res.success) {
       dataSource.value = res.data.items
@@ -140,7 +148,7 @@ const handleTableChange = (pag: any) => {
 }
 
 const handleSearch = () => { pagination.current = 1; fetchData() }
-const handleReset = () => { searchText.value = ''; prepStatusFilter.value = ''; approvalFilter.value = ''; pagination.current = 1; fetchData() }
+const handleReset = () => { searchText.value = ''; prepStatusFilter.value = ''; approvalFilter.value = ''; factoryFilter.value = undefined; pagination.current = 1; fetchData() }
 
 // ==================== More Actions ====================
 const handleMoreAction = async (key: string, record: MaterialPreparation) => {
@@ -267,7 +275,8 @@ const fetchOrderData = async () => {
     const res = await getOrdersForGenerate({
       page: orderPagination.current,
       limit: orderPagination.pageSize,
-      search: orderSearchText.value || undefined
+      search: orderSearchText.value || undefined,
+      factory_id: factoryFilter.value || undefined
     })
     if (res.success) {
       orderDataSource.value = res.data.items
@@ -389,7 +398,14 @@ const handleSaveDetails = async () => {
   finally { detailSaving.value = false }
 }
 
-onMounted(async () => { await loadColumnPreference(); fetchData() })
+onMounted(async () => { await loadColumnPreference(); loadFactories(); fetchData() })
+
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 // ==================== 批量审批操作 ====================
 const batchLoading = ref(false)
@@ -436,6 +452,9 @@ const handleBatchAction = (action: string) => {
             @search="handleSearch"
             @pressEnter="handleSearch"
           />
+          <a-select v-model:value="factoryFilter" placeholder="全部工厂" allow-clear style="width: 120px" @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
           <a-select v-model:value="prepStatusFilter" placeholder="备料状态" allow-clear style="width: 120px" @change="handleSearch">
             <a-select-option value="">全部</a-select-option>
             <a-select-option value="未领料">未领料</a-select-option>

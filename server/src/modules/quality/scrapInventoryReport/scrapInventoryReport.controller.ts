@@ -16,8 +16,10 @@ export const getScrapInventoryKPI = async (req: Request, res: Response, next: Ne
     if (!wn) { res.json(success({ item_types: 0, total_qty: 0, batch_count: 0, overdue_count: 0 })); return; }
 
     const _factoryId = getFactoryId(req);
-    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
-    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps: any = effectiveFactoryId !== null ? { _factoryId: effectiveFactoryId } : {};
     const [rows]: any = await sequelize.query(`
       SELECT
         COUNT(DISTINCT item_number) AS item_types,
@@ -37,8 +39,10 @@ export const getScrapInventoryChartData = async (req: Request, res: Response, ne
     if (!wn) { res.json(success({ inventory_by_item: [], monthly_inbound: [], backlog_items: [] })); return; }
 
     const _factoryId = getFactoryId(req);
-    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
-    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps: any = effectiveFactoryId !== null ? { _factoryId: effectiveFactoryId } : {};
     const baseWhere = `warehouse_number = :wn AND status <> N'冻结'${factoryCond}`;
 
     const [inventoryByItem]: any = await sequelize.query(`
@@ -89,8 +93,10 @@ export const getScrapInventoryTableData = async (req: Request, res: Response, ne
     }
 
     const _factoryId = getFactoryId(req);
-    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
-    if (_factoryId !== null) reps._factoryId = _factoryId;
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    if (effectiveFactoryId !== null) reps._factoryId = effectiveFactoryId;
     const baseWhere = `warehouse_number = :wn AND status <> N'冻结'${factoryCond}`;
 
     const [countResult]: any = await sequelize.query(`

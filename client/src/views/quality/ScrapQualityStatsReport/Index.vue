@@ -7,6 +7,7 @@ import {
   CloseCircleOutlined, ClockCircleOutlined, EyeOutlined
 } from '@ant-design/icons-vue'
 import { getScrapQualityStatsKPI, getScrapQualityStatsChartData, getScrapQualityStatsTableData } from '@/api/quality/scrapQualityStatsReport'
+import { getFactories } from '@/api/system/factory'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart, PieChart, LineChart } from 'echarts/charts'
@@ -25,6 +26,14 @@ const chartData = ref<any>({})
 const tableData = ref<any[]>([])
 const detailVisible = ref(false)
 const detailData = ref<any>(null)
+const filterFactoryId = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 const pagination = reactive({
   current: 1, pageSize: 20, total: 0,
@@ -34,6 +43,8 @@ const pagination = reactive({
 })
 
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true,
+    customRender: ({ record }: any) => record.factory_short || '-' },
   { title: '不合格单号', dataIndex: 'nonconforming_number', key: 'nonconforming_number', width: 150 },
   { title: '物料编号', dataIndex: 'item_number', key: 'item_number', width: 110 },
   { title: '物料名称', dataIndex: 'item_name', key: 'item_name', width: 120 },
@@ -46,6 +57,7 @@ const columns = [
 
 const getParams = () => {
   const params: any = {}
+  if (filterFactoryId.value !== undefined && filterFactoryId.value !== null) params.factory_id = filterFactoryId.value
   if (searchText.value) params.search = searchText.value
   if (dateRange.value) { params.start_date = dateRange.value[0].format('YYYY-MM-DD'); params.end_date = dateRange.value[1].format('YYYY-MM-DD') }
   return params
@@ -127,7 +139,7 @@ const topItemsOption = computed(() => {
   }
 })
 
-onMounted(() => { fetchKPI(); fetchChartData(); fetchTableData() })
+onMounted(() => { loadFactories(); fetchKPI(); fetchChartData(); fetchTableData() })
 </script>
 
 <template>
@@ -137,6 +149,11 @@ onMounted(() => { fetchKPI(); fetchChartData(); fetchTableData() })
         <h3 class="page-title" style="margin: 0; white-space: nowrap;">废品统计分析报表</h3>
         <a-divider type="vertical" style="height: 24px; margin: 0;" />
         <a-form layout="inline" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: 1;">
+          <a-form-item label="所属工厂" style="margin-bottom: 0;" v-if="factoryList.length > 0">
+            <a-select v-model:value="filterFactoryId" placeholder="全部工厂" allow-clear style="width: 140px;" @change="handleSearch">
+              <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+            </a-select>
+          </a-form-item>
           <a-form-item label="搜索" style="margin-bottom: 0;">
             <a-input-search v-model:value="searchText" placeholder="不合格单号/物料编号/名称" style="width: 260px;" allow-clear @search="handleSearch" />
           </a-form-item>

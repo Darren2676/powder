@@ -12,6 +12,7 @@ import {
   ShoppingOutlined
 } from '@ant-design/icons-vue'
 import { getProductQualitySummary } from '@/api/quality/qualityReport'
+import { getFactories } from '@/api/system/factory'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart, PieChart } from 'echarts/charts'
@@ -39,7 +40,16 @@ const loading = ref(false)
 const dataSource = ref<any[]>([])
 const searchText = ref('')
 const dateRange = ref<[dayjs.Dayjs, dayjs.Dayjs] | null>(null)
+const filterFactoryId = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
 const allDefectDetails = ref<any[]>([])
+
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories()
+    if (res?.success) factoryList.value = res.data || []
+  } catch { /* ignore */ }
+}
 
 const pagination = reactive({
   current: 1,
@@ -148,6 +158,7 @@ const fetchData = async (page = 1, pageSize = pagination.pageSize) => {
       params.start_date = dateRange.value[0].format('YYYY-MM-DD')
       params.end_date = dateRange.value[1].format('YYYY-MM-DD')
     }
+    if (filterFactoryId.value) params.factory_id = filterFactoryId.value
 
     const res: any = await getProductQualitySummary(params)
     if (res?.success) {
@@ -185,6 +196,7 @@ const handleSearch = () => {
 const handleReset = () => {
   searchText.value = ''
   dateRange.value = null
+  filterFactoryId.value = undefined
   fetchData(1)
 }
 
@@ -207,6 +219,7 @@ const getDefectRatio = (qty: number, record: any) => {
 // ==================== 初始化 ====================
 
 onMounted(() => {
+  loadFactories()
   fetchData()
 })
 </script>
@@ -232,6 +245,17 @@ onMounted(() => {
             style="width: 240px;"
             @change="handleSearch"
           />
+        </a-form-item>
+        <a-form-item v-if="factoryList.length > 0" label="工厂" style="margin-bottom: 0;">
+          <a-select
+            v-model:value="filterFactoryId"
+            placeholder="全部工厂"
+            style="width: 140px;"
+            allow-clear
+            @change="handleSearch"
+          >
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
         </a-form-item>
         <a-form-item style="margin-bottom: 0;">
           <a-space>

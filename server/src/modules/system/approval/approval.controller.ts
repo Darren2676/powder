@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import sequelize from '../../../config/database';
 import { success } from '../../../utils/response.util';
 import { BusinessError } from '@/shared/errors/BusinessError';
+import { getFactoryId } from '../../../utils/factoryWhere.util';
 import {
   submitForApprovalCore,
   approveCore,
@@ -26,6 +27,7 @@ export const submitForApproval = async (req: Request, res: Response, next: NextF
       userId: user.id,
       username: user.username,
       remark: b.remark,
+      factory_id: getFactoryId(req) ?? undefined,
     });
 
     if (result.usedWorkflow) {
@@ -54,6 +56,7 @@ export const approve = async (req: Request, res: Response, next: NextFunction) =
       userId: user.id,
       username: user.username,
       remark: b.remark,
+      factory_id: getFactoryId(req) ?? undefined,
     });
 
     res.json(success(null, '审批通过'));
@@ -78,6 +81,7 @@ export const reverseApproval = async (req: Request, res: Response, next: NextFun
       userId: user.id,
       username: user.username,
       remark: b.remark,
+      factory_id: getFactoryId(req) ?? undefined,
     });
 
     res.json(success(null, '反审成功，已退回草稿'));
@@ -101,6 +105,7 @@ export const withdraw = async (req: Request, res: Response, next: NextFunction) 
       recordId: b.record_id,
       userId: user.id,
       username: user.username,
+      factory_id: getFactoryId(req) ?? undefined,
     });
 
     res.json(success(null, '撤回成功'));
@@ -141,6 +146,7 @@ export const batchSubmit = async (req: Request, res: Response, next: NextFunctio
       recordIds: b.record_ids,
       userId: user.id,
       username: user.username,
+      factory_id: getFactoryId(req) ?? undefined,
     });
 
     res.json(success(results, `批量提交完成：成功 ${results.succeeded.length} 条，失败 ${results.failed.length} 条`));
@@ -164,6 +170,7 @@ export const batchApprove = async (req: Request, res: Response, next: NextFuncti
       recordIds: b.record_ids,
       userId: user.id,
       username: user.username,
+      factory_id: getFactoryId(req) ?? undefined,
     });
 
     res.json(success(results, `批量审批完成：成功 ${results.succeeded.length} 条，失败 ${results.failed.length} 条`));
@@ -187,6 +194,7 @@ export const batchWithdraw = async (req: Request, res: Response, next: NextFunct
       recordIds: b.record_ids,
       userId: user.id,
       username: user.username,
+      factory_id: getFactoryId(req) ?? undefined,
     });
 
     res.json(success(results, `批量撤回完成：成功 ${results.succeeded.length} 条，失败 ${results.failed.length} 条`));
@@ -210,6 +218,7 @@ export const batchReverse = async (req: Request, res: Response, next: NextFuncti
       recordIds: b.record_ids,
       userId: user.id,
       username: user.username,
+      factory_id: getFactoryId(req) ?? undefined,
     });
 
     res.json(success(results, `批量反审完成：成功 ${results.succeeded.length} 条，失败 ${results.failed.length} 条`));
@@ -229,7 +238,7 @@ export const getPendingApprovals = async (req: Request, res: Response, next: Nex
     const limit = parseInt(req.query.limit as string) || 20;
     const statusFilter = (req.query.status as string) || 'pending';
 
-    const result = await getPendingApprovalsCore({ page, limit, statusFilter });
+    const result = await getPendingApprovalsCore({ page, limit, statusFilter, factory_id: getFactoryId(req) ?? undefined });
 
     res.json(success(result, '获取审批待办成功'));
   } catch (err) { next(err); }

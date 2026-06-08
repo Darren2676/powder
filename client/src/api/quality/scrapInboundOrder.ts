@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 
-export function getScrapInboundOrders(params?: any) {
+export function getScrapInboundOrders(params?: { page?: number; limit?: number; search?: string; approval_status?: string; factory_id?: number }) {
   return request.get('/quality/scrap-inbound-orders', { params })
 }
 

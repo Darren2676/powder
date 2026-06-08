@@ -3,7 +3,7 @@ import request from '@/utils/request'
 // ==================== 报废仓处置管理 ====================
 
 // 查询报废仓库存（按物料汇总）
-export function getScrapInventory(params?: { page?: number; limit?: number; search?: string }) {
+export function getScrapInventory(params?: { page?: number; limit?: number; search?: string; factory_id?: number }) {
   return request.get('/scrap-disposal/inventory', { params })
 }
 
@@ -13,7 +13,7 @@ export function getScrapBatchDetail(itemNumber: string) {
 }
 
 // 查询处置单列表
-export function getScrapDisposalList(params?: { page?: number; limit?: number; search?: string; status?: string }) {
+export function getScrapDisposalList(params?: { page?: number; limit?: number; search?: string; status?: string; factory_id?: number }) {
   return request.get('/scrap-disposal/disposals', { params })
 }
 
@@ -44,10 +44,10 @@ export function deleteScrapDisposal(disposalNumber: string) {
 
 // ==================== 报废仓月度报表 ====================
 
-export function getCompletedScrapStockCounts() {
-  return request.get('/scrap-disposal/completed-scrap-stock-counts')
+export function getCompletedScrapStockCounts(params?: { factory_id?: number }) {
+  return request.get('/scrap-disposal/completed-scrap-stock-counts', { params })
 }
 
-export function getScrapMonthlyReport(params: { count_number: string }) {
+export function getScrapMonthlyReport(params: { count_number: string; factory_id?: number }) {
   return request.get('/scrap-disposal/scrap-monthly-report', { params })
 }

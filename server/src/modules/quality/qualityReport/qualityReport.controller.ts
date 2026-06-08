@@ -183,9 +183,11 @@ export const getQualitySummary = async (req: Request, res: Response, next: NextF
     const replacements: any = { offset, offsetEnd };
 
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += ` AND po.factory_id = :_factoryId`;
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (start_date) {
@@ -227,6 +229,7 @@ export const getQualitySummary = async (req: Request, res: Response, next: NextF
           po.equipment_name,
           po.plan_status,
           po.yield_rate,
+          f.factory_short,
           COUNT(DISTINCT wr.step_number) AS process_count,
           SUM(wr.qualified_quantity) AS total_qualified,
           SUM(wr.unqualified_quantity) AS total_unqualified,
@@ -239,10 +242,11 @@ export const getQualitySummary = async (req: Request, res: Response, next: NextF
           ROW_NUMBER() OVER (ORDER BY po.production_date DESC, po.production_order_number DESC) AS _row_num
         FROM production_order po
         INNER JOIN work_report wr ON wr.production_order_number = po.production_order_number
+        LEFT JOIN factory f ON po.factory_id = f.id
         ${whereClause}
         GROUP BY po.production_order_number, po.item_number, po.item_name, po.specifications,
                  po.basic_unit, po.planned_quantity, po.production_date, po.equipment_name, po.plan_status,
-                 po.yield_rate, po.inbound_quantity
+                 po.yield_rate, po.inbound_quantity, f.factory_short
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
 
@@ -295,9 +299,11 @@ export const getProductionOrderQualityPivot = async (req: Request, res: Response
     const replacements: any = { offset, offsetEnd };
 
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += ' AND po.factory_id = :_factoryId';
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (start_date) {
@@ -327,9 +333,10 @@ export const getProductionOrderQualityPivot = async (req: Request, res: Response
         SELECT
           po.production_order_number, po.item_number, po.item_name, po.specifications,
           po.basic_unit, po.planned_quantity, po.inbound_quantity, po.yield_rate,
-          po.production_date, po.plan_status, po.equipment_name,
+          po.production_date, po.plan_status, po.equipment_name, f.factory_short,
           ROW_NUMBER() OVER (ORDER BY po.production_date DESC, po.production_order_number DESC) AS _row_num
         FROM production_order po
+        LEFT JOIN factory f ON po.factory_id = f.id
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
@@ -455,6 +462,7 @@ export const getProductionOrderQualityPivot = async (req: Request, res: Response
         production_date: o.production_date,
         plan_status: o.plan_status,
         equipment_name: o.equipment_name,
+        factory_short: o.factory_short,
         total_unqualified: Math.round(totalUnqualified * 10000) / 10000,
         concession_quantity: Math.round(concession * 10000) / 10000,
         net_unqualified: Math.round(netUnqualified * 10000) / 10000,
@@ -525,9 +533,11 @@ export const getDefectAnalysis = async (req: Request, res: Response, next: NextF
     let whereClause = 'WHERE wr.unqualified_quantity > 0';
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += ` AND wr.factory_id = :_factoryId`;
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (start_date) {
@@ -626,9 +636,11 @@ export const getProcessQuality = async (req: Request, res: Response, next: NextF
     let whereClause = 'WHERE 1=1';
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += ` AND wr.factory_id = :_factoryId`;
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (start_date) {
@@ -727,9 +739,11 @@ export const getProductQualitySummary = async (req: Request, res: Response, next
     let whereClause = 'WHERE 1=1';
     const replacements: any = { offset, offsetEnd };
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += ` AND wr.factory_id = :_factoryId`;
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (start_date) {
@@ -857,9 +871,11 @@ export const getYieldRateReport = async (req: Request, res: Response, next: Next
     let whereClause = 'WHERE 1=1';
     const replacements: any = { offset, offsetEnd };
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += ` AND po.factory_id = :_factoryId`;
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (start_date) {
@@ -902,6 +918,7 @@ export const getYieldRateReport = async (req: Request, res: Response, next: Next
           po.production_date,
           po.plan_status,
           po.yield_rate,
+          f.factory_short,
           ISNULL(wr_agg.total_unqualified, 0) AS total_unqualified,
           CASE
             WHEN po.inbound_quantity IS NOT NULL AND (po.inbound_quantity + ISNULL(wr_agg.total_unqualified, 0)) > 0
@@ -914,6 +931,7 @@ export const getYieldRateReport = async (req: Request, res: Response, next: Next
             po.production_date DESC
           ) AS _row_num
         FROM production_order po
+        LEFT JOIN factory f ON po.factory_id = f.id
         LEFT JOIN (
           SELECT production_order_number, SUM(unqualified_quantity) AS total_unqualified
           FROM work_report

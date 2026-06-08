@@ -12,6 +12,7 @@ import {
   deleteProductionInspection,
   exportProductionInspections
 } from '@/api/quality/productionInspection'
+import { getFactories } from '@/api/system/factory'
 import { generateExportFilename } from '@/utils/exportFilename'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -25,6 +26,14 @@ const searchText = ref('')
 const filterType = ref<string | undefined>(undefined)
 const filterResult = ref<string | undefined>(undefined)
 const filterStatus = ref<string | undefined>(undefined)
+const filterFactory = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 const pagination = reactive({ current: 1, pageSize: 15, total: 0 })
 
 // ==================== Detail Modal ====================
@@ -143,7 +152,8 @@ const fetchList = async () => {
       search: searchText.value || undefined,
       inspect_type: filterType.value || undefined,
       inspection_result: filterResult.value || undefined,
-      status: filterStatus.value || undefined
+      status: filterStatus.value || undefined,
+      factory_id: filterFactory.value
     })
     dataSource.value = res.data.items || []
     pagination.total = res.data.pagination?.total || 0
@@ -154,7 +164,7 @@ const fetchList = async () => {
 const handleSearch = () => { pagination.current = 1; fetchList() }
 const handleReset = () => {
   searchText.value = ''; filterType.value = undefined
-  filterResult.value = undefined; filterStatus.value = undefined
+  filterResult.value = undefined; filterStatus.value = undefined; filterFactory.value = undefined
   pagination.current = 1; fetchList()
 }
 const handleTableChange = (pag: any) => {
@@ -281,7 +291,7 @@ const handleDelete = (record: any) => {
 // ==================== Export ====================
 const handleExport = async () => {
   try {
-    const res = await exportProductionInspections()
+    const res = await exportProductionInspections(filterFactory.value)
     const blob = new Blob([res.data], { type: res.headers?.['content-type'] || 'application/octet-stream' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
@@ -314,7 +324,7 @@ const isItemPass = (item: any): boolean => {
   return true
 }
 
-onMounted(() => { loadColumnPreference(); fetchList() })
+onMounted(() => { loadColumnPreference(); loadFactories(); fetchList() })
 </script>
 
 <template>
@@ -336,6 +346,9 @@ onMounted(() => { loadColumnPreference(); fetchList() })
             <a-select-option value="检验中">检验中</a-select-option>
             <a-select-option value="已完成">已完成</a-select-option>
             <a-select-option value="已处理">已处理</a-select-option>
+          </a-select>
+          <a-select v-model:value="filterFactory" placeholder="所属工厂" style="width: 120px" allowClear @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
           </a-select>
           <a-button @click="handleReset"><ReloadOutlined />重置</a-button>
           <a-button @click="handleExport"><DownloadOutlined />导出</a-button>

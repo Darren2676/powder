@@ -12,6 +12,8 @@ export const createShippingOrder = async (req: Request, res: Response, next: Nex
   try {
     const factoryCode = await getFactoryCode(req);
     const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const b = req.body;
 
     // ---- 基础校验 ----
@@ -208,8 +210,8 @@ export const createShippingOrder = async (req: Request, res: Response, next: Nex
       );
       if (allFullyShipped) {
         await sequelize.query(
-          `UPDATE shipping_request SET status = N'已发货' WHERE request_number = :rn`,
-          { replacements: { rn: b.request_number }, transaction }
+          `UPDATE shipping_request SET status = N'已发货' WHERE request_number = :rn${factoryCond}`,
+          { replacements: { rn: b.request_number, ...factoryReps }, transaction }
         );
       }
 
@@ -608,8 +610,8 @@ export const cancelShippingOrder = async (req: Request, res: Response, next: Nex
 
       // 4. 更新发货单状态为已取消
       await sequelize.query(
-        `UPDATE shipping_order SET status = N'已取消' WHERE shipping_order_number = :sn`,
-        { replacements: { sn: shipping_order_number }, transaction }
+        `UPDATE shipping_order SET status = N'已取消' WHERE shipping_order_number = :sn${factoryCond}`,
+        { replacements: { sn: shipping_order_number, ...factoryReps }, transaction }
       );
 
       // 4.5 已发货状态：回冲成品库存 + 标记流水作废
@@ -819,8 +821,8 @@ export const cancelShippingOrder = async (req: Request, res: Response, next: Nex
         if (!allFullyShipped) {
           // 回退申请状态为“已审核”
           await sequelize.query(
-            `UPDATE shipping_request SET status = N'已审核' WHERE request_number = :rn`,
-            { replacements: { rn }, transaction }
+            `UPDATE shipping_request SET status = N'已审核' WHERE request_number = :rn${factoryCond}`,
+            { replacements: { rn, ...factoryReps }, transaction }
           );
         }
       }
@@ -1032,9 +1034,11 @@ export const getReconciliationPrintData = async (req: Request, res: Response, ne
              h.customer_name, h.customer_number, h.warehouse_name, h.status as order_status,
              h.shipping_date, h.carrier, h.tracking_number,
              h.creation_man, h.creation_date as order_creation_date,
-             h.shipping_address, h.contact_person, h.contact_phone
+             h.shipping_address, h.contact_person, h.contact_phone,
+             f.factory_name, f.factory_short
       FROM shipping_order_detail d
       INNER JOIN shipping_order h ON h.shipping_order_number = d.shipping_order_number
+      LEFT JOIN factory f ON h.factory_id = f.id
       WHERE d.id IN (${placeholders})
       ${factoryCond}
       ORDER BY h.shipping_order_number, d.line_number

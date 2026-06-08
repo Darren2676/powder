@@ -102,30 +102,34 @@ export const getReworkOrders = async (req: Request, res: Response, next: NextFun
     let whereClause = 'WHERE 1=1';
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
-      whereClause += ` AND factory_id = :_factoryId`;
-      replacements._factoryId = _factoryId;
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ` AND r.factory_id = :_factoryId`;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (search) {
-      whereClause += ` AND (rework_order_number LIKE :search OR production_order_number LIKE :search OR item_number LIKE :search OR item_name LIKE :search)`;
+      whereClause += ` AND (r.rework_order_number LIKE :search OR r.production_order_number LIKE :search OR r.item_number LIKE :search OR r.item_name LIKE :search)`;
       replacements.search = `%${search}%`;
     }
     if (reworkStatus) {
-      whereClause += ` AND rework_status = :reworkStatus`;
+      whereClause += ` AND r.rework_status = :reworkStatus`;
       replacements.reworkStatus = reworkStatus;
     }
 
     const [countResult]: any = await sequelize.query(
-      `SELECT COUNT(*) AS total FROM rework_order ${whereClause}`,
+      `SELECT COUNT(*) AS total FROM rework_order r ${whereClause}`,
       { replacements }
     );
     const total = countResult[0].total;
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY creation_date DESC) AS _row_num
-        FROM rework_order ${whereClause.replace(/r\./g, '')}
+        SELECT r.*, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY r.creation_date DESC) AS _row_num
+        FROM rework_order r
+        LEFT JOIN factory f ON r.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > ${offset} AND t._row_num <= ${offset + limit}
     `, { replacements });
 
@@ -138,7 +142,7 @@ export const getReworkOrders = async (req: Request, res: Response, next: NextFun
         ISNULL(SUM(CASE WHEN rework_status = N'待返修' THEN 1 ELSE 0 END), 0) AS pending_count,
         ISNULL(SUM(CASE WHEN rework_status = N'返修中' THEN 1 ELSE 0 END), 0) AS in_progress_count,
         ISNULL(SUM(CASE WHEN rework_status = N'返修完成' THEN 1 ELSE 0 END), 0) AS completed_count
-      FROM rework_order ${whereClause}
+      FROM rework_order r ${whereClause}
     `, { replacements });
 
     res.json(success({
@@ -310,15 +314,21 @@ export const reworkReInspect = async (req: Request, res: Response, next: NextFun
 };
 
 // ==================== 导出 ====================
-const exportFields = ['rework_order_number', 'nonconforming_number', 'source_inspection_number', 'production_order_number', 'item_number', 'item_name', 'specifications', 'rework_step_number', 'rework_quantity', 'rework_status', 'rework_result', 'rework_start_date', 'rework_complete_date', 'operator'];
-const exportHeaders = ['返修单号', '不合格品单号', '来源检验单号', '生产单号', '物料编号', '物料名称', '规格型号', '返修工序号', '返修数量', '返修状态', '返修结果', '开始日期', '完成日期', '操作人'];
+const exportFields = ['rework_order_number', 'nonconforming_number', 'source_inspection_number', 'production_order_number', 'item_number', 'item_name', 'specifications', 'rework_step_number', 'rework_quantity', 'rework_status', 'rework_result', 'rework_start_date', 'rework_complete_date', 'factory_short', 'operator'];
+const exportHeaders = ['返修单号', '不合格品单号', '来源检验单号', '生产单号', '物料编号', '物料名称', '规格型号', '返修工序号', '返修数量', '返修状态', '返修结果', '开始日期', '完成日期', '工厂', '操作人'];
 
 export const exportReworkOrders = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const _factoryId = getFactoryId(req);
-    const factoryWhere = _factoryId !== null ? 'WHERE factory_id = :_factoryId' : '';
-    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
-    const [items]: any = await sequelize.query(`SELECT * FROM rework_order ${factoryWhere} ORDER BY creation_date DESC`, { replacements: factoryReps });
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    let factoryWhere = '';
+    const factoryReps: any = {};
+    if (effectiveFactoryId !== null) {
+      factoryWhere = 'WHERE r.factory_id = :_factoryId';
+      factoryReps._factoryId = effectiveFactoryId;
+    }
+    const [items]: any = await sequelize.query(`SELECT r.*, f.factory_name, f.factory_short FROM rework_order r LEFT JOIN factory f ON r.factory_id = f.id ${factoryWhere} ORDER BY r.creation_date DESC`, { replacements: factoryReps });
     exportToExcel(items, exportFields, exportHeaders, 'rework_orders', res);
   } catch (err) { next(err); }
 };

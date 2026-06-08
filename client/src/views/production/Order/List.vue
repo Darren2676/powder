@@ -9,6 +9,7 @@ import { getMoulds } from '@/api/equipment/mould'
 import { getMouldBomByItemAndMould } from '@/api/master-data/mfgBom'
 import { getPlans } from '@/api/planning/plan'
 import { getSchedules } from '@/api/master-data/schedule'
+import { getFactories } from '@/api/system/factory'
 import { useAuthStore } from '@/store/auth'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
@@ -47,6 +48,7 @@ interface Order {
   plan_status: string
   remark: string
   approval_status: string
+  factory_id?: number | null
 }
 
 interface Product {
@@ -64,6 +66,16 @@ interface Product {
 
 
 const activeStatus = ref('')
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) {
+      factoryList.value = res.data.items || []
+    }
+  } catch (e) { /* ignore */ }
+}
 const authStore = useAuthStore()
 const approvalFilter = ref('')
 const approvalLogVisible = ref(false)
@@ -96,7 +108,8 @@ const { loading, dataSource, searchText, pagination, selectedRowKeys, fetchData 
 
 const getFilterParams = () => ({
   status: activeStatus.value || undefined,
-  approval_status: approvalFilter.value || undefined
+  approval_status: approvalFilter.value || undefined,
+  factory_id: factoryFilter.value || undefined
 })
 
 const handleSearch = () => {
@@ -108,6 +121,7 @@ const handleReset = () => {
   searchText.value = ''
   approvalFilter.value = ''
   activeStatus.value = ''
+  factoryFilter.value = undefined
   pagination.current = 1
   fetchData(getFilterParams())
 }
@@ -147,7 +161,8 @@ const emptyForm = (): Order => ({
   schedule_id: '',
   plan_status: '未开始',
   remark: '',
-  approval_status: '草稿'
+  approval_status: '草稿',
+  factory_id: null
 })
 
 // 编辑弹窗
@@ -170,7 +185,6 @@ const productSearchLoading = ref(false)
 
 
 const defaultDataColumns: any[] = [
-  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '生产单编号', dataIndex: 'production_order_number', key: 'production_order_number', resizable: true },
   { title: '生产计划编号', dataIndex: 'production_number', key: 'production_number', customFilterDropdown: true, resizable: true },
@@ -585,6 +599,7 @@ onMounted(async () => {
   await loadColumnPreference()
   await loadDispatchColPreference()
   fetchData(getFilterParams())
+  loadFactories()
   // 加载班次列表用于列表显示
   try {
     const res = await getSchedules({ limit: 100 })
@@ -1402,6 +1417,9 @@ const handleDispatchSubmit = () => {
             <a-select-option value="待审批">待审批</a-select-option>
             <a-select-option value="已审批">已审批</a-select-option>
           </a-select>
+          <a-select v-model:value="factoryFilter" placeholder="工厂" allow-clear style="width: 100px" @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
           <a-button @click="handleReset">
             <template #icon><ReloadOutlined /></template>
             重置
@@ -1555,6 +1573,11 @@ const handleDispatchSubmit = () => {
         <a-form-item label="生产单编号">
           <a-input v-model:value="editForm.production_order_number" disabled />
         </a-form-item>
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="editForm.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
+        </a-form-item>
         <a-form-item label="生产计划编号">
           <a-input v-model:value="editForm.production_number" />
         </a-form-item>
@@ -1656,6 +1679,11 @@ const handleDispatchSubmit = () => {
     <!-- 新建弹窗 -->
     <a-modal v-model:open="createModalVisible" title="新建生产单" :confirm-loading="createLoading" @ok="handleCreateSubmit" width="600px">
       <a-form :label-col="{ span: 6 }" :wrapper-col="{ span: 16 }">
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="createForm.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
+        </a-form-item>
         <a-form-item label="生产计划编号">
           <a-input v-model:value="createForm.production_number" placeholder="请输入生产计划编号" />
         </a-form-item>

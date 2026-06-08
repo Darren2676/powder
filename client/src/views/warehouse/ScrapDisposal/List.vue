@@ -10,6 +10,7 @@ import {
   getScrapDisposalList, getScrapDisposalDetail,
   createScrapDisposal, confirmScrapDisposal, rejectScrapDisposal, deleteScrapDisposal
 } from '@/api/warehouse/scrapDisposal'
+import { getFactories } from '@/api/system/factory'
 import { useModalDrag } from '@/composables/useModalDrag'
 import { useOpenAccountingPeriods } from '@/composables/useOpenAccountingPeriods'
 import dayjs from 'dayjs'
@@ -23,6 +24,14 @@ const loading = ref(false)
 const dataSource = ref<any[]>([])
 const searchText = ref('')
 const filterStatus = ref('')
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 const pagination = reactive({
   current: 1,
@@ -68,7 +77,8 @@ const fetchDisposals = async () => {
       page: pagination.current,
       limit: pagination.pageSize,
       search: searchText.value,
-      status: filterStatus.value
+      status: filterStatus.value,
+      factory_id: factoryFilter.value || undefined
     })
     if (res?.success) {
       dataSource.value = res.data.items || []
@@ -95,6 +105,7 @@ const handleSearch = () => {
 const handleReset = () => {
   searchText.value = ''
   filterStatus.value = ''
+  factoryFilter.value = undefined
   pagination.current = 1
   fetchDisposals()
 }
@@ -286,6 +297,7 @@ const handleDelete = (record: any) => {
 // ==================== 生命周期 ====================
 onMounted(() => {
   fetchOpenPeriods()
+  loadFactories()
   fetchDisposals()
 })
 </script>
@@ -303,6 +315,9 @@ onMounted(() => {
             <a-select-option value="待确认">待确认</a-select-option>
             <a-select-option value="已确认">已确认</a-select-option>
             <a-select-option value="已驳回">已驳回</a-select-option>
+          </a-select>
+          <a-select v-model:value="factoryFilter" placeholder="选择工厂" allow-clear style="width: 130px" @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
           </a-select>
           <a-button @click="handleSearch"><SearchOutlined /> 查询</a-button>
           <a-button @click="handleReset"><ReloadOutlined /> 重置</a-button>

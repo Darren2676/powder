@@ -16,6 +16,7 @@ import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import { useModalDrag } from '@/composables/useModalDrag'
 import { useAuthStore } from '@/store/auth'
+import { getFactories } from '@/api/system/factory'
 
 const authStore = useAuthStore()
 
@@ -54,6 +55,16 @@ const toOrderMergeSameItems = ref(false)
 const toOrderLoading = ref(false)
 const toOrderUnitPrices = ref<Record<number, number>>({})
 const toOrderForm = reactive({ supplier_number: '', supplier_name: '', delivery_date: null as string | null, procurement_manager: '', linkman: '', contacts: '' })
+
+// 工厂筛选
+const factoryList = ref<any[]>([])
+const filterFactory = ref<number | undefined>(undefined)
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 // ==================== 列定义 ====================
 const { loading, dataSource, searchText, pagination, selectedRowKeys, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getPurchaseReqs)
@@ -107,7 +118,8 @@ const fetchList = async () => {
   try {
     const res: any = await getPurchaseReqs({
       page: pagination.current, limit: pagination.pageSize,
-      search: searchText.value, approval_status: filterApproval.value, order_status: filterOrder.value
+      search: searchText.value, approval_status: filterApproval.value, order_status: filterOrder.value,
+      factory_id: filterFactory.value
     })
     dataList.value = res.data?.items || []
     pagination.total = res.data?.pagination?.total || 0
@@ -125,7 +137,7 @@ const loadDropdowns = async () => {
   } catch { /* ignore */ }
 }
 
-onMounted(() => { loadColumnPreference(); loadDetailColPreference(); fetchList(); loadDropdowns() })
+onMounted(() => { loadColumnPreference(); loadDetailColPreference(); fetchList(); loadDropdowns(); loadFactories() })
 
 const handleRefresh = () => { fetchList() }
 const openCreate = () => {
@@ -399,7 +411,7 @@ const doToOrder = async () => {
 
 // ==================== 导出 ====================
 const handleExport = async () => {
-  const res: any = await exportPurchaseReqs(searchText.value)
+  const res: any = await exportPurchaseReqs(searchText.value, filterFactory.value)
   const url = window.URL.createObjectURL(new Blob([res.data]))
   const link = document.createElement('a')
   link.href = url
@@ -442,6 +454,9 @@ const handleBatchAction = (action: string) => {
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:nowrap;overflow-x:auto">
       <h3 style="margin:0;white-space:nowrap;flex-shrink:0">采购申请单</h3>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:nowrap">
+        <a-select v-model:value="filterFactory" placeholder="工厂" allow-clear style="width:120px;flex-shrink:0" @change="fetchList">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+        </a-select>
         <a-input-search v-model:value="searchText" placeholder="搜索申请号/申请人/部门/计划编号" style="width:260px;flex-shrink:0" @search="handleSearch" allow-clear />
         <a-select v-model:value="filterApproval" placeholder="审批状态" style="width:120px;flex-shrink:0" allow-clear @change="handleSearch">
           <a-select-option value="草稿">草稿</a-select-option>

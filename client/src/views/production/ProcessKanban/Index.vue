@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { getKanbanOrders, getKanbanOrderFlow } from '@/api/production/processKanban'
 import { getMateriaProperties } from '@/api/master-data/materiaProperty'
+import { getFactories } from '@/api/system/factory'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import dayjs from 'dayjs'
@@ -19,6 +20,8 @@ const pagination = ref({ total: 0, page: 1, limit: 20, totalPages: 0 })
 const search = ref('')
 const planStatus = ref('')
 const itemProperties = ref('产品')
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
 const materiaPropertyOptions = ref<{value: string; label: string}[]>([])
 
 const fetchMateriaProperties = async () => {
@@ -43,7 +46,8 @@ const fetchOrders = async (page = 1) => {
       page, limit: pagination.value.limit,
       search: search.value || undefined,
       plan_status: planStatus.value || undefined,
-      item_properties: itemProperties.value || undefined
+      item_properties: itemProperties.value || undefined,
+      factory_id: factoryFilter.value || undefined
     })
     if (res.success) {
       orders.value = res.data.items
@@ -53,13 +57,15 @@ const fetchOrders = async (page = 1) => {
 }
 
 const handleSearch = () => fetchOrders(1)
-const handleReset = () => { search.value = ''; planStatus.value = ''; itemProperties.value = '产品'; fetchOrders(1) }
+const handleReset = () => { search.value = ''; planStatus.value = ''; itemProperties.value = '产品'; factoryFilter.value = undefined; fetchOrders(1) }
 const handlePageChange = (page: number) => fetchOrders(page)
 
 const defaultDataColumns: any[] = [
   { title: '产品编码', dataIndex: 'item_number', key: 'item_number', width: 120, resizable: true },
   { title: '物料属性', dataIndex: 'item_properties', key: 'item_properties', width: 100, resizable: true },
   { title: '产品名称', dataIndex: 'item_name', key: 'item_name', width: 150, resizable: true },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true,
+    customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 100, resizable: true },
   { title: '计划数量', dataIndex: 'planned_quantity', key: 'planned_quantity', width: 90, align: 'right' as const, resizable: true },
   { title: '工序进度', key: 'step_progress', width: 160, resizable: true },
@@ -145,8 +151,16 @@ const formatDate = (v: string) => v ? dayjs(v).format('YYYY-MM-DD') : '-'
 onMounted(() => {
   loadColumnPreference()
   fetchMateriaProperties()
+  loadFactories()
   fetchOrders()
 })
+
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 </script>
 
 <template>
@@ -164,6 +178,9 @@ onMounted(() => {
           </a-input>
           <a-select v-model:value="itemProperties" placeholder="物料属性" allow-clear style="width: 150px;" @change="handleSearch">
             <a-select-option v-for="opt in materiaPropertyOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</a-select-option>
+          </a-select>
+          <a-select v-model:value="factoryFilter" placeholder="全部工厂" allow-clear style="width: 130px;" @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
           </a-select>
           <a-select v-model:value="planStatus" placeholder="生产状态" allow-clear style="width: 130px;" @change="handleSearch">
             <a-select-option value="未开始">未开始</a-select-option>
@@ -240,6 +257,7 @@ onMounted(() => {
                 {{ orderInfo.inbound_status }}
               </a-tag>
             </a-descriptions-item>
+            <a-descriptions-item label="工厂">{{ orderInfo.factory_short || orderInfo.factory_name || '-' }}</a-descriptions-item>
           </a-descriptions>
         </a-card>
 

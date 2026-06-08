@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { PrinterOutlined, DownloadOutlined } from '@ant-design/icons-vue'
 import { getMaterialMonthlyReportByPeriod, getWarehouseOptions, getStockCountsByWarehouse } from '@/api/warehouse/materialWarehouse'
+import { getFactories } from '@/api/system/factory'
 import { useOpenAccountingPeriods } from '@/composables/useOpenAccountingPeriods'
 import dayjs from 'dayjs'
 import ExcelJS from 'exceljs'
@@ -11,6 +12,16 @@ import { saveAs } from 'file-saver'
 const loading = ref(false)
 const reportData = ref<any>(null)
 const dataSource = ref<any[]>([])
+
+// ==================== 工厂筛选 ====================
+const factoryList = ref<any[]>([])
+const filterFactory = ref<number | undefined>(undefined)
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 
 // ==================== 仓库选择 ====================
 const warehouseOptions = ref<any[]>([])
@@ -44,7 +55,7 @@ const fetchStockCounts = async () => {
   }
   stockCountLoading.value = true
   try {
-    const res: any = await getStockCountsByWarehouse({ warehouse_number: selectedWarehouse.value })
+    const res: any = await getStockCountsByWarehouse({ warehouse_number: selectedWarehouse.value, factory_id: filterFactory.value || undefined })
     stockCountOptions.value = res?.data || []
     // 默认选中最近的盘点单
     if (stockCountOptions.value.length > 0) {
@@ -78,7 +89,8 @@ const fetchReport = async () => {
   try {
     const params: any = {
       warehouse_number: selectedWarehouse.value,
-      accounting_period: selectedPeriod.value
+      accounting_period: selectedPeriod.value,
+      factory_id: filterFactory.value || undefined
     }
     if (selectedCountNumber.value) {
       params.count_number = selectedCountNumber.value
@@ -405,7 +417,7 @@ const handlePrint = () => {
 }
 
 onMounted(async () => {
-  await Promise.all([fetchWarehouses(), fetchOpenPeriods()])
+  await Promise.all([fetchWarehouses(), fetchOpenPeriods(), loadFactories()])
   selectedPeriod.value = getDefaultPeriod()
 })
 </script>
@@ -416,6 +428,17 @@ onMounted(async () => {
     <div style="margin-bottom: 16px">
       <div style="display: flex; align-items: center; gap: 12px; flex-wrap: nowrap">
         <span style="font-size: 18px; font-weight: 600; white-space: nowrap; flex-shrink: 0">原料仓月度报表</span>
+        <a-select
+          v-model:value="filterFactory"
+          placeholder="工厂"
+          style="min-width: 120px; flex: 0 1 150px"
+          allow-clear
+          @change="onWarehouseChange"
+        >
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">
+            {{ f.factory_short || f.factory_name }}
+          </a-select-option>
+        </a-select>
         <span style="font-weight: 500; white-space: nowrap; flex-shrink: 0">仓库:</span>
         <a-select
           v-model:value="selectedWarehouse"

@@ -350,7 +350,7 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
         UPDATE return_order SET
           type = :type, warehouse_number = :warehouse_number, warehouse_name = :warehouse_name,
           reason = :reason, remark = :remark, accounting_period = :accounting_period
-        WHERE return_order_number = :rn
+        WHERE return_order_number = :rn${factoryCond}
       `, {
         replacements: {
           rn: return_order_number,
@@ -359,7 +359,8 @@ export const update = async (req: Request, res: Response, next: NextFunction) =>
           warehouse_name: b.warehouse_name || '',
           reason: b.reason || '',
           remark: b.remark || '',
-          accounting_period: b.accounting_period || ''
+          accounting_period: b.accounting_period || '',
+          ...factoryReps
         }, transaction
       });
 
@@ -516,9 +517,9 @@ export const confirm = async (req: Request, res: Response, next: NextFunction) =
       await sequelize.query(`
         UPDATE return_order SET status = N'已确认',
           confirmed_by = :confirmed_by, confirmed_date = GETDATE(), confirm_remark = :confirm_remark
-        WHERE return_order_number = :rn
+        WHERE return_order_number = :rn${factoryCond}
       `, {
-        replacements: { rn, confirmed_by: operator, confirm_remark },
+        replacements: { rn, confirmed_by: operator, confirm_remark, ...factoryReps },
         transaction
       });
 
@@ -904,8 +905,8 @@ export const cancelReturnOrder = async (req: Request, res: Response, next: NextF
       // 6. 更新退货单状态为已取消
       await sequelize.query(
         `UPDATE return_order SET status = N'已取消', inbound_status = CASE WHEN inbound_status = N'已入库' THEN N'已取消' ELSE inbound_status END
-         WHERE return_order_number = :rn`,
-        { replacements: { rn: return_order_number }, transaction }
+         WHERE return_order_number = :rn${factoryCond}`,
+        { replacements: { rn: return_order_number, ...factoryReps }, transaction }
       );
 
       await transaction.commit();

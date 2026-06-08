@@ -47,6 +47,7 @@ const pagination = reactive({
 const defaultDataColumns: any[] = [
   { title: '对账状态', dataIndex: 'reconciliation_status', key: 'reconciliation_status', width: 100, resizable: true },
   { title: '发货单号', dataIndex: 'shipping_order_number', key: 'shipping_order_number', width: 170, resizable: true },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '发货状态', dataIndex: 'order_status', key: 'order_status', width: 90, resizable: true },
   { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 150, resizable: true },
   { title: '行号', dataIndex: 'line_number', key: 'line_number', width: 70 },

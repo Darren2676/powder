@@ -14,14 +14,17 @@ export const getCompletedMaterialStockCounts = async (req: Request, res: Respons
   try {
     // 多工厂数据隔离过滤
     const _factoryId = getFactoryId(req);
-    const factoryCond = _factoryId !== null ? ` AND w.factory_id = ${_factoryId}` : '';
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? ' AND w.factory_id = :_factoryId' : '';
+    const factoryReps: any = effectiveFactoryId !== null ? { _factoryId: effectiveFactoryId } : {};
     const [items]: any = await sequelize.query(`
       SELECT sc.count_number, sc.count_period, sc.warehouse_number, sc.warehouse_name, sc.confirmed_date
       FROM stock_count sc
       INNER JOIN warehouse w ON sc.warehouse_number = w.warehouse_number
       WHERE sc.status = N'已完成' AND w.warehouse_type NOT IN (N'成品仓库', N'报废仓库', N'待检仓')${factoryCond}
       ORDER BY sc.count_period DESC, sc.confirmed_date DESC
-    `);
+    `, { replacements: { ...factoryReps } });
     res.json(success(items));
   } catch (err) { next(err); }
 };
@@ -29,16 +32,24 @@ export const getCompletedMaterialStockCounts = async (req: Request, res: Respons
 // ==================== 获取指定仓库的可用盘点单（用于月报表期初选择） ====================
 export const getStockCountsByWarehouse = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { warehouse_number } = req.query;
+    const { warehouse_number, factory_id } = req.query;
     if (!warehouse_number) {
       return res.status(400).json({ success: false, message: '请指定仓库' });
     }
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = factory_id ? parseInt(factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? ' AND w.factory_id = :_factoryId' : '';
+    const factoryReps: any = { wn: String(warehouse_number) };
+    if (effectiveFactoryId !== null) factoryReps._factoryId = effectiveFactoryId;
     const [items]: any = await sequelize.query(`
-      SELECT count_number, count_period, warehouse_name, confirmed_date
-      FROM stock_count
-      WHERE warehouse_number = :wn AND status = N'已完成'
-      ORDER BY count_period DESC, confirmed_date DESC
-    `, { replacements: { wn: String(warehouse_number) } });
+      SELECT sc.count_number, sc.count_period, sc.warehouse_name, sc.confirmed_date
+      FROM stock_count sc
+      INNER JOIN warehouse w ON sc.warehouse_number = w.warehouse_number
+      WHERE sc.warehouse_number = :wn AND sc.status = N'已完成'${factoryCond}
+      ORDER BY sc.count_period DESC, sc.confirmed_date DESC
+    `, { replacements: factoryReps });
     res.json(success(items));
   } catch (err) { next(err); }
 };
@@ -46,15 +57,24 @@ export const getStockCountsByWarehouse = async (req: Request, res: Response, nex
 // ==================== 原料仓月度报表 ====================
 export const getMaterialMonthlyReport = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { count_number } = req.query;
+    const { count_number, factory_id } = req.query;
     if (!count_number) {
       return res.status(400).json({ success: false, message: '请选择盘点单' });
     }
 
-    // Step 1: 校验盘点单
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = factory_id ? parseInt(factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+
+    // Step 1: 校验盘点单（含工厂防越权）
+    const factoryJoin = effectiveFactoryId !== null ? ' INNER JOIN warehouse w ON sc.warehouse_number = w.warehouse_number' : '';
+    const factoryCond = effectiveFactoryId !== null ? ' AND w.factory_id = :_factoryId' : '';
+    const factoryReps: any = { count_number };
+    if (effectiveFactoryId !== null) factoryReps._factoryId = effectiveFactoryId;
     const [headers]: any = await sequelize.query(
-      `SELECT count_number, count_period, warehouse_number, warehouse_name, status FROM stock_count WHERE count_number = :count_number`,
-      { replacements: { count_number } }
+      `SELECT sc.count_number, sc.count_period, sc.warehouse_number, sc.warehouse_name, sc.status FROM stock_count sc${factoryJoin} WHERE sc.count_number = :count_number${factoryCond}`,
+      { replacements: factoryReps }
     );
     if (!headers.length) {
       return res.status(404).json({ success: false, message: '盘点单不存在' });
@@ -84,6 +104,9 @@ export const getMaterialMonthlyReport = async (req: Request, res: Response, next
     `, { replacements: { count_number } });
 
     // Step 3: 本月交易汇总（material_inventory_transaction）
+    const txFacCond = effectiveFactoryId !== null ? ' AND t.factory_id = :_factoryId' : '';
+    const txReps: any = { warehouse_number: header.warehouse_number, reportMonth, startDate, nextMonthStart };
+    if (effectiveFactoryId !== null) txReps._factoryId = effectiveFactoryId;
     const [txRows]: any = await sequelize.query(`
       SELECT item_number, MAX(item_name) as item_name, MAX(specifications) as specifications,
         MAX(basic_unit) as basic_unit, MAX(item_type) as item_type,
@@ -98,11 +121,11 @@ export const getMaterialMonthlyReport = async (req: Request, res: Response, next
         SUM(CASE WHEN transaction_type=N'出库' AND source_type IN (N'盘亏调整',N'月末盘亏') THEN quantity ELSE 0 END) as out_shortage,
         SUM(CASE WHEN transaction_type=N'出库' AND source_type NOT IN (N'领料出库',N'倒冲出库',N'委外备料出库',N'盘亏调整',N'月末盘亏') THEN quantity ELSE 0 END) as out_other,
         SUM(CASE WHEN transaction_type=N'出库' THEN quantity ELSE 0 END) as out_total
-      FROM material_inventory_transaction
-      WHERE warehouse_number = :warehouse_number
-        AND (accounting_period = :reportMonth OR (ISNULL(accounting_period, '') = '' AND operation_date >= :startDate AND operation_date < :nextMonthStart))
+      FROM material_inventory_transaction t
+      WHERE t.warehouse_number = :warehouse_number
+        AND (t.accounting_period = :reportMonth OR (ISNULL(t.accounting_period, '') = '' AND t.operation_date >= :startDate AND t.operation_date < :nextMonthStart))${txFacCond}
       GROUP BY item_number
-    `, { replacements: { warehouse_number: header.warehouse_number, reportMonth, startDate, nextMonthStart } });
+    `, { replacements: txReps });
 
     // Step 4: Node.js 层合并
     const map = new Map<string, any>();
@@ -176,18 +199,26 @@ export const getMaterialMonthlyReport = async (req: Request, res: Response, next
 // ==================== 按会计期间生成原料仓月度报表 ====================
 export const getMaterialMonthlyReportByPeriod = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { warehouse_number, accounting_period, count_number: userCountNumber } = req.query;
+    const { warehouse_number, accounting_period, count_number: userCountNumber, factory_id } = req.query;
     if (!warehouse_number || !accounting_period) {
       return res.status(400).json({ success: false, message: '请选择仓库和会计期间' });
     }
 
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = factory_id ? parseInt(factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+
     const ap = String(accounting_period);
     const wn = String(warehouse_number);
 
-    // Step 1: 查询仓库名称
+    // Step 1: 查询仓库名称（含工厂防越权）
+    const factoryWhCond = effectiveFactoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const whReps: any = { wn };
+    if (effectiveFactoryId !== null) whReps._factoryId = effectiveFactoryId;
     const [whRows]: any = await sequelize.query(
-      `SELECT warehouse_name FROM warehouse WHERE warehouse_number = :wn`,
-      { replacements: { wn } }
+      `SELECT warehouse_name FROM warehouse WHERE warehouse_number = :wn${factoryWhCond}`,
+      { replacements: whReps }
     );
     const warehouseName = whRows.length > 0 ? whRows[0].warehouse_name : wn;
 
@@ -199,9 +230,12 @@ export const getMaterialMonthlyReportByPeriod = async (req: Request, res: Respon
 
     if (userCountNumber) {
       // 用户手动选择的盘点单
+      const scFacCond = effectiveFactoryId !== null ? ' AND w.factory_id = :_factoryId' : '';
+      const scReps: any = { cn: String(userCountNumber), wn };
+      if (effectiveFactoryId !== null) scReps._factoryId = effectiveFactoryId;
       const [scRows]: any = await sequelize.query(
-        `SELECT count_number, count_period FROM stock_count WHERE count_number = :cn AND warehouse_number = :wn AND status = N'已完成'`,
-        { replacements: { cn: String(userCountNumber), wn } }
+        `SELECT sc.count_number, sc.count_period FROM stock_count sc INNER JOIN warehouse w ON sc.warehouse_number = w.warehouse_number WHERE sc.count_number = :cn AND sc.warehouse_number = :wn AND sc.status = N'已完成'${scFacCond}`,
+        { replacements: scReps }
       );
       if (scRows.length > 0) {
         countNumber = scRows[0].count_number;
@@ -209,12 +243,15 @@ export const getMaterialMonthlyReportByPeriod = async (req: Request, res: Respon
       }
     } else {
       // 默认取最近的已完成盘点单（count_period < 当前会计期间）
+      const defScFacCond = effectiveFactoryId !== null ? ' AND w.factory_id = :_factoryId' : '';
+      const defScReps: any = { wn, ap };
+      if (effectiveFactoryId !== null) defScReps._factoryId = effectiveFactoryId;
       const [scRows]: any = await sequelize.query(`
-        SELECT TOP 1 count_number, count_period
-        FROM stock_count
-        WHERE warehouse_number = :wn AND status = N'已完成' AND count_period < :ap
-        ORDER BY count_period DESC, confirmed_date DESC
-      `, { replacements: { wn, ap } });
+        SELECT TOP 1 sc.count_number, sc.count_period
+        FROM stock_count sc INNER JOIN warehouse w ON sc.warehouse_number = w.warehouse_number
+        WHERE sc.warehouse_number = :wn AND sc.status = N'已完成' AND sc.count_period < :ap${defScFacCond}
+        ORDER BY sc.count_period DESC, sc.confirmed_date DESC
+      `, { replacements: defScReps });
       if (scRows.length > 0) {
         countNumber = scRows[0].count_number;
         countPeriod = scRows[0].count_period;
@@ -240,6 +277,9 @@ export const getMaterialMonthlyReportByPeriod = async (req: Request, res: Respon
     const ny = apMonth === 12 ? apYear + 1 : apYear;
     const nextMonthStart = `${ny}-${String(nm).padStart(2, '0')}-01`;
 
+    const txFacCond = effectiveFactoryId !== null ? ' AND t.factory_id = :_factoryId' : '';
+    const txReps: any = { wn, ap, startDate, nextMonthStart };
+    if (effectiveFactoryId !== null) txReps._factoryId = effectiveFactoryId;
     const [txRows]: any = await sequelize.query(`
       SELECT item_number, MAX(item_name) as item_name, MAX(specifications) as specifications,
         MAX(basic_unit) as basic_unit, MAX(item_type) as item_type,
@@ -254,11 +294,11 @@ export const getMaterialMonthlyReportByPeriod = async (req: Request, res: Respon
         SUM(CASE WHEN transaction_type=N'出库' AND source_type IN (N'盘亏调整',N'月末盘亏') THEN quantity ELSE 0 END) as out_shortage,
         SUM(CASE WHEN transaction_type=N'出库' AND source_type NOT IN (N'领料出库',N'倒冲出库',N'委外备料出库',N'盘亏调整',N'月末盘亏') THEN quantity ELSE 0 END) as out_other,
         SUM(CASE WHEN transaction_type=N'出库' THEN quantity ELSE 0 END) as out_total
-      FROM material_inventory_transaction
-      WHERE warehouse_number = :wn
-        AND (accounting_period = :ap OR (ISNULL(accounting_period, '') = '' AND operation_date >= :startDate AND operation_date < :nextMonthStart))
+      FROM material_inventory_transaction t
+      WHERE t.warehouse_number = :wn
+        AND (t.accounting_period = :ap OR (ISNULL(t.accounting_period, '') = '' AND t.operation_date >= :startDate AND t.operation_date < :nextMonthStart))${txFacCond}
       GROUP BY item_number
-    `, { replacements: { wn, ap, startDate, nextMonthStart } });
+    `, { replacements: txReps });
 
     // Step 4: 合并
     const map = new Map<string, any>();

@@ -28,7 +28,7 @@ const selectColumns = `
   pe.rubber_compound_number, pe.batch_production_quota, pe.standard_pass_rate
 `;
 
-const joinClause = `FROM mould m LEFT JOIN item_master im ON m.product_item_number = im.item_number LEFT JOIN product_ext pe ON im.item_number = pe.item_number`;
+const joinClause = `FROM mould m LEFT JOIN item_master im ON m.product_item_number = im.item_number LEFT JOIN product_ext pe ON im.item_number = pe.item_number LEFT JOIN factory f ON m.factory_id = f.id`;
 
 export const getMoulds = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -39,9 +39,11 @@ export const getMoulds = async (req: Request, res: Response, next: NextFunction)
     let whereClause = '';
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause = `WHERE m.factory_id = :_factoryId`;
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (search) {
@@ -55,7 +57,7 @@ export const getMoulds = async (req: Request, res: Response, next: NextFunction)
 
     const dataSql = `
       SELECT * FROM (
-        SELECT ${selectColumns}, ROW_NUMBER() OVER (ORDER BY m.item_number) AS _row_num
+        SELECT ${selectColumns}, f.factory_short, ROW_NUMBER() OVER (ORDER BY m.item_number) AS _row_num
         ${joinClause} ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
@@ -129,13 +131,14 @@ export const updateMould = async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    const setClauses = mouldOwnFields.filter(f => f !== 'item_number').map(f => `${f} = :${f}`).join(', ');
+    const setClauses = mouldOwnFields.filter(f => f !== 'item_number').map(f => `${f} = :${f}`).join(', ') + ', factory_id = :factory_id';
     const replacements: any = { id };
     for (const f of mouldOwnFields) {
       if (f !== 'item_number') {
         replacements[f] = body[f] || '';
       }
     }
+    replacements.factory_id = body.factory_id || null;
 
     await sequelize.query(`UPDATE mould SET ${setClauses} WHERE item_number = :id`, { replacements });
 
@@ -158,8 +161,10 @@ export const deleteMould = async (req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    await sequelize.query(`DELETE FROM mould WHERE item_number = :id`, {
-      replacements: { id }
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    await sequelize.query(`DELETE FROM mould WHERE item_number = :id${factoryCond}`, {
+      replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) }
     });
     res.json(success(null, '删除模具成功'));
   } catch (err) {
@@ -173,18 +178,21 @@ export const exportMoulds = async (req: Request, res: Response, next: NextFuncti
     let whereClause = '';
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause = `WHERE m.factory_id = :_factoryId`;
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
     if (search) {
       whereClause = (whereClause ? whereClause + ' AND' : 'WHERE') + ` (m.item_number LIKE :search OR m.item_name LIKE :search OR m.product_item_number LIKE :search OR im.item_name LIKE :search OR m.mfg_bom_number LIKE :search)`;
       replacements.search = `%${search}%`;
     }
-    const sql = `SELECT ${selectColumns} ${joinClause} ${whereClause} ORDER BY m.item_number`;
+    const sql = `SELECT ${selectColumns}, f.factory_short ${joinClause} ${whereClause} ORDER BY m.item_number`;
     const [items]: any = await sequelize.query(sql, { replacements });
 
     const exportFields = [
+      'factory_short',
       'item_number', 'item_name', 'product_item_number', 'product_net_weight',
       'unit_consumption', 'formed_part_number', 'formed_part_specifications', 'formed_part_materia_consumption',
       'formed_parts_number', 'design_cavities_number', 'actual_cavities_number',
@@ -195,6 +203,7 @@ export const exportMoulds = async (req: Request, res: Response, next: NextFuncti
       'rubber_compound_number', 'batch_production_quota', 'standard_pass_rate'
     ];
     const exportHeaders = [
+      '工厂',
       '模具编号', '模具名称', '产品编号', '产品净重',
       '单耗', '成型件编号', '成型件规格', '成型件单耗',
       '成型件数量', '设计模穴数', '实际模穴数',
@@ -226,9 +235,9 @@ export const importMoulds = async (req: Request, res: Response, next: NextFuncti
       try {
         if (!item.item_number) continue;
         const [existing]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM mould WHERE item_number = :item_number`, { replacements: { item_number: item.item_number } });
-        const setClauses = mouldOwnFields.filter(f => f !== 'item_number').map(f => `${f} = :${f}`).join(', ');
+        const setClauses = mouldOwnFields.filter(f => f !== 'item_number').map(f => `${f} = :${f}`).join(', ') + ', factory_id = :factory_id';
         if (existing[0].cnt > 0) {
-          await sequelize.query(`UPDATE mould SET ${setClauses} WHERE item_number = :item_number`, { replacements: item });
+          await sequelize.query(`UPDATE mould SET ${setClauses} WHERE item_number = :item_number`, { replacements: { ...item, factory_id: item.factory_id || null } });
         } else {
           const cols = mouldOwnFields.join(', ') + ', factory_id';
           const vals = mouldOwnFields.map(f => ':' + f).join(', ') + ', :factory_id';

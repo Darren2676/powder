@@ -43,38 +43,43 @@ export const getPurchaseReqs = async (req: Request, res: Response, next: NextFun
     const replacements: any = {};
 
     if (search) {
-      conditions.push(`(purchase_req_number LIKE :search OR requester LIKE :search OR request_department LIKE :search OR source_number LIKE :search OR production_number LIKE :search)`);
+      conditions.push(`(pr.purchase_req_number LIKE :search OR pr.requester LIKE :search OR pr.request_department LIKE :search OR pr.source_number LIKE :search OR pr.production_number LIKE :search)`);
       replacements.search = `%${search}%`;
     }
     if (approval_status) {
-      conditions.push(`approval_status = :approval_status`);
+      conditions.push(`pr.approval_status = :approval_status`);
       replacements.approval_status = approval_status;
     }
     if (order_status) {
-      conditions.push(`order_status = :order_status`);
+      conditions.push(`pr.order_status = :order_status`);
       replacements.order_status = order_status;
     }
 
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
-      conditions.push(`factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      conditions.push(`pr.factory_id = :_factoryId`);
+      replacements._factoryId = effectiveFactoryId;
     }
 
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
     const [countResult]: any = await sequelize.query(
-      `SELECT COUNT(*) as total FROM purchase_req ${whereClause}`, { replacements }
+      `SELECT COUNT(*) as total FROM purchase_req pr ${whereClause}`, { replacements }
     );
     const total = countResult[0].total;
 
     const offset = (page - 1) * limit;
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT purchase_req_number, request_date, request_department, requester, request_reason,
-               source_number, production_number, approval_status, order_status, [condition], remark, creation_date, creation_man,
-               ROW_NUMBER() OVER (ORDER BY creation_date DESC, purchase_req_number DESC) AS _row_num
-        FROM purchase_req ${whereClause}
+        SELECT pr.purchase_req_number, pr.request_date, pr.request_department, pr.requester, pr.request_reason,
+               pr.source_number, pr.production_number, pr.approval_status, pr.order_status, pr.[condition], pr.remark, pr.creation_date, pr.creation_man,
+               f.factory_name, f.factory_short,
+               ROW_NUMBER() OVER (ORDER BY pr.creation_date DESC, pr.purchase_req_number DESC) AS _row_num
+        FROM purchase_req pr
+        LEFT JOIN factory f ON pr.factory_id = f.id
+        ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
@@ -399,6 +404,8 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
     const { id } = req.params;
     const b = req.body;
     const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     if (!b.supplier_number) { res.status(400).json({ success: false, message: '供应商不能为空' }); return; }
     if (!b.detail_ids || !b.detail_ids.length) { res.status(400).json({ success: false, message: '请选择要转单的明细行' }); return; }
 
@@ -658,8 +665,8 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
       const anyDone = allDetails.some((r: any) => r.status !== ORDER_STATUS.UNEXECUTED);
       const newOrderStatus = allDone ? '已转单' : (anyDone ? '部分转单' : ORDER_STATUS.UNEXECUTED);
       await sequelize.query(
-        `UPDATE purchase_req SET order_status = :newOrderStatus WHERE purchase_req_number = :id`,
-        { replacements: { newOrderStatus, id }, transaction }
+        `UPDATE purchase_req SET order_status = :newOrderStatus WHERE purchase_req_number = :id${factoryCond}`,
+        { replacements: { newOrderStatus, id, ...factoryReps }, transaction }
       );
 
       await transaction.commit();
@@ -683,9 +690,11 @@ export const exportPurchaseReqs = async (req: Request, res: Response, next: Next
       replacements.search = `%${search}%`;
     }
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += `${whereClause ? ' AND' : ' WHERE'} h.factory_id = :_factoryId`;
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
     const [rows]: any = await sequelize.query(
       `SELECT h.purchase_req_number, h.request_date, h.request_department, h.requester, h.request_reason,
@@ -738,9 +747,11 @@ export const getPurchaseReqDetailsPage = async (req: Request, res: Response, nex
     }
 
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += `${whereClause ? ' AND' : ' WHERE'} h.factory_id = :_factoryId`;
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     const [countResult]: any = await sequelize.query(
@@ -758,9 +769,11 @@ export const getPurchaseReqDetailsPage = async (req: Request, res: Response, nex
                d.status, d.remark,
                h.request_date, h.requester, h.request_department, h.request_reason,
                h.source_number, h.production_number, h.approval_status, h.order_status,
+               f.factory_name, f.factory_short,
                ROW_NUMBER() OVER (ORDER BY h.purchase_req_number DESC, d.line_number) AS _row_num
         FROM purchase_req_detail d
         INNER JOIN purchase_req h ON h.purchase_req_number = d.purchase_req_number
+        LEFT JOIN factory f ON h.factory_id = f.id
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });

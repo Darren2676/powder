@@ -29,9 +29,11 @@ export const getKanbanOrders = async (req: Request, res: Response, next: NextFun
     }
 
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       conditions.push(`po.factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`;
@@ -49,8 +51,12 @@ export const getKanbanOrders = async (req: Request, res: Response, next: NextFun
                po.basic_unit, po.planned_quantity, po.plan_status,
                po.production_date, po.equipment_name,
                im.item_properties,
+               ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name, po.factory_id,
                ROW_NUMBER() OVER (ORDER BY po.production_date DESC, po.production_order_number DESC) AS _row_num
-        FROM production_order po LEFT JOIN item_master im ON po.item_number = im.item_number ${whereClause}
+        FROM production_order po
+        LEFT JOIN item_master im ON po.item_number = im.item_number
+        LEFT JOIN factory f ON po.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
 
@@ -106,14 +112,22 @@ export const getKanbanOrderFlow = async (req: Request, res: Response, next: Next
     const orderNo = req.params.orderNo;
 
     // 1. 生产单基本信息
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const flowReps: any = { orderNo };
+    if (_factoryId !== null) flowReps._factoryId = _factoryId;
+
     const [orderRows]: any = await sequelize.query(
-      `SELECT production_order_number, item_number, item_name, specifications, basic_unit,
-              planned_quantity, plan_status, approval_status, production_date,
-              equipment_name, equipment_number, mould_number,
-              ISNULL(inbound_quantity, 0) as inbound_quantity,
-              ISNULL(inbound_status, N'未入库') as inbound_status
-       FROM production_order WHERE production_order_number = :orderNo`,
-      { replacements: { orderNo } }
+      `SELECT po.production_order_number, po.item_number, po.item_name, po.specifications, po.basic_unit,
+              po.planned_quantity, po.plan_status, po.approval_status, po.production_date,
+              po.equipment_name, po.equipment_number, po.mould_number,
+              ISNULL(po.inbound_quantity, 0) as inbound_quantity,
+              ISNULL(po.inbound_status, N'未入库') as inbound_status,
+              ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name, po.factory_id
+       FROM production_order po
+       LEFT JOIN factory f ON po.factory_id = f.id
+       WHERE po.production_order_number = :orderNo${factoryCond}`,
+      { replacements: flowReps }
     );
 
     if (orderRows.length === 0) {
@@ -213,6 +227,9 @@ export const getKanbanOrderFlow = async (req: Request, res: Response, next: Next
         equipment_name: orderInfo.equipment_name,
         inbound_quantity: parseFloat(orderInfo.inbound_quantity) || 0,
         inbound_status: orderInfo.inbound_status,
+        factory_short: orderInfo.factory_short,
+        factory_name: orderInfo.factory_name,
+        factory_id: orderInfo.factory_id,
         step_count: processFlow.length,
         completed_steps: processFlow.filter(p => p.task_status === '已完成' || p.task_status === '已关闭').length,
         current_step_index: currentStepIndex

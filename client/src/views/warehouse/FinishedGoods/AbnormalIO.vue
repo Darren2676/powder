@@ -11,6 +11,7 @@ import {
 } from '@/api/warehouse/abnormalIO'
 import { getWarehouseOptions } from '@/api/warehouse/finishedGoods'
 import { getItemOptions } from '@/api/warehouse/materialWarehouse'
+import { getFactories } from '@/api/system/factory'
 import { useModalDrag } from '@/composables/useModalDrag'
 import { useOpenAccountingPeriods } from '@/composables/useOpenAccountingPeriods'
 import dayjs from 'dayjs'
@@ -25,6 +26,14 @@ const dataSource = ref<any[]>([])
 const searchText = ref('')
 const filterType = ref('')
 const filterStatus = ref('')
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 const warehouseOptions = ref<any[]>([])
 
 const typeOptions = ['退货入库', '报废出库', '调拨出入库', '盘盈盘亏']
@@ -92,7 +101,8 @@ const fetchData = async () => {
       limit: pagination.pageSize,
       search: searchText.value,
       type: filterType.value,
-      status: filterStatus.value
+      status: filterStatus.value,
+      factory_id: factoryFilter.value || undefined
     })
     if (res?.success) {
       dataSource.value = res.data.items || []
@@ -475,6 +485,7 @@ const handleConfirmAction = async () => {
 onMounted(() => {
   fetchOpenPeriods()
   fetchWarehouseOptions()
+  loadFactories()
   fetchData()
 })
 </script>
@@ -485,6 +496,17 @@ onMounted(() => {
     <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; overflow-x: auto">
       <span style="font-size: 18px; font-weight: 600; white-space: nowrap; flex-shrink: 0">其他出入库</span>
       <div style="display: flex; gap: 8px; align-items: center; flex-wrap: nowrap">
+        <a-select
+          v-model:value="factoryFilter"
+          placeholder="选择工厂"
+          style="width: 130px"
+          allow-clear
+          @change="handleSearch"
+        >
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">
+            {{ f.factory_short || f.factory_name }}
+          </a-select-option>
+        </a-select>
         <a-input-search
           v-model:value="searchText"
           placeholder="搜索单号/客户/仓库/原因"

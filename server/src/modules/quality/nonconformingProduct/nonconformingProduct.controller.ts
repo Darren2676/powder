@@ -176,26 +176,30 @@ export const getNonconformingProducts = async (req: Request, res: Response, next
     let whereClause = 'WHERE 1=1';
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
-      whereClause += ` AND factory_id = :_factoryId`;
-      replacements._factoryId = _factoryId;
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ` AND np.factory_id = :_factoryId`;
+      replacements._factoryId = effectiveFactoryId;
     }
 
-    if (sourceType) { whereClause += ` AND source_type = :sourceType`; replacements.sourceType = sourceType; }
-    if (handlingStatus) { whereClause += ` AND handling_status = :handlingStatus`; replacements.handlingStatus = handlingStatus; }
+    if (sourceType) { whereClause += ` AND np.source_type = :sourceType`; replacements.sourceType = sourceType; }
+    if (handlingStatus) { whereClause += ` AND np.handling_status = :handlingStatus`; replacements.handlingStatus = handlingStatus; }
     if (search) {
-      whereClause += ` AND (nonconforming_number LIKE :search OR source_number LIKE :search OR item_number LIKE :search OR item_name LIKE :search)`;
+      whereClause += ` AND (np.nonconforming_number LIKE :search OR np.source_number LIKE :search OR np.item_number LIKE :search OR np.item_name LIKE :search)`;
       replacements.search = `%${search}%`;
     }
 
-    const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM nonconforming_product ${whereClause}`, { replacements });
+    const [countResult]: any = await sequelize.query(`SELECT COUNT(*) as total FROM nonconforming_product np ${whereClause}`, { replacements });
     const total = countResult[0].total;
     const offset = (page - 1) * limit;
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY creation_date DESC) AS _row_num
-        FROM nonconforming_product ${whereClause}
+        SELECT np.*, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY np.creation_date DESC) AS _row_num
+        FROM nonconforming_product np
+        LEFT JOIN factory f ON np.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
 
@@ -205,10 +209,10 @@ export const getNonconformingProducts = async (req: Request, res: Response, next
     const [stats]: any = await sequelize.query(`
       SELECT
         COUNT(*) AS total_count,
-        ISNULL(SUM(CASE WHEN handling_status = N'待处理' THEN 1 ELSE 0 END), 0) AS pending_count,
-        ISNULL(SUM(CASE WHEN handling_status = N'已完成' THEN 1 ELSE 0 END), 0) AS completed_count,
-        ISNULL(SUM(unqualified_quantity), 0) AS total_unqualified
-      FROM nonconforming_product ${whereClause}
+        ISNULL(SUM(CASE WHEN np.handling_status = N'待处理' THEN 1 ELSE 0 END), 0) AS pending_count,
+        ISNULL(SUM(CASE WHEN np.handling_status = N'已完成' THEN 1 ELSE 0 END), 0) AS completed_count,
+        ISNULL(SUM(np.unqualified_quantity), 0) AS total_unqualified
+      FROM nonconforming_product np ${whereClause}
     `, { replacements });
 
     res.json(success({
@@ -1213,12 +1217,21 @@ export const cancelHandleNonconforming = async (req: Request, res: Response, nex
 };
 
 // ==================== 导出 ====================
-const exportFields = ['nonconforming_number', 'source_type', 'source_number', 'item_number', 'item_name', 'specifications', 'unqualified_quantity', 'defect_class_name', 'defect_name', 'defect_reason_name', 'handling_method', 'handling_status', 'handling_date', 'operator'];
-const exportHeaders = ['不合格品单号', '来源类型', '检验单号', '物料编号', '物料名称', '规格型号', '不合格数量', '缺陷分类', '缺陷名称', '缺陷原因', '处理方式', '处理状态', '处理日期', '处理人'];
+const exportFields = ['factory_short', 'nonconforming_number', 'source_type', 'source_number', 'item_number', 'item_name', 'specifications', 'unqualified_quantity', 'defect_class_name', 'defect_name', 'defect_reason_name', 'handling_method', 'handling_status', 'handling_date', 'operator'];
+const exportHeaders = ['工厂', '不合格品单号', '来源类型', '检验单号', '物料编号', '物料名称', '规格型号', '不合格数量', '缺陷分类', '缺陷名称', '缺陷原因', '处理方式', '处理状态', '处理日期', '处理人'];
 
 export const exportNonconformingProducts = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [items]: any = await sequelize.query(`SELECT * FROM nonconforming_product ORDER BY creation_date DESC`);
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    let factoryWhere = '';
+    const factoryReps: any = {};
+    if (effectiveFactoryId !== null) {
+      factoryWhere = 'WHERE np.factory_id = :_factoryId';
+      factoryReps._factoryId = effectiveFactoryId;
+    }
+    const [items]: any = await sequelize.query(`SELECT np.*, f.factory_name, f.factory_short FROM nonconforming_product np LEFT JOIN factory f ON np.factory_id = f.id ${factoryWhere} ORDER BY np.creation_date DESC`, { replacements: factoryReps });
     exportToExcel(items, exportFields, exportHeaders, 'nonconforming_products', res);
   } catch (err) { next(err); }
 };

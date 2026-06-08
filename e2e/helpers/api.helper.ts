@@ -70,12 +70,14 @@ export async function disposeApiContext() {
  *   - 降级直接 SQL 更新 approval_status 为已审批
  *   - 这在 E2E 场景下用于跳过复杂的 workflow 交互，下游业务逻辑只看 approval_status
  */
-export async function submitAndApprove(module: string, recordId: string): Promise<void> {
+export async function submitAndApprove(module: string, recordId: string, factoryId?: number): Promise<void> {
   const ctx = await getApiContext();
+  const headers: any = factoryId != null ? { 'x-factory-id': String(factoryId) } : {};
 
   // 1. 先尝试提交审批（若已在流程中会返 400，忽略）
   const submitRes = await ctx.post(`${API_BASE}/approval/submit`, {
     data: { module, record_id: recordId, remark: 'E2E自动提交' },
+    headers,
   });
   if (!submitRes.ok() && submitRes.status() !== 400) {
     throw new Error(`[${module}] 提交审批失败 ${submitRes.status()}: ${await submitRes.text()}`);
@@ -84,6 +86,7 @@ export async function submitAndApprove(module: string, recordId: string): Promis
   // 2. 尝试走 /approval/approve 完成审批
   const approveRes = await ctx.post(`${API_BASE}/approval/approve`, {
     data: { module, record_id: recordId, remark: 'E2E自动审批' },
+    headers,
   });
   if (approveRes.ok()) {
     console.log(`[${module}] 审批成功，回调已触发`);
@@ -121,10 +124,12 @@ async function forceApproveBySql(module: string, recordId: string): Promise<void
 }
 
 /** 反审（用于清理时需要把已审批单据改回草稿） */
-export async function reverseApproval(module: string, recordId: string): Promise<void> {
+export async function reverseApproval(module: string, recordId: string, factoryId?: number): Promise<void> {
   const ctx = await getApiContext();
+  const headers: any = factoryId != null ? { 'x-factory-id': String(factoryId) } : {};
   const res = await ctx.post(`${API_BASE}/approval/reverse`, {
     data: { module, record_id: recordId, remark: 'E2E自动反审' },
+    headers,
   });
   if (!res.ok()) {
     console.warn(`[${module}] 反审失败 ${res.status()}: ${await res.text()}`);

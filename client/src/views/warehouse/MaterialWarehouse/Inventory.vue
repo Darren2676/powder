@@ -21,6 +21,11 @@
           </a-radio-group>
         </a-col>
         <a-col :span="4">
+          <a-select v-model:value="factoryFilter" placeholder="选择工厂" allow-clear size="small" style="width:100%;" @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
+        </a-col>
+        <a-col :span="4">
           <a-select v-model:value="filterWarehouse" placeholder="全部仓库" allow-clear size="small" style="width:100%;" @change="handleSearch">
             <a-select-option v-for="w in warehouseOptions" :key="w.warehouse_number" :value="w.warehouse_number">{{ w.warehouse_name }}</a-select-option>
           </a-select>
@@ -86,6 +91,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { WarningOutlined } from '@ant-design/icons-vue'
 import { getInventoryList, getWarehouseOptions, updateSafetyStock, adjustInventory } from '@/api/warehouse/materialWarehouse'
+import { getFactories } from '@/api/system/factory'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -94,6 +100,14 @@ const summary = ref<any>({})
 const searchText = ref('')
 const filterType = ref('')
 const filterWarehouse = ref<string | undefined>(undefined)
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 const warehouseOptions = ref<any[]>([])
 
 const pagination = reactive({ current: 1, pageSize: 10, total: 0, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` })
@@ -118,7 +132,8 @@ const fetchData = async () => {
     const res: any = await getInventoryList({
       page: pagination.current, limit: pagination.pageSize,
       search: searchText.value, warehouse_number: filterWarehouse.value || '',
-      item_type: filterType.value
+      item_type: filterType.value,
+      factory_id: factoryFilter.value || undefined
     })
     dataSource.value = res?.data?.items || []
     pagination.total = res?.data?.total || 0
@@ -176,6 +191,7 @@ onMounted(async () => {
     const res: any = await getWarehouseOptions()
     warehouseOptions.value = res?.data || []
   } catch { /* ignore */ }
+  loadFactories()
   fetchData()
 })
 </script>

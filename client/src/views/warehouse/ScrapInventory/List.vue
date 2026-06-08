@@ -3,6 +3,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { getScrapInventory, getScrapBatchDetail } from '@/api/warehouse/scrapDisposal'
+import { getFactories } from '@/api/system/factory'
 import { useModalDrag } from '@/composables/useModalDrag'
 import dayjs from 'dayjs'
 
@@ -17,6 +18,8 @@ const formatDateTime = (date: any) => {
 const loading = ref(false)
 const dataSource = ref<any[]>([])
 const searchText = ref('')
+const filterFactory = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
 const warehouse = ref<any>(null)
 
 const pagination = reactive({
@@ -60,7 +63,8 @@ const fetchInventory = async () => {
     const res: any = await getScrapInventory({
       page: pagination.current,
       limit: pagination.pageSize,
-      search: searchText.value
+      search: searchText.value,
+      factory_id: filterFactory.value || undefined
     })
     if (res?.success) {
       dataSource.value = res.data.items || []
@@ -86,9 +90,16 @@ const handleSearch = () => {
 }
 
 const handleReset = () => {
-  searchText.value = ''
-  pagination.current = 1
-  fetchInventory()
+  searchText.value = ''; filterFactory.value = undefined
+  pagination.current = 1; fetchInventory()
+}
+
+// 加载工厂列表
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data?.items || [] }
+  } catch (e) { /* ignore */ }
 }
 
 // ==================== 批次明细弹窗 ====================
@@ -134,7 +145,7 @@ const showBatchDetail = async (record: any) => {
 }
 
 onMounted(() => {
-  fetchInventory()
+  fetchInventory(); loadFactories()
 })
 </script>
 
@@ -149,6 +160,9 @@ onMounted(() => {
           </a-input>
           <a-button @click="handleSearch"><SearchOutlined /> 查询</a-button>
           <a-button @click="handleReset"><ReloadOutlined /> 重置</a-button>
+          <a-select v-model:value="filterFactory" placeholder="工厂" style="width: 120px" allowClear @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
           <a-tag v-if="warehouse" color="blue">{{ warehouse.warehouse_name }} ({{ warehouse.warehouse_number }})</a-tag>
         </div>
       </div>

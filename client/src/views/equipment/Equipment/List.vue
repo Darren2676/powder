@@ -8,6 +8,7 @@ import {
 } from '@ant-design/icons-vue'
 import { getEquipments, createEquipment, updateEquipment, deleteEquipment, exportEquipments, importEquipments, approveEquipment, withdrawEquipment } from '@/api/equipment/equipment'
 import { updateEquipmentStatus, updateEquipmentMaintenanceSettings } from '@/api/equipment/equipmentLife'
+import { getFactories } from '@/api/system/factory'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
 import { useColumnPreference } from '@/composables/useColumnPreference'
@@ -31,9 +32,30 @@ interface Equipment {
   last_maintenance_date?: string | null
   next_maintenance_date?: string | null
   total_running_hours?: number
+  approval_status?: string
+  factory_id?: number | null
+  factory_short?: string
 }
 
-const { loading, dataSource, searchText, selectedRowKeys, pagination, rowSelection, fetchData, handleTableChange, handleSearch, handleReset } = useTableList<Equipment>(getEquipments)
+// 工厂筛选
+const filterFactoryId = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
+
+// 包装 getEquipments，自动注入 factory_id
+const getEquipmentsWrapper = (params: any) => getEquipments({ ...params, factory_id: filterFactoryId.value })
+
+const { loading, dataSource, searchText, selectedRowKeys, pagination, rowSelection, fetchData, handleTableChange, handleSearch, handleReset: _handleReset } = useTableList<Equipment>(getEquipmentsWrapper)
+
+const handleReset = () => {
+  filterFactoryId.value = undefined
+  _handleReset()
+}
 
 const emptyForm = (): Equipment => ({
   equipment_number: '',
@@ -42,7 +64,8 @@ const emptyForm = (): Equipment => ({
   equipment_type: '',
   equipment_model: '',
   manufacture_date: null,
-  remark: ''
+  remark: '',
+  factory_id: null
 })
 
 // 编辑弹窗
@@ -163,6 +186,7 @@ const handleEdit = (record: Equipment) => {
   }
   originalEditEquipmentNumber.value = record.equipment_number
   Object.assign(editForm, record)
+  editForm.factory_id = (record as any).factory_id ?? null
   editRecordDate.value = record.record_date ? dayjs(record.record_date) : null
   editManufactureDate.value = record.manufacture_date ? dayjs(record.manufacture_date) : null
   editModalVisible.value = true
@@ -224,7 +248,7 @@ const fileInputRef = ref<HTMLInputElement>()
 
 const handleExport = async () => {
   try {
-    const res = await exportEquipments(searchText.value || undefined)
+    const res = await exportEquipments(searchText.value || undefined, filterFactoryId.value)
     const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
@@ -340,6 +364,7 @@ const handleMaintenanceSettingsSubmit = async () => {
 onMounted(() => {
   loadColumnPreference()
   fetchData()
+  loadFactories()
 })
 </script>
 
@@ -356,6 +381,12 @@ onMounted(() => {
             @search="handleSearch"
             @pressEnter="handleSearch"
           />
+          <a-select
+            v-model:value="filterFactoryId" placeholder="全部工厂" allow-clear
+            style="width:120px" @change="handleSearch" v-if="factoryList.length > 0"
+          >
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
           <a-button @click="handleReset">
             <template #icon><ReloadOutlined /></template>
             重置
@@ -554,6 +585,11 @@ onMounted(() => {
         <a-form-item label="备注">
           <a-textarea v-model:value="editForm.remark" :rows="3" />
         </a-form-item>
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="editForm.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
+        </a-form-item>
       </a-form>
     </a-modal>
 
@@ -586,6 +622,11 @@ onMounted(() => {
         </a-form-item>
         <a-form-item label="备注">
           <a-textarea v-model:value="createForm.remark" :rows="3" placeholder="请输入备注" />
+        </a-form-item>
+        <a-form-item label="所属工厂">
+          <a-select v-model:value="createForm.factory_id" placeholder="请选择" allow-clear>
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
         </a-form-item>
       </a-form>
     </a-modal>

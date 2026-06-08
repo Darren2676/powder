@@ -5,6 +5,7 @@ import { PlusOutlined, ReloadOutlined, DownloadOutlined, UploadOutlined, Exclama
 import { getPurchasePriceLists, getPurchasePriceListDetail, createPurchasePriceList, updatePurchasePriceList, deletePurchasePriceList, exportPurchasePriceLists, importPurchasePriceList, downloadImportTemplate } from '@/api/purchasing/purchasePrice'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getSuppliers } from '@/api/master-data/supplier'
+import { getFactories } from '@/api/system/factory'
 import { submitForApproval, approveRecord, reverseApproval } from '@/api/system/approval'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -28,6 +29,15 @@ const detailRows = ref<any[]>([])
 
 const itemOptions = ref<any[]>([])
 const supplierOptions = ref<any[]>([])
+const factoryList = ref<any[]>([])
+const filterFactory = ref<number | undefined>(undefined)
+
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 // 弹窗拖拽
 const { modalStyle, onDragStart, resetDrag } = useModalDrag()
@@ -86,7 +96,8 @@ const fetchList = async () => {
   try {
     const res: any = await getPurchasePriceLists({
       page: pagination.current, limit: pagination.pageSize,
-      search: searchText.value, approval_status: filterApproval.value
+      search: searchText.value, approval_status: filterApproval.value,
+      factory_id: filterFactory.value
     })
     dataList.value = res.data?.items || []
     pagination.total = res.data?.pagination?.total || 0
@@ -103,7 +114,7 @@ const loadDropdowns = async () => {
   } catch { /* ignore */ }
 }
 
-onMounted(() => { loadColumnPreference(); fetchList(); loadDropdowns() })
+onMounted(() => { loadColumnPreference(); fetchList(); loadDropdowns(); loadFactories() })
 
 
 
@@ -260,7 +271,7 @@ const handleWithdraw = async (record: any) => {
 
 // ==================== 导出 ====================
 const handleExport = async () => {
-  const res: any = await exportPurchasePriceLists(searchText.value)
+  const res: any = await exportPurchasePriceLists(searchText.value, filterFactory.value)
   const url = window.URL.createObjectURL(new Blob([res.data]))
   const link = document.createElement('a')
   link.href = url
@@ -304,6 +315,9 @@ const handleImportFile = async (e: Event) => {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h2 style="margin:0">采购价目表</h2>
       <div style="display:flex;gap:8px;align-items:center">
+        <a-select v-model:value="filterFactory" placeholder="工厂" style="width:120px" allow-clear @change="handleSearch">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+        </a-select>
         <a-input-search v-model:value="searchText" placeholder="搜索编号/名称/供应商" style="width:260px" @search="handleSearch" allow-clear />
         <a-select v-model:value="filterApproval" placeholder="审批状态" style="width:120px" allow-clear @change="handleSearch">
           <a-select-option value="草稿">草稿</a-select-option>

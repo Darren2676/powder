@@ -7,6 +7,7 @@ import { getItems } from '@/api/master-data/itemMaster'
 import { getProcedures } from '@/api/master-data/procedure'
 import { getEquipments } from '@/api/equipment/equipment'
 import { getEmployees } from '@/api/master-data/employee'
+import { getFactories } from '@/api/system/factory'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval } from '@/api/system/approval'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -29,6 +30,15 @@ const itemOptions = ref<any[]>([])
 const procedureOptions = ref<any[]>([])
 const equipmentOptions = ref<any[]>([])
 const employeeOptions = ref<any[]>([])
+const factoryList = ref<any[]>([])
+const filterFactory = ref<number | undefined>(undefined)
+
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 const importFileRef = ref<HTMLInputElement | null>(null)
 const selectedRowKeys = ref<string[]>([])
@@ -48,6 +58,7 @@ const rowSelection = computed(() => ({
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getPieceRatePrices)
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '编号', dataIndex: 'price_list_number', key: 'price_list_number', width: 180, resizable: true },
   { title: '名称', dataIndex: 'price_list_name', key: 'price_list_name', width: 160, resizable: true },
   { title: '生效日期', dataIndex: 'effective_date', key: 'effective_date', width: 110, resizable: true },
@@ -107,7 +118,8 @@ const fetchList = async () => {
   try {
     const res: any = await getPieceRatePrices({
       page: pagination.current, limit: pagination.pageSize,
-      search: searchText.value, approval_status: filterApproval.value
+      search: searchText.value, approval_status: filterApproval.value,
+      factory_id: filterFactory.value
     })
     dataList.value = res.data?.items || []
     pagination.total = res.data?.pagination?.total || 0
@@ -127,7 +139,7 @@ const loadDropdowns = async () => {
   } catch { /* ignore */ }
 }
 
-onMounted(() => { loadColumnPreference(); fetchList(); loadDropdowns() })
+onMounted(() => { loadColumnPreference(); fetchList(); loadDropdowns(); loadFactories() })
 
 // ==================== 刷新 ====================
 const handleRefresh = () => { fetchList() }
@@ -290,7 +302,7 @@ const handleReverse = async (record: any) => {
 
 // ==================== 导出 ====================
 const handleExport = async () => {
-  const res: any = await exportPieceRatePrices(searchText.value, filterApproval.value)
+  const res: any = await exportPieceRatePrices(searchText.value, filterApproval.value, filterFactory.value)
   const url = window.URL.createObjectURL(new Blob([res.data]))
   const link = document.createElement('a')
   link.href = url
@@ -359,6 +371,9 @@ const handleImportFile = async (e: Event) => {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h2 style="margin:0">计件单价管理</h2>
       <div style="display:flex;gap:8px;align-items:center">
+        <a-select v-model:value="filterFactory" placeholder="工厂" style="width:120px" allow-clear @change="handleSearch">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+        </a-select>
         <a-input-search v-model:value="searchText" placeholder="搜索编号/名称" style="width:260px" @search="handleSearch" allow-clear />
         <a-select v-model:value="filterApproval" placeholder="审批状态" style="width:120px" allow-clear @change="handleSearch">
           <a-select-option value="草稿">草稿</a-select-option>

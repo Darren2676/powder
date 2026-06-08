@@ -3,6 +3,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { SearchOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getTransactionList } from '@/api/warehouse/finishedGoods'
+import { getFactories } from '@/api/system/factory'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import dayjs from 'dayjs'
@@ -13,6 +14,14 @@ const searchText = ref('')
 const typeFilter = ref('')
 const sourceFilter = ref('')
 const statusFilter = ref('')
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 
 const pagination = reactive({
   current: 1,
@@ -25,6 +34,8 @@ const pagination = reactive({
 })
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true,
+    customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '流水编号', dataIndex: 'transaction_number', key: 'transaction_number', width: 170, resizable: true },
   { title: '类型', dataIndex: 'transaction_type', key: 'transaction_type', width: 80, resizable: true },
   { title: '来源类型', dataIndex: 'source_type', key: 'source_type', width: 100, resizable: true },
@@ -68,7 +79,8 @@ const fetchData = async () => {
       search: searchText.value,
       transaction_type: typeFilter.value,
       source_type: sourceFilter.value,
-      status: statusFilter.value
+      status: statusFilter.value,
+      factory_id: factoryFilter.value || undefined
     })
     if (res?.success) {
       dataSource.value = res.data.items || []
@@ -94,6 +106,7 @@ const handleSearch = () => {
 
 onMounted(async () => {
   await loadColumnPreference()
+  loadFactories()
   fetchData()
 })
 </script>
@@ -103,6 +116,17 @@ onMounted(async () => {
     <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; overflow-x: auto">
       <span style="font-size: 18px; font-weight: 600; white-space: nowrap; flex-shrink: 0">库存流水记录</span>
       <div style="display: flex; gap: 8px; align-items: center; flex-wrap: nowrap">
+        <a-select
+          v-model:value="factoryFilter"
+          placeholder="选择工厂"
+          style="width: 130px"
+          allow-clear
+          @change="handleSearch"
+        >
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">
+            {{ f.factory_short || f.factory_name }}
+          </a-select-option>
+        </a-select>
         <a-input-search
           v-model:value="searchText"
           placeholder="搜索流水号/来源单号/物料编号/名称"

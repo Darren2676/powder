@@ -6,6 +6,7 @@ import {
   ApartmentOutlined, CheckCircleOutlined
 } from '@ant-design/icons-vue'
 import { getPlansForMrp, runMRP, getMRPRunDetail, executeMRP } from '@/api/planning/mrp'
+import { getFactories } from '@/api/system/factory'
 
 // ==================== State ====================
 const loading = ref(false)
@@ -15,6 +16,18 @@ const mrpRunning = ref(false)
 const mrpExecuting = ref(false)
 
 const filterForm = reactive({ search: '', start_date: '', end_date: '' })
+
+// 工厂筛选
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) {
+      factoryList.value = res.data.items || []
+    }
+  } catch (e) { /* ignore */ }
+}
 
 // MRP 结果
 const mrpResult = ref<any>(null)
@@ -30,6 +43,7 @@ const selectedDualKeys = ref<number[]>([])
 // ==================== 计划列表 ====================
 const planColumns = [
   { title: '计划编号', dataIndex: 'production_number', key: 'production_number', width: 140 },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 130 },
   { title: '产品名称', dataIndex: 'item_name', key: 'item_name', width: 150 },
   { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 120, ellipsis: true },
@@ -86,7 +100,10 @@ const summary = computed(() => {
 const loadPlans = async () => {
   loading.value = true
   try {
-    const res: any = await getPlansForMrp(filterForm)
+    const res: any = await getPlansForMrp({
+      ...filterForm,
+      factory_id: factoryFilter.value || undefined
+    })
     planList.value = res.data || []
   } catch { message.error('加载计划列表失败') }
   finally { loading.value = false }
@@ -254,6 +271,7 @@ const formatDate = (val: any) => {
 
 // 初始加载
 loadPlans()
+loadFactories()
 </script>
 
 <template>
@@ -283,9 +301,14 @@ loadPlans()
           <a-date-picker v-model:value="filterForm.end_date" placeholder="计划完成截止" style="width: 100%" valueFormat="YYYY-MM-DD" />
         </a-col>
         <a-col :span="4">
+          <a-select v-model:value="factoryFilter" placeholder="工厂" allow-clear style="width: 100%" @change="loadPlans">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
+        </a-col>
+        <a-col :span="4">
           <a-space>
             <a-button type="primary" @click="loadPlans" :loading="loading"><SearchOutlined /> 查询</a-button>
-            <a-button @click="() => { filterForm.search = ''; filterForm.start_date = ''; filterForm.end_date = ''; loadPlans() }"><ReloadOutlined /> 重置</a-button>
+            <a-button @click="() => { filterForm.search = ''; filterForm.start_date = ''; filterForm.end_date = ''; factoryFilter = undefined; loadPlans() }"><ReloadOutlined /> 重置</a-button>
           </a-space>
         </a-col>
         <a-col :span="6" style="text-align: right">
@@ -299,7 +322,7 @@ loadPlans()
         row-key="production_number"
         :loading="loading"
         size="small"
-        :scroll="{ x: 900, y: 240 }"
+        :scroll="{ x: 1000, y: 240 }"
         :pagination="false"
       >
         <template #bodyCell="{ column, record }">

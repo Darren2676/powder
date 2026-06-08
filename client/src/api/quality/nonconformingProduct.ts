@@ -12,5 +12,5 @@ export const handleNonconforming = (id: string, data: any) =>
 export const cancelHandleNonconforming = (id: string) =>
   request.put(`/quality/nonconforming-products/${encodeURIComponent(id)}/cancel-handle`)
 
-export const exportNonconformingProducts = () =>
-  request.get('/quality/nonconforming-products/export', { responseType: 'blob' })
+export const exportNonconformingProducts = (params?: any) =>
+  request.get('/quality/nonconforming-products/export', { params, responseType: 'blob' })

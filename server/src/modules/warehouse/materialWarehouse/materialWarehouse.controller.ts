@@ -27,37 +27,50 @@ export const getInventoryList = async (req: Request, res: Response, next: NextFu
     const replacements: any = { offset, offsetEnd };
 
     if (search) {
-      whereClause += ` AND (item_number LIKE :search OR item_name LIKE :search OR specifications LIKE :search)`;
+      whereClause += ` AND (mi.item_number LIKE :search OR mi.item_name LIKE :search OR mi.specifications LIKE :search)`;
       replacements.search = `%${search}%`;
     }
     if (warehouse_number) {
-      whereClause += ` AND warehouse_number = :warehouse_number`;
+      whereClause += ` AND mi.warehouse_number = :warehouse_number`;
       replacements.warehouse_number = warehouse_number;
     }
     if (item_type) {
-      whereClause += ` AND item_type = :item_type`;
+      whereClause += ` AND mi.item_type = :item_type`;
       replacements.item_type = item_type;
     }
 
+    // 多工厂数据隔离过滤（通过仓库关联工厂）
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ' AND w.factory_id = :_factoryId';
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
-      `SELECT COUNT(*) as total FROM material_inventory ${whereClause}`, { replacements }
+      `SELECT COUNT(*) as total FROM material_inventory mi LEFT JOIN warehouse w ON mi.warehouse_number = w.warehouse_number ${whereClause}`, { replacements }
     );
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT *,
-               CASE WHEN safety_stock_quantity > 0 AND quantity < safety_stock_quantity THEN 1 ELSE 0 END as is_below_safety,
-               ROW_NUMBER() OVER (ORDER BY item_number, warehouse_number) AS _row_num
-        FROM material_inventory ${whereClause}
+        SELECT mi.*, ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name,
+               CASE WHEN mi.safety_stock_quantity > 0 AND mi.quantity < mi.safety_stock_quantity THEN 1 ELSE 0 END as is_below_safety,
+               ROW_NUMBER() OVER (ORDER BY mi.item_number, mi.warehouse_number) AS _row_num
+        FROM material_inventory mi
+        LEFT JOIN warehouse w ON mi.warehouse_number = w.warehouse_number
+        LEFT JOIN factory f ON w.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
 
     const [summary]: any = await sequelize.query(`
-      SELECT COUNT(DISTINCT item_number) as total_items,
-             COUNT(DISTINCT warehouse_number) as total_warehouses,
-             SUM(quantity) as total_quantity,
-             SUM(CASE WHEN safety_stock_quantity > 0 AND quantity < safety_stock_quantity THEN 1 ELSE 0 END) as below_safety_count
-      FROM material_inventory ${whereClause}
+      SELECT COUNT(DISTINCT mi.item_number) as total_items,
+             COUNT(DISTINCT mi.warehouse_number) as total_warehouses,
+             SUM(mi.quantity) as total_quantity,
+             SUM(CASE WHEN mi.safety_stock_quantity > 0 AND mi.quantity < mi.safety_stock_quantity THEN 1 ELSE 0 END) as below_safety_count
+      FROM material_inventory mi LEFT JOIN warehouse w ON mi.warehouse_number = w.warehouse_number
+      ${whereClause}
     `, { replacements: { ...replacements } });
 
     res.json(success({
@@ -153,7 +166,8 @@ export const productionInbound = async (req: Request, res: Response, next: NextF
 export const manualOutbound = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const factoryCode = await getFactoryCode(req);
-    const result = await manualOutboundMaterial(req.body, (req as any).user?.username || '', factoryCode);
+    const _factoryId = getFactoryId(req);
+    const result = await manualOutboundMaterial(req.body, (req as any).user?.username || '', factoryCode, _factoryId);
     res.json(success(result, '出库成功'));
   } catch (err) {
     if (err instanceof BusinessError) {
@@ -168,7 +182,8 @@ export const manualOutbound = async (req: Request, res: Response, next: NextFunc
 export const adjustInventory = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const factoryCode = await getFactoryCode(req);
-    const result = await adjustMaterialInventoryService(req.body, (req as any).user?.username || '', factoryCode);
+    const _factoryId = getFactoryId(req);
+    const result = await adjustMaterialInventoryService(req.body, (req as any).user?.username || '', factoryCode, _factoryId);
     res.json(success(result, '库存调整成功'));
   } catch (err) {
     if (err instanceof BusinessError) {
@@ -192,31 +207,42 @@ export const getTransactionList = async (req: Request, res: Response, next: Next
     const replacements: any = { offset, offsetEnd };
 
     if (search) {
-      whereClause += ` AND (transaction_number LIKE :search OR source_number LIKE :search OR item_number LIKE :search OR item_name LIKE :search)`;
+      whereClause += ` AND (t.transaction_number LIKE :search OR t.source_number LIKE :search OR t.item_number LIKE :search OR t.item_name LIKE :search)`;
       replacements.search = `%${search}%`;
     }
     if (transaction_type) {
-      whereClause += ` AND transaction_type = :transaction_type`;
+      whereClause += ` AND t.transaction_type = :transaction_type`;
       replacements.transaction_type = transaction_type;
     }
     if (source_type) {
-      whereClause += ` AND source_type = :source_type`;
+      whereClause += ` AND t.source_type = :source_type`;
       replacements.source_type = source_type;
     }
     if (item_type) {
-      whereClause += ` AND item_type = :item_type`;
+      whereClause += ` AND t.item_type = :item_type`;
       replacements.item_type = item_type;
     }
 
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ` AND t.factory_id = :_factoryId`;
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
-      `SELECT COUNT(*) as total FROM material_inventory_transaction ${whereClause}`, { replacements }
+      `SELECT COUNT(*) as total FROM material_inventory_transaction t ${whereClause}`, { replacements }
     );
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY creation_date DESC) AS _row_num
-        FROM material_inventory_transaction ${whereClause}
-      ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
+        SELECT t.*, ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name as factory_name_val,
+               ROW_NUMBER() OVER (ORDER BY t.creation_date DESC) AS _row_num
+        FROM material_inventory_transaction t LEFT JOIN factory f ON t.factory_id = f.id
+        ${whereClause}
+      ) AS p WHERE p._row_num > :offset AND p._row_num <= :offsetEnd
     `, { replacements });
 
     res.json(success({
@@ -237,10 +263,21 @@ export const getSafetyStockAlerts = async (req: Request, res: Response, next: Ne
     const offset = (pageNum - 1) * pageSize;
     const offsetEnd = offset + pageSize;
 
-    const baseWhere = `WHERE mi.safety_stock_quantity > 0 AND mi.quantity < mi.safety_stock_quantity`;
+    let baseWhere = `WHERE mi.safety_stock_quantity > 0 AND mi.quantity < mi.safety_stock_quantity`;
+    const replacements: any = { offset, offsetEnd };
+
+    // 多工厂数据隔离过滤（通过仓库关联工厂）
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      baseWhere += ' AND w.factory_id = :_factoryId';
+      replacements._factoryId = effectiveFactoryId;
+    }
 
     const [countResult]: any = await sequelize.query(
-      `SELECT COUNT(*) as total FROM material_inventory mi ${baseWhere}`
+      `SELECT COUNT(*) as total FROM material_inventory mi LEFT JOIN warehouse w ON mi.warehouse_number = w.warehouse_number ${baseWhere}`,
+      { replacements }
     );
 
     const [items]: any = await sequelize.query(`
@@ -248,11 +285,14 @@ export const getSafetyStockAlerts = async (req: Request, res: Response, next: Ne
         SELECT mi.item_number, mi.item_name, mi.item_type, mi.specifications, mi.basic_unit,
                mi.warehouse_number, mi.warehouse_name, mi.quantity, mi.safety_stock_quantity,
                (mi.safety_stock_quantity - mi.quantity) as shortage,
+               ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name as factory_name_val,
                ROW_NUMBER() OVER (ORDER BY (mi.safety_stock_quantity - mi.quantity) DESC) AS _row_num
         FROM material_inventory mi
+        LEFT JOIN warehouse w ON mi.warehouse_number = w.warehouse_number
+        LEFT JOIN factory f ON w.factory_id = f.id
         ${baseWhere}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
-    `, { replacements: { offset, offsetEnd } });
+    `, { replacements });
 
     res.json(success({
       items,
@@ -273,6 +313,18 @@ export const updateSafetyStock = async (req: Request, res: Response, next: NextF
     const qty = Number(safety_stock_quantity) || 0;
     if (qty < 0) {
       res.status(400).json({ success: false, message: '安全库存量不能为负数' }); return;
+    }
+
+    // 多工厂防越权
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      const [chk]: any = await sequelize.query(
+        `SELECT w.factory_id FROM material_inventory mi LEFT JOIN warehouse w ON mi.warehouse_number = w.warehouse_number WHERE mi.item_number = :item_number AND mi.warehouse_number = :warehouse_number`,
+        { replacements: { item_number, warehouse_number } }
+      );
+      if (chk.length > 0 && chk[0].factory_id !== _factoryId) {
+        res.status(403).json({ success: false, message: '无权操作其他工厂的安全库存' }); return;
+      }
     }
 
     await sequelize.query(
@@ -507,14 +559,25 @@ export const getSemiInboundOrderList = async (req: Request, res: Response, next:
       replacements.search = `%${search}%`;
     }
 
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += (whereClause ? ' AND ' : 'WHERE ') + `o.factory_id = :_factoryId`;
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
       `SELECT COUNT(*) as total FROM semi_production_inbound_order o ${whereClause}`, { replacements }
     );
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT o.*, ROW_NUMBER() OVER (ORDER BY o.creation_date DESC) AS _row_num
-        FROM semi_production_inbound_order o ${whereClause}
+        SELECT o.*, ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name,
+               ROW_NUMBER() OVER (ORDER BY o.creation_date DESC) AS _row_num
+        FROM semi_production_inbound_order o LEFT JOIN factory f ON o.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
 
@@ -532,9 +595,14 @@ export const getSemiInboundOrderDetail = async (req: Request, res: Response, nex
   try {
     const { inbound_order_number } = req.params;
 
+    // 多工厂防越权
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM semi_production_inbound_order WHERE inbound_order_number = :num`,
-      { replacements: { num: inbound_order_number } }
+      `SELECT * FROM semi_production_inbound_order WHERE inbound_order_number = :num${factoryCond}`,
+      { replacements: { num: inbound_order_number, ...factoryReps } }
     );
 
     const [details]: any = await sequelize.query(
@@ -549,6 +617,18 @@ export const getSemiInboundOrderDetail = async (req: Request, res: Response, nex
 // ==================== 半成品生产入库单撤回 ====================
 export const withdrawSemiInboundOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // 多工厂防越权
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      const [chk]: any = await sequelize.query(
+        `SELECT factory_id FROM semi_production_inbound_order WHERE inbound_order_number = :num`,
+        { replacements: { num: req.params.inbound_order_number } }
+      );
+      if (chk.length > 0 && chk[0].factory_id !== _factoryId) {
+        res.status(403).json({ success: false, message: '无权操作其他工厂的入库单' }); return;
+      }
+    }
+
     const result = await rollbackSemiProductionInboundService(
       String(req.params.inbound_order_number),
       (req as any).user?.username || ''
@@ -584,6 +664,15 @@ export const getReturnOutboundList = async (req: Request, res: Response, next: N
       replacements.return_status = return_status;
     }
 
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      conditions.push(`pr.factory_id = :_factoryId`);
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     const whereClause = 'WHERE ' + conditions.join(' AND ');
 
     const [countResult]: any = await sequelize.query(
@@ -599,9 +688,11 @@ export const getReturnOutboundList = async (req: Request, res: Response, next: N
                pr.total_return_quantity, pr.total_return_amount,
                pr.remark, pr.creation_date, pr.creation_man,
                po.order_status as po_order_status,
+               ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name as factory_name_val,
                ROW_NUMBER() OVER (ORDER BY pr.creation_date DESC, pr.return_number DESC) AS _row_num
         FROM purchase_return pr
         LEFT JOIN purchase_order po ON po.purchase_order_number = pr.purchase_order_number
+        LEFT JOIN factory f ON pr.factory_id = f.id
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
@@ -616,8 +707,13 @@ export const getReturnOutboundDetail = async (req: Request, res: Response, next:
   try {
     const { id } = req.params;
 
+    // 多工厂防越权
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM purchase_return WHERE return_number = :id`, { replacements: { id } }
+      `SELECT * FROM purchase_return WHERE return_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '退货单不存在' }); return; }
     const header = headers[0];

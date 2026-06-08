@@ -157,8 +157,11 @@ export const updateOutsourcingIssue = async (req: Request, res: Response, next: 
   try {
     const { id } = req.params;
     const b = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
-    const [check]: any = await sequelize.query(`SELECT status FROM outsourcing_material_issue WHERE issue_number = :id`, { replacements: { id } });
+    const [check]: any = await sequelize.query(`SELECT status FROM outsourcing_material_issue WHERE issue_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!check.length) { res.status(404).json({ success: false, message: '委外发料单不存在' }); return; }
     if (check[0].status !== '草稿') { res.status(403).json({ success: false, message: '非草稿状态不允许编辑' }); return; }
 
@@ -168,7 +171,7 @@ export const updateOutsourcingIssue = async (req: Request, res: Response, next: 
         UPDATE outsourcing_material_issue SET
           issue_date = :issue_date, warehouse_number = :warehouse_number, warehouse_name = :warehouse_name,
           handler = :handler, remark = :remark
-        WHERE issue_number = :id
+        WHERE issue_number = :id${factoryCond}
       `, {
         replacements: {
           id,
@@ -176,13 +179,14 @@ export const updateOutsourcingIssue = async (req: Request, res: Response, next: 
           warehouse_number: b.warehouse_number,
           warehouse_name: b.warehouse_name,
           handler: b.handler,
-          remark: b.remark || ''
+          remark: b.remark || '',
+          ...factoryReps
         },
         transaction
       });
 
       // 重写明细行
-      await sequelize.query(`DELETE FROM outsourcing_material_issue_detail WHERE issue_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM outsourcing_material_issue_detail WHERE issue_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
 
       const details = b.details || [];
       for (let i = 0; i < details.length; i++) {
@@ -224,14 +228,17 @@ export const updateOutsourcingIssue = async (req: Request, res: Response, next: 
 export const deleteOutsourcingIssue = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [check]: any = await sequelize.query(`SELECT status FROM outsourcing_material_issue WHERE issue_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    const [check]: any = await sequelize.query(`SELECT status FROM outsourcing_material_issue WHERE issue_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!check.length) { res.status(404).json({ success: false, message: '委外发料单不存在' }); return; }
     if (check[0].status !== '草稿') { res.status(403).json({ success: false, message: '非草稿状态不允许删除' }); return; }
 
     const transaction = await sequelize.transaction();
     try {
-      await sequelize.query(`DELETE FROM outsourcing_material_issue_detail WHERE issue_number = :id`, { replacements: { id }, transaction });
-      await sequelize.query(`DELETE FROM outsourcing_material_issue WHERE issue_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM outsourcing_material_issue_detail WHERE issue_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
+      await sequelize.query(`DELETE FROM outsourcing_material_issue WHERE issue_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
       await transaction.commit();
       res.json(success(null, '删除委外发料单成功'));
     } catch (e) {
@@ -245,11 +252,14 @@ export const deleteOutsourcingIssue = async (req: Request, res: Response, next: 
 export const approveIssue = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [check]: any = await sequelize.query(`SELECT status FROM outsourcing_material_issue WHERE issue_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    const [check]: any = await sequelize.query(`SELECT status FROM outsourcing_material_issue WHERE issue_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!check.length) { res.status(404).json({ success: false, message: '委外发料单不存在' }); return; }
     if (check[0].status !== '草稿') { res.status(403).json({ success: false, message: '只能审核草稿状态的发料单' }); return; }
 
-    await sequelize.query(`UPDATE outsourcing_material_issue SET status = N'已审核' WHERE issue_number = :id`, { replacements: { id } });
+    await sequelize.query(`UPDATE outsourcing_material_issue SET status = N'已审核' WHERE issue_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     res.json(success(null, '审核成功'));
   } catch (err) { next(err); }
 };
@@ -269,6 +279,9 @@ export const confirmIssue = async (req: Request, res: Response, next: NextFuncti
     const transaction = await sequelize.transaction();
     try {
       const factoryCode = await getFactoryCode(req);
+      const _factoryId = getFactoryId(req);
+      const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+      const factoryReps = _factoryId !== null ? { _factoryId } : {};
       const operator = (req as any).user?.username || '';
       const warehouseNumber = check[0].warehouse_number || '';
       const warehouseName = check[0].warehouse_name || '';
@@ -342,7 +355,7 @@ export const confirmIssue = async (req: Request, res: Response, next: NextFuncti
       }
 
       // 更新发料单状态
-      await sequelize.query(`UPDATE outsourcing_material_issue SET status = N'已出库' WHERE issue_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`UPDATE outsourcing_material_issue SET status = N'已出库' WHERE issue_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
 
       await transaction.commit();
       res.json(success(null, '发料确认成功，库存已扣减'));

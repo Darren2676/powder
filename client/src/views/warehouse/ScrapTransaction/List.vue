@@ -3,6 +3,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { SearchOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getScrapTransactionList } from '@/api/warehouse/scrapTransaction'
+import { getFactories } from '@/api/system/factory'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import dayjs from 'dayjs'
@@ -13,6 +14,8 @@ const searchText = ref('')
 const typeFilter = ref('')
 const sourceFilter = ref('')
 const statusFilter = ref('')
+const filterFactory = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
 
 const pagination = reactive({
   current: 1,
@@ -69,7 +72,8 @@ const fetchData = async () => {
       search: searchText.value,
       transaction_type: typeFilter.value,
       source_type: sourceFilter.value,
-      status: statusFilter.value
+      status: statusFilter.value,
+      factory_id: filterFactory.value || undefined
     })
     if (res?.success) {
       dataSource.value = res.data.items || []
@@ -94,17 +98,21 @@ const handleSearch = () => {
 }
 
 const handleReset = () => {
-  searchText.value = ''
-  typeFilter.value = ''
-  sourceFilter.value = ''
-  statusFilter.value = ''
-  pagination.current = 1
-  fetchData()
+  searchText.value = ''; typeFilter.value = ''; sourceFilter.value = ''; statusFilter.value = ''; filterFactory.value = undefined
+  pagination.current = 1; fetchData()
+}
+
+// 加载工厂列表
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data?.items || [] }
+  } catch (e) { /* ignore */ }
 }
 
 onMounted(async () => {
   await loadColumnPreference()
-  fetchData()
+  fetchData(); loadFactories()
 })
 </script>
 
@@ -156,6 +164,9 @@ onMounted(async () => {
             <a-select-option value="作废">作废</a-select-option>
           </a-select>
           <a-button @click="handleReset"><ReloadOutlined /> 重置</a-button>
+          <a-select v-model:value="filterFactory" placeholder="工厂" style="width: 120px" allowClear @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
           <a-tooltip title="列设置">
             <a-button @click="openColumnSetting"><SettingOutlined /></a-button>
           </a-tooltip>

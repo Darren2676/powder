@@ -1,6 +1,7 @@
 import request from '@/utils/request'
 
 export function getReceivingNotices(params?: any) {
+  // params includes: page, limit, search, approval_status, factory_id
   return request.get('/receiving-notices', { params })
 }
 

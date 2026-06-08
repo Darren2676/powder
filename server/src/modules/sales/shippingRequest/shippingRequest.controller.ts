@@ -422,8 +422,8 @@ export const updateShippingRequest = async (req: Request, res: Response, next: N
     try {
       // 更新主表
       await sequelize.query(`
-        UPDATE shipping_request SET remark = :remark WHERE request_number = :id
-      `, { replacements: { remark: b.remark || '', id }, transaction });
+        UPDATE shipping_request SET remark = :remark WHERE request_number = :id${factoryCond}
+      `, { replacements: { remark: b.remark || '', id, ...factoryReps }, transaction });
 
       // 更新明细行的 ship_quantity
       if (b.details && Array.isArray(b.details)) {
@@ -602,8 +602,8 @@ export const cancelShippingRequest = async (req: Request, res: Response, next: N
 
       // 更新状态为已取消
       await sequelize.query(
-        `UPDATE shipping_request SET status = N'已取消' WHERE request_number = :id`,
-        { replacements: { id }, transaction }
+        `UPDATE shipping_request SET status = N'已取消' WHERE request_number = :id${factoryCond}`,
+        { replacements: { id, ...factoryReps }, transaction }
       );
 
       // 回写销售订单明细发货状态

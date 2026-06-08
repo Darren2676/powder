@@ -171,6 +171,8 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
     try {
       const factoryCode = await getFactoryCode(req);
       const _factoryId = getFactoryId(req);
+      const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+      const factoryReps = _factoryId !== null ? { _factoryId } : {};
       const operator = (req as any).user?.username || '';
       const inspWhNumber = check[0].inspection_warehouse_number || check[0].warehouse_number || 'INSP_WH';
       const inspWhName = check[0].inspection_warehouse_name || check[0].warehouse_name || '待检仓';
@@ -463,8 +465,8 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
           const plannedQty = parseFloat(order.planned_quantity) || 0;
           const orderStatus = newQualifiedQty >= plannedQty ? '已完成' : '部分收回';
           await sequelize.query(
-            `UPDATE outsourcing_order SET qualified_quantity = :qty, order_status = :status WHERE outsourcing_order_number = :orderNumber`,
-            { replacements: { qty: newQualifiedQty, status: orderStatus, orderNumber }, transaction }
+            `UPDATE outsourcing_order SET qualified_quantity = :qty, order_status = :status WHERE outsourcing_order_number = :orderNumber${factoryCond}`,
+            { replacements: { qty: newQualifiedQty, status: orderStatus, orderNumber, ...factoryReps }, transaction }
           );
         }
       }
@@ -474,8 +476,8 @@ export const confirmReceipt = async (req: Request, res: Response, next: NextFunc
         ? '免检'
         : (needsInspection.length === details.length ? '待检验' : '部分待检');
       await sequelize.query(
-        `UPDATE outsourcing_receipt SET status = N'已收回', inspection_status = :inspectionStatus WHERE receipt_number = :id`,
-        { replacements: { id, inspectionStatus }, transaction }
+        `UPDATE outsourcing_receipt SET status = N'已收回', inspection_status = :inspectionStatus WHERE receipt_number = :id${factoryCond}`,
+        { replacements: { id, inspectionStatus, ...factoryReps }, transaction }
       );
 
       await transaction.commit();

@@ -15,6 +15,7 @@ import { useColumnPreference } from '@/composables/useColumnPreference'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { getWarehouses } from '@/api/master-data/warehouse'
 import { getItemDetail } from '@/api/master-data/itemMaster'
+import { getFactories } from '@/api/system/factory'
 
 defineOptions({ name: 'PendingNonconformingProductList' })
 
@@ -24,6 +25,8 @@ const dataSource = ref<any[]>([])
 const searchText = ref('')
 const filterSourceType = ref<string | undefined>(undefined)
 const filterHandlingStatus = ref<string | undefined>('待处理')
+const filterFactory = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
 const pagination = reactive({ current: 1, pageSize: 15, total: 0 })
 const stats = ref<any>({})
 
@@ -90,7 +93,8 @@ const fetchList = async () => {
       page: pagination.current, limit: pagination.pageSize,
       search: searchText.value || undefined,
       source_type: filterSourceType.value || undefined,
-      handling_status: filterHandlingStatus.value || undefined
+      handling_status: filterHandlingStatus.value || undefined,
+      factory_id: filterFactory.value || undefined
     })
     dataSource.value = res.data.items || []
     pagination.total = res.data.pagination?.total || 0
@@ -102,7 +106,7 @@ const fetchList = async () => {
 const handleSearch = () => { pagination.current = 1; fetchList() }
 const handleReset = () => {
   searchText.value = ''; filterSourceType.value = undefined
-  filterHandlingStatus.value = '待处理'; pagination.current = 1; fetchList()
+  filterHandlingStatus.value = '待处理'; filterFactory.value = undefined; pagination.current = 1; fetchList()
 }
 const handleTableChange = (pag: any) => {
   pagination.current = pag.current; pagination.pageSize = pag.pageSize; fetchList()
@@ -198,7 +202,7 @@ const handleCancelHandling = async (record: any) => {
 // ==================== Export ====================
 const handleExport = async () => {
   try {
-    const res = await exportNonconformingProducts()
+    const res = await exportNonconformingProducts({ factory_id: filterFactory.value || undefined })
     const blob = new Blob([res.data], { type: res.headers?.['content-type'] || 'application/octet-stream' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
@@ -234,7 +238,14 @@ const getHandlingMethodColor = (method: string) => {
   return 'default'
 }
 
-onMounted(() => { loadColumnPreference(); fetchWarehouses(); fetchList() })
+const loadFactories = async () => {
+  try {
+    const res = await getFactories()
+    factoryList.value = res.data || []
+  } catch {}
+}
+
+onMounted(() => { loadColumnPreference(); fetchWarehouses(); loadFactories(); fetchList() })
 </script>
 
 <template>
@@ -264,6 +275,9 @@ onMounted(() => { loadColumnPreference(); fetchWarehouses(); fetchList() })
       <template #extra>
         <a-space wrap>
           <a-input-search v-model:value="searchText" placeholder="搜索单号/物料" style="width: 200px" @search="handleSearch" allowClear @change="(e: any) => { if (!e.target.value) handleSearch() }" />
+          <a-select v-model:value="filterFactory" placeholder="工厂" style="width: 120px" allowClear @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
           <a-select v-model:value="filterSourceType" placeholder="来源类型" style="width: 110px" allowClear @change="handleSearch">
             <a-select-option value="来料检验">来料检验</a-select-option>
             <a-select-option value="生产检验">生产检验</a-select-option>

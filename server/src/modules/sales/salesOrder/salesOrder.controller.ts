@@ -257,7 +257,7 @@ export const updateSalesOrder = async (req: Request, res: Response, next: NextFu
           UPDATE sales_order SET
             head_of_sales = :head_of_sales, linkman = :linkman, contacts = :contacts,
             delivery_date = :delivery_date, remark = :remark, customer_po_number = :customer_po_number
-          WHERE sales_order_number = :id
+          WHERE sales_order_number = :id${factoryCond}
         `, {
           replacements: {
             id,
@@ -266,7 +266,8 @@ export const updateSalesOrder = async (req: Request, res: Response, next: NextFu
             contacts: b.contacts || '',
             delivery_date: b.delivery_date || null,
             remark: b.remark || '',
-            customer_po_number: b.customer_po_number || ''
+            customer_po_number: b.customer_po_number || '',
+            ...factoryReps
           },
           transaction
         });
@@ -289,7 +290,7 @@ export const updateSalesOrder = async (req: Request, res: Response, next: NextFu
             order_date = :order_date, delivery_date = :delivery_date,
             order_status = :order_status, [condition] = :condition, remark = :remark,
             customer_po_number = :customer_po_number
-          WHERE sales_order_number = :id
+          WHERE sales_order_number = :id${factoryCond}
         `, {
           replacements: {
             id,
@@ -304,7 +305,8 @@ export const updateSalesOrder = async (req: Request, res: Response, next: NextFu
             order_status: b.order_status || '',
             condition: b.condition || CONDITION_STATUS.ENABLED,
             remark: b.remark || '',
-            customer_po_number: b.customer_po_number || ''
+            customer_po_number: b.customer_po_number || '',
+            ...factoryReps
           },
           transaction
         });

@@ -37,9 +37,11 @@ export const getScrapTransactionList = async (req: Request, res: Response, next:
 
     // 多工厂数据隔离过滤
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += ' AND t.factory_id = :_factoryId';
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     const [countResult]: any = await sequelize.query(

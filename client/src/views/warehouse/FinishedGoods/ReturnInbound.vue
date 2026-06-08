@@ -3,6 +3,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { SearchOutlined, ReloadOutlined, ImportOutlined } from '@ant-design/icons-vue'
 import { getPendingReturnInbound, getReturnInboundDetail, returnInbound, getWarehouseOptions } from '@/api/warehouse/finishedGoods'
+import { getFactories } from '@/api/system/factory'
 import { useOpenAccountingPeriods } from '@/composables/useOpenAccountingPeriods'
 import dayjs from 'dayjs'
 
@@ -10,6 +11,14 @@ const loading = ref(false)
 const submitLoading = ref(false)
 const dataSource = ref<any[]>([])
 const searchText = ref('')
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 const warehouseOptions = ref<any[]>([])
 
 const pagination = reactive({
@@ -23,6 +32,7 @@ const pagination = reactive({
 })
 
 const columns = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '退货单号', dataIndex: 'return_order_number', key: 'return_order_number', width: 160 },
   { title: '发货单号', dataIndex: 'shipping_order_number', key: 'shipping_order_number', width: 160 },
   { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 180 },
@@ -45,7 +55,8 @@ const fetchData = async () => {
     const res: any = await getPendingReturnInbound({
       page: pagination.current,
       limit: pagination.pageSize,
-      search: searchText.value
+      search: searchText.value,
+      factory_id: factoryFilter.value || undefined
     })
     if (res?.success) {
       dataSource.value = res.data.items || []
@@ -249,6 +260,7 @@ const onUnqualifiedQtyChange = (record: any, val: number | null) => {
 onMounted(() => {
   fetchOpenPeriods()
   fetchWarehouseOptions()
+  loadFactories()
   fetchData()
 })
 </script>
@@ -257,6 +269,17 @@ onMounted(() => {
   <div style="padding: 20px">
     <div style="margin-bottom: 16px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px">
       <div style="display: flex; gap: 8px; align-items: center">
+        <a-select
+          v-model:value="factoryFilter"
+          placeholder="选择工厂"
+          style="width: 130px"
+          allow-clear
+          @change="handleSearch"
+        >
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">
+            {{ f.factory_short || f.factory_name }}
+          </a-select-option>
+        </a-select>
         <a-input-search
           v-model:value="searchText"
           placeholder="搜索退货单号/客户名称/发货单号"

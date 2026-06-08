@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 
-export function getEquipments(params?: { page?: number; limit?: number; search?: string }) {
+export function getEquipments(params?: { page?: number; limit?: number; search?: string; factory_id?: number }) {
   return request.get('/equipments', { params })
 }
 
@@ -16,8 +16,8 @@ export function deleteEquipment(id: string) {
   return request.delete(`/equipments/${encodeURIComponent(id)}`)
 }
 
-export function exportEquipments(search?: string) {
-  return request.get('/equipments/export', { params: { search }, responseType: 'blob' })
+export function exportEquipments(search?: string, factory_id?: number) {
+  return request.get('/equipments/export', { params: { search, factory_id }, responseType: 'blob' })
 }
 
 export function importEquipments(formData: FormData) {

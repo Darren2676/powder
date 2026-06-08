@@ -483,9 +483,11 @@ export const getShippingByOrderSummary = async (req: Request, res: Response, nex
           ISNULL(shipped_sub.shipped_qty, 0) - ISNULL(returned_sub.returned_qty, 0) as net_shipped_qty,
           CASE WHEN sod.order_quantity = 0 THEN 0 ELSE CAST(ISNULL(shipped_sub.shipped_qty, 0) * 100.0 / sod.order_quantity AS DECIMAL(10,2)) END as ship_rate,
           CASE WHEN ISNULL(shipped_sub.shipped_qty, 0) = 0 THEN 0 ELSE CAST(ISNULL(returned_sub.returned_qty, 0) * 100.0 / shipped_sub.shipped_qty AS DECIMAL(10,2)) END as return_rate,
+          f.factory_name, f.factory_short,
           ROW_NUMBER() OVER (ORDER BY so.order_date DESC, so.sales_order_number, sod.line_number) AS _row_num
         FROM sales_order so
         INNER JOIN sales_order_detail sod ON sod.sales_order_number = so.sales_order_number
+        LEFT JOIN factory f ON so.factory_id = f.id
         OUTER APPLY (
           SELECT SUM(sd.quantity) as shipped_qty
           FROM shipping_order_detail sd
@@ -551,9 +553,11 @@ export const exportShippingByOrderSummary = async (req: Request, res: Response, 
         ISNULL(returned_sub.returned_qty, 0) as returned_qty,
         ISNULL(shipped_sub.shipped_qty, 0) - ISNULL(returned_sub.returned_qty, 0) as net_shipped_qty,
         CASE WHEN sod.order_quantity = 0 THEN 0 ELSE CAST(ISNULL(shipped_sub.shipped_qty, 0) * 100.0 / sod.order_quantity AS DECIMAL(10,2)) END as ship_rate,
-        CASE WHEN ISNULL(shipped_sub.shipped_qty, 0) = 0 THEN 0 ELSE CAST(ISNULL(returned_sub.returned_qty, 0) * 100.0 / shipped_sub.shipped_qty AS DECIMAL(10,2)) END as return_rate
+        CASE WHEN ISNULL(shipped_sub.shipped_qty, 0) = 0 THEN 0 ELSE CAST(ISNULL(returned_sub.returned_qty, 0) * 100.0 / shipped_sub.shipped_qty AS DECIMAL(10,2)) END as return_rate,
+        f.factory_name, f.factory_short
       FROM sales_order so
       INNER JOIN sales_order_detail sod ON sod.sales_order_number = so.sales_order_number
+      LEFT JOIN factory f ON so.factory_id = f.id
       OUTER APPLY (
         SELECT SUM(sd.quantity) as shipped_qty
         FROM shipping_order_detail sd
@@ -577,13 +581,13 @@ export const exportShippingByOrderSummary = async (req: Request, res: Response, 
     `, { replacements });
 
     const fields = [
-      'sales_order_number', 'customer_name', 'order_date', 'line_number',
+      'sales_order_number', 'factory_short', 'customer_name', 'order_date', 'line_number',
       'item_number', 'item_name', 'specifications', 'basic_unit',
       'order_quantity', 'shipped_qty', 'returned_qty', 'net_shipped_qty',
       'ship_rate', 'return_rate'
     ];
     const headers = [
-      '销售订单号', '客户名称', '订单日期', '行号',
+      '销售订单号', '工厂', '客户名称', '订单日期', '行号',
       '物料编号', '物料名称', '规格', '单位',
       '订单数量', '已发数量', '已退数量', '实发数量',
       '发货率(%)', '退货率(%)'
@@ -661,6 +665,7 @@ export const getOrderProductionSummary = async (req: Request, res: Response, nex
           ISNULL(po.inbound_quantity, 0) AS po_inbound_quantity,
           CASE WHEN po.plan_status IN (N'已派发', N'已备料', N'生产中') THEN po.planned_quantity ELSE 0 END AS po_wip_quantity,
           CASE WHEN po.production_order_number IS NOT NULL THEN pp.planned_quantity - ISNULL(inbound_sub.total_inbound, 0) ELSE pp.planned_quantity END AS uncompleted_quantity,
+          f.factory_name, f.factory_short,
           ROW_NUMBER() OVER (ORDER BY so.order_date DESC, so.sales_order_number, sod.line_number, po.production_order_number) AS _row_num
         FROM sales_order so
         INNER JOIN sales_order_detail sod ON sod.sales_order_number = so.sales_order_number
@@ -668,6 +673,7 @@ export const getOrderProductionSummary = async (req: Request, res: Response, nex
           AND pp.source_line_number = sod.line_number
         LEFT JOIN production_order po ON po.production_number = pp.production_number
           AND po.item_number = pp.item_number
+        LEFT JOIN factory f ON so.factory_id = f.id
         OUTER APPLY (
           SELECT ISNULL(SUM(po2.inbound_quantity), 0) AS total_inbound
           FROM production_order po2

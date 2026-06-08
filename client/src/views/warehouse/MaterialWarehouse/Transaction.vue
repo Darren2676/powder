@@ -19,6 +19,9 @@
           <a-select-option value="原材料">原材料</a-select-option>
           <a-select-option value="半成品">半成品</a-select-option>
         </a-select>
+        <a-select v-model:value="factoryFilter" placeholder="选择工厂" allow-clear size="small" style="width:130px;flex-shrink:0" @change="handleSearch">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+        </a-select>
         <a-tooltip title="列设置"><a-button size="small" @click="openColumnSetting"><SettingOutlined /></a-button></a-tooltip>
       </div>
     </div>
@@ -57,6 +60,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import { getTransactionList } from '@/api/warehouse/materialWarehouse'
+import { getFactories } from '@/api/system/factory'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import dayjs from 'dayjs'
@@ -67,10 +71,20 @@ const searchText = ref('')
 const filterTxnType = ref<string | undefined>(undefined)
 const filterSourceType = ref<string | undefined>(undefined)
 const filterItemType = ref<string | undefined>(undefined)
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 
 const pagination = reactive({ current: 1, pageSize: 10, total: 0, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` })
 
 const defaultDataColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true,
+    customRender: ({ record }: any) => record.factory_short || record.factory_name_val || record.factory_name || '-' },
   { title: '流水号', dataIndex: 'transaction_number', key: 'transaction_number', width: 160, resizable: true },
   { title: '类型', dataIndex: 'transaction_type', key: 'transaction_type', width: 70, resizable: true },
   { title: '来源', dataIndex: 'source_type', key: 'source_type', width: 90, resizable: true },
@@ -109,7 +123,7 @@ const fetchData = async () => {
     const res: any = await getTransactionList({
       page: pagination.current, limit: pagination.pageSize, search: searchText.value,
       transaction_type: filterTxnType.value || '', source_type: filterSourceType.value || '',
-      item_type: filterItemType.value || ''
+      item_type: filterItemType.value || '', factory_id: factoryFilter.value || undefined
     })
     dataSource.value = res?.data?.items || []
     pagination.total = res?.data?.total || 0
@@ -122,6 +136,7 @@ const handleTableChange = (p: any) => { pagination.current = p.current; paginati
 
 onMounted(async () => {
   await loadColumnPreference()
+  loadFactories()
   fetchData()
 })
 </script>

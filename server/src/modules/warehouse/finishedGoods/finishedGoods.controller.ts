@@ -148,6 +148,15 @@ export const getPendingInbound = async (req: Request, res: Response, next: NextF
     let whereClause = `WHERE po.plan_status = N'已完成' AND po.approval_status = N'已审批' AND (po.inbound_status IS NULL OR po.inbound_status IN (N'未入库', N'部分入库'))`;
     const replacements: any = { offset, offsetEnd };
 
+    // 多工厂数据隔离
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ` AND po.factory_id = :_factoryId`;
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     if (search) {
       whereClause += ` AND (po.production_order_number LIKE :search OR po.item_number LIKE :search OR po.item_name LIKE :search OR po.production_number LIKE :search)`;
       replacements.search = `%${search}%`;
@@ -185,8 +194,11 @@ export const getPendingInbound = async (req: Request, res: Response, next: NextF
                  ), 0) - ISNULL(po.inbound_quantity, 0)
                  ELSE 0
                END as pending_inbound_qty,
+               ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name,
                ROW_NUMBER() OVER (ORDER BY po.production_date DESC, po.production_order_number DESC) AS _row_num
-        FROM production_order po ${whereClause}
+        FROM production_order po
+        LEFT JOIN factory f ON po.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
 
@@ -224,28 +236,39 @@ export const getInboundOrderList = async (req: Request, res: Response, next: Nex
     const offset = (pageNum - 1) * pageSize;
     const offsetEnd = offset + pageSize;
 
-    let whereClause = '';
-    if (search) {
-      whereClause = `WHERE (o.inbound_order_number LIKE :search OR o.warehouse_name LIKE :search OR o.operator LIKE :search)`;
+    const conditions: string[] = [];
+    const replacements: any = { offset, offsetEnd };
+
+    // 多工厂数据隔离
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      conditions.push(`o.factory_id = :_factoryId`);
+      replacements._factoryId = effectiveFactoryId;
     }
+
+    if (search) {
+      conditions.push(`(o.inbound_order_number LIKE :search OR o.warehouse_name LIKE :search OR o.operator LIKE :search)`);
+      replacements.search = `%${search}%`;
+    }
+
+    const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
     const [countRows]: any = await sequelize.query(
       `SELECT COUNT(*) as total FROM production_inbound_order o ${whereClause}`,
-      { replacements: search ? { search: `%${search}%` } : {} }
+      { replacements }
     );
 
     const [rows]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT o.*, ROW_NUMBER() OVER (ORDER BY o.creation_date DESC) AS _row_num
+        SELECT o.*, ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name,
+               ROW_NUMBER() OVER (ORDER BY o.creation_date DESC) AS _row_num
         FROM production_inbound_order o
+        LEFT JOIN factory f ON o.factory_id = f.id
         ${whereClause}
       ) t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
-    `, {
-      replacements: {
-        ...(search ? { search: `%${search}%` } : {}),
-        offset, offsetEnd
-      }
-    });
+    `, { replacements });
 
     res.json(success({
       items: rows,
@@ -261,9 +284,15 @@ export const getInboundOrderDetail = async (req: Request, res: Response, next: N
   try {
     const { inbound_order_number } = req.params;
 
+    // 多工厂防越权：校验入库单所属工厂
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryRepl: any = { num: inbound_order_number };
+    if (_factoryId !== null) factoryRepl._factoryId = _factoryId;
+
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM production_inbound_order WHERE inbound_order_number = :num`,
-      { replacements: { num: inbound_order_number } }
+      `SELECT * FROM production_inbound_order WHERE inbound_order_number = :num${factoryCond}`,
+      { replacements: factoryRepl }
     );
     if (headers.length === 0) {
       res.status(404).json({ success: false, message: '入库单不存在' }); return;
@@ -290,6 +319,15 @@ export const getPendingOutbound = async (req: Request, res: Response, next: Next
     let whereClause = `WHERE h.status = N'已审核'`;
     const replacements: any = { offset, offsetEnd };
 
+    // 多工厂数据隔离
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ` AND h.factory_id = :_factoryId`;
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     if (search) {
       whereClause += ` AND (h.request_number LIKE :search OR h.customer_name LIKE :search OR d.item_number LIKE :search OR d.item_name LIKE :search)`;
       replacements.search = `%${search}%`;
@@ -305,9 +343,11 @@ export const getPendingOutbound = async (req: Request, res: Response, next: Next
       SELECT * FROM (
         SELECT d.*, h.customer_number, h.customer_name, h.request_date, h.status as request_status,
                h.creation_man,
+               ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name,
                ROW_NUMBER() OVER (ORDER BY h.request_number, d.line_number) AS _row_num
         FROM shipping_request_detail d
         INNER JOIN shipping_request h ON h.request_number = d.request_number
+        LEFT JOIN factory f ON h.factory_id = f.id
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
@@ -325,7 +365,8 @@ export const getPendingOutbound = async (req: Request, res: Response, next: Next
 export const shippingOutbound = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const factoryCode = await getFactoryCode(req);
-    const result = await shippingOutboundService(req.body, (req as any).user?.username || '', factoryCode);
+    const _factoryId = getFactoryId(req);
+    const result = await shippingOutboundService(req.body, (req as any).user?.username || '', factoryCode, _factoryId);
     res.json(success(result, '出库成功'));
   } catch (err) {
     if (err instanceof BusinessError) {
@@ -367,6 +408,15 @@ export const getTransactionList = async (req: Request, res: Response, next: Next
       replacements.source_type = source_type;
     }
 
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ' AND t.factory_id = :_factoryId';
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
       `SELECT COUNT(*) as total FROM (
         SELECT t.transaction_number
@@ -380,8 +430,9 @@ export const getTransactionList = async (req: Request, res: Response, next: Next
         COALESCE(NULLIF(t.item_name,''), im.item_name) AS item_name,
         COALESCE(NULLIF(t.specifications,''), im.specifications) AS specifications,
         COALESCE(NULLIF(t.basic_unit,''), im.basic_unit) AS basic_unit,
+        ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name,
         ROW_NUMBER() OVER (ORDER BY t.creation_date DESC) AS _row_num
-      FROM inventory_transaction t LEFT JOIN item_master im ON t.item_number = im.item_number
+      FROM inventory_transaction t LEFT JOIN item_master im ON t.item_number = im.item_number LEFT JOIN factory f ON t.factory_id = f.id
       ${whereClause}
     `, { replacements });
 
@@ -576,14 +627,25 @@ export const getPendingReturnInbound = async (req: Request, res: Response, next:
       replacements.search = `%${search}%`;
     }
 
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ' AND ro.factory_id = :_factoryId';
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
       `SELECT COUNT(*) as total FROM return_order ro ${whereClause}`, { replacements }
     );
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT ro.*, ROW_NUMBER() OVER (ORDER BY ro.confirmed_date DESC, ro.return_order_number DESC) AS _row_num
-        FROM return_order ro ${whereClause}
+        SELECT ro.*, ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name,
+          ROW_NUMBER() OVER (ORDER BY ro.confirmed_date DESC, ro.return_order_number DESC) AS _row_num
+        FROM return_order ro LEFT JOIN factory f ON ro.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
 
@@ -601,9 +663,14 @@ export const getReturnInboundDetail = async (req: Request, res: Response, next: 
   try {
     const { return_order_number } = req.params;
 
+    // 多工厂防越权
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [headerRows]: any = await sequelize.query(
-      `SELECT * FROM return_order WHERE return_order_number = :rn`,
-      { replacements: { rn: return_order_number } }
+      `SELECT * FROM return_order WHERE return_order_number = :rn${factoryCond}`,
+      { replacements: { rn: return_order_number, ...factoryReps } }
     );
     if (headerRows.length === 0) {
       res.status(404).json({ success: false, message: '退货单不存在' }); return;
@@ -636,7 +703,8 @@ export const returnInbound = async (req: Request, res: Response, next: NextFunct
       return_order_number: req.params.return_order_number,
     };
     const factoryCode = await getFactoryCode(req);
-    const result = await returnInboundService(params, (req as any).user?.username || '', factoryCode);
+    const _factoryId = getFactoryId(req);
+    const result = await returnInboundService(params, (req as any).user?.username || '', factoryCode, _factoryId);
     res.json(success(result, '退货入库成功'));
   } catch (err) {
     if (err instanceof BusinessError) {
@@ -650,12 +718,22 @@ export const returnInbound = async (req: Request, res: Response, next: NextFunct
 // ==================== 已完成盘点单列表（下拉用） ====================
 export const getCompletedStockCounts = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // 多工厂数据隔离
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? ` AND sc.factory_id = :_factoryId` : '';
+    const replacements: any = {};
+    if (effectiveFactoryId !== null) replacements._factoryId = effectiveFactoryId;
+
     const [items]: any = await sequelize.query(`
-      SELECT count_number, count_period, warehouse_number, warehouse_name, confirmed_date
-      FROM stock_count
-      WHERE status = N'已完成'
-      ORDER BY count_period DESC, confirmed_date DESC
-    `);
+      SELECT sc.count_number, sc.count_period, sc.warehouse_number, sc.warehouse_name, sc.confirmed_date,
+        ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name
+      FROM stock_count sc
+      LEFT JOIN factory f ON sc.factory_id = f.id
+      WHERE sc.status = N'已完成'${factoryCond}
+      ORDER BY sc.count_period DESC, sc.confirmed_date DESC
+    `, { replacements });
     res.json(success(items));
   } catch (err) { next(err); }
 };
@@ -669,9 +747,17 @@ export const getMonthlyReport = async (req: Request, res: Response, next: NextFu
     }
 
     // Step 1: 校验盘点单
+    // 多工厂防越权：校验盘点单所属工厂
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? ` AND factory_id = :_factoryId` : '';
+    const headerRepl: any = { count_number };
+    if (effectiveFactoryId !== null) headerRepl._factoryId = effectiveFactoryId;
+
     const [headers]: any = await sequelize.query(
-      `SELECT count_number, count_period, warehouse_number, warehouse_name, status FROM stock_count WHERE count_number = :count_number`,
-      { replacements: { count_number } }
+      `SELECT count_number, count_period, warehouse_number, warehouse_name, status FROM stock_count WHERE count_number = :count_number${factoryCond}`,
+      { replacements: headerRepl }
     );
     if (!headers.length) {
       return res.status(404).json({ success: false, message: '盘点单不存在' });
@@ -807,6 +893,17 @@ export const rollbackOutbound = async (req: Request, res: Response, next: NextFu
 // ==================== 生产入库撤回 - Thin Adapter ====================
 export const withdrawInboundOrder = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // 多工厂防越权：校验入库单所属工厂
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      const [chk]: any = await sequelize.query(
+        `SELECT factory_id FROM production_inbound_order WHERE inbound_order_number = :num`,
+        { replacements: { num: req.params.inbound_order_number as string } }
+      );
+      if (chk.length === 0 || chk[0].factory_id !== _factoryId) {
+        res.status(404).json({ success: false, message: '入库单不存在' }); return;
+      }
+    }
     const result = await rollbackProductionInboundService(
       req.params.inbound_order_number as string,
       (req as any).user?.username || ''

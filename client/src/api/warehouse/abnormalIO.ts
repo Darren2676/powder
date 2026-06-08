@@ -2,7 +2,7 @@ import request from '@/utils/request'
 
 // ==================== 其他出入库管理 ====================
 
-export function getAbnormalIOList(params?: { page?: number; limit?: number; search?: string; type?: string; status?: string }) {
+export function getAbnormalIOList(params?: { page?: number; limit?: number; search?: string; type?: string; status?: string; factory_id?: number }) {
   return request.get('/abnormal-io', { params })
 }
 

@@ -1,6 +1,6 @@
 import request from '@/utils/request'
 
-export function getPurchasePriceLists(params?: { page?: number; limit?: number; search?: string; approval_status?: string }) {
+export function getPurchasePriceLists(params?: { page?: number; limit?: number; search?: string; approval_status?: string; factory_id?: number }) {
   return request.get('/purchase-prices', { params })
 }
 
@@ -20,8 +20,8 @@ export function deletePurchasePriceList(id: string) {
   return request.delete(`/purchase-prices/${encodeURIComponent(id)}`)
 }
 
-export function exportPurchasePriceLists(search?: string) {
-  return request.get('/purchase-prices/export', { params: { search }, responseType: 'blob' })
+export function exportPurchasePriceLists(search?: string, factory_id?: number) {
+  return request.get('/purchase-prices/export', { params: { search, factory_id }, responseType: 'blob' })
 }
 
 export function importPurchasePriceList(formData: FormData) {

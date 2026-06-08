@@ -13,21 +13,21 @@ import { createLogger } from '@/config/logger'
 const log = createLogger('workflow')
 
 // Module configuration - same pattern as approval.controller.ts
-export const moduleConfig: Record<string, { tableName: string; primaryKey: string; displayName: string }> = {
-  'routing_header': { tableName: 'routing_header', primaryKey: 'process_route_number', displayName: '工艺路线' },
-  'Production_plan': { tableName: 'Production_plan', primaryKey: 'production_number', displayName: '生产计划' },
-  'bom_header': { tableName: 'bom_header', primaryKey: 'bom_number', displayName: 'BOM物料清单' },
-  'production_order': { tableName: 'production_order', primaryKey: 'production_order_number', displayName: '生产单' },
-  'process_task': { tableName: 'process_task', primaryKey: 'process_task_number', displayName: '工序任务单' },
-  'material_preparation': { tableName: 'material_preparation', primaryKey: 'preparation_number', displayName: '备料单' },
-  'work_report': { tableName: 'work_report', primaryKey: 'work_report_number', displayName: '报工单' },
-  'sales_order': { tableName: 'sales_order', primaryKey: 'sales_order_number', displayName: '销售订单' },
-  'sales_forecast': { tableName: 'sales_forecast', primaryKey: 'forecast_number', displayName: '销售预测' },
-  'purchase_req': { tableName: 'purchase_req', primaryKey: 'purchase_req_number', displayName: '采购申请单' },
-  'purchase_order': { tableName: 'purchase_order', primaryKey: 'purchase_order_number', displayName: '采购订单' },
-  'stock_in': { tableName: 'stock_in', primaryKey: 'stock_in_number', displayName: '入库单' },
-  'return_order': { tableName: 'return_order', primaryKey: 'return_order_number', displayName: '退货单' },
-  'expense_claim': { tableName: 'expense_claim', primaryKey: 'claim_number', displayName: '报销单' }
+export const moduleConfig: Record<string, { tableName: string; primaryKey: string; displayName: string; hasFactoryId?: boolean }> = {
+  'routing_header': { tableName: 'routing_header', primaryKey: 'process_route_number', displayName: '工艺路线', hasFactoryId: false },
+  'Production_plan': { tableName: 'Production_plan', primaryKey: 'production_number', displayName: '生产计划', hasFactoryId: true },
+  'bom_header': { tableName: 'bom_header', primaryKey: 'bom_number', displayName: 'BOM物料清单', hasFactoryId: false },
+  'production_order': { tableName: 'production_order', primaryKey: 'production_order_number', displayName: '生产单', hasFactoryId: true },
+  'process_task': { tableName: 'process_task', primaryKey: 'process_task_number', displayName: '工序任务单', hasFactoryId: true },
+  'material_preparation': { tableName: 'material_preparation', primaryKey: 'preparation_number', displayName: '备料单', hasFactoryId: false },
+  'work_report': { tableName: 'work_report', primaryKey: 'work_report_number', displayName: '报工单', hasFactoryId: true },
+  'sales_order': { tableName: 'sales_order', primaryKey: 'sales_order_number', displayName: '销售订单', hasFactoryId: true },
+  'sales_forecast': { tableName: 'sales_forecast', primaryKey: 'forecast_number', displayName: '销售预测', hasFactoryId: true },
+  'purchase_req': { tableName: 'purchase_req', primaryKey: 'purchase_req_number', displayName: '采购申请单', hasFactoryId: true },
+  'purchase_order': { tableName: 'purchase_order', primaryKey: 'purchase_order_number', displayName: '采购订单', hasFactoryId: true },
+  'stock_in': { tableName: 'stock_in', primaryKey: 'stock_in_number', displayName: '入库单', hasFactoryId: true },
+  'return_order': { tableName: 'return_order', primaryKey: 'return_order_number', displayName: '退货单', hasFactoryId: true },
+  'expense_claim': { tableName: 'expense_claim', primaryKey: 'claim_number', displayName: '报销单', hasFactoryId: true }
 }
 
 export interface WorkflowUser {
@@ -261,7 +261,8 @@ export function evaluateCondition(expression: string | null, businessData: Recor
 export async function startWorkflow(
   module: string,
   recordId: string,
-  user: { id: number; username: string }
+  user: { id: number; username: string },
+  factory_id?: number
 ): Promise<{ instanceId: number; success: boolean; message: string }> {
   try {
     return await withTransaction(async (transaction) => {
@@ -284,6 +285,14 @@ export async function startWorkflow(
       // 3. Snapshot business data
       const businessData = await snapshotBusinessData(module, recordId)
       const config = moduleConfig[module]
+
+      // 多工厂隔离：校验记录所属工厂
+      const fCond = (factory_id != null && config.hasFactoryId) ? ' AND factory_id = :factory_id' : ''
+      const fReps = (factory_id != null && config.hasFactoryId) ? { factory_id } : {}
+      if (factory_id != null && config.hasFactoryId && businessData.factory_id != null && businessData.factory_id !== factory_id) {
+        return { instanceId: 0, success: false, message: '不能操作其他工厂的记录' }
+      }
+
       const title = `${config.displayName} ${recordId} 审批`
 
       // 4. Create workflow instance
@@ -314,8 +323,8 @@ export async function startWorkflow(
       await sequelize.query(`
         UPDATE ${config.tableName}
         SET approval_status = N'审批中'
-        WHERE ${config.primaryKey} = :recordId
-      `, { replacements: { recordId }, transaction })
+        WHERE ${config.primaryKey} = :recordId${fCond}
+      `, { replacements: { recordId, ...fReps }, transaction })
 
       // 6. Create history entry for start
       await sequelize.query(`
@@ -341,7 +350,7 @@ export async function startWorkflow(
       }
 
       // Advance from start node
-      await advanceWorkflow(instanceId, startNodes[0].id, 'approve', transaction)
+      await advanceWorkflow(instanceId, startNodes[0].id, 'approve', transaction, factory_id)
 
       return { instanceId, success: true, message: '流程已启动' }
     })
@@ -361,7 +370,8 @@ export async function advanceWorkflow(
   instanceId: number,
   fromNodeId: number,
   result: 'approve' | 'reject',
-  transaction?: Transaction
+  transaction?: Transaction,
+  factory_id?: number
 ): Promise<void> {
   const ownTransaction = !transaction
   if (ownTransaction) {
@@ -425,18 +435,18 @@ export async function advanceWorkflow(
     switch (nextNodeType) {
       case 'end':
         // Complete the workflow
-        await completeWorkflow(instanceId, 'completed', transaction!)
+        await completeWorkflow(instanceId, 'completed', transaction!, factory_id)
         break
 
       case 'condition':
         // Condition/gateway node - immediately advance
-        await advanceWorkflow(instanceId, nextEdge.to_node_id, result, transaction)
+        await advanceWorkflow(instanceId, nextEdge.to_node_id, result, transaction, factory_id)
         break
 
       case 'notification':
         // Create notification tasks (auto-read) and advance
         await createTasksForNode(instanceId, nextEdge.to_node_id, transaction!)
-        await advanceWorkflow(instanceId, nextEdge.to_node_id, result, transaction)
+        await advanceWorkflow(instanceId, nextEdge.to_node_id, result, transaction, factory_id)
         break
 
       case 'approval':
@@ -552,7 +562,8 @@ export async function processTask(
   taskId: number,
   action: 'approve' | 'reject',
   user: { id: number; username: string },
-  remark?: string
+  remark?: string,
+  factory_id?: number
 ): Promise<{ success: boolean; message: string }> {
   // Capture instance info for deferred hook execution after transaction commit.
   // Hooks must run OUTSIDE the transaction because they use separate DB connections
@@ -631,10 +642,10 @@ export async function processTask(
 
         if (action === 'approve') {
           // Advance to next node
-          await advanceWorkflow(task.instance_id, task.node_id, 'approve', transaction)
+          await advanceWorkflow(task.instance_id, task.node_id, 'approve', transaction, factory_id)
         } else {
           // Reject - use configured strategy
-          await executeRejectStrategy(task.node_config, task.instance_id, task.node_id, user, remark || '', transaction)
+          await executeRejectStrategy(task.node_config, task.instance_id, task.node_id, user, remark || '', transaction, factory_id)
         }
 
       } else if (task.node_type === 'countersign') {
@@ -643,10 +654,10 @@ export async function processTask(
 
         if (completed.done) {
           if (completed.result === 'approved') {
-            await advanceWorkflow(task.instance_id, task.node_id, 'approve', transaction)
+            await advanceWorkflow(task.instance_id, task.node_id, 'approve', transaction, factory_id)
           } else {
             // Reject - use configured strategy
-            await executeRejectStrategy(task.node_config, task.instance_id, task.node_id, user, remark || '', transaction)
+            await executeRejectStrategy(task.node_config, task.instance_id, task.node_id, user, remark || '', transaction, factory_id)
           }
         }
       }
@@ -792,7 +803,8 @@ async function checkCountersignProgress(
 async function completeWorkflow(
   instanceId: number,
   status: 'completed' | 'rejected',
-  transaction: Transaction
+  transaction: Transaction,
+  factory_id?: number
 ): Promise<void> {
   // Get instance
   const [instances]: any = await sequelize.query(`
@@ -803,6 +815,8 @@ async function completeWorkflow(
 
   const instance = instances[0]
   const config = moduleConfig[instance.module]
+  const fCond = (factory_id != null && config.hasFactoryId) ? ' AND factory_id = :factory_id' : ''
+  const fReps = (factory_id != null && config.hasFactoryId) ? { factory_id } : {}
 
   // Update instance status
   await sequelize.query(`
@@ -816,8 +830,8 @@ async function completeWorkflow(
   await sequelize.query(`
     UPDATE ${config.tableName}
     SET approval_status = :status
-    WHERE ${config.primaryKey} = :recordId
-  `, { replacements: { status: newApprovalStatus, recordId: instance.record_id }, transaction })
+    WHERE ${config.primaryKey} = :recordId${fCond}
+  `, { replacements: { status: newApprovalStatus, recordId: instance.record_id, ...fReps }, transaction })
 
   // Cancel any remaining pending tasks
   await sequelize.query(`
@@ -854,7 +868,8 @@ async function completeWorkflow(
  */
 export async function withdrawWorkflow(
   instanceId: number,
-  user: { id: number; username: string }
+  user: { id: number; username: string },
+  factory_id?: number
 ): Promise<{ success: boolean; message: string }> {
   try {
     return await withTransaction(async (transaction) => {
@@ -880,6 +895,19 @@ export async function withdrawWorkflow(
       }
 
       const config = moduleConfig[instance.module]
+      const fCond = (factory_id != null && config.hasFactoryId) ? ' AND factory_id = :factory_id' : ''
+      const fReps = (factory_id != null && config.hasFactoryId) ? { factory_id } : {}
+
+      // 多工厂隔离：校验记录所属工厂
+      if (factory_id != null && config.hasFactoryId) {
+        const [bizRec]: any = await sequelize.query(
+          `SELECT factory_id FROM ${config.tableName} WHERE ${config.primaryKey} = :recordId`,
+          { replacements: { recordId: instance.record_id }, transaction }
+        )
+        if (bizRec.length > 0 && bizRec[0].factory_id != null && bizRec[0].factory_id !== factory_id) {
+          throw new BusinessError(403, '不能操作其他工厂的记录')
+        }
+      }
 
       // Update instance status
       await sequelize.query(`
@@ -892,8 +920,8 @@ export async function withdrawWorkflow(
       await sequelize.query(`
         UPDATE ${config.tableName}
         SET approval_status = N'草稿'
-        WHERE ${config.primaryKey} = :recordId
-      `, { replacements: { recordId: instance.record_id }, transaction })
+        WHERE ${config.primaryKey} = :recordId${fCond}
+      `, { replacements: { recordId: instance.record_id, ...fReps }, transaction })
 
       // Cancel all pending tasks
       await sequelize.query(`
@@ -935,19 +963,20 @@ async function executeRejectStrategy(
   nodeId: number,
   user: { id: number; username: string },
   remark: string,
-  transaction: Transaction
+  transaction: Transaction,
+  factory_id?: number
 ): Promise<void> {
   const strategy = parseRejectStrategy(nodeConfig)
   switch (strategy) {
     case 'to_start':
-      await returnToStart(instanceId, nodeId, user, remark, transaction)
+      await returnToStart(instanceId, nodeId, user, remark, transaction, factory_id)
       break
     case 'to_previous':
-      await returnToPrevious(instanceId, nodeId, user, remark, transaction)
+      await returnToPrevious(instanceId, nodeId, user, remark, transaction, factory_id)
       break
     case 'end':
     default:
-      await completeWorkflow(instanceId, 'rejected', transaction)
+      await completeWorkflow(instanceId, 'rejected', transaction, factory_id)
       break
   }
 }
@@ -977,7 +1006,8 @@ async function returnToStart(
   currentNodeId: number,
   user: { id: number; username: string },
   remark: string,
-  transaction: Transaction
+  transaction: Transaction,
+  factory_id?: number
 ): Promise<void> {
   const [instances]: any = await sequelize.query(`
     SELECT * FROM workflow_instances WHERE id = :instanceId
@@ -987,6 +1017,8 @@ async function returnToStart(
 
   const instance = instances[0]
   const config = moduleConfig[instance.module]
+  const fCond = (factory_id != null && config.hasFactoryId) ? ' AND factory_id = :factory_id' : ''
+  const fReps = (factory_id != null && config.hasFactoryId) ? { factory_id } : {}
 
   // Get current node name for history
   const [nodes]: any = await sequelize.query(`
@@ -1005,8 +1037,8 @@ async function returnToStart(
   await sequelize.query(`
     UPDATE ${config.tableName}
     SET approval_status = N'草稿'
-    WHERE ${config.primaryKey} = :recordId
-  `, { replacements: { recordId: instance.record_id }, transaction })
+    WHERE ${config.primaryKey} = :recordId${fCond}
+  `, { replacements: { recordId: instance.record_id, ...fReps }, transaction })
 
   // Cancel remaining pending tasks
   await sequelize.query(`
@@ -1056,7 +1088,8 @@ async function returnToPrevious(
   currentNodeId: number,
   user: { id: number; username: string },
   remark: string,
-  transaction: Transaction
+  transaction: Transaction,
+  factory_id?: number
 ): Promise<void> {
   // Find previous approval node from history
   const [prevHistory]: any = await sequelize.query(`
@@ -1071,7 +1104,7 @@ async function returnToPrevious(
 
   // If no previous approval node, degrade to returnToStart
   if (prevHistory.length === 0) {
-    await returnToStart(instanceId, currentNodeId, user, remark || '无上一审批节点，已退回发起人', transaction)
+    await returnToStart(instanceId, currentNodeId, user, remark || '无上一审批节点，已退回发起人', transaction, factory_id)
     return
   }
 

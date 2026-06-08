@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>计划管理业务全流程逻辑流程图 - MES系统</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+  .page { max-width: 1400px; margin: 0 auto; padding: 32px; background: #fff; min-height: 100vh; }
+  h1 { text-align: center; font-size: 28px; color: #1a1a2e; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 32px; }
+  h2 { font-size: 20px; color: #1a1a2e; margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 2px solid #e8e8e8; }
+  h3 { font-size: 16px; color: #1a1a2e; margin: 20px 0 10px; }
+  .intro { background: #fff7e6; border: 1px solid #ffd591; border-radius: 6px; padding: 16px; margin-bottom: 24px; font-size: 14px; }
+  .mermaid { text-align: center; margin: 16px 0; }
+  .note { background: #fffbe6; border-left: 4px solid #faad14; padding: 12px 16px; margin: 12px 0; font-size: 13px; color: #666; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #e8e8e8; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>计划管理业务全流程逻辑流程图</h1>
+<div class="subtitle">MES系统 | 从销售订单/预测 → MPS计算 → 生产计划 → MRP运算 → 生产工单/备料任务/生产任务/采购申请的完整业务链路</div>
+
+<div class="intro">
+  <strong>文档说明：</strong>本文档完整展示了计划管理模块的全业务流程：包含销售订单与销售预测需求汇总、成品安全库存考虑、MPS(主生产计划)计算生成生产计划、MRP(物料需求计划)运算进行BOM逐层分解、确认执行后生成生产工单、生产备料任务单、生产任务单和采购申请，<strong>以及生产计划删除/撤消(反审批)时自动回退源销售订单和销售预测状态</strong>的完整逻辑。涵盖多工厂数据隔离、审批控制、库存联动、源单据状态联动等核心机制。
+</div>
+
+<!-- ==================== 一、全流程总览 ==================== -->
+<h2>一、计划管理业务全流程总览</h2>
+<div class="mermaid">
+graph TB
+    subgraph 需求输入["📋 需求输入层"]
+        SO[销售订单<br/>sales_order<br/>approval_status=已审批<br/>shipping_status=未完成] 
+        FC[销售预测<br/>sales_forecast<br/>approval_status=已审批<br/>remaining_quantity>0]
+        SS[成品安全库存<br/>finished_goods_inventory<br/>safety_stock_quantity]
+    end
+
+    subgraph MPS计算["📊 MPS主生产计划计算"]
+        SO --> DEMAND[需求合并<br/>gross_demand = MAX<br/>forecast_demand, order_demand]
+        FC --> DEMAND
+        DEMAND --> NET[净需求计算<br/>net_demand = MAX 0,<br/>gross - on_hand - in_transit<br/>- production_in_transit + safety_stock]
+        SS --> NET
+    end
+
+    subgraph 生产计划["📝 生产计划生成"]
+        NET -->|net_demand>0| PP[生成生产计划<br/>Production_plan<br/>approval_status=草稿<br/>plan_status=待加入任务]
+        PP --> PP_APPR[提交审批<br/>approval_status: 草稿→已审批]
+        PP_APPR --> PP_READY[待MRP计划<br/>plan_status=待加入任务<br/>mrp_status=NULL]
+    end
+
+    subgraph MRP运算["🔧 MRP物料需求计划"]
+        PP_READY -->|选择计划| MRP_RUN[MRP运算执行<br/>mrp_run]
+        MRP_RUN --> BOM_DECOMP[BOM逐层分解<br/>广度优先BFS<br/>Level 0→1→2→...]
+        BOM_DECOMP --> MRP_RESULT[MRP结果<br/>mrp_run_detail<br/>result_status=待确认]
+    end
+
+    subgraph MRP确认执行["✅ MRP确认执行"]
+        MRP_RESULT -->|确认执行| EXEC[executeMRP]
+        EXEC --> PO_GEN[生成生产工单<br/>production_order<br/>plan_status=未开始<br/>approval_status=草稿]
+        EXEC --> PR_GEN[生成采购申请<br/>purchase_req<br/>approval_status=草稿<br/>plan_status=未执行]
+        EXEC --> PLAN_IMPORT[计划导入生产单<br/>Production_plan→production_order<br/>plan_status: 待加入任务→已加入任务]
+    end
+
+    subgraph 生产执行["🏭 生产执行层"]
+        PO_GEN --> PO_APPR[生产工单审批<br/>approval_status: 草稿→已审批]
+        PO_APPR --> MAT_PREP[生产备料任务单<br/>material_preparation_task<br/>BOM子件需求分解]
+        MAT_PREP --> PROD_TASK[生产任务单<br/>production_task<br/>工序排程执行]
+        PROD_TASK --> COMPLETE[生产完成入库<br/>finished_goods_inventory]
+    end
+
+    subgraph 采购执行["🛒 采购执行层"]
+        PR_GEN --> PR_APPR[采购申请审批<br/>approval_status: 草稿→已审批]
+        PR_APPR --> PR_EXEC[转采购订单<br/>purchase_order<br/>下达供应商]
+    end
+
+    subgraph 回退["↩️ 计划删除与撤消回退"]
+        PP_APPR -->|反审批撤消| REVERSE[onPlanReversed回调<br/>revertPlanSourceStatuses<br/>查询source_order_number<br/>source_line_number]
+        PP -->|删除草稿| DELETE_PLAN[deletePlan<br/>revertPlanSourceStatuses<br/>在事务内先回退再删除]
+        REVERSE --> SO_RB[回退销售订单<br/>sales_order_detail<br/>production_status→未加入计划<br/>status→未开始]
+        REVERSE --> FC_RB[回退销售预测<br/>sales_forecast_detail<br/>status→未开始]
+        DELETE_PLAN --> SO_RB
+        DELETE_PLAN --> FC_RB
+        SO_RB --> SO_HEADER_RB[若订单无其他明细在排产<br/>sales_order.order_status<br/>生产中→待执行]
+        FC_RB --> SOURCE_CLEAN{源单据回退完成<br/>可重新导入计划}
+    end
+
+    style PP fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style MRP_RUN fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style PO_GEN fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style PR_GEN fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style MAT_PREP fill:#f0f5ff,stroke:#597ef7,stroke-width:2px
+    style PROD_TASK fill:#f0f5ff,stroke:#597ef7,stroke-width:2px
+    style NET fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style REVERSE fill:#fff1f0,stroke:#ff4d4f,stroke-width:2px
+    style DELETE_PLAN fill:#ffccc7,stroke:#ff4d4f,stroke-width:2px
+    style SO_RB fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style FC_RB fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+</div>
+
+<div class="note">
+  <strong>全流程概述：</strong>销售订单和销售预测作为需求输入，经过MPS计算（考虑成品安全库存、现有库存、采购在途、生产在途），计算出各物料的净需求，生成生产计划。生产计划审批通过后进入MRP运算，通过BOM逐层分解计算所有层级物料的需求。MRP确认执行后，自动生成生产工单（含计划导入的生产单）和采购申请。生产工单审批后可生成备料任务单和生产任务单；采购申请审批后可转采购订单。<strong>新增：生产计划删除或反审批撤消时，自动回退关联的销售订单/销售预测状态（revertPlanSourceStatuses），确保源单据可重新纳入计划。</strong>整个链路实现从需求→计划→执行→回退的全闭环管理。
+</div>
+
+<!-- ==================== 二、MPS计算详细流程 ==================== -->
+<h2>二、MPS主生产计划计算详细流程</h2>
+<div class="mermaid">
+graph TB
+    START([MPS计算开始<br/>calculateMPS]) --> PARAMS[输入参数<br/>start_date / end_date<br/>customer_number 可选]
+
+    subgraph 需求采集["步骤1-2: 需求采集"]
+        PARAMS --> FC_QUERY[查询已审批销售预测<br/>sales_forecast_detail<br/>remaining_quantity > 0<br/>按物料汇总 forecast_demand]
+        PARAMS --> SO_QUERY[查询已审批销售订单<br/>sales_order_detail<br/>shipping_status IN 未申请/未发货/部分发货<br/>production_status NOT IN 待排产/计划中/待生产/生产中]
+        
+        SO_QUERY --> SO_CALC[计算订单需求<br/>order_demand = order_quantity<br/>- shipped_quantity<br/>+ refunded_quantity<br/>按物料 GROUP BY]
+    end
+
+    subgraph 需求合并["步骤3: 需求合并去重"]
+        FC_QUERY --> MERGE[需求合并<br/>同物料取MAX<br/>gross_demand = MAX<br/>forecast_demand, order_demand]
+        SO_CALC --> MERGE
+    end
+
+    subgraph 供给计算["步骤4: 供给计算"]
+        MERGE --> INV_QUERY[查成品库存+安全库存<br/>finished_goods_inventory<br/>SUM quantity AS on_hand<br/>SUM safety_stock_quantity AS safety_stock]
+        MERGE --> PO_TRANSIT[查采购在途<br/>purchase_order_detail<br/>已审批未完全入库<br/>order_quantity - received_quantity]
+        MERGE --> PROD_TRANSIT[查生产在途<br/>Production_plan + production_order<br/>已审批未完成<br/>planned_quantity - inbound_quantity]
+    end
+
+    subgraph 净需求["步骤5: 净需求计算"]
+        INV_QUERY --> NET_CALC[净需求公式<br/>net_demand = MAX 0,<br/>gross_demand - on_hand<br/>- in_transit<br/>- production_in_transit<br/>+ safety_stock]
+        PO_TRANSIT --> NET_CALC
+        PROD_TRANSIT --> NET_CALC
+        NET_CALC --> RANK[按净需求降序排列]
+    end
+
+    RANK --> RESULT[返回MPS计算结果<br/>含产品扩展信息<br/>橡胶编号/班产定额]
+
+    style NET_CALC fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style RESULT fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style MERGE fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+</div>
+
+<table>
+  <tr><th>步骤</th><th>操作</th><th>数据源</th><th>关键条件</th></tr>
+  <tr><td>1</td><td>查询预测需求</td><td>sales_forecast_detail + sales_forecast</td><td>approval_status=已审批, remaining_quantity>0</td></tr>
+  <tr><td>2</td><td>查询订单需求</td><td>sales_order_detail + sales_order</td><td>approval_status=已审批, shipping_status IN (未申请,未发货,部分发货), production_status排除已排产</td></tr>
+  <tr><td>3</td><td>需求合并去重</td><td>内存Map</td><td>同物料取MAX(forecast_demand, order_demand)</td></tr>
+  <tr><td>4</td><td>查库存</td><td>finished_goods_inventory</td><td>SUM(quantity) AS on_hand, SUM(safety_stock_quantity)</td></tr>
+  <tr><td>5</td><td>查采购在途</td><td>purchase_order_detail + purchase_order</td><td>approval_status=已审批, SUM(order_quantity - received_quantity)</td></tr>
+  <tr><td>6</td><td>查生产在途</td><td>Production_plan + production_order</td><td>approval_status=已审批, plan_status NOT IN (已完成,已关闭), JOINT需加item_number条件</td></tr>
+  <tr><td>7</td><td>净需求计算</td><td>内存计算</td><td>net = MAX(0, gross - on_hand - in_transit - production_in_transit + safety_stock)</td></tr>
+  <tr><td>8</td><td>降序排列</td><td>内存排序</td><td>按净需求从大到小排序</td></tr>
+</table>
+
+<div class="note">
+  <strong>MPS计算要点：</strong>
+  <ul>
+    <li>销售订单与销售预测按物料合并，同一物料取两者需求量的最大值，避免重复计算</li>
+    <li>生产在途查询必须加 <code>po.item_number = pp.item_number</code> 条件，防止MRP展开的子件工单被误累加</li>
+    <li>已入库数量通过入库单计入 finished_goods_inventory，生产在途必须扣除已入库部分避免重复</li>
+    <li>所有查询均带 factory_id 多工厂隔离条件</li>
+    <li>返回结果包含产品扩展信息：橡胶编号(rubber_compound_number)、班产定额(batch_production_quota)</li>
+  </ul>
+</div>
+
+<!-- ==================== 三、MPS结果导入生产计划 ==================== -->
+<h2>三、MPS结果导入生产计划流程</h2>
+<div class="mermaid">
+graph TB
+    START([MPS计算结果表格]) --> SELECT{导入方式选择}
+
+    subgraph 方式一["方式一: MPS批量导入"]
+        SELECT -->|批量导入| BATCH1[选择净需求>0的物料] 
+        BATCH1 --> BATCH2[生成生产计划单号<br/>PP-YYYYMMDD-NNN]
+        BATCH2 --> BATCH3[INSERT Production_plan<br/>source_order_number='MPS'<br/>approval_status=草稿<br/>plan_status=待加入任务]
+        BATCH3 --> BATCH4[回写预测明细状态<br/>sales_forecast_detail<br/>status='计划中']
+    end
+
+    subgraph 方式二["方式二: 从需求来源导入"]
+        SELECT -->|按物料导入| SRC1[选择MPS表格中某物料] 
+        SRC1 --> SRC2[查询需求来源混合列表<br/>销售订单明细: 未完成发货<br/>销售预测明细: 未开始]
+        SRC2 --> SRC3[用户勾选记录]
+        SRC3 --> SRC4[生成生产计划单号]
+        SRC4 --> SRC5[INSERT Production_plan<br/>source_order_number=源单号<br/>source_line_number=源单行号]
+        SRC5 --> SRC6{来源类型判断}
+        SRC6 -->|ORDER| ORDER_CB[回写销售订单明细<br/>production_status='待排产']
+        SRC6 -->|FORECAST| FC_CB[回写预测明细<br/>status='计划中']
+        ORDER_CB --> ORDER_MAIN[更新销售订单主表<br/>order_status='生产中']
+    end
+
+    BATCH4 --> DONE[生产计划创建完成<br/>等待审批]
+    FC_CB --> DONE
+    ORDER_MAIN --> DONE
+
+    style BATCH3 fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style SRC5 fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style DONE fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style SRC6 fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+</div>
+
+<div class="note">
+  <strong>导入方式说明：</strong>
+  <ul>
+    <li><strong>MPS批量导入</strong>：从MPS计算结果中选择净需求>0的物料，批量生成生产计划，source_order_number='MPS'</li>
+    <li><strong>从需求来源导入</strong>：针对单个物料，查看其需求来源（销售订单明细/销售预测明细），用户勾选具体记录后生成生产计划，保留源单追溯</li>
+    <li>两种方式生成的计划初始状态均为：approval_status=草稿, plan_status=待加入任务</li>
+    <li>导入后回写源单据状态：销售订单明细 production_status='待排产'，主表 order_status='生产中'；预测明细 status='计划中'</li>
+  </ul>
+</div>
+
+<!-- ==================== 四、MRP运行计算详细流程 ==================== -->
+<h2>四、MRP物料需求计划计算详细流程</h2>
+<div class="mermaid">
+graph TB
+    START([MRP运算开始<br/>runMRP]) --> GET_PLANS[获取可选计划<br/>getPlansForMrp<br/>approval_status=已审批<br/>plan_status=待加入任务<br/>mrp_status IS NULL]
+
+    GET_PLANS --> INIT[初始化MRP运行]
+    
+    subgraph MRP初始化["MRP初始化"]
+        INIT --> GEN_NUM[生成MRP运行编号<br/>MRP-FC-YYYYMMDD-NNN]
+        GEN_NUM --> INSERT_RUN[INSERT mrp_run<br/>run_status=已计算<br/>plan_count/run_by/creation_date]
+        INSERT_RUN --> INSERT_PLAN[INSERT mrp_run_plan<br/>关联每个选中的生产计划<br/>production_number/item_number/planned_quantity]
+    end
+
+    subgraph BOM分解["BOM广度优先逐层分解"]
+        INSERT_PLAN --> INIT_QUEUE[初始化队列<br/>Level 0: 成品物料<br/>quantity=planned_quantity<br/>due_date=planned_completion_time]
+
+        INIT_QUEUE --> LEVEL0[Level 0: 成品处理]
+        
+        subgraph L0处理["Level 0: 成品层"]
+            LEVEL0 --> L0_BOM[查BOM<br/>bom_header: condition=启用, approval_status=已审批]
+            L0_BOM --> L0_IM[查物料主数据<br/>item_master: lead_time_days, item_type, business_scope]
+            L0_IM --> L0_WRITE[写入 mrp_run_detail<br/>成品行: action_type=生产<br/>gross_requirement=planned_quantity<br/>net_requirement=planned_quantity<br/>result_status=待确认]
+            L0_WRITE --> L0_EXPAND[展开BOM子件<br/>bom_detail: 子件需求<br/>childQty = quantity × actual_quantity / base_quantity<br/>加入队列 Level=1]
+        end
+
+        L0_EXPAND --> LEVEL_N[Level 1+: 子件处理]
+
+        subgraph LN处理["Level 1+: 子件层处理循环"]
+            LEVEL_N --> DEMAND_MERGE[需求归集<br/>同物料合并gross需求<br/>取最早due_date]
+            DEMAND_MERGE --> IM_BATCH[批量查物料主数据<br/>item_type, business_scope<br/>lead_time_days<br/>safety_stock_enabled/qty]
+            IM_BATCH --> INV_BATCH[批量查库存<br/>material_inventory<br/>SUM quantity AS on_hand<br/>SUM safety_stock_quantity]
+            INV_BATCH --> WIP_BATCH[批量查在制品<br/>production_order<br/>已审批未完成<br/>SUM planned_quantity]
+            WIP_BATCH --> PO_BATCH[批量查在途采购<br/>purchase_order_detail<br/>已审批未完全入库]
+            PO_BATCH --> PR_BATCH[批量查待执行采购申请<br/>purchase_req_detail<br/>已审批未执行<br/>request_quantity - ordered_quantity]
+            PR_BATCH --> NET_CALC[净需求计算<br/>gross = 汇总需求<br/>supply = on_hand + wip + po + pr<br/>safety_stock = inventory表优先<br/>net = MAX 0, gross - supply + safety_stock]
+            NET_CALC --> ACTION_TYPE{判断action_type<br/>根据business_scope}
+            ACTION_TYPE -->|仅生产| PROD_ONLY[action_type=生产]
+            ACTION_TYPE -->|仅采购| PUR_ONLY[action_type=采购]
+            ACTION_TYPE -->|生产+采购| DUAL[action_type=生产+采购<br/>双源待用户决策]
+            ACTION_TYPE -->|NULL| BOM_CHECK{有BOM?}
+            BOM_CHECK -->|是| PROD_ONLY
+            BOM_CHECK -->|否| PUR_ONLY
+            PROD_ONLY --> WRITE_DETAIL
+            PUR_ONLY --> WRITE_DETAIL
+            DUAL --> WRITE_DETAIL
+            WRITE_DETAIL[写入 mrp_run_detail<br/>gross/net/库存/在途等信息<br/>produce_quantity/purchase_quantity<br/>result_status=待确认]
+            WRITE_DETAIL --> EXPAND_CHECK{净需求>0 且<br/>action_type含生产 且<br/>有BOM?}
+            EXPAND_CHECK -->|是| EXPAND_CHILD[展开子件BOM<br/>加入队列 Level+1]
+            EXPAND_CHECK -->|否| NEXT_LEVEL
+            EXPAND_CHILD --> NEXT_LEVEL{队列为空?}
+        end
+
+        NEXT_LEVEL -->|否| LEVEL_N
+    end
+
+    NEXT_LEVEL -->|是| FINAL[更新mrp_run.result_count<br/>MRP计算完成]
+
+    style NET_CALC fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style L0_WRITE fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style WRITE_DETAIL fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style FINAL fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style ACTION_TYPE fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+</div>
+
+<table>
+  <tr><th>层级</th><th>操作</th><th>库存表</th><th>关键逻辑</th></tr>
+  <tr><td>Level 0</td><td>成品写入</td><td>-</td><td>成品直接写入mrp_run_detail，net=planned_quantity，确保即使子件库存充足也能生成生产单</td></tr>
+  <tr><td>Level 1</td><td>半成品/原料</td><td>material_inventory</td><td>查material_inventory(不查finished_goods_inventory，避免与MPS重复扣减)</td></tr>
+  <tr><td>Level 2+</td><td>深层子件</td><td>material_inventory</td><td>同上，递归展开直到无BOM或净需求≤0，最大深度10层</td></tr>
+</table>
+
+<div class="note">
+  <strong>MRP计算核心要点：</strong>
+  <ul>
+    <li><strong>广度优先BFS</strong>：按层级逐层处理，每层先归集需求再批量查询，大幅减少数据库查询次数</li>
+    <li><strong>成品特殊处理</strong>：Level 0成品 net_requirement = planned_quantity（不做供给扣减），确保成品生产单必定生成</li>
+    <li><strong>子件净需求公式</strong>：net = MAX(0, gross - (on_hand + wip + in_transit_po + pending_pr) + safety_stock)</li>
+    <li><strong>安全库存</strong>：优先取 material_inventory.safety_stock_quantity，fallback到 item_master.safety_stock_qty（需safety_stock_enabled='Y'）</li>
+    <li><strong>business_scope决策</strong>：生产→action_type=生产，采购→采购，生产+采购→双源(生产+采购)，NULL按BOM判断</li>
+    <li><strong>净需求≤0不入detail</strong>：净需求≤0的物料不生成MRP明细行（成品除外），避免无意义数据</li>
+  </ul>
+</div>
+
+<!-- ==================== 五、MRP确认执行流程 ==================== -->
+<h2>五、MRP确认执行 - 单据生成流程</h2>
+<div class="mermaid">
+graph TB
+    START([MRP确认执行<br/>executeMRP]) --> CHECK{校验MRP状态<br/>mrp_run.run_status<br/>必须为 已计算}
+
+    CHECK -->|否| ERR[错误: 状态不允许执行]
+    CHECK -->|是| INIT_TX[开始事务]
+
+    subgraph 双源决策["双源物料处理"]
+        INIT_TX --> DUAL_CHECK[遍历确认项<br/>识别双源物料<br/>action_type=生产+采购]
+        DUAL_CHECK --> PURE_PURCH{produce_quantity=0<br/>purchase_quantity>0?}
+        PURE_PURCH -->|是| MARK_PARENT[标记该物料为纯采购父项<br/>其BOM子件将被跳过]
+        PURE_PURCH -->|否| NEXT_ITEM
+    end
+
+    MARK_PARENT --> NEXT_ITEM[逐项处理]
+
+    subgraph 生产单生成["生产工单生成"]
+        NEXT_ITEM --> PROD_CHECK{produce_quantity>0<br/>且 action_type含生产?}
+        PROD_CHECK -->|是| GEN_PO_NUM[生成生产工单号<br/>P-FC-YYYYMMDD-NNN]
+        GEN_PO_NUM --> INSERT_PO[INSERT production_order<br/>production_order_number<br/>production_number=源计划编号<br/>item_number/item_name<br/>planned_quantity=生产数量<br/>planned_completion_time<br/>plan_status=未开始<br/>approval_status=草稿<br/>is_semi_product=物料类型判断<br/>remark=MRP自动生成]
+        PROD_CHECK -->|否| PURCH_CHECK
+    end
+
+    subgraph 采购申请生成["采购申请生成"]
+        INSERT_PO --> PURCH_CHECK{purchase_quantity>0<br/>且 action_type含采购?}
+        PURCH_CHECK -->|是| COLLECT_PR[收集采购行<br/>item_number/quantity/expected_date<br/>source_production_number]
+        PURCH_CHECK -->|否| UPDATE_DETAIL
+        COLLECT_PR --> UPDATE_DETAIL[更新 mrp_run_detail<br/>result_status=已确认<br/>produce_quantity/purchase_quantity<br/>generated_order_number]
+    end
+
+    subgraph 批量生成PR["批量生成采购申请单"]
+        UPDATE_DETAIL --> PR_CHECK{采购行数量>0?}
+        PR_CHECK -->|是| GEN_PR_NUM[生成采购申请单号<br/>PR-FC-YYYYMMDD-NNN]
+        GEN_PR_NUM --> INSERT_PR[INSERT purchase_req<br/>purchase_req_number<br/>source_number=mrp_run_number<br/>production_number=计划编号汇总<br/>approval_status=草稿<br/>request_reason=MRP物料需求计划]
+        INSERT_PR --> INSERT_PR_D[INSERT purchase_req_detail<br/>逐行写入采购明细<br/>request_quantity=采购数量<br/>status=未执行]
+        PR_CHECK -->|否| UPDATE_MRP
+    end
+
+    subgraph 状态更新["状态更新与计划导入"]
+        INSERT_PR_D --> UPDATE_MRP[UPDATE mrp_run<br/>run_status=已确认<br/>confirmed_at=GETDATE<br/>production_order_count/ purchase_req_count]
+        UPDATE_MRP --> UPDATE_PLAN_MRP[UPDATE Production_plan<br/>mrp_status=已分解<br/>WHERE mrp_status IS NULL]
+        UPDATE_PLAN_MRP --> IMPORT_PLAN[计划导入生产单<br/>INSERT production_order<br/>按源Production_plan生成<br/>plan_status: 待加入任务→已加入任务]
+        IMPORT_PLAN --> COMMIT[提交事务]
+    end
+
+    COMMIT --> DONE[MRP执行完成<br/>返回统计信息<br/>production_order_count<br/>purchase_req_count<br/>plan_import_count]
+
+    style INSERT_PO fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style INSERT_PR fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style IMPORT_PLAN fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style DONE fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style ERR fill:#fff1f0,stroke:#ff4d4f,stroke-width:2px
+</div>
+
+<table>
+  <tr><th>生成单据</th><th>表名</th><th>初始状态</th><th>关联字段</th></tr>
+  <tr><td>生产工单</td><td>production_order</td><td>approval_status=草稿, plan_status=未开始</td><td>production_number=源计划编号, is_semi_product</td></tr>
+  <tr><td>采购申请头</td><td>purchase_req</td><td>approval_status=草稿, order_status=未执行</td><td>source_number=mrp_run_number, production_number</td></tr>
+  <tr><td>采购申请明细</td><td>purchase_req_detail</td><td>status=未执行</td><td>purchase_req_number</td></tr>
+  <tr><td>计划导入生产单</td><td>production_order</td><td>approval_status=草稿, plan_status=未开始</td><td>production_number=源计划编号</td></tr>
+</table>
+
+<div class="note">
+  <strong>MRP执行核心要点：</strong>
+  <ul>
+    <li><strong>双源决策</strong>：action_type='生产+采购'的物料，用户可选择纯采购（produce_quantity=0），其BOM子件将被跳过不生成任何单据</li>
+    <li><strong>子件跳过机制</strong>：通过解析 parent_item_number 判断是否为纯采购父项的子件，若是则标记 result_status='已跳过'</li>
+    <li><strong>计划导入</strong>：MRP执行后自动将源Production_plan的生成为production_order（按计划编号+物料编号去重），同时更新plan_status为'已加入任务'</li>
+    <li><strong>去重机制</strong>：计划导入前检查 production_order 是否已存在相同 production_number+item_number 的记录，避免重复生成</li>
+    <li><strong>净需求≤0的处理</strong>：标记 result_status='已跳过'，不生成任何单据</li>
+    <li><strong>事务保护</strong>：整个执行过程在一个数据库事务中，任何步骤失败自动回滚</li>
+  </ul>
+</div>
+
+<!-- ==================== 六、生产单后续流程 ==================== -->
+<h2>六、生产工单→备料任务→生产任务流程</h2>
+<div class="mermaid">
+graph TB
+    START([生产工单已审批<br/>production_order<br/>approval_status=已审批]) --> PO_PLAN{plan_status?}
+
+    subgraph 备料阶段["📦 备料阶段"]
+        PO_PLAN -->|未开始/备料中| MAT_CREATE[生成备料任务单<br/>material_preparation_task<br/>task_type=生产备料]
+        MAT_CREATE --> BOM_EXPAND[展开生产BOM<br/>bom_detail<br/>计算各子件需求数量<br/>考虑损耗率]
+        BOM_EXPAND --> MAT_PICK[仓库备料拣货<br/>按批次FIFO出库<br/>material_inventory扣减]
+        MAT_PICK --> MAT_COMPLETE[备料完成<br/>production_order<br/>plan_status=备料完成]
+    end
+
+    subgraph 生产阶段["🏭 生产阶段"]
+        MAT_COMPLETE --> TASK_CREATE[生成生产任务单<br/>production_task<br/>分配工序/设备/模具]
+        TASK_CREATE --> PROCESS_ROUTE[按工艺路线排程<br/>routing_master → routing_detail<br/>确定各工序顺序和工时]
+        PROCESS_ROUTE --> EXECUTE[生产执行<br/>工序报工<br/>production_report]
+        EXECUTE --> QC{质检}
+        QC -->|合格| QC_PASS[合格品入库<br/>finished_goods_inventory<br/>库存增加]
+        QC -->|不合格| QC_FAIL[不合格品处理<br/>nonconforming_product<br/>→报废/返修/让步接收]
+    end
+
+    subgraph 完成阶段["✅ 完成阶段"]
+        QC_PASS --> PO_COMPLETE[生产工单完成<br/>plan_status=已完成]
+        QC_FAIL --> PO_COMPLETE
+        PO_COMPLETE --> CLOSE{全部入库?}
+        CLOSE -->|是| PO_CLOSE[生产工单关闭<br/>plan_status=已关闭]
+    end
+
+    style MAT_CREATE fill:#f0f5ff,stroke:#597ef7,stroke-width:2px
+    style TASK_CREATE fill:#f0f5ff,stroke:#597ef7,stroke-width:2px
+    style EXECUTE fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style PO_COMPLETE fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+</div>
+
+<div class="note">
+  <strong>生产执行流程说明：</strong>
+  <ul>
+    <li><strong>备料任务</strong>：生产工单审批后，根据BOM展开子件需求，仓库按FIFO批次出库配料</li>
+    <li><strong>生产任务</strong>：备料完成后，按工艺路线（routing_master→routing_detail）生成各工序的生产任务单</li>
+    <li><strong>工序报工</strong>：逐工序执行并报工，记录产量、工时、设备等</li>
+    <li><strong>质检入库</strong>：生产完成后质检，合格品入成品库（finished_goods_inventory），不合格品走NC处理流程</li>
+    <li><strong>工单状态</strong>：未开始 → 备料中 → 备料完成 → 生产中 → 已完成 → 已关闭</li>
+  </ul>
+</div>
+
+<!-- ==================== 七、生产计划删除与撤消 ==================== -->
+<h2>七、生产计划删除与撤消 — 源单据状态回退流程</h2>
+<div class="mermaid">
+graph TB
+    subgraph 触发入口["触发入口"]
+        T1[删除生产计划<br/>deletePlan<br/>仅草稿状态可删除] 
+        T2[反审批撤消<br/>approval.service.ts<br/>dispatchApprovalCallback<br/>onReverse]
+    end
+
+    subgraph 核心逻辑["revertPlanSourceStatuses"]
+        T1 --> CORE[revertPlanSourceStatuses<br/>productionNumber, transaction?]
+        T2 --> ON_REV[onPlanReversed<br/>productionNumber]
+        ON_REV --> CORE
+        CORE --> QUERY[查询 Production_plan<br/>source_order_number<br/>source_line_number<br/>item_number, factory_id]
+    end
+
+    subgraph 来源判断["来源类型判断"]
+        QUERY --> CHECK_SRC{source_order_number<br/>判断来源}
+        CHECK_SRC -->|≠MPS 且 line_number≠null| CHECK_SO[查询 sales_order<br/>WHERE sales_order_number<br/>= source_order_number]
+        CHECK_SRC -->|=MPS| MPS_PATH[MPS来源处理]
+    end
+
+    subgraph 销售订单来源["来源: 销售订单"]
+        CHECK_SO --> SO_FOUND{存在?}
+        SO_FOUND -->|是| CHECK_OTHER_SO[检查其他计划<br/>Production_plan<br/>同source_order_number<br/>+ source_line_number<br/>排除自身]
+        CHECK_OTHER_SO --> SO_DEC{有其他计划?}
+        SO_DEC -->|否| REVERT_SO_D[UPDATE sales_order_detail<br/>production_status = 未加入计划<br/>status = 未开始<br/>WHERE sales_order_number<br/>AND line_number]
+        SO_DEC -->|是| SO_SKIP[跳过回退<br/>仍有其他计划关联]
+        REVERT_SO_D --> CHECK_SO_H[检查该订单其他明细<br/>sales_order_detail<br/>production_status IN<br/>待排产,计划中,生产中]
+        CHECK_SO_H --> SO_H_DEC{有其他明细在排产?}
+        SO_H_DEC -->|否| REVERT_SO_H[UPDATE sales_order<br/>order_status = 待执行<br/>WHERE order_status = 生产中]
+        SO_H_DEC -->|是| SO_H_SKIP[保持订单头状态]
+    end
+
+    subgraph 销售预测来源["来源: 销售预测"]
+        SO_FOUND -->|否| CHECK_OTHER_FC[检查其他计划<br/>Production_plan<br/>同source_order_number<br/>+ source_line_number<br/>排除自身]
+        CHECK_OTHER_FC --> FC_DEC{有其他计划?}
+        FC_DEC -->|否| REVERT_FC[UPDATE sales_forecast_detail<br/>status = 未开始<br/>WHERE forecast_number<br/>AND line_number<br/>AND status = 计划中]
+        FC_DEC -->|是| FC_SKIP[跳过回退<br/>仍有其他计划关联]
+    end
+
+    subgraph MPS来源["来源: MPS批量导入"]
+        MPS_PATH --> CHECK_OTHER_MPS[检查其他计划<br/>Production_plan<br/>同item_number<br/>排除自身]
+        CHECK_OTHER_MPS --> MPS_DEC{有其他计划?}
+        MPS_DEC -->|否| REVERT_MPS[UPDATE sales_forecast_detail<br/>status = 未开始<br/>WHERE item_number<br/>AND status = 计划中]
+        MPS_DEC -->|是| MPS_SKIP[跳过回退<br/>仍有其他计划关联]
+    end
+
+    subgraph 最终操作["最终操作"]
+        REVERT_SO_H --> TXN_COMMIT[事务提交 / 回调完成]
+        SO_H_SKIP --> TXN_COMMIT
+        SO_SKIP --> TXN_COMMIT
+        REVERT_FC --> TXN_COMMIT
+        FC_SKIP --> TXN_COMMIT
+        REVERT_MPS --> TXN_COMMIT
+        MPS_SKIP --> TXN_COMMIT
+        TXN_COMMIT --> DONE[回退完成<br/>源单据可重新导入计划]
+    end
+
+    style CORE fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style REVERT_SO_D fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style REVERT_SO_H fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style REVERT_FC fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style REVERT_MPS fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style DONE fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style ON_REV fill:#fff1f0,stroke:#ff4d4f,stroke-width:2px
+</div>
+
+<table>
+  <tr><th>触发场景</th><th>入口函数</th><th>事务</th><th>源单据影响</th></tr>
+  <tr><td>删除草稿计划</td><td>deletePlan → revertPlanSourceStatuses</td><td>✅ 同一事务</td><td>回退销售订单/预测状态后删除计划</td></tr>
+  <tr><td>反审批撤消</td><td>dispatchApprovalCallback → onPlanReversed → revertPlanSourceStatuses</td><td>❌ 回调独立执行</td><td>仅回退源单据状态，计划变回草稿</td></tr>
+</table>
+
+<div class="note">
+  <strong>回退逻辑核心要点：</strong>
+  <ul>
+    <li><strong>来源判断</strong>：通过查询 sales_order 表确认 source_order_number 是订单号还是预测号，无歧义</li>
+    <li><strong>防御性检查</strong>：回退前检查是否还有其他 Production_plan 关联同一源单据（source_order_number + source_line_number），避免误回退</li>
+    <li><strong>销售订单头状态</strong>：仅当该订单下所有明细行都不在排产状态时（待排产/计划中/生产中），才回退 order_status 从'生产中'→'待执行'</li>
+    <li><strong>MPS来源</strong>：source_order_number='MPS'，按 item_number 回退所有 status='计划中' 的预测明细</li>
+    <li><strong>工厂隔离</strong>：所有 UPDATE 均带 factory_id 条件（从计划记录中读取 planFactoryId）</li>
+    <li><strong>删除场景</strong>：回退与删除在同一事务中，确保原子性——回退失败则计划不被删除</li>
+    <li><strong>撤消场景</strong>：回调在审批事务提交后异步执行，失败不影响审批状态回退，仅记录日志</li>
+  </ul>
+</div>
+
+<!-- ==================== 八、MRP单据回退流程 ==================== -->
+<h2>八、MRP单据删除与计划回退流程</h2>
+<div class="mermaid">
+graph TB
+    subgraph 生产工单删除["生产工单删除 - 计划状态回退"]
+        D1[用户删除生产工单<br/>production_order] --> D1_CHK{approval_status<br/>= 草稿?}
+        D1_CHK -->|否| D1_REJ[禁止删除<br/>已审批不允许删除]
+        D1_CHK -->|是| D1_READ[读取 production_number<br/>关联的生产计划编号]
+        D1_READ --> D1_CK_ORD[检查其他 production_order<br/>WHERE production_number = :pn]
+        D1_READ --> D1_CK_REQ[检查其他 purchase_req<br/>CHARINDEX :pn, production_number]
+        D1_CK_ORD --> D1_DEC{仍有其他关联单据?}
+        D1_CK_REQ --> D1_DEC
+        D1_DEC -->|是| D1_KEEP[保持计划状态不变]
+        D1_DEC -->|否| D1_REV[回退 Production_plan<br/>plan_status = 待加入任务<br/>mrp_status = NULL<br/>production_status回退]
+    end
+
+    subgraph 采购申请删除["采购申请删除 - 计划状态回退"]
+        D2[用户删除采购申请<br/>purchase_req] --> D2_CHK{approval_status<br/>= 草稿?}
+        D2_CHK -->|否| D2_REJ[禁止删除<br/>已审批不允许删除]
+        D2_CHK -->|是| D2_SPLIT[解析 production_number<br/>逗号分隔可能含多个计划编号]
+        D2_SPLIT --> D2_LOOP[遍历每个计划编号]
+        D2_LOOP --> D2_CK_ORD[检查 production_order<br/>WHERE production_number = :pn]
+        D2_LOOP --> D2_CK_REQ[检查其他 purchase_req<br/>CHARINDEX + 排除自身]
+        D2_CK_ORD --> D2_DEC{有其他关联单据?}
+        D2_CK_REQ --> D2_DEC
+        D2_DEC -->|是| D2_KEEP[保持该计划状态不变]
+        D2_DEC -->|否| D2_REV[回退该计划<br/>plan_status = 待加入任务<br/>mrp_status = NULL<br/>仅当该计划无任何关联单据时]
+    end
+
+    style D1_REV fill:#fff1f0,stroke:#ff4d4f,stroke-width:2px
+    style D2_REV fill:#fff1f0,stroke:#ff4d4f,stroke-width:2px
+    style D1_KEEP fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style D2_KEEP fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style D1_REJ fill:#ffccc7,stroke:#ff4d4f,stroke-width:2px
+    style D2_REJ fill:#ffccc7,stroke:#ff4d4f,stroke-width:2px
+</div>
+
+<div class="note">
+  <strong>回退规则说明：</strong>
+  <ul>
+    <li><strong>共同前提</strong>：仅草稿状态的生产工单/采购申请允许删除，已审批单据禁止删除</li>
+    <li><strong>生产工单删除</strong>：读取 production_number → 检查是否还有其他 production_order 或 purchase_req 关联该计划 → 若无则回退计划状态</li>
+    <li><strong>采购申请删除</strong>：解析 production_number（逗号分隔多个计划编号）→ 遍历每个计划编号检查关联 → 逐个决定是否回退</li>
+    <li><strong>回退操作</strong>：plan_status → '待加入任务', mrp_status → NULL</li>
+    <li><strong>保留条件</strong>：只要存在任意关联的 production_order 或 purchase_req，该计划状态保持不变</li>
+  </ul>
+</div>
+
+<!-- ==================== 九、状态流转图 ==================== -->
+<h2>九、核心单据状态流转图</h2>
+<div class="mermaid">
+stateDiagram-v2
+    state 生产计划_ProductionPlan {
+        [*] --> 草稿: 创建生产计划
+        草稿 --> 已审批: 提交审批通过
+        已审批 --> 草稿: 反审批撤消<br/>→ onPlanReversed<br/>→ revertPlanSourceStatuses<br/>→ 回退源单据状态
+        草稿 --> 已删除: 删除(仅草稿)<br/>→ revertPlanSourceStatuses<br/>→ 回退源单据状态
+        
+        state 已审批 {
+            [*] --> 待加入任务: 初始状态
+            待加入任务 --> 已加入任务: MRP执行<br/>计划导入生产单
+            待加入任务 --> 待加入任务: MRP释放<br/>采购申请全部删除
+            
+            state MRP状态 {
+                [*] --> NULL: 未运行MRP
+                NULL --> 已分解: MRP执行
+                已分解 --> NULL: 关联单据全部删除
+            }
+        }
+        
+        已审批 --> 已完成: 生产完成
+        已完成 --> 已关闭: 全部入库
+    }
+
+    state 生产工单_ProductionOrder {
+        [*] --> 草稿: MRP自动生成<br/>或计划导入
+        草稿 --> 已审批: 提交审批通过
+        已审批 --> 草稿: 反审批
+        草稿 --> 已删除: 删除(仅草稿)
+        
+        state 已审批 {
+            [*] --> 未开始: 初始状态
+            未开始 --> 备料中: 生成备料任务
+            备料中 --> 备料完成: 备料完成
+            备料完成 --> 生产中: 开始生产
+            生产中 --> 已完成: 生产完成
+            已完成 --> 已关闭: 全部入库
+        }
+    }
+
+    state 采购申请_PurchaseReq {
+        [*] --> 草稿: MRP自动生成
+        草稿 --> 已审批: 提交审批通过
+        已审批 --> 草稿: 反审批
+        草稿 --> 已删除: 删除(仅草稿)
+        
+        state 已审批 {
+            [*] --> 未执行: 初始状态
+            未执行 --> 部分执行: 部分转采购订单
+            部分执行 --> 已执行: 全部转采购订单
+        }
+    }
+
+    state MRP运行_MRPRun {
+        [*] --> 已计算: 运行MRP
+        已计算 --> 已确认: 执行MRP确认
+        已计算 --> 已取消: 取消MRP
+        已取消 --> 已删除: 删除记录
+    }
+</div>
+
+<div class="note">
+  <strong>状态流转说明：</strong>
+  <ul>
+    <li><strong>生产计划</strong>：草稿 → 已审批(待加入任务) → MRP执行后(已加入任务, mrp_status=已分解) → 关联单据全部删除后回退(待加入任务, mrp_status=NULL)</li>
+    <li><strong>生产计划删除/撤消</strong>：删除(仅草稿)或反审批撤消时，自动调用 revertPlanSourceStatuses 回退源销售订单明细(production_status→未加入计划)和销售预测明细(status→未开始)，若订单下无其他明细在排产则回退订单头状态(生产中→待执行)</li>
+    <li><strong>生产工单</strong>：草稿 → 已审批(未开始) → 备料中 → 备料完成 → 生产中 → 已完成 → 已关闭</li>
+    <li><strong>采购申请</strong>：草稿 → 已审批(未执行) → 部分执行 → 已执行（转采购订单）</li>
+    <li><strong>MRP运行</strong>：已计算 → 已确认 / 已取消 → 已删除（仅已取消状态可删）</li>
+    <li>所有草稿状态单据可直接删除，已审批单据需先反审批再删除</li>
+  </ul>
+</div>
+
+<!-- ==================== 十、数据实体关系 ==================== -->
+<h2>十、计划管理数据实体关系</h2>
+<div class="mermaid">
+erDiagram
+    sales_order ||--o{ sales_order_detail : contains
+    sales_order_detail ||--o| Production_plan : "source MPS导入"
+    sales_forecast ||--o{ sales_forecast_detail : contains
+    sales_forecast_detail ||--o| Production_plan : "source MPS导入"
+
+    Production_plan ||--o{ mrp_run_plan : "selected for MRP"
+    mrp_run ||--o{ mrp_run_plan : contains
+    mrp_run ||--o{ mrp_run_detail : "MRP分解结果"
+    Production_plan ||--o{ mrp_run_detail : "source_production_number"
+
+    mrp_run_detail ||--o| production_order : "generates 生产工单"
+    mrp_run_detail ||--o| purchase_req_detail : "generates 采购明细"
+
+    Production_plan ||--o{ production_order : "plan import 计划导入"
+    production_order ||--o| bom_header : "references BOM"
+    bom_header ||--o{ bom_detail : contains
+    bom_detail ||--o| production_order : "子件需求"
+
+    production_order ||--o{ material_preparation_task : "generates 备料任务"
+    production_order ||--o{ production_task : "generates 生产任务"
+
+    purchase_req ||--o{ purchase_req_detail : contains
+    purchase_req_detail ||--o| purchase_order_detail : "converts 转采购"
+
+    item_master ||--o{ bom_header : "BOM父项"
+    item_master ||--o{ bom_detail : "BOM子件"
+    item_master ||--o{ Production_plan : references
+    item_master ||--o{ production_order : references
+
+    finished_goods_inventory ||--o| Production_plan : "MPS供给计算"
+    material_inventory ||--o| mrp_run_detail : "MRP供给计算"
+
+    Production_plan {
+        int id PK
+        string production_number
+        string item_number
+        string item_name
+        decimal planned_quantity
+        string plan_status
+        string mrp_status
+        string approval_status
+        string source_order_number
+        string source_line_number
+        int factory_id FK
+    }
+    mrp_run {
+        int id PK
+        string mrp_run_number
+        string run_status
+        int plan_count
+        int result_count
+        int production_order_count
+        int purchase_req_count
+        datetime run_date
+        datetime confirmed_at
+        int factory_id FK
+    }
+    mrp_run_plan {
+        int id PK
+        string mrp_run_number FK
+        string production_number
+        string item_number
+        decimal planned_quantity
+        int factory_id FK
+    }
+    mrp_run_detail {
+        int id PK
+        string mrp_run_number FK
+        string source_production_number
+        int bom_level
+        string parent_item_number
+        string item_number
+        decimal gross_requirement
+        decimal on_hand_inventory
+        decimal wip_quantity
+        decimal in_transit_po
+        decimal pending_pr
+        decimal safety_stock
+        decimal net_requirement
+        string action_type
+        string result_status
+        decimal produce_quantity
+        decimal purchase_quantity
+        string generated_order_number
+        int factory_id FK
+    }
+    production_order {
+        int id PK
+        string production_order_number
+        string production_number
+        string item_number
+        decimal planned_quantity
+        string plan_status
+        string approval_status
+        int is_semi_product
+        int factory_id FK
+    }
+    purchase_req {
+        int id PK
+        string purchase_req_number
+        string source_number
+        string production_number
+        string approval_status
+        string order_status
+        int factory_id FK
+    }
+    purchase_req_detail {
+        int id PK
+        string purchase_req_number FK
+        string item_number
+        decimal request_quantity
+        string status
+    }
+</div>
+
+<div class="note">
+  <strong>数据关系要点：</strong>
+  <ul>
+    <li><strong>需求来源 → 生产计划</strong>：sales_order_detail/sales_forecast_detail → Production_plan (source_order_number + source_line_number)</li>
+    <li><strong>生产计划 → MRP</strong>：Production_plan → mrp_run_plan → mrp_run (一对多：一个计划可参与多次MRP)</li>
+    <li><strong>MRP结果 → 执行单据</strong>：mrp_run_detail → production_order / purchase_req_detail (一对多)</li>
+    <li><strong>BOM引用</strong>：production_order 通过 item_number 关联 bom_header，展开子件需求</li>
+    <li><strong>多工厂隔离</strong>：所有表均含 factory_id 字段，查询/写入均带工厂条件</li>
+  </ul>
+</div>
+
+<!-- ==================== 十一、关键业务规则汇总 ==================== -->
+<h2>十一、关键业务规则汇总</h2>
+
+<h3>11.1 MPS计算规则</h3>
+<div class="note">
+  <ul>
+    <li>需求合并：同物料取 MAX(预测需求, 订单需求)，避免重复计算</li>
+    <li>净需求 = MAX(0, 毛需求 - 现有库存 - 采购在途 - 生产在途 + 安全库存)</li>
+    <li>生产在途 JOIN 必须加 item_number 条件，防止子件工单误累加</li>
+    <li>已入库数量已计入 finished_goods_inventory，生产在途必须扣除 inbound_quantity</li>
+    <li>仅净需求 > 0 的物料才建议导入生产计划</li>
+  </ul>
+</div>
+
+<h3>11.2 MRP运行规则</h3>
+<div class="note">
+  <ul>
+    <li>可选计划条件：approval_status=已审批, plan_status=待加入任务, mrp_status IS NULL</li>
+    <li>BOM分解采用广度优先BFS，最大深度10层</li>
+    <li>Level 0成品不做供给扣减，确保生产单必定生成</li>
+    <li>Level 1+子件查 material_inventory（不查 finished_goods_inventory）</li>
+    <li>action_type 决策逻辑：business_scope优先 → NULL时按BOM判断（有BOM=生产, 无BOM=采购）</li>
+    <li>净需求≤0的Level 1+物料不写入detail行</li>
+  </ul>
+</div>
+
+<h3>11.3 MRP执行规则</h3>
+<div class="note">
+  <ul>
+    <li>仅 run_status='已计算' 的MRP可执行确认</li>
+    <li>双源物料(生产+采购)：用户可选纯采购，其BOM子件全部跳过</li>
+    <li>净需求≤0的detail行标记为'已跳过'</li>
+    <li>计划导入前检查去重：同一 production_number+item_number 不重复生成生产工单</li>
+    <li>采购申请合并生成：所有采购行汇总到一张 purchase_req，明细逐行写入</li>
+    <li>执行后更新源计划：mrp_status='已分解', plan_status='已加入任务'</li>
+  </ul>
+</div>
+
+<h3>11.4 生产计划删除与撤消规则（新增）</h3>
+<div class="note">
+  <ul>
+    <li><strong>删除</strong>：仅草稿状态可删除，删除前在事务内调用 revertPlanSourceStatuses 回退源单据状态，确保原子性</li>
+    <li><strong>撤消(反审批)</strong>：已审批计划反审批时，approval.service.ts 通过 onPlanReversed 回调自动回退源单据状态</li>
+    <li><strong>来源判断</strong>：通过查询 sales_order 表确认 source_order_number 是订单还是预测</li>
+    <li><strong>销售订单回退</strong>：明细 production_status→未加入计划, status→未开始；若订单下无其他明细在排产(待排产/计划中/生产中)，头 order_status→待执行</li>
+    <li><strong>销售预测回退</strong>：明细 status→未开始（仅 status=计划中 的行）</li>
+    <li><strong>MPS来源回退</strong>：按 item_number 回退所有 status=计划中 的预测明细</li>
+    <li><strong>防御性检查</strong>：回退前检查是否还有其他计划关联同一源单据，避免误回退</li>
+    <li><strong>工厂隔离</strong>：UPDATE 均带 factory_id 条件（从计划记录中读取）</li>
+  </ul>
+</div>
+
+<h3>11.5 MRP单据删除与回退规则</h3>
+<div class="note">
+  <ul>
+    <li>仅草稿状态的生产工单/采购申请可删除</li>
+    <li>删除前检查关联：查询是否还有其他 production_order 或 purchase_req 关联同一计划编号</li>
+    <li>删除后回退：若某计划编号无任何关联单据，回退其 plan_status='待加入任务', mrp_status=NULL</li>
+    <li>采购申请的 production_number 可能为逗号分隔多个计划编号，需逐个检查</li>
+    <li>MRP运行记录仅'已取消'状态可删除</li>
+  </ul>
+</div>
+
+<h3>11.6 多工厂隔离规则</h3>
+<div class="note">
+  <ul>
+    <li>所有查询和写入均带 factory_id 条件，通过 x-factory-id 请求头注入</li>
+    <li>HQ总部模式支持传 factory_id 查询参数覆盖隔离条件</li>
+    <li>factory_id 传递链：Production_plan → mrp_run → mrp_run_plan/mrp_run_detail → production_order/purchase_req</li>
+    <li>跨工厂操作禁止：如宁国工厂计划不可被广州工厂MRP运行或导入</li>
+  </ul>
+</div>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: 'basis'
+    },
+    state: {
+      useMaxWidth: true
+    },
+    er: {
+      useMaxWidth: true
+    }
+  });
+</script>
+</body>
+</html>
+

@@ -78,9 +78,13 @@ export const getForecastDetail = async (req: Request, res: Response, next: NextF
   try {
     const { id } = req.params;
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM sales_forecast WHERE forecast_number = :id`,
-      { replacements: { id } }
+      `SELECT * FROM sales_forecast WHERE forecast_number = :id${factoryCond}`,
+      { replacements: { id, ...factoryReps } }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '预测单不存在' }); return; }
 
@@ -186,14 +190,15 @@ export const updateForecast = async (req: Request, res: Response, next: NextFunc
       await sequelize.query(`
         UPDATE sales_forecast SET customer_number = :customer_number, customer_name = :customer_name,
           forecast_date = :forecast_date, remark = :remark
-        WHERE forecast_number = :id
+        WHERE forecast_number = :id${factoryCond}
       `, {
         replacements: {
           id,
           customer_number: b.customer_number || '',
           customer_name: b.customer_name || '',
           forecast_date: b.forecast_date || null,
-          remark: b.remark || ''
+          remark: b.remark || '',
+          ...factoryReps
         }, transaction
       });
 
@@ -277,9 +282,18 @@ export const deleteForecast = async (req: Request, res: Response, next: NextFunc
 export const getForecastConsumptionLog = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND h.factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [logs]: any = await sequelize.query(
-      `SELECT * FROM forecast_consumption WHERE forecast_number = :id ORDER BY consumed_date DESC`,
-      { replacements: { id } }
+      `SELECT fc.*
+       FROM forecast_consumption fc
+       INNER JOIN sales_forecast h ON h.forecast_number = fc.forecast_number
+       WHERE fc.forecast_number = :id${factoryCond}
+       ORDER BY fc.consumed_date DESC`,
+      { replacements: { id, ...factoryReps } }
     );
     res.json(success(logs, '获取消耗记录成功'));
   } catch (err) { next(err); }
@@ -383,22 +397,24 @@ export const exportForecastDetailsSelected = async (req: Request, res: Response,
       SELECT d.forecast_number, d.line_number, d.item_number, d.item_name, d.specifications,
              d.basic_unit, d.product_drawing_number, d.start_date, d.end_date,
              d.forecast_quantity, d.consumed_quantity, d.remaining_quantity, d.consumption_status, d.status, d.remark,
-             h.customer_name, h.forecast_date
+             h.customer_name, h.forecast_date,
+             f.factory_name, f.factory_short
       FROM sales_forecast_detail d
       INNER JOIN sales_forecast h ON h.forecast_number = d.forecast_number
+      LEFT JOIN factory f ON h.factory_id = f.id
       WHERE d.id IN (${placeholders})
       ${_factoryId !== null ? ' AND h.factory_id = :_factoryId' : ''}
       ORDER BY d.forecast_number, d.line_number
     `, { replacements: _factoryId !== null ? { ...replacements, _factoryId } : replacements });
 
     const fields = [
-      'forecast_number', 'line_number', 'customer_name', 'item_number', 'item_name',
+      'forecast_number', 'line_number', 'factory_short', 'customer_name', 'item_number', 'item_name',
       'specifications', 'basic_unit', 'product_drawing_number',
       'forecast_quantity', 'consumed_quantity', 'remaining_quantity',
       'consumption_status', 'status', 'start_date', 'end_date', 'forecast_date', 'remark'
     ];
     const headers = [
-      '预测单号', '行号', '客户名称', '产品编号', '产品名称',
+      '预测单号', '行号', '工厂', '客户名称', '产品编号', '产品名称',
       '规格', '单位', '产品图号',
       '预测数量', '已消耗', '剩余数量',
       '消耗状态', '计划状态', '开始日期', '结束日期', '预测日期', '备注'
@@ -413,9 +429,13 @@ export const addForecastDetail = async (req: Request, res: Response, next: NextF
     const forecastNumber = req.params.id as string;
     const b = req.body;
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM sales_forecast WHERE forecast_number = :id`,
-      { replacements: { id: forecastNumber } }
+      `SELECT approval_status FROM sales_forecast WHERE forecast_number = :id${factoryCond}`,
+      { replacements: { id: forecastNumber, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '预测单不存在' }); return; }
     if (chk[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '只有草稿状态可以新增明细' }); return; }
@@ -458,13 +478,15 @@ export const updateForecastDetail = async (req: Request, res: Response, next: Ne
     const detailId = req.params.detailId as string;
     const b = req.body;
 
+    const _factoryId = getFactoryId(req);
+
     // 检查明细存在且主表状态
     const [detail]: any = await sequelize.query(
       `SELECT d.id, d.forecast_number, d.consumed_quantity, h.approval_status
        FROM sales_forecast_detail d
        INNER JOIN sales_forecast h ON h.forecast_number = d.forecast_number
-       WHERE d.id = :id`,
-      { replacements: { id: detailId } }
+       WHERE d.id = :id${_factoryId !== null ? ' AND h.factory_id = :_factoryId' : ''}`,
+      { replacements: _factoryId !== null ? { id: detailId, _factoryId } : { id: detailId } }
     );
     if (!detail.length) { res.status(404).json({ success: false, message: '明细不存在' }); return; }
     if (detail[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '只有草稿状态可以编辑明细' }); return; }
@@ -505,12 +527,15 @@ export const updateForecastDetail = async (req: Request, res: Response, next: Ne
 export const deleteForecastDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { detailId } = req.params;
+
+    const _factoryId = getFactoryId(req);
+
     const [detail]: any = await sequelize.query(
       `SELECT d.id, h.approval_status
        FROM sales_forecast_detail d
        INNER JOIN sales_forecast h ON h.forecast_number = d.forecast_number
-       WHERE d.id = :id`,
-      { replacements: { id: detailId } }
+       WHERE d.id = :id${_factoryId !== null ? ' AND h.factory_id = :_factoryId' : ''}`,
+      { replacements: _factoryId !== null ? { id: detailId, _factoryId } : { id: detailId } }
     );
     if (!detail.length) { res.status(404).json({ success: false, message: '明细不存在' }); return; }
     if (detail[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '只有草稿状态可以删除明细' }); return; }
@@ -522,13 +547,13 @@ export const deleteForecastDetail = async (req: Request, res: Response, next: Ne
 
 // ==================== 导出/导入预测单 ====================
 const forecastExportFields = [
-  'forecast_number', 'customer_number', 'customer_name', 'forecast_date', 'approval_status',
+  'forecast_number', 'factory_short', 'customer_number', 'customer_name', 'forecast_date', 'approval_status',
   'line_number', 'item_number', 'item_name', 'specifications', 'basic_unit',
   'product_drawing_number', 'start_date', 'end_date', 'forecast_quantity',
   'consumed_quantity', 'remaining_quantity', 'remark'
 ];
 const forecastExportHeaders = [
-  '预测编号', '客户编号', '客户名称', '预测日期', '审批状态',
+  '预测编号', '工厂', '客户编号', '客户名称', '预测日期', '审批状态',
   '行号', '物料编号', '物料名称', '规格', '单位',
   '产品图号', '开始日期', '结束日期', '预测数量',
   '已消耗', '剩余数量', '备注'
@@ -544,9 +569,11 @@ export const exportForecasts = async (req: Request, res: Response, next: NextFun
       SELECT h.forecast_number, h.customer_number, h.customer_name, h.forecast_date, h.approval_status,
              d.line_number, d.item_number, d.item_name, d.specifications, d.basic_unit,
              d.product_drawing_number, d.start_date, d.end_date, d.forecast_quantity,
-             d.consumed_quantity, d.remaining_quantity, d.remark
+             d.consumed_quantity, d.remaining_quantity, d.remark,
+             f.factory_name, f.factory_short
       FROM sales_forecast h
       LEFT JOIN sales_forecast_detail d ON h.forecast_number = d.forecast_number
+      LEFT JOIN factory f ON h.factory_id = f.id
       ${factoryCond}
       ORDER BY h.forecast_number DESC, d.line_number
     `, { replacements: factoryReps });

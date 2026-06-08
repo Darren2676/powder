@@ -4,6 +4,7 @@ import { message } from 'ant-design-vue'
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { getReportSummary, getReportDiffDetail, getReportTrend } from '@/api/warehouse/stockCount'
 import { getWarehouseOptions } from '@/api/warehouse/finishedGoods'
+import { getFactories } from '@/api/system/factory'
 import dayjs from 'dayjs'
 
 // ==================== 筛选条件 ====================
@@ -12,6 +13,16 @@ const endPeriod = ref('')
 const filterWarehouse = ref('')
 const warehouseOptions = ref<any[]>([])
 const activeTab = ref('summary')
+
+// 工厂筛选
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 
 const formatDate = (date: any) => date ? dayjs(date).format('YYYY-MM-DD') : '-'
 
@@ -29,6 +40,7 @@ const summaryData = ref<any[]>([])
 
 const summaryColumns = [
   { title: '盘点单号', dataIndex: 'count_number', width: 160 },
+  { title: '工厂', dataIndex: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '期间', dataIndex: 'count_period', width: 80 },
   { title: '仓库', dataIndex: 'warehouse_name', width: 120 },
   { title: '类型', dataIndex: 'count_type', width: 60 },
@@ -51,6 +63,7 @@ const fetchSummary = async () => {
     if (startPeriod.value) params.start_period = startPeriod.value
     if (endPeriod.value) params.end_period = endPeriod.value
     if (filterWarehouse.value) params.warehouse_number = filterWarehouse.value
+    if (factoryFilter.value) params.factory_id = factoryFilter.value
 
     const res: any = await getReportSummary(params)
     if (res?.success) {
@@ -80,6 +93,7 @@ const diffPagination = reactive({
 
 const diffColumns = [
   { title: '盘点单号', dataIndex: 'count_number', width: 160 },
+  { title: '工厂', dataIndex: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '期间', dataIndex: 'count_period', width: 80 },
   { title: '仓库', dataIndex: 'warehouse_name', width: 110 },
   { title: '物料编号', dataIndex: 'item_number', width: 120 },
@@ -104,6 +118,7 @@ const fetchDiffDetail = async () => {
     if (startPeriod.value) params.start_period = startPeriod.value
     if (endPeriod.value) params.end_period = endPeriod.value
     if (filterWarehouse.value) params.warehouse_number = filterWarehouse.value
+    if (factoryFilter.value) params.factory_id = factoryFilter.value
     if (diffSearch.value) params.search = diffSearch.value
     if (diffType.value) params.diff_type = diffType.value
     if (diffQualityStatus.value) params.quality_status = diffQualityStatus.value
@@ -133,6 +148,7 @@ const fetchTrend = async () => {
   try {
     const params: any = { months: 12 }
     if (filterWarehouse.value) params.warehouse_number = filterWarehouse.value
+    if (factoryFilter.value) params.factory_id = factoryFilter.value
     const res: any = await getReportTrend(params)
     if (res?.success) {
       trendData.value = res.data || []
@@ -153,6 +169,7 @@ const handleReset = () => {
   startPeriod.value = ''
   endPeriod.value = ''
   filterWarehouse.value = ''
+  factoryFilter.value = undefined
   diffSearch.value = ''
   diffType.value = ''
   diffQualityStatus.value = ''
@@ -162,6 +179,7 @@ const handleReset = () => {
 
 onMounted(() => {
   fetchWarehouseOptions()
+  loadFactories()
   handleQuery()
 })
 </script>
@@ -180,6 +198,9 @@ onMounted(() => {
           <a-select-option v-for="w in warehouseOptions" :key="w.warehouse_number" :value="w.warehouse_number">
             {{ w.warehouse_name }}
           </a-select-option>
+        </a-select>
+        <a-select v-model:value="factoryFilter" placeholder="工厂" allow-clear style="width: 120px" @change="handleQuery">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
         </a-select>
         <a-button type="primary" @click="handleQuery"><SearchOutlined /> 查询</a-button>
         <a-button @click="handleReset"><ReloadOutlined /> 重置</a-button>

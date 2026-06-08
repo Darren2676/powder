@@ -53,9 +53,11 @@ export const getShelfLifeReport = async (req: Request, res: Response, next: Next
 
     // 多工厂数据隔离过滤
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       conditions.push(`b.factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -69,6 +71,7 @@ export const getShelfLifeReport = async (req: Request, res: Response, next: Next
              im.shelf_life_days,
              ${expiryDateExpr('mb')} AS expiry_date,
              ${expireStatusExpr('mb')} AS expire_status,
+             mb.factory_id,
              f.factory_name, f.factory_short
       FROM material_batch_inventory mb
       JOIN item_master im ON mb.item_number = im.item_number
@@ -84,6 +87,7 @@ export const getShelfLifeReport = async (req: Request, res: Response, next: Next
              im.shelf_life_days,
              ${expiryDateExpr('fb')} AS expiry_date,
              ${expireStatusExpr('fb')} AS expire_status,
+             fb.factory_id,
              f.factory_name, f.factory_short
       FROM finished_batch_inventory fb
       JOIN item_master im ON fb.item_number = im.item_number

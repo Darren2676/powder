@@ -33,9 +33,11 @@ export const getEquipmentOees = async (req: Request, res: Response, next: NextFu
     let whereClause = 'WHERE 1=1';
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
-      whereClause += ' AND o.factory_id = :_factoryId';
-      replacements._factoryId = _factoryId;
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ' AND o.factory_id = :effectiveFactoryId';
+      replacements.effectiveFactoryId = effectiveFactoryId;
     }
 
     if (equipmentNumber) {
@@ -61,9 +63,10 @@ export const getEquipmentOees = async (req: Request, res: Response, next: NextFu
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT o.*, e.equipment_name, ROW_NUMBER() OVER (ORDER BY o.record_date DESC, o.id DESC) AS _row_num
+        SELECT o.*, e.equipment_name, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY o.record_date DESC, o.id DESC) AS _row_num
         FROM equipment_oee o
         LEFT JOIN equipment e ON o.equipment_number = e.equipment_number
+        LEFT JOIN factory f ON o.factory_id = f.id
         ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
@@ -122,7 +125,7 @@ export const saveEquipmentOee = async (req: Request, res: Response, next: NextFu
           ideal_output = :ideal_output, actual_output = :actual_output, good_output = :good_output,
           availability_rate = :availability_rate, performance_rate = :performance_rate,
           quality_rate = :quality_rate, oee_rate = :oee_rate,
-          data_source = :data_source, remark = :remark, updated_at = GETDATE()
+          data_source = :data_source, remark = :remark, factory_id = :factory_id, updated_at = GETDATE()
         WHERE id = :id`,
         {
           replacements: {
@@ -136,7 +139,8 @@ export const saveEquipmentOee = async (req: Request, res: Response, next: NextFu
             good_output: goodOutput,
             data_source: b.data_source || '手动',
             remark: b.remark || null,
-            ...rates
+            ...rates,
+            factory_id: b.factory_id || null
           }
         }
       );
@@ -172,7 +176,12 @@ export const saveEquipmentOee = async (req: Request, res: Response, next: NextFu
 export const deleteEquipmentOee = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    await sequelize.query(`DELETE FROM equipment_oee WHERE id = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    if (_factoryId !== null) {
+      await sequelize.query(`DELETE FROM equipment_oee WHERE id = :id AND factory_id = :_factoryId`, { replacements: { id, _factoryId } });
+    } else {
+      await sequelize.query(`DELETE FROM equipment_oee WHERE id = :id`, { replacements: { id } });
+    }
     res.json(success(null, '删除OEE记录成功'));
   } catch (err) { next(err); }
 };
@@ -187,9 +196,11 @@ export const getOeeDashboard = async (req: Request, res: Response, next: NextFun
     let whereClause = 'WHERE 1=1';
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
-      whereClause += ' AND o.factory_id = :_factoryId';
-      replacements._factoryId = _factoryId;
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ' AND o.factory_id = :effectiveFactoryId';
+      replacements.effectiveFactoryId = effectiveFactoryId;
     }
     if (dateFrom) { whereClause += ' AND o.record_date >= :dateFrom'; replacements.dateFrom = dateFrom; }
     if (dateTo) { whereClause += ' AND o.record_date <= :dateTo'; replacements.dateTo = dateTo; }
@@ -268,6 +279,10 @@ export const calculateOeeFromProduction = async (req: Request, res: Response, ne
       downtimeWhere += ' AND equipment_number = :en';
       replacements.en = equipment_number;
     }
+    if (_factoryId !== null) {
+      downtimeWhere += ' AND factory_id = :_factoryId';
+      replacements._factoryId = _factoryId;
+    }
 
     const [downtimeRows]: any = await sequelize.query(
       `SELECT equipment_number, SUM(ISNULL(duration_minutes, 0)) as total_downtime
@@ -282,6 +297,10 @@ export const calculateOeeFromProduction = async (req: Request, res: Response, ne
     if (equipment_number) {
       eqWhere += ' AND equipment_number = :en';
       eqReplacements.en = equipment_number;
+    }
+    if (_factoryId !== null) {
+      eqWhere += ' AND factory_id = :_factoryId';
+      eqReplacements._factoryId = _factoryId;
     }
     const [equipments]: any = await sequelize.query(
       `SELECT equipment_number, equipment_name, daily_running_hours FROM equipment ${eqWhere}`,
@@ -320,9 +339,9 @@ export const calculateOeeFromProduction = async (req: Request, res: Response, ne
       if (existing.length > 0) {
         await sequelize.query(
           `UPDATE equipment_oee SET planned_time_minutes = :planned_time_minutes, downtime_minutes = :downtime_minutes,
-            actual_run_minutes = :actual_run_minutes, availability_rate = :availability_rate, updated_at = GETDATE()
+            actual_run_minutes = :actual_run_minutes, availability_rate = :availability_rate, factory_id = :factory_id, updated_at = GETDATE()
           WHERE id = :id`,
-          { replacements: { id: existing[0].id, ...oeeRecord } }
+          { replacements: { id: existing[0].id, ...oeeRecord, factory_id: _factoryId } }
         );
       } else {
         await sequelize.query(

@@ -460,6 +460,7 @@ export const initDatabase = async () => {
         'sales_price_list', 'sales_price_list_detail',
         // ── 计划域 ──
         'production_plan', 'forecast_consumption', 'plan_status',
+        'mrp_run', 'mrp_run_plan', 'mrp_run_detail',
         // ── 生产域 ──
         'production_order',
         'production_inbound_order', 'production_inbound_order_detail',
@@ -478,8 +479,11 @@ export const initDatabase = async () => {
         'purchase_price_list', 'purchase_price_list_detail',
         // ── 仓储域 ──
         'stock_in', 'stock_in_detail',
-        'material_batch_inventory',
+        'material_batch_inventory', 'material_inventory',
+        'material_inventory_transaction',
         'finished_goods_inventory', 'finished_batch_inventory',
+        'inventory_transaction', 'inventory_transaction_batch',
+        'lineside_inventory_transaction',
         'packing_box_inventory', 'packing_order',
         'stock_count', 'stock_count_detail',
         'batch_traceability',
@@ -565,7 +569,7 @@ export const initDatabase = async () => {
         'inspection_plan', 'inspection_spec', 'incoming_inspect_plan', 'nonconforming_product', 'backflush_task',
         'rework_order', 'batch_traceability', 'packing_order',
         'purchase_receiving_notice', 'purchase_return', 'equipment_downtime',
-        'engineering_change_lifecycle', 'abnormal_io_request'
+        'engineering_change_lifecycle', 'abnormal_io_request', 'mrp_run'
       ];
 
       let defaultCount = 0;
@@ -592,6 +596,26 @@ export const initDatabase = async () => {
       console.log(`[多工厂迁移] factory_id DEFAULT 约束: ${defaultCount} 张表已处理`);
     } catch (e) {
       console.warn('[多工厂迁移] factory_id DEFAULT 约束跳过:', (e as any).message);
+    }
+
+    // ===== [多工厂] 回填 NULL factory_id 为宁国工厂 =====
+    try {
+      const backfillTables = [
+        'production_plan', 'sales_order', 'purchase_order', 'production_order',
+        'shipping_order', 'work_report', 'expense_claim', 'purchase_req', 'sales_forecast',
+        'return_order', 'scrap_disposal', 'stock_count', 'outsourcing_order', 'outsourcing_req',
+        'outsourcing_receipt', 'packing_order', 'purchase_receiving_notice', 'purchase_return', 'mrp_run'
+      ];
+      for (const tableName of backfillTables) {
+        try {
+          await sequelize.query(
+            `UPDATE [${tableName}] SET factory_id = (SELECT id FROM factory WHERE factory_code = 'N') WHERE factory_id IS NULL`
+          );
+        } catch { /* 表可能不存在或无数据 */ }
+      }
+      console.log('[多工厂迁移] NULL factory_id 回填完成');
+    } catch (e) {
+      console.warn('[多工厂迁移] NULL factory_id 回填跳过:', (e as any).message);
     }
 
     // 暂时禁用 umzug 迁移（迁移脚本中有 process.exit() 会导致服务器退出）

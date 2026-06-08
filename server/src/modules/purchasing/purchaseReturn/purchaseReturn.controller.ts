@@ -44,9 +44,11 @@ export const getPurchaseReturns = async (req: Request, res: Response, next: Next
       replacements.approval_status = approval_status;
     }
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       conditions.push(`r.factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
@@ -58,8 +60,10 @@ export const getPurchaseReturns = async (req: Request, res: Response, next: Next
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT r.*, ROW_NUMBER() OVER (ORDER BY r.creation_date DESC) AS _row_num
-        FROM purchase_return r ${whereClause}
+        SELECT r.*, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY r.creation_date DESC) AS _row_num
+        FROM purchase_return r
+        LEFT JOIN factory f ON r.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
 
@@ -72,8 +76,11 @@ export const getPurchaseReturns = async (req: Request, res: Response, next: Next
 export const getPurchaseReturnDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM purchase_return WHERE return_number = :id`, { replacements: { id } }
+      `SELECT * FROM purchase_return WHERE return_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '退货单不存在' }); return; }
     const [details]: any = await sequelize.query(
@@ -219,8 +226,11 @@ export const updatePurchaseReturn = async (req: Request, res: Response, next: Ne
   try {
     const { id } = req.params;
     const b = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM purchase_return WHERE return_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM purchase_return WHERE return_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '退货单不存在' }); return; }
     if (chk[0].approval_status !== '草稿') { res.status(403).json({ success: false, message: '非草稿状态不允许编辑' }); return; }
@@ -239,7 +249,7 @@ export const updatePurchaseReturn = async (req: Request, res: Response, next: Ne
           warehouse_number = :warehouse_number, warehouse_name = :warehouse_name,
           total_return_quantity = :total_return_quantity, total_return_amount = :total_return_amount,
           remark = :remark
-        WHERE return_number = :id
+        WHERE return_number = :id${factoryCond}
       `, {
         replacements: {
           id,
@@ -249,7 +259,8 @@ export const updatePurchaseReturn = async (req: Request, res: Response, next: Ne
           warehouse_name: b.warehouse_name || '',
           total_return_quantity: totalQty,
           total_return_amount: totalAmt,
-          remark: b.remark || ''
+          remark: b.remark || '',
+          ...factoryReps
         },
         transaction
       });
@@ -495,8 +506,8 @@ export const executeReturn = async (req: Request, res: Response, next: NextFunct
                 WHEN received_quantity - :retQty < order_quantity THEN N'部分到货'
                 ELSE N'已到货'
               END
-            WHERE id = :detailId
-          `, { replacements: { retQty, detailId: d.purchase_detail_id }, transaction });
+            WHERE id = :detailId AND factory_id = :_factoryId
+          `, { replacements: { retQty, detailId: d.purchase_detail_id, ...factoryReps }, transaction });
         }
       }
 
@@ -536,8 +547,11 @@ export const printPurchaseReturn = async (req: Request, res: Response, next: Nex
   try {
     const { id } = req.params;
 
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
     const [headerRows]: any = await sequelize.query(
-      `SELECT * FROM purchase_return WHERE return_number = :id`, { replacements: { id } }
+      `SELECT * FROM purchase_return WHERE return_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!headerRows.length) { res.status(404).json({ success: false, message: '退货单不存在' }); return; }
     const header = headerRows[0];
@@ -673,7 +687,7 @@ export const exchangeStockIn = async (req: Request, res: Response, next: NextFun
     const operator = (req as any).user?.username || '';
 
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM purchase_return WHERE return_number = :id`, { replacements: { id } }
+      `SELECT * FROM purchase_return WHERE return_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '退货单不存在' }); return; }
     const header = headers[0];
@@ -773,8 +787,8 @@ export const exchangeStockIn = async (req: Request, res: Response, next: NextFun
                 WHEN received_quantity + :exQty >= order_quantity THEN N'已到货'
                 ELSE N'部分到货'
               END
-            WHERE id = :detailId
-          `, { replacements: { exQty, detailId: d.purchase_detail_id }, transaction });
+            WHERE id = :detailId AND factory_id = :_factoryId
+          `, { replacements: { exQty, detailId: d.purchase_detail_id, ...factoryReps }, transaction });
         }
 
         // 6. 更新明细换货状态

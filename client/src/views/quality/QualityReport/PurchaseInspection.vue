@@ -29,6 +29,7 @@ import {
   defectHandlingPurchaseInspection,
   cancelDefectHandlingPurchaseInspection
 } from '@/api/quality/qualityReport'
+import { getFactories } from '@/api/system/factory'
 
 // ==================== 弹窗拖拽 ====================
 const { modalStyle: createModalStyle, onDragStart: onCreateDragStart, resetDrag: resetCreateDrag } = useModalDrag()
@@ -49,6 +50,15 @@ const pagination = reactive({
 const searchText = ref('')
 const filterStatus = ref<string | undefined>(undefined)
 const dateRange = ref<any>(null)
+const filterFactoryId = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories()
+    if (res?.success) factoryList.value = res.data || []
+  } catch { /* ignore */ }
+}
 
 const stats = ref<any>({})
 
@@ -106,6 +116,7 @@ const fetchData = async () => {
       params.start_date = dateRange.value[0].format('YYYY-MM-DD')
       params.end_date = dateRange.value[1].format('YYYY-MM-DD')
     }
+    if (filterFactoryId.value) params.factory_id = filterFactoryId.value
 
     const res: any = await getPurchaseInspections(params)
     if (res.data) {
@@ -582,6 +593,7 @@ const getHandlingColor = (handling: string) => {
 }
 
 onMounted(() => {
+  loadFactories()
   fetchData()
 })
 </script>
@@ -676,6 +688,17 @@ onMounted(() => {
           style="width: 260px;"
           @change="onSearch"
         />
+
+        <a-select
+          v-if="factoryList.length > 0"
+          v-model:value="filterFactoryId"
+          placeholder="全部工厂"
+          style="width: 140px;"
+          allow-clear
+          @change="onSearch"
+        >
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+        </a-select>
 
         <a-button @click="onSearch">
           <template #icon><ReloadOutlined /></template>

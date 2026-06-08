@@ -12,6 +12,7 @@ import {
 } from '@ant-design/icons-vue'
 import { getOrders, getPrintData } from '@/api/production/order'
 import { getSchedules } from '@/api/master-data/schedule'
+import { getFactories } from '@/api/system/factory'
 import dayjs from 'dayjs'
 import QRCode from 'qrcode'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
@@ -41,12 +42,16 @@ interface Order {
   schedule_id: string
   plan_status: string
   remark: string
+  factory_id?: number | null
+  factory_short?: string
+  factory_name?: string
 }
 
 const loading = ref(false)
 const dataSource = ref<Order[]>([])
 const selectedRowKeys = ref<string[]>([])
 const scheduleList = ref<any[]>([])
+const factoryList = ref<any[]>([])
 const printVisible = ref(false)
 const detailPrintLoading = ref(false)
 const detailPrintData = ref<any[]>([])
@@ -57,7 +62,8 @@ const filters = reactive({
   schedule_id: '',
   equipment_number: '',
   item_number: '',
-  search: ''
+  search: '',
+  factory_id: undefined as number | undefined
 })
 
 const pagination = reactive({
@@ -75,7 +81,9 @@ const defaultDataColumns: any[] = [
   { title: '班次', dataIndex: 'schedule_id', key: 'schedule_id', width: 80, resizable: true },
   { title: '设备名称', dataIndex: 'equipment_name', key: 'equipment_name', width: 120, ellipsis: true, resizable: true },
   { title: '生产单编号', dataIndex: 'production_order_number', key: 'production_order_number', width: 140, resizable: true },
-  { title: '生产计划编号', dataIndex: 'production_number', key: 'production_number', width: 140, resizable: true },
+  { title: '计划编号', dataIndex: 'production_number', key: 'production_number', width: 140, resizable: true },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true,
+    customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '产品编号', dataIndex: 'item_number', key: 'item_number', width: 110, resizable: true },
   { title: '产品名称', dataIndex: 'item_name', key: 'item_name', width: 130, ellipsis: true, resizable: true },
   { title: '规格', dataIndex: 'specifications', key: 'specifications', width: 120, ellipsis: true, resizable: true },
@@ -142,7 +150,8 @@ const fetchData = async () => {
       production_date: filters.production_date || undefined,
       schedule_id: filters.schedule_id || undefined,
       equipment_number: filters.equipment_number || undefined,
-      item_number: filters.item_number || undefined
+      item_number: filters.item_number || undefined,
+      factory_id: filters.factory_id || undefined
     })
     if (res.success) {
       // 列表也按 生产日期(升序)+班次+设备编号 排序显示
@@ -178,6 +187,7 @@ const handleReset = () => {
   filters.schedule_id = ''
   filters.equipment_number = ''
   filters.item_number = ''
+  filters.factory_id = undefined
   pagination.current = 1
   fetchData()
 }
@@ -1128,9 +1138,17 @@ const triggerDetailPrint = () => {
 
 onMounted(async () => {
   await loadSchedules()
+  await loadFactories()
   await loadColumnPreference()
   await fetchData()
 })
+
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 </script>
 
 <template>
@@ -1174,6 +1192,21 @@ onMounted(async () => {
     <!-- 筛选条件区 -->
     <div class="filter-bar">
       <div class="filter-items">
+        <div class="filter-item">
+          <span class="filter-label">工厂</span>
+          <a-select
+            v-model:value="filters.factory_id"
+            placeholder="全部工厂"
+            size="small"
+            allow-clear
+            style="width: 120px"
+            @change="handleSearch"
+          >
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">
+              {{ f.factory_short || f.factory_name }}
+            </a-select-option>
+          </a-select>
+        </div>
         <div class="filter-item">
           <span class="filter-label">生产日期</span>
           <a-date-picker

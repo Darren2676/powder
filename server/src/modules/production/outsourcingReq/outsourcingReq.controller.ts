@@ -159,8 +159,11 @@ export const updateOutsourcingReq = async (req: Request, res: Response, next: Ne
   try {
     const { id } = req.params;
     const b = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
 
-    const [check]: any = await sequelize.query(`SELECT approval_status FROM outsourcing_req WHERE outsourcing_req_number = :id`, { replacements: { id } });
+    const [check]: any = await sequelize.query(`SELECT approval_status FROM outsourcing_req WHERE outsourcing_req_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!check.length) { res.status(404).json({ success: false, message: '委外申请单不存在' }); return; }
     if (check[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许编辑' }); return; }
 
@@ -169,8 +172,8 @@ export const updateOutsourcingReq = async (req: Request, res: Response, next: Ne
       await sequelize.query(`
         UPDATE outsourcing_req SET
           remark = :remark
-        WHERE outsourcing_req_number = :id
-      `, { replacements: { id, remark: b.remark || '' }, transaction });
+        WHERE outsourcing_req_number = :id${factoryCond}
+      `, { replacements: { id, remark: b.remark || '', ...factoryReps }, transaction });
 
       // 重写明细行
       await sequelize.query(`DELETE FROM outsourcing_req_detail WHERE outsourcing_req_number = :id`, { replacements: { id }, transaction });
@@ -222,14 +225,17 @@ export const updateOutsourcingReq = async (req: Request, res: Response, next: Ne
 export const deleteOutsourcingReq = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const [check]: any = await sequelize.query(`SELECT approval_status FROM outsourcing_req WHERE outsourcing_req_number = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+    const [check]: any = await sequelize.query(`SELECT approval_status FROM outsourcing_req WHERE outsourcing_req_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } });
     if (!check.length) { res.status(404).json({ success: false, message: '委外申请单不存在' }); return; }
     if (check[0].approval_status !== ORDER_STATUS.DRAFT) { res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return; }
 
     const transaction = await sequelize.transaction();
     try {
-      await sequelize.query(`DELETE FROM outsourcing_req_detail WHERE outsourcing_req_number = :id`, { replacements: { id }, transaction });
-      await sequelize.query(`DELETE FROM outsourcing_req WHERE outsourcing_req_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM outsourcing_req_detail WHERE outsourcing_req_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
+      await sequelize.query(`DELETE FROM outsourcing_req WHERE outsourcing_req_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
       await transaction.commit();
       res.json(success(null, '删除委外申请单成功'));
     } catch (e) {
@@ -244,6 +250,8 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
   try {
     const factoryCode = await getFactoryCode(req);
     const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
     const { id } = req.params;
     const b = req.body;
     if (!b.supplier_number) { res.status(400).json({ success: false, message: '供应商不能为空' }); return; }
@@ -356,8 +364,8 @@ export const toOrder = async (req: Request, res: Response, next: NextFunction) =
       const anyDone = allDetails.some((r: any) => r.status !== ORDER_STATUS.UNEXECUTED);
       const newOrderStatus = allDone ? '已转单' : (anyDone ? '部分转单' : ORDER_STATUS.UNEXECUTED);
       await sequelize.query(
-        `UPDATE outsourcing_req SET order_status = :newOrderStatus WHERE outsourcing_req_number = :id`,
-        { replacements: { newOrderStatus, id }, transaction }
+        `UPDATE outsourcing_req SET order_status = :newOrderStatus WHERE outsourcing_req_number = :id${factoryCond}`,
+        { replacements: { newOrderStatus, id, ...factoryReps }, transaction }
       );
 
       await transaction.commit();

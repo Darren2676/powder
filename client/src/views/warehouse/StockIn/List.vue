@@ -3,12 +3,21 @@ import { ref, reactive, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, DownloadOutlined, ExclamationCircleOutlined, DownOutlined } from '@ant-design/icons-vue'
 import { getStockIns, getStockInDetail, deleteStockIn, confirmStockIn, withdrawStockIn, exportStockIns } from '@/api/warehouse/stockIn'
+import { getFactories } from '@/api/system/factory'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
 
 // ==================== 数据 ====================
 
 const dataList = ref<any[]>([])
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 
 
 const { loading, dataSource, searchText, pagination, fetchData, handleTableChange, handleSearch, handleReset } = useTableList(getStockIns)
@@ -57,14 +66,15 @@ const fetchList = async () => {
   try {
     const res: any = await getStockIns({
       page: pagination.current, limit: pagination.pageSize,
-      search: searchText.value, approval_status: filterStatus.value
+      search: searchText.value, approval_status: filterStatus.value,
+      factory_id: factoryFilter.value || undefined
     })
     dataList.value = res.data?.items || []
     pagination.total = res.data?.pagination?.total || 0
   } finally { loading.value = false }
 }
 
-onMounted(() => fetchList())
+onMounted(() => { fetchList(); loadFactories() })
 
 // ==================== 详情弹窗 ====================
 const openDetail = async (record: any) => {
@@ -147,6 +157,9 @@ const handleExport = async () => {
     <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:nowrap;overflow-x:auto">
       <span style="font-size:18px;font-weight:600;white-space:nowrap;flex-shrink:0">采购入库单</span>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:nowrap">
+        <a-select v-model:value="factoryFilter" placeholder="选择工厂" style="width:130px" allow-clear @change="handleSearch">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+        </a-select>
         <a-input-search v-model:value="searchText" placeholder="搜索入库单号/采购单号/供应商/仓库" style="width:300px" @search="handleSearch" allow-clear />
         <a-select v-model:value="filterStatus" placeholder="状态" style="width:120px" allow-clear @change="handleSearch">
           <a-select-option value="草稿">草稿</a-select-option>

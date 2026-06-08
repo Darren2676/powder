@@ -3,6 +3,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { ReloadOutlined, SearchOutlined, CheckOutlined, CloseOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { getDetailsByOrder, updateDetailAutoWeigh } from '@/api/production/materialPreparation'
+import { getFactories } from '@/api/system/factory'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 
@@ -28,12 +29,17 @@ interface PrepDetailRow {
   item_name: string
   preparation_status: string
   approval_status: string
+  factory_id?: number | null
+  factory_short?: string
+  factory_name?: string
 }
 
 const loading = ref(false)
 const dataSource = ref<PrepDetailRow[]>([])
 const searchText = ref('')
 const autoWeighFilter = ref<string | undefined>(undefined)
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
 const selectedRowKeys = ref<number[]>([])
 
 const pagination = reactive({
@@ -56,6 +62,7 @@ const fetchData = async () => {
       page: pagination.current,
       limit: pagination.pageSize,
       auto_weigh: autoWeighFilter.value || undefined,
+      factory_id: factoryFilter.value || undefined,
     })
     if (res.success && res.data) {
       dataSource.value = res.data.items || []
@@ -75,6 +82,7 @@ const handleSearch = () => { pagination.current = 1; fetchData() }
 const handleReset = () => {
   searchText.value = ''
   autoWeighFilter.value = undefined
+  factoryFilter.value = undefined
   pagination.current = 1
   dataSource.value = []
   pagination.total = 0
@@ -129,6 +137,7 @@ const defaultDataColumns: any[] = [
   { title: '已发料', dataIndex: 'issued_quantity', key: 'issued_quantity', width: 80, resizable: true },
   { title: '自动称量', dataIndex: 'auto_weigh', key: 'auto_weigh', width: 90, resizable: true },
   { title: '备注', dataIndex: 'remark', key: 'remark', width: 120, resizable: true, ellipsis: true },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
 ]
 
 const {
@@ -139,8 +148,16 @@ const {
   fixedLeft: [{ title: '#', key: 'rowIndex', width: 50, fixed: 'left' as const, align: 'center' as const }],
 })
 
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) factoryList.value = res.data.items || []
+  } catch { /* ignore */ }
+}
+
 onMounted(() => {
   loadColumnPreference()
+  loadFactories()
 })
 </script>
 
@@ -153,6 +170,9 @@ onMounted(() => {
         <a-select v-model:value="autoWeighFilter" placeholder="自动称量" allowClear style="width:120px" @change="handleSearch">
           <a-select-option value="Y">是</a-select-option>
           <a-select-option value="N">否</a-select-option>
+        </a-select>
+        <a-select v-model:value="factoryFilter" placeholder="全部工厂" allow-clear style="width: 120px" @change="handleSearch">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
         </a-select>
         <a-button @click="handleReset">重置</a-button>
 

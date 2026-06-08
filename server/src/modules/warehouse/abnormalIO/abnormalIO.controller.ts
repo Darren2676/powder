@@ -61,14 +61,25 @@ export const getList = async (req: Request, res: Response, next: NextFunction) =
       replacements.status = status;
     }
 
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ' AND factory_id = :_factoryId';
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
       `SELECT COUNT(*) as total FROM abnormal_io_request ${whereClause}`, { replacements }
     );
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT *, ROW_NUMBER() OVER (ORDER BY creation_date DESC, id DESC) AS _row_num
-        FROM abnormal_io_request ${whereClause}
+        SELECT h.*, ISNULL(f.factory_short, f.factory_name) as factory_short, f.factory_name,
+          ROW_NUMBER() OVER (ORDER BY h.creation_date DESC, h.id DESC) AS _row_num
+        FROM abnormal_io_request h LEFT JOIN factory f ON h.factory_id = f.id
+        ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
 
@@ -89,9 +100,14 @@ export const getDetail = async (req: Request, res: Response, next: NextFunction)
       res.status(400).json({ success: false, message: '缺少单号' }); return;
     }
 
+    // 多工厂防越权
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM abnormal_io_request WHERE request_number = :rn`,
-      { replacements: { rn: request_number } }
+      `SELECT * FROM abnormal_io_request WHERE request_number = :rn${factoryCond}`,
+      { replacements: { rn: request_number, ...factoryReps } }
     );
 
     if (headers.length === 0) {

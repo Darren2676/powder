@@ -4,7 +4,7 @@
     <!-- 顶部：扫码 + 生产单信息合并 -->
     <a-card :bordered="false" size="small" class="top-card">
       <a-row :gutter="12" align="middle">
-        <a-col :span="8">
+        <a-col :span="6">
           <a-input-search
             ref="scanInputRef"
             v-model:value="orderInput"
@@ -15,10 +15,17 @@
             size="small"
           />
         </a-col>
+        <a-col :span="2">
+          <a-select v-model:value="factoryFilter" placeholder="工厂" size="small" allow-clear style="width: 100%;" @change="handleSearch(orderInput)">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
+        </a-col>
         <a-col :span="14">
           <template v-if="orderInfo">
             <span class="info-item"><b>{{ orderInfo.production_order_number }}</b></span>
             <a-divider type="vertical" />
+            <a-tag v-if="orderInfo.factory_short" color="purple" size="small">{{ orderInfo.factory_short }}</a-tag>
+            <a-divider v-if="orderInfo.factory_short" type="vertical" />
             <span class="info-item">{{ orderInfo.item_number }}</span>
             <a-divider type="vertical" />
             <span class="info-item">{{ orderInfo.item_name }}</span>
@@ -256,6 +263,7 @@ import { getTasksByOrder, quickReport, completeOrderReport, getWorkReportsByTask
 import { getDefectClasses } from '@/api/quality/defectClass'
 import { getDefects } from '@/api/quality/defect'
 import { useAuthStore } from '@/store/auth'
+import { getFactories } from '@/api/system/factory'
 
 interface TaskWithReport {
   process_task_number: string
@@ -305,6 +313,16 @@ const completing = ref(false)
 const orderInfo = ref<any>(null)
 const tasks = ref<TaskWithReport[]>([])
 const quickQty = ref<number | null>(null)
+
+// ==================== 工厂筛选 ====================
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 
 // ==================== 撤销重报 ====================
 const undoModalVisible = ref(false)
@@ -461,7 +479,7 @@ const handleSearch = async (value: string) => {
   if (!keyword) { message.warning('请输入生产单编号'); return }
   loading.value = true
   try {
-    const res: any = await getTasksByOrder(keyword)
+    const res: any = await getTasksByOrder(keyword, factoryFilter.value || undefined)
     const data = res?.data
     if (!data) { message.error('未查询到数据'); return }
     orderInfo.value = data.order
@@ -488,7 +506,7 @@ const handleSearch = async (value: string) => {
 }
 
 const handleReset = () => {
-  orderInput.value = ''; orderInfo.value = null; tasks.value = []; quickQty.value = null
+  orderInput.value = ''; orderInfo.value = null; tasks.value = []; quickQty.value = null; factoryFilter.value = undefined
   nextTick(() => { scanInputRef.value?.focus?.() })
 }
 
@@ -634,7 +652,7 @@ const submitBatchReport = async () => {
 const refreshTasks = async () => {
   if (!orderInput.value.trim()) return
   try {
-    const res: any = await getTasksByOrder(orderInput.value.trim())
+    const res: any = await getTasksByOrder(orderInput.value.trim(), factoryFilter.value || undefined)
     const data = res?.data
     if (!data) return
     orderInfo.value = data.order
@@ -671,6 +689,7 @@ const toggleHistory = async (task: TaskWithReport) => {
 
 onMounted(() => {
   loadDropdowns()
+  loadFactories()
   nextTick(() => { scanInputRef.value?.focus?.() })
 })
 </script>

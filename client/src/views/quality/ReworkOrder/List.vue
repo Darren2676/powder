@@ -9,6 +9,7 @@ import {
   getReworkOrders, getReworkOrderDetail,
   completeRework, reworkReInspect, exportReworkOrders
 } from '@/api/quality/reworkOrder'
+import { getFactories } from '@/api/system/factory'
 import { generateExportFilename } from '@/utils/exportFilename'
 import { useModalDrag } from '@/composables/useModalDrag'
 
@@ -19,6 +20,14 @@ const loading = ref(false)
 const dataSource = ref<any[]>([])
 const searchText = ref('')
 const filterStatus = ref<string | undefined>(undefined)
+const filterFactory = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 const pagination = reactive({ current: 1, pageSize: 15, total: 0 })
 const stats = ref<any>({})
 
@@ -38,6 +47,7 @@ const reInspectForm = reactive({
 // ==================== Columns ====================
 const columns = [
   { title: '行号', key: 'rowIndex', width: 55, fixed: 'left' as const },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '返修单号', dataIndex: 'rework_order_number', key: 'rework_order_number', width: 150 },
   { title: '不合格品单号', dataIndex: 'nonconforming_number', key: 'nonconforming_number', width: 150 },
   { title: '检验单号', dataIndex: 'source_inspection_number', key: 'source_inspection_number', width: 150 },
@@ -60,7 +70,8 @@ const fetchList = async () => {
     const res = await getReworkOrders({
       page: pagination.current, limit: pagination.pageSize,
       search: searchText.value || undefined,
-      rework_status: filterStatus.value || undefined
+      rework_status: filterStatus.value || undefined,
+      factory_id: filterFactory.value
     })
     dataSource.value = res.data.items || []
     pagination.total = res.data.pagination?.total || 0
@@ -71,7 +82,7 @@ const fetchList = async () => {
 
 const handleSearch = () => { pagination.current = 1; fetchList() }
 const handleReset = () => {
-  searchText.value = ''; filterStatus.value = undefined
+  searchText.value = ''; filterStatus.value = undefined; filterFactory.value = undefined
   pagination.current = 1; fetchList()
 }
 const handleTableChange = (pag: any) => {
@@ -122,7 +133,7 @@ const handleReInspectOk = async () => {
 // ==================== Export ====================
 const handleExport = async () => {
   try {
-    const res = await exportReworkOrders()
+    const res = await exportReworkOrders(filterFactory.value)
     const blob = new Blob([res.data], { type: res.headers?.['content-type'] || 'application/octet-stream' })
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
@@ -146,7 +157,7 @@ const getResultColor = (result: string) => {
   return 'default'
 }
 
-onMounted(() => { fetchList() })
+onMounted(() => { loadFactories(); fetchList() })
 </script>
 
 <template>
@@ -189,6 +200,9 @@ onMounted(() => { fetchList() })
             <a-select-option value="待返修">待返修</a-select-option>
             <a-select-option value="返修中">返修中</a-select-option>
             <a-select-option value="返修完成">返修完成</a-select-option>
+          </a-select>
+          <a-select v-model:value="filterFactory" placeholder="所属工厂" style="width: 120px" allowClear @change="handleSearch">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
           </a-select>
           <a-button @click="handleReset"><ReloadOutlined />重置</a-button>
           <a-button @click="handleExport"><DownloadOutlined />导出</a-button>

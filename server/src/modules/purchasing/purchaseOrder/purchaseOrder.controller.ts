@@ -56,9 +56,11 @@ export const getPurchaseOrders = async (req: Request, res: Response, next: NextF
     }
 
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       conditions.push(`po.factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
@@ -74,12 +76,14 @@ export const getPurchaseOrders = async (req: Request, res: Response, next: NextF
         SELECT po.purchase_order_number, po.supplier_number, po.supplier_name, po.procurement_manager, po.linkman, po.contacts,
                po.order_date, po.delivery_date, po.approval_status, po.order_status, po.total_amount, po.[condition],
                po.source_req_number, po.remark, po.creation_date, po.creation_man,
+               f.factory_name, f.factory_short,
                ISNULL(ri.return_count, 0) as return_count,
                ISNULL(ri.pending_return_count, 0) as pending_return_count,
                ISNULL(ri.completed_return_count, 0) as completed_return_count,
                ISNULL(ri.pending_exchange_count, 0) as pending_exchange_count,
                ROW_NUMBER() OVER (ORDER BY po.creation_date DESC, po.purchase_order_number DESC) AS _row_num
         FROM purchase_order po
+        LEFT JOIN factory f ON po.factory_id = f.id
         LEFT JOIN (
           SELECT purchase_order_number,
             COUNT(*) as return_count,
@@ -378,9 +382,10 @@ export const deletePurchaseOrder = async (req: Request, res: Response, next: Nex
         const allDone = allDetails.every((r: any) => r.status === '已转单')
         const anyDone = allDetails.some((r: any) => r.status !== '未执行')
         const newOrderStatus = allDone ? '已转单' : (anyDone ? '部分转单' : '未执行')
+        const prFactoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
         await sequelize.query(
-          `UPDATE purchase_req SET order_status = :newOrderStatus WHERE purchase_req_number = :reqNumber`,
-          { replacements: { newOrderStatus, reqNumber }, transaction }
+          `UPDATE purchase_req SET order_status = :newOrderStatus WHERE purchase_req_number = :reqNumber${prFactoryCond}`,
+          { replacements: { newOrderStatus, reqNumber, ...(_factoryId !== null ? { _factoryId } : {}) }, transaction }
         )
       }
 
@@ -496,6 +501,7 @@ export const updatePurchaseOrderDetail = async (req: Request, res: Response, nex
 
 export const deletePurchaseOrderDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
     const { detailId } = req.params;
     const [det]: any = await sequelize.query(
       `SELECT purchase_order_number, source_req_number, source_req_detail_id, order_quantity FROM purchase_order_detail WHERE id = :detailId`,
@@ -557,9 +563,10 @@ export const deletePurchaseOrderDetail = async (req: Request, res: Response, nex
         const allDone = allDetails.every((r: any) => r.status === '已转单')
         const anyDone = allDetails.some((r: any) => r.status !== '未执行')
         const newOrderStatus = allDone ? '已转单' : (anyDone ? '部分转单' : '未执行')
+        const prFactoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
         await sequelize.query(
-          `UPDATE purchase_req SET order_status = :newOrderStatus WHERE purchase_req_number = :reqNumber`,
-          { replacements: { newOrderStatus, reqNumber } }
+          `UPDATE purchase_req SET order_status = :newOrderStatus WHERE purchase_req_number = :reqNumber${prFactoryCond}`,
+          { replacements: { newOrderStatus, reqNumber, ...(_factoryId !== null ? { _factoryId } : {}) } }
         )
       }
     }
@@ -760,9 +767,11 @@ export const exportPurchaseOrders = async (req: Request, res: Response, next: Ne
       replacements.search = `%${search}%`;
     }
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += `${whereClause ? ' AND' : ' WHERE'} h.factory_id = :_factoryId`;
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
     const [rows]: any = await sequelize.query(
       `SELECT h.purchase_order_number, h.supplier_number, h.supplier_name, h.procurement_manager,
@@ -827,9 +836,11 @@ export const getPurchaseOrderDetailsPage = async (req: Request, res: Response, n
     }
 
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += `${whereClause ? ' AND' : ' WHERE'} h.factory_id = :_factoryId`;
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     const [countResult]: any = await sequelize.query(
@@ -846,9 +857,11 @@ export const getPurchaseOrderDetailsPage = async (req: Request, res: Response, n
                d.received_quantity, d.delivery_date, d.receive_status, d.source_req_number, d.remark,
                h.supplier_number, h.supplier_name, h.procurement_manager,
                h.order_date, h.approval_status, h.order_status,
+               f.factory_name, f.factory_short,
                ROW_NUMBER() OVER (ORDER BY h.purchase_order_number DESC, d.line_number) AS _row_num
         FROM purchase_order_detail d
         INNER JOIN purchase_order h ON h.purchase_order_number = d.purchase_order_number
+        LEFT JOIN factory f ON h.factory_id = f.id
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
@@ -920,8 +933,10 @@ export const exportPurchaseOrderDetailsSelected = async (req: Request, res: Resp
 export const getPurchaseOrderStats = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const _factoryId = getFactoryId(req);
-    const factoryCond = _factoryId !== null ? ` AND po.factory_id = :_factoryId` : '';
-    const factoryReplacements: any = { ...(_factoryId !== null ? { _factoryId } : {}) };
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? ` AND po.factory_id = :_factoryId` : '';
+    const factoryReplacements: any = { ...(effectiveFactoryId !== null ? { _factoryId: effectiveFactoryId } : {}) };
     const [totalRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM purchase_order po WHERE 1=1${factoryCond}`, { replacements: factoryReplacements });
     const [draftRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM purchase_order po WHERE po.approval_status = N'草稿'${factoryCond}`, { replacements: factoryReplacements });
     const [pendingRow]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM purchase_order po WHERE po.approval_status = N'待审批'${factoryCond}`, { replacements: factoryReplacements });
@@ -942,7 +957,12 @@ export const getPurchaseOrderStats = async (req: Request, res: Response, next: N
 
 export const getPurchaseOrderStatusDistribution = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [rows]: any = await sequelize.query(`SELECT approval_status, COUNT(*) as cnt FROM purchase_order GROUP BY approval_status`);
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? ' AND po.factory_id = :_factoryId' : '';
+    const factoryReps: any = effectiveFactoryId !== null ? { _factoryId: effectiveFactoryId } : {};
+    const [rows]: any = await sequelize.query(`SELECT po.approval_status, COUNT(*) as cnt FROM purchase_order po WHERE 1=1${factoryCond} GROUP BY po.approval_status`, { replacements: factoryReps });
     const result: Record<string, number> = {};
     rows.forEach((r: any) => { result[r.approval_status || '未知'] = r.cnt; });
     res.json(success(result));
@@ -951,22 +971,32 @@ export const getPurchaseOrderStatusDistribution = async (req: Request, res: Resp
 
 export const getPurchaseOrderSupplierRanking = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? ' AND h.factory_id = :_factoryId' : '';
+    const factoryReps: any = effectiveFactoryId !== null ? { _factoryId: effectiveFactoryId } : {};
     const [rows]: any = await sequelize.query(`
       SELECT TOP 10 h.supplier_name,
              COUNT(DISTINCT h.purchase_order_number) as order_count,
              ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as total_amount
       FROM purchase_order h
       LEFT JOIN purchase_order_detail d ON h.purchase_order_number = d.purchase_order_number
-      WHERE h.supplier_name IS NOT NULL AND h.supplier_name <> ''
+      WHERE h.supplier_name IS NOT NULL AND h.supplier_name <> ''${factoryCond}
       GROUP BY h.supplier_name
       ORDER BY total_amount DESC
-    `);
+    `, { replacements: factoryReps });
     res.json(success(rows));
   } catch (err) { next(err); }
 };
 
 export const getPurchaseOrderMonthlyTrend = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? ' AND po.factory_id = :_factoryId' : '';
+    const factoryReps: any = effectiveFactoryId !== null ? { _factoryId: effectiveFactoryId } : {};
     const [rows]: any = await sequelize.query(`
       SELECT m.month, ISNULL(t.order_count, 0) as order_count, ISNULL(t.amount, 0) as amount
       FROM (
@@ -975,7 +1005,7 @@ export const getPurchaseOrderMonthlyTrend = async (req: Request, res: Response, 
               UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9 UNION SELECT 10 UNION SELECT 11) nums
       ) m
       LEFT JOIN (
-        SELECT CONVERT(varchar(7), CAST(order_date AS date), 120) as month,
+        SELECT CONVERT(varchar(7), CAST(po.order_date AS date), 120) as month,
                COUNT(*) as order_count,
                ISNULL(SUM(sub.detail_amount), 0) as amount
         FROM purchase_order po
@@ -983,29 +1013,40 @@ export const getPurchaseOrderMonthlyTrend = async (req: Request, res: Response, 
           SELECT ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as detail_amount
           FROM purchase_order_detail d WHERE d.purchase_order_number = po.purchase_order_number
         ) sub
-        WHERE CAST(order_date AS date) >= DATEADD(MONTH, -12, GETDATE())
-        GROUP BY CONVERT(varchar(7), CAST(order_date AS date), 120)
+        WHERE CAST(po.order_date AS date) >= DATEADD(MONTH, -12, GETDATE())${factoryCond}
+        GROUP BY CONVERT(varchar(7), CAST(po.order_date AS date), 120)
       ) t ON m.month = t.month
       ORDER BY m.month
-    `);
+    `, { replacements: factoryReps });
     res.json(success(rows));
   } catch (err) { next(err); }
 };
 
 export const getPurchaseOrderRecentList = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? ' AND h.factory_id = :_factoryId' : '';
+    const factoryReps: any = effectiveFactoryId !== null ? { _factoryId: effectiveFactoryId } : {};
     const [rows]: any = await sequelize.query(`
       SELECT TOP 10 h.purchase_order_number, h.supplier_name, h.order_date, h.approval_status, h.order_status,
              ISNULL((SELECT SUM(CAST(total_amount AS decimal(18,2))) FROM purchase_order_detail WHERE purchase_order_number = h.purchase_order_number), 0) as total_amount
       FROM purchase_order h
+      WHERE 1=1${factoryCond}
       ORDER BY h.creation_date DESC
-    `);
+    `, { replacements: factoryReps });
     res.json(success(rows));
   } catch (err) { next(err); }
 };
 
 export const getPurchaseOrderDeliveryTrend = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? ' AND h.factory_id = :_factoryId' : '';
+    const factoryReps: any = effectiveFactoryId !== null ? { _factoryId: effectiveFactoryId } : {};
     const [rows]: any = await sequelize.query(`
       SELECT w.week_label, ISNULL(t.order_count, 0) as order_count, ISNULL(t.quantity, 0) as quantity
       FROM (
@@ -1022,12 +1063,12 @@ export const getPurchaseOrderDeliveryTrend = async (req: Request, res: Response,
         FROM purchase_order_detail d
         INNER JOIN purchase_order h ON h.purchase_order_number = d.purchase_order_number
         WHERE CAST(d.delivery_date AS date) >= CAST(GETDATE() AS date)
-          AND CAST(d.delivery_date AS date) < DATEADD(WEEK, 8, CAST(GETDATE() AS date))
+          AND CAST(d.delivery_date AS date) < DATEADD(WEEK, 8, CAST(GETDATE() AS date))${factoryCond}
         GROUP BY CONVERT(varchar(10), DATEADD(WEEK, DATEDIFF(WEEK, CAST(GETDATE() AS date), CAST(d.delivery_date AS date)),
                  CAST(GETDATE() AS date)), 120)
       ) t ON w.week_start = t.week_start
       ORDER BY w.week_start
-    `);
+    `, { replacements: factoryReps });
     res.json(success(rows));
   } catch (err) { next(err); }
 };
@@ -1060,6 +1101,14 @@ export const getPurchaseOrderReconciliationPage = async (req: Request, res: Resp
       replacements.search = `%${search}%`;
     }
 
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      whereClause += ` AND h.factory_id = :_factoryId`;
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     const [countResult]: any = await sequelize.query(
       `SELECT COUNT(*) as total
        FROM purchase_order_detail d
@@ -1075,9 +1124,11 @@ export const getPurchaseOrderReconciliationPage = async (req: Request, res: Resp
                d.delivery_date, d.reconciliation_status,
                h.supplier_name, h.supplier_number,
                h.order_status, h.creation_man, h.creation_date as order_creation_date,
+               f.factory_name, f.factory_short,
                ROW_NUMBER() OVER (ORDER BY h.creation_date DESC, d.purchase_order_number, d.line_number) AS _row_num
         FROM purchase_order_detail d
         INNER JOIN purchase_order h ON h.purchase_order_number = d.purchase_order_number
+        LEFT JOIN factory f ON h.factory_id = f.id
         ${whereClause}
       ) AS t WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements });
@@ -1103,12 +1154,20 @@ export const updatePurchaseOrderReconciliationStatus = async (req: Request, res:
       res.status(400).json({ success: false, message: '无效的对账状态' }); return;
     }
 
-    const replacements: any = { reconciliationStatus };
+    // 多工厂防越权
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND h.factory_id = :_factoryId' : '';
+    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
+
+    const replacements: any = { reconciliationStatus, ...factoryReps };
     detailIds.forEach((id: number, i: number) => { replacements[`id${i}`] = id; });
     const placeholders = detailIds.map((_: any, i: number) => `:id${i}`).join(', ');
 
     await sequelize.query(
-      `UPDATE purchase_order_detail SET reconciliation_status = :reconciliationStatus WHERE id IN (${placeholders})`,
+      `UPDATE d SET d.reconciliation_status = :reconciliationStatus
+       FROM purchase_order_detail d
+       INNER JOIN purchase_order h ON h.purchase_order_number = d.purchase_order_number
+       WHERE d.id IN (${placeholders})${factoryCond}`,
       { replacements }
     );
 
@@ -1125,7 +1184,12 @@ export const getPurchaseOrderReconciliationPrintData = async (req: Request, res:
       res.status(400).json({ success: false, message: '请选择要打印的记录' }); return;
     }
 
-    const replacements: any = {};
+    // 多工厂防越权
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND h.factory_id = :_factoryId' : '';
+    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
+
+    const replacements: any = { ...factoryReps };
     detailIds.forEach((id: number, i: number) => { replacements[`id${i}`] = id; });
     const placeholders = detailIds.map((_: any, i: number) => `:id${i}`).join(', ');
 
@@ -1139,7 +1203,7 @@ export const getPurchaseOrderReconciliationPrintData = async (req: Request, res:
              h.remark
       FROM purchase_order_detail d
       INNER JOIN purchase_order h ON h.purchase_order_number = d.purchase_order_number
-      WHERE d.id IN (${placeholders})
+      WHERE d.id IN (${placeholders})${factoryCond}
       ORDER BY h.purchase_order_number, d.line_number
     `, { replacements });
 

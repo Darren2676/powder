@@ -35,35 +35,40 @@ export const getPurchasePriceLists = async (req: Request, res: Response, next: N
     const replacements: any = {};
 
     if (search) {
-      conditions.push(`(price_list_number LIKE :search OR price_list_name LIKE :search OR supplier_number LIKE :search OR supplier_name LIKE :search)`);
+      conditions.push(`(ppl.price_list_number LIKE :search OR ppl.price_list_name LIKE :search OR ppl.supplier_number LIKE :search OR ppl.supplier_name LIKE :search)`);
       replacements.search = `%${search}%`;
     }
     if (approval_status) {
-      conditions.push(`approval_status = :approval_status`);
+      conditions.push(`ppl.approval_status = :approval_status`);
       replacements.approval_status = approval_status;
     }
 
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
-      conditions.push(`factory_id = :_factoryId`);
-      replacements._factoryId = _factoryId;
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
+      conditions.push(`ppl.factory_id = :_factoryId`);
+      replacements._factoryId = effectiveFactoryId;
     }
 
     const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
     const [countResult]: any = await sequelize.query(
-      `SELECT COUNT(*) as total FROM purchase_price_list ${whereClause}`, { replacements }
+      `SELECT COUNT(*) as total FROM purchase_price_list ppl ${whereClause}`, { replacements }
     );
     const total = countResult[0].total;
 
     const offset = (page - 1) * limit;
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT price_list_number, price_list_name, supplier_number, supplier_name, supplier_category,
-               effective_date, expiration_date, price_type, currency, approval_status,
-               remark, creation_date, creation_man,
-               ROW_NUMBER() OVER (ORDER BY creation_date DESC, price_list_number DESC) AS _row_num
-        FROM purchase_price_list ${whereClause}
+        SELECT ppl.price_list_number, ppl.price_list_name, ppl.supplier_number, ppl.supplier_name, ppl.supplier_category,
+               ppl.effective_date, ppl.expiration_date, ppl.price_type, ppl.currency, ppl.approval_status,
+               ppl.remark, ppl.creation_date, ppl.creation_man,
+               f.factory_name, f.factory_short,
+               ROW_NUMBER() OVER (ORDER BY ppl.creation_date DESC, ppl.price_list_number DESC) AS _row_num
+        FROM purchase_price_list ppl
+        LEFT JOIN factory f ON ppl.factory_id = f.id
+        ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
     `, { replacements: { ...replacements, offset, offsetEnd: offset + limit } });
@@ -81,8 +86,11 @@ export const getPurchasePriceLists = async (req: Request, res: Response, next: N
 export const getPurchasePriceListDetail = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
     const [headers]: any = await sequelize.query(
-      `SELECT * FROM purchase_price_list WHERE price_list_number = :id`, { replacements: { id } }
+      `SELECT * FROM purchase_price_list WHERE price_list_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!headers.length) { res.status(404).json({ success: false, message: '采购价目表不存在' }); return; }
     const [details]: any = await sequelize.query(
@@ -185,9 +193,12 @@ export const updatePurchasePriceList = async (req: Request, res: Response, next:
   try {
     const { id } = req.params;
     const b = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
 
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM purchase_price_list WHERE price_list_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM purchase_price_list WHERE price_list_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (!chk.length) { res.status(404).json({ success: false, message: '采购价目表不存在' }); return; }
     if (chk[0].approval_status !== ORDER_STATUS.DRAFT) {
@@ -200,8 +211,8 @@ export const updatePurchasePriceList = async (req: Request, res: Response, next:
         UPDATE purchase_price_list SET
           price_list_name = :price_list_name, supplier_number = :supplier_number, supplier_name = :supplier_name,
           supplier_category = :supplier_category, effective_date = :effective_date, expiration_date = :expiration_date,
-          price_type = :price_type, currency = :currency, remark = :remark
-        WHERE price_list_number = :id
+          price_type = :price_type, currency = :currency, remark = :remark, factory_id = :factory_id
+        WHERE price_list_number = :id${factoryCond}
       `, {
         replacements: {
           id,
@@ -213,7 +224,9 @@ export const updatePurchasePriceList = async (req: Request, res: Response, next:
           expiration_date: b.expiration_date || null,
           price_type: b.price_type || '含税',
           currency: b.currency || 'CNY',
-          remark: b.remark || ''
+          remark: b.remark || '',
+          factory_id: b.factory_id || null,
+          ...factoryReps
         },
         transaction
       });
@@ -273,8 +286,11 @@ export const updatePurchasePriceList = async (req: Request, res: Response, next:
 export const deletePurchasePriceList = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
     const [chk]: any = await sequelize.query(
-      `SELECT approval_status FROM purchase_price_list WHERE price_list_number = :id`, { replacements: { id } }
+      `SELECT approval_status FROM purchase_price_list WHERE price_list_number = :id${factoryCond}`, { replacements: { id, ...factoryReps } }
     );
     if (chk.length && chk[0].approval_status !== ORDER_STATUS.DRAFT) {
       res.status(403).json({ success: false, message: '已提交审批或已审批的记录不允许删除' }); return;
@@ -282,7 +298,7 @@ export const deletePurchasePriceList = async (req: Request, res: Response, next:
     const transaction = await sequelize.transaction();
     try {
       await sequelize.query(`DELETE FROM purchase_price_list_detail WHERE price_list_number = :id`, { replacements: { id }, transaction });
-      await sequelize.query(`DELETE FROM purchase_price_list WHERE price_list_number = :id`, { replacements: { id }, transaction });
+      await sequelize.query(`DELETE FROM purchase_price_list WHERE price_list_number = :id${factoryCond}`, { replacements: { id, ...factoryReps }, transaction });
       await transaction.commit();
       res.json(success(null, '删除采购价目表成功'));
     } catch (e) {
@@ -293,21 +309,35 @@ export const deletePurchasePriceList = async (req: Request, res: Response, next:
 };
 
 // ==================== 导出 ====================
-const exportFields = ['price_list_number', 'price_list_name', 'supplier_number', 'supplier_name', 'item_number', 'item_name', 'item_category', 'specifications', 'tax_inclusive_price', 'tax_exclusive_price', 'tax_rate', 'enable_tiered_pricing', 'start_quantity', 'end_quantity', 'pricing_unit', 'approval_status'];
-const exportHeaders = ['价目表编号', '价目表名称', '供应商编号', '供应商名称', '物料编号', '物料名称', '物料分类', '物料规格', '含税单价', '未税单价', '税率%', '启用分段价格', '起始数量', '结束数量', '计价单位', '审批状态'];
+const exportFields = ['price_list_number', 'price_list_name', 'supplier_number', 'supplier_name', 'item_number', 'item_name', 'item_category', 'specifications', 'tax_inclusive_price', 'tax_exclusive_price', 'tax_rate', 'enable_tiered_pricing', 'start_quantity', 'end_quantity', 'pricing_unit', 'approval_status', 'factory_id'];
+const exportHeaders = ['价目表编号', '价目表名称', '供应商编号', '供应商名称', '物料编号', '物料名称', '物料分类', '物料规格', '含税单价', '未税单价', '税率%', '启用分段价格', '起始数量', '结束数量', '计价单位', '审批状态', '所属工厂'];
 
 export const exportPurchasePriceLists = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+
+    let whereClause = '';
+    const replacements: any = {};
+    if (effectiveFactoryId !== null) {
+      whereClause = 'WHERE h.factory_id = :_factoryId';
+      replacements._factoryId = effectiveFactoryId;
+    }
+
     const [items]: any = await sequelize.query(`
       SELECT h.price_list_number, h.price_list_name, h.supplier_number, h.supplier_name,
              d.item_number, d.item_name, d.item_category, d.specifications,
              d.tax_inclusive_price, d.tax_exclusive_price, d.tax_rate,
              CASE WHEN d.enable_tiered_pricing = 1 THEN N'是' ELSE N'否' END as enable_tiered_pricing,
-             d.start_quantity, d.end_quantity, d.pricing_unit, h.approval_status
+             d.start_quantity, d.end_quantity, d.pricing_unit, h.approval_status,
+             f.factory_short as factory_id
       FROM purchase_price_list h
       INNER JOIN purchase_price_list_detail d ON d.price_list_number = h.price_list_number
+      LEFT JOIN factory f ON h.factory_id = f.id
+      ${whereClause}
       ORDER BY h.price_list_number, d.item_number, d.line_number
-    `);
+    `, { replacements });
     exportToExcel(items, exportFields, exportHeaders, 'purchase_price_lists', res);
   } catch (err) { next(err); }
 };
@@ -475,6 +505,9 @@ export const queryPurchasePrice = async (req: Request, res: Response, next: Next
     const items = item_numbers.split(',').filter(Boolean)
 
     // 查询该供应商所有已审批且在有效期内的价目表
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND h.factory_id = :_factoryId' : '';
+    const factoryReps: any = _factoryId !== null ? { _factoryId } : {};
     const [priceLists]: any = await sequelize.query(`
       SELECT h.price_list_number, h.price_type
       FROM purchase_price_list h
@@ -482,7 +515,8 @@ export const queryPurchasePrice = async (req: Request, res: Response, next: Next
         AND h.approval_status = N'已审批'
         AND h.effective_date <= CAST(GETDATE() AS DATE)
         AND (h.expiration_date IS NULL OR h.expiration_date >= CAST(GETDATE() AS DATE))
-    `, { replacements: { supplier_number } })
+        ${factoryCond}
+    `, { replacements: { supplier_number, ...factoryReps } })
 
     const result: Record<string, { unit_price: number; price_type: string; price_list_number: string }> = {}
 

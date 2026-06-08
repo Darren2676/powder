@@ -14,14 +14,17 @@ export const getCompletedScrapStockCounts = async (req: Request, res: Response, 
   try {
     // 多工厂数据隔离过滤
     const _factoryId = getFactoryId(req);
-    const factoryCond = _factoryId !== null ? ` AND w.factory_id = ${_factoryId}` : '';
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    const factoryCond = effectiveFactoryId !== null ? ' AND w.factory_id = :_factoryId' : '';
+    const factoryReps: any = effectiveFactoryId !== null ? { _factoryId: effectiveFactoryId } : {};
     const [items]: any = await sequelize.query(`
       SELECT sc.count_number, sc.count_period, sc.warehouse_number, sc.warehouse_name, sc.confirmed_date
       FROM stock_count sc
       INNER JOIN warehouse w ON sc.warehouse_number = w.warehouse_number
       WHERE sc.status = N'已完成' AND w.warehouse_type = N'报废仓库'${factoryCond}
       ORDER BY sc.count_period DESC, sc.confirmed_date DESC
-    `);
+    `, { replacements: { ...factoryReps } });
     res.json(success(items));
   } catch (err) { next(err); }
 };
@@ -29,15 +32,24 @@ export const getCompletedScrapStockCounts = async (req: Request, res: Response, 
 // ==================== 报废仓月度报表 ====================
 export const getScrapMonthlyReport = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { count_number } = req.query;
+    const { count_number, factory_id } = req.query;
     if (!count_number) {
       return res.status(400).json({ success: false, message: '请选择盘点单' });
     }
 
-    // Step 1: 校验盘点单
+    // 多工厂数据隔离过滤
+    const _factoryId = getFactoryId(req);
+    const queryFactoryId = factory_id ? parseInt(factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+
+    // Step 1: 校验盘点单（含工厂防越权）
+    const factoryJoin = effectiveFactoryId !== null ? ' INNER JOIN warehouse w ON sc.warehouse_number = w.warehouse_number' : '';
+    const factoryCond = effectiveFactoryId !== null ? ' AND w.factory_id = :_factoryId' : '';
+    const factoryReps: any = { count_number };
+    if (effectiveFactoryId !== null) factoryReps._factoryId = effectiveFactoryId;
     const [headers]: any = await sequelize.query(
-      `SELECT count_number, count_period, warehouse_number, warehouse_name, status FROM stock_count WHERE count_number = :count_number`,
-      { replacements: { count_number } }
+      `SELECT sc.count_number, sc.count_period, sc.warehouse_number, sc.warehouse_name, sc.status FROM stock_count sc${factoryJoin} WHERE sc.count_number = :count_number${factoryCond}`,
+      { replacements: factoryReps }
     );
     if (!headers.length) {
       return res.status(404).json({ success: false, message: '盘点单不存在' });
@@ -67,6 +79,9 @@ export const getScrapMonthlyReport = async (req: Request, res: Response, next: N
     `, { replacements: { count_number } });
 
     // Step 3: 本月交易汇总（inventory_transaction - 报废仓专用）
+    const txFacCond = effectiveFactoryId !== null ? ' AND t.factory_id = :_factoryId' : '';
+    const txReps: any = { warehouse_number: header.warehouse_number, reportMonth, startDate, nextMonthStart };
+    if (effectiveFactoryId !== null) txReps._factoryId = effectiveFactoryId;
     const [txRows]: any = await sequelize.query(`
       SELECT item_number, MAX(item_name) as item_name, MAX(specifications) as specifications,
         MAX(basic_unit) as basic_unit,
@@ -78,12 +93,12 @@ export const getScrapMonthlyReport = async (req: Request, res: Response, next: N
         SUM(CASE WHEN transaction_type=N'出库' AND source_type IN (N'盘亏调整',N'月末盘亏') THEN quantity ELSE 0 END) as out_shortage,
         SUM(CASE WHEN transaction_type=N'出库' AND source_type NOT IN (N'报废处置',N'盘亏调整',N'月末盘亏') THEN quantity ELSE 0 END) as out_other,
         SUM(CASE WHEN transaction_type=N'出库' THEN quantity ELSE 0 END) as out_total
-      FROM inventory_transaction
-      WHERE warehouse_number = :warehouse_number
-        AND (accounting_period = :reportMonth OR (ISNULL(accounting_period, '') = '' AND operation_date >= :startDate AND operation_date < :nextMonthStart))
-        AND status = N'正常'
+      FROM inventory_transaction t
+      WHERE t.warehouse_number = :warehouse_number
+        AND (t.accounting_period = :reportMonth OR (ISNULL(t.accounting_period, '') = '' AND t.operation_date >= :startDate AND t.operation_date < :nextMonthStart))
+        AND t.status = N'正常'${txFacCond}
       GROUP BY item_number
-    `, { replacements: { warehouse_number: header.warehouse_number, reportMonth, startDate, nextMonthStart } });
+    `, { replacements: txReps });
 
     // Step 4: Node.js 层合并
     const map = new Map<string, any>();

@@ -34,6 +34,7 @@ const {
 } = useTableList(fetchDataFn)
 
 const defaultColumns: any[] = [
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80, resizable: true, customRender: ({ record }: any) => record.factory_short || record.factory_name || '-' },
   { title: '客户名称', dataIndex: 'customer_name', key: 'customer_name', width: 140, resizable: true },
   { title: '订单日期', dataIndex: 'order_date', key: 'order_date', width: 110, resizable: true },
   { title: '行号', dataIndex: 'line_number', key: 'line_number', width: 70, resizable: true, align: 'center' },

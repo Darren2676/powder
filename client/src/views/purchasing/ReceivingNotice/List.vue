@@ -5,12 +5,21 @@ import { PlusOutlined, ReloadOutlined, EyeOutlined, DeleteOutlined, CheckCircleO
 import { getReceivingNotices, getReceivingNoticeDetail, createReceivingNotice, deleteReceivingNotice, confirmReceivingNotice } from '@/api/purchasing/receivingNotice'
 import { getPurchaseOrderDetail, getReceivable, getPurchaseOrders } from '@/api/purchasing/purchaseOrder'
 import { getWarehouses } from '@/api/master-data/warehouse'
+import { getFactories } from '@/api/system/factory'
 import dayjs from 'dayjs'
 import { useTableList } from '@/composables/useTableList'
 
 // ==================== 数据 ====================
 const dataList = ref<any[]>([])
 const filterStatus = ref('')
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch (e) { /* ignore */ }
+}
 
 const modalVisible = ref(false)
 const modalTitle = ref('新建采购收货通知')
@@ -73,7 +82,8 @@ const fetchList = async () => {
   try {
     const res: any = await getReceivingNotices({
       page: pagination.current, limit: pagination.pageSize,
-      search: searchText.value, approval_status: filterStatus.value
+      search: searchText.value, approval_status: filterStatus.value,
+      factory_id: factoryFilter.value || undefined
     })
     dataList.value = res.data?.items || []
     pagination.total = res.data?.pagination?.total || 0
@@ -89,7 +99,7 @@ const loadDropdowns = async () => {
   } catch { /* ignore */ }
 }
 
-onMounted(() => { fetchList(); loadDropdowns() })
+onMounted(() => { fetchList(); loadDropdowns(); loadFactories() })
 
 const handleRefresh = () => { fetchList() }
 const handleSearch = () => { pagination.current = 1; fetchList() }
@@ -256,6 +266,9 @@ const handleConfirm = async () => {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h2 style="margin:0">采购收货通知</h2>
       <div style="display:flex;gap:8px;align-items:center">
+        <a-select v-model:value="factoryFilter" placeholder="选择工厂" style="width:130px" allow-clear @change="handleSearch">
+          <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+        </a-select>
         <a-input-search v-model:value="searchText" placeholder="搜索通知号/订单号/供应商" style="width:260px" @search="handleSearch" allow-clear />
         <a-select v-model:value="filterStatus" placeholder="状态" style="width:110px" allow-clear @change="handleSearch">
           <a-select-option value="待确认">待确认</a-select-option>

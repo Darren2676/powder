@@ -44,9 +44,11 @@ export const getEquipmentMaintenancePlans = async (req: Request, res: Response, 
     let whereClause = 'WHERE 1=1';
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += ' AND mp.factory_id = :_factoryId';
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
 
     if (equipmentNumber) {
@@ -80,9 +82,10 @@ export const getEquipmentMaintenancePlans = async (req: Request, res: Response, 
 
     const [items]: any = await sequelize.query(`
       SELECT * FROM (
-        SELECT mp.*, e.equipment_name, ROW_NUMBER() OVER (ORDER BY mp.planned_date DESC, mp.id DESC) AS _row_num
+        SELECT mp.*, e.equipment_name, f.factory_name, f.factory_short, ROW_NUMBER() OVER (ORDER BY mp.planned_date DESC, mp.id DESC) AS _row_num
         FROM equipment_maintenance_plan mp
         LEFT JOIN equipment e ON mp.equipment_number = e.equipment_number
+        LEFT JOIN factory f ON mp.factory_id = f.id
         ${whereClause}
       ) AS t
       WHERE t._row_num > :offset AND t._row_num <= :offsetEnd
@@ -150,8 +153,8 @@ export const updateEquipmentMaintenancePlan = async (req: Request, res: Response
     const { id } = req.params;
     const b = req.body;
 
-    const setClauses = fields.map(f => `${f} = :${f}`).join(', ');
-    const replacements: any = { id };
+    const setClauses = fields.map(f => `${f} = :${f}`).join(', ') + ', factory_id = :factory_id';
+    const replacements: any = { id, factory_id: b.factory_id || null };
     for (const f of fields) {
       replacements[f] = b[f] !== undefined ? b[f] : null;
     }
@@ -167,7 +170,9 @@ export const updateEquipmentMaintenancePlan = async (req: Request, res: Response
 export const deleteEquipmentMaintenancePlan = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    await sequelize.query(`DELETE FROM equipment_maintenance_plan WHERE id = :id`, { replacements: { id } });
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    await sequelize.query(`DELETE FROM equipment_maintenance_plan WHERE id = :id${factoryCond}`, { replacements: { id, ...(_factoryId !== null ? { _factoryId: _factoryId } : {}) } });
     res.json(success(null, '删除保养计划成功'));
   } catch (err) { next(err); }
 };
@@ -282,18 +287,22 @@ export const exportEquipmentMaintenancePlans = async (req: Request, res: Respons
     let whereClause = 'WHERE 1=1';
     const replacements: any = {};
     const _factoryId = getFactoryId(req);
-    if (_factoryId !== null) {
+    const queryFactoryId = req.query.factory_id ? parseInt(req.query.factory_id as string) : null;
+    const effectiveFactoryId = _factoryId !== null ? _factoryId : queryFactoryId;
+    if (effectiveFactoryId !== null) {
       whereClause += ' AND mp.factory_id = :_factoryId';
-      replacements._factoryId = _factoryId;
+      replacements._factoryId = effectiveFactoryId;
     }
     if (equipmentNumber) { whereClause += ' AND mp.equipment_number = :equipmentNumber'; replacements.equipmentNumber = equipmentNumber; }
     if (planStatus) { whereClause += ' AND mp.plan_status = :planStatus'; replacements.planStatus = planStatus; }
 
     const [items]: any = await sequelize.query(
-      `SELECT mp.*, e.equipment_name FROM equipment_maintenance_plan mp LEFT JOIN equipment e ON mp.equipment_number = e.equipment_number ${whereClause} ORDER BY mp.planned_date DESC`,
+      `SELECT mp.*, e.equipment_name, f.factory_short FROM equipment_maintenance_plan mp LEFT JOIN equipment e ON mp.equipment_number = e.equipment_number LEFT JOIN factory f ON mp.factory_id = f.id ${whereClause} ORDER BY mp.planned_date DESC`,
       { replacements }
     );
-    exportToExcel(items, fields, headers, 'equipment_maintenance_plans', res);
+    const exportFields = ['factory_short', ...fields];
+    const exportHeaders = ['工厂', ...headers];
+    exportToExcel(items, exportFields, exportHeaders, 'equipment_maintenance_plans', res);
   } catch (err) { next(err); }
 };
 

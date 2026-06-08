@@ -13,6 +13,11 @@
             <a-select-option value="已退货">已退货</a-select-option>
           </a-select>
         </a-col>
+        <a-col :span="4">
+          <a-select v-model:value="factoryFilter" placeholder="选择工厂" size="small" style="width: 100%;" allow-clear @change="fetchList">
+            <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
+          </a-select>
+        </a-col>
         <a-col>
           <a-space>
             <a-button size="small" type="primary" @click="fetchList">查询</a-button>
@@ -150,10 +155,19 @@ import { message, Modal } from 'ant-design-vue'
 import { ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { createVNode } from 'vue'
 import { getReturnOutboundList, getReturnOutboundDetail, executeReturnOutbound } from '@/api/warehouse/materialWarehouse'
+import { getFactories } from '@/api/system/factory'
 
 const loading = ref(false)
 const searchText = ref('')
 const filterStatus = ref('')
+const factoryFilter = ref<number | undefined>(undefined)
+const factoryList = ref<any[]>([])
+const loadFactories = async () => {
+  try {
+    const res: any = await getFactories({ limit: 9999 })
+    if (res.success) { factoryList.value = res.data.items || [] }
+  } catch { /* ignore */ }
+}
 const listData = ref<any[]>([])
 
 const pagination = reactive({
@@ -166,6 +180,8 @@ const pagination = reactive({
 
 const columns = [
   { title: '退货单号', dataIndex: 'return_number', key: 'return_number', width: 150, fixed: 'left' as const },
+  { title: '工厂', dataIndex: 'factory_short', key: 'factory_short', width: 80,
+    customRender: ({ record }: any) => record.factory_short || record.factory_name_val || record.factory_name || '-' },
   { title: '采购订单号', dataIndex: 'purchase_order_number', key: 'purchase_order_number', width: 150 },
   { title: '供应商', dataIndex: 'supplier_name', key: 'supplier_name', width: 140 },
   { title: '退货类型', dataIndex: 'return_type', key: 'return_type', width: 100 },
@@ -216,7 +232,8 @@ const fetchList = async () => {
       page: pagination.current,
       limit: pagination.pageSize,
       search: searchText.value || undefined,
-      return_status: filterStatus.value || undefined
+      return_status: filterStatus.value || undefined,
+      factory_id: factoryFilter.value || undefined
     })
     listData.value = res?.data?.items || []
     pagination.total = res?.data?.pagination?.total || 0
@@ -230,6 +247,7 @@ const fetchList = async () => {
 const resetFilter = () => {
   searchText.value = ''
   filterStatus.value = ''
+  factoryFilter.value = undefined
   pagination.current = 1
   fetchList()
 }
@@ -295,6 +313,7 @@ const handleExecuteFromDetail = () => {
 }
 
 onMounted(() => {
+  loadFactories()
   fetchList()
 })
 </script>

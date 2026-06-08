@@ -2,7 +2,7 @@ import request from '@/utils/request'
 
 // ==================== Header ====================
 
-export function getPurchaseOrders(params?: { page?: number; limit?: number; search?: string; approval_status?: string; order_status?: string }) {
+export function getPurchaseOrders(params?: { page?: number; limit?: number; search?: string; approval_status?: string; order_status?: string; factory_id?: number }) {
   return request.get('/purchase-orders', { params })
 }
 
@@ -22,8 +22,8 @@ export function deletePurchaseOrder(id: string) {
   return request.delete(`/purchase-orders/${encodeURIComponent(id)}`)
 }
 
-export function exportPurchaseOrders(search?: string) {
-  return request.get('/purchase-orders/export', { params: { search }, responseType: 'blob' })
+export function exportPurchaseOrders(search?: string, factory_id?: number) {
+  return request.get('/purchase-orders/export', { params: { search, factory_id }, responseType: 'blob' })
 }
 
 // ==================== Detail ====================
@@ -46,7 +46,7 @@ export function deletePurchaseOrderDetail(detailId: number) {
 
 // ==================== 明细列表页 ====================
 
-export function getPurchaseOrderDetailsPage(params?: { page?: number; limit?: number; search?: string; receive_status?: string; approval_status?: string }) {
+export function getPurchaseOrderDetailsPage(params?: { page?: number; limit?: number; search?: string; receive_status?: string; approval_status?: string; factory_id?: number }) {
   return request.get('/purchase-orders/details-page', { params })
 }
 
