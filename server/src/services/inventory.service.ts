@@ -1,9 +1,17 @@
 /**
  * 库存服务 - 批次号生成、事务号生成、库存汇总同步
  * 从 materialWarehouse.controller 和 finishedGoods.controller 抽取
+ * 
+ * 双模式批次号：
+ *   模式A（默认）：入库时自动生成 generateBatchNumber() → FB-N-20260609-001
+ *   模式B（新增）：计划派发时预分配 → FB-MN20260609001
+ *   统一入口：resolveBatchNumber()
  */
 import sequelize from '@/config/database'
 import { Transaction } from 'sequelize'
+import { createLogger } from '@/config/logger'
+
+const log = createLogger('inventory-service')
 
 // ==================== 批次号生成 ====================
 
@@ -37,6 +45,111 @@ export const generateBatchNumber = async (type: 'MB' | 'HB' | 'FB', factoryCode:
     );
   }
   return prefix + String(seq).padStart(3, '0');
+};
+
+// ==================== 双模式批次号：查询规则 + 统一入口 ====================
+
+/**
+ * 查询产品的批次号产生规则（含优先级解析）
+ * 优先级：精确匹配(item_number+factory_id) > 全局匹配(item_number+null) > 默认模式A
+ */
+export const lookupBatchRule = async (
+  itemNumber: string,
+  factoryId: number | null = null,
+  transaction?: any
+): Promise<{ mode: 'A' | 'B'; template: string; append_split_seq: boolean } | null> => {
+  const txOpt: any = transaction ? { transaction } : {};
+
+  // 1. 精确匹配：item_number + factory_id
+  if (factoryId !== null) {
+    const [exactRows]: any = await sequelize.query(
+      `SELECT TOP 1 batch_rule_mode, batch_number_template, ISNULL(append_split_seq, 1) AS append_split_seq FROM batch_number_rule_config
+       WHERE item_number = :item_number AND factory_id = :factory_id AND is_active = N'是'`,
+      { replacements: { item_number: itemNumber, factory_id: factoryId }, ...txOpt }
+    );
+    if (exactRows.length > 0) {
+      return { mode: exactRows[0].batch_rule_mode as 'A' | 'B', template: exactRows[0].batch_number_template, append_split_seq: !!exactRows[0].append_split_seq };
+    }
+  }
+
+  // 2. 全局匹配：item_number + factory_id IS NULL
+  const [globalRows]: any = await sequelize.query(
+    `SELECT TOP 1 batch_rule_mode, batch_number_template, ISNULL(append_split_seq, 1) AS append_split_seq FROM batch_number_rule_config
+     WHERE item_number = :item_number AND factory_id IS NULL AND is_active = N'是'`,
+    { replacements: { item_number: itemNumber }, ...txOpt }
+  );
+  if (globalRows.length > 0) {
+    return { mode: globalRows[0].batch_rule_mode as 'A' | 'B', template: globalRows[0].batch_number_template, append_split_seq: !!globalRows[0].append_split_seq };
+  }
+
+  // 3. 无配置 → 默认模式A
+  return null;
+};
+
+/**
+ * 生成模式B的预分配批次号
+ * 格式：FB-{production_number}[-S{nn}]
+ * - 不拆分：FB-MN20260609001
+ * - 拆分且追加序号：FB-MN20260609001-S01, FB-MN20260609001-S02
+ * - 拆分不追加序号：FB-MN20260609001（所有拆分子单共享同一批次号）
+ */
+export const generatePreassignedBatchNumber = (
+  productionNumber: string,
+  splitIndex?: number,       // 从1开始，undefined表示不拆分
+  appendSplitSeq: boolean = true  // 是否在拆分时追加序号
+): string => {
+  const base = `FB-${productionNumber}`;
+  if (appendSplitSeq && splitIndex !== undefined && splitIndex > 0) {
+    return `${base}-S${String(splitIndex).padStart(2, '0')}`;
+  }
+  return base;
+};
+
+/**
+ * 统一批次号生成入口（入库时调用）
+ * - 模式A：调用 generateBatchNumber('FB', factoryCode)
+ * - 模式B：读取 production_order.preassigned_batch_number
+ * - 降级：模式B但预分配为空时，降级为模式A
+ */
+export const resolveBatchNumber = async (params: {
+  itemNumber: string;
+  factoryId: number | null;
+  productionOrderNumber: string;
+  factoryCode: string;
+  transaction?: any;
+}): Promise<string> => {
+  const { itemNumber, factoryId, productionOrderNumber, factoryCode, transaction } = params;
+  const txOpt: any = transaction ? { transaction } : {};
+
+  // 0. 优先从 Production_plan.batch_number 读取（计划派发时预生成的批次号）
+  const [planRows]: any = await sequelize.query(
+    `SELECT pp.batch_number FROM Production_plan pp
+     INNER JOIN production_order po ON po.production_number = pp.production_number
+     WHERE po.production_order_number = :pon`,
+    { replacements: { pon: productionOrderNumber }, ...txOpt }
+  );
+  if (planRows.length > 0 && planRows[0].batch_number) {
+    return planRows[0].batch_number;
+  }
+
+  // 1. 查询产品批次号规则
+  const rule = await lookupBatchRule(itemNumber, factoryId, transaction);
+
+  // 2. 模式B：读取预分配批次号
+  if (rule?.mode === 'B') {
+    const [poRows]: any = await sequelize.query(
+      `SELECT preassigned_batch_number FROM production_order WHERE production_order_number = :pon`,
+      { replacements: { pon: productionOrderNumber }, ...txOpt }
+    );
+    if (poRows.length > 0 && poRows[0].preassigned_batch_number) {
+      return poRows[0].preassigned_batch_number;
+    }
+    // 降级：预分配为空
+    log.warn({ itemNumber, productionOrderNumber }, '模式B但预分配为空, 降级为模式A');
+  }
+
+  // 3. 模式A（默认）：入库时自动生成
+  return generateBatchNumber('FB', factoryCode, transaction);
 };
 
 // ==================== 库存事务号生成 ====================

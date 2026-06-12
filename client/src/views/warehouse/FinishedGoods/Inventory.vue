@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { SearchOutlined, ReloadOutlined, BarChartOutlined, EditOutlined, ProfileOutlined, DownOutlined, SafetyCertificateOutlined } from '@ant-design/icons-vue'
+import { SearchOutlined, ReloadOutlined, BarChartOutlined, EditOutlined, ProfileOutlined, DownOutlined, SafetyCertificateOutlined, PrinterOutlined } from '@ant-design/icons-vue'
 import { getInventoryList, getInventoryDetail, adjustInventory, getWarehouseOptions, getFinishedBatchOptions, updateFinishedGoodsSafetyStock } from '@/api/warehouse/finishedGoods'
+import PrintModal from '@/views/master-data/LabelPrint/PrintModal.vue'
 import dayjs from 'dayjs'
 
 const loading = ref(false)
@@ -257,6 +258,15 @@ onMounted(() => {
   fetchWarehouseOptions()
   fetchData()
 })
+
+// ==================== 标签打印 ====================
+const printLabelVisible = ref(false)
+const printLabelRecord = ref<any>(null)
+
+const handlePrintLabel = (record: any) => {
+  printLabelRecord.value = record
+  printLabelVisible.value = true
+}
 </script>
 
 <template>
@@ -353,6 +363,9 @@ onMounted(() => {
                   </a-menu-item>
                   <a-menu-item @click="handleEditSafetyStock(record)">
                     <SafetyCertificateOutlined /> 安全库存
+                  </a-menu-item>
+                  <a-menu-item @click="handlePrintLabel(record)">
+                    <PrinterOutlined /> 打印标签
                   </a-menu-item>
                 </a-menu>
               </template>
@@ -492,5 +505,8 @@ onMounted(() => {
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- 标签打印弹窗 -->
+    <PrintModal v-model:visible="printLabelVisible" :record="printLabelRecord" />
   </div>
 </template>

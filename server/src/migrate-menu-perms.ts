@@ -51,6 +51,7 @@ async function migrate() {
       { name: '质量报表', code: 'quality-report-menu', parent_code: 'quality', menu_key: 'quality-report-menu', icon: 'PieChartOutlined', sort: 3 },
       // 集团管理子菜单
       { name: '总部汇总报表', code: 'hq-reports', parent_code: 'group', menu_key: 'hq-reports', icon: 'BarChartOutlined', sort: 1 },
+      { name: '集团管理驾驶舱', code: 'hq-cockpit-menu', parent_code: 'group', menu_key: 'hq-cockpit-menu', icon: 'DashboardOutlined', sort: 0 },
     ];
 
     for (const sm of subMenus) {
@@ -173,6 +174,8 @@ async function migrate() {
       { name: '集团财务汇总表', code: 'hq-finance-summary', parent_code: 'hq-reports', menu_key: 'hq-finance-summary', route: '/hq-finance-summary', sort: 5 },
       { name: '集团质量汇总表', code: 'hq-quality-summary', parent_code: 'hq-reports', menu_key: 'hq-quality-summary', route: '/hq-quality-summary', sort: 6 },
       { name: '集团出入库流水总表', code: 'hq-inventory-flow', parent_code: 'hq-reports', menu_key: 'hq-inventory-flow', route: '/hq-inventory-flow', sort: 7 },
+      // 集团管理 > 集团管理驾驶舱
+      { name: '集团管理驾驶舱', code: 'hq-cockpit', parent_code: 'hq-cockpit-menu', menu_key: 'hq-cockpit', route: '/hq-cockpit', sort: 1 },
     ];
 
     for (const p of pages) {
@@ -365,11 +368,11 @@ async function migrate() {
     }
 
     const hqRolePerms: Record<string, string[]> = {
-      'headquarters_admin': ['group', 'hq-reports', 'hq-sales-summary', 'hq-production-summary', 'hq-purchase-summary', 'hq-inventory-summary', 'hq-finance-summary', 'hq-quality-summary', 'hq-inventory-flow'],
-      'headquarters_manager': ['group', 'hq-reports', 'hq-sales-summary', 'hq-production-summary', 'hq-purchase-summary', 'hq-inventory-summary', 'hq-finance-summary', 'hq-quality-summary', 'hq-inventory-flow'],
-      'headquarters_finance': ['group', 'hq-reports', 'hq-finance-summary', 'hq-inventory-summary', 'hq-inventory-flow'],
-      'headquarters_quality': ['group', 'hq-reports', 'hq-quality-summary', 'hq-production-summary', 'hq-inventory-summary'],
-      'headquarters_sales': ['group', 'hq-reports', 'hq-sales-summary', 'hq-purchase-summary', 'hq-inventory-summary', 'hq-inventory-flow'],
+      'headquarters_admin': ['group', 'hq-cockpit-menu', 'hq-cockpit', 'hq-reports', 'hq-sales-summary', 'hq-production-summary', 'hq-purchase-summary', 'hq-inventory-summary', 'hq-finance-summary', 'hq-quality-summary', 'hq-inventory-flow'],
+      'headquarters_manager': ['group', 'hq-cockpit-menu', 'hq-cockpit', 'hq-reports', 'hq-sales-summary', 'hq-production-summary', 'hq-purchase-summary', 'hq-inventory-summary', 'hq-finance-summary', 'hq-quality-summary', 'hq-inventory-flow'],
+      'headquarters_finance': ['group', 'hq-cockpit-menu', 'hq-cockpit', 'hq-reports', 'hq-finance-summary', 'hq-inventory-summary', 'hq-inventory-flow'],
+      'headquarters_quality': ['group', 'hq-cockpit-menu', 'hq-cockpit', 'hq-reports', 'hq-quality-summary', 'hq-production-summary', 'hq-inventory-summary'],
+      'headquarters_sales': ['group', 'hq-cockpit-menu', 'hq-cockpit', 'hq-reports', 'hq-sales-summary', 'hq-purchase-summary', 'hq-inventory-summary', 'hq-inventory-flow'],
     };
     for (const [roleCode, permCodes] of Object.entries(hqRolePerms)) {
       const hqRole: any = await sequelize.query(`SELECT id FROM role WHERE role_code = :rc`, { replacements: { rc: roleCode }, type: 'SELECT' });

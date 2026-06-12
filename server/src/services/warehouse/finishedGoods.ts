@@ -6,6 +6,7 @@ import sequelize from '@/config/database';
 import { BusinessError } from '@/shared/errors/BusinessError';
 import {
   generateBatchNumber,
+  resolveBatchNumber,
   generateTransactionNumber,
   syncFinishedGoodsSummary,
 } from '@/services/inventory.service';
@@ -60,8 +61,14 @@ export const productionInboundFinished = async (
       const inboundQty = Number(item.inbound_qty) || 0;
       if (inboundQty <= 0) continue;
 
-      // 1. 自动生成成品批次号
-      const batchNo = await generateBatchNumber('FB', factoryCode, transaction);
+      // 1. 统一批次号生成入口：模式A自动生成 / 模式B读取预分配
+      const batchNo = await resolveBatchNumber({
+        itemNumber: item.item_number,
+        factoryId: _factoryId,
+        productionOrderNumber: item.production_order_number || '',
+        factoryCode,
+        transaction
+      });
       batchNumbers.push(batchNo);
 
       // 2. 写入成品批次库存表

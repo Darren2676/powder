@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, PlusOutlined, SearchOutlined, DownloadOutlined, UploadOutlined, HistoryOutlined, DownOutlined, ShoppingCartOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, PlusOutlined, SearchOutlined, DownloadOutlined, UploadOutlined, HistoryOutlined, DownOutlined, ShoppingCartOutlined, SettingOutlined, PrinterOutlined } from '@ant-design/icons-vue'
 import { getPlans, createPlan, updatePlan, deletePlan, exportPlans, importPlans, getSalesOrdersForImport, importFromSalesOrder } from '@/api/planning/plan'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getFactories } from '@/api/system/factory'
@@ -9,6 +9,7 @@ import { useAuthStore } from '@/store/auth'
 import ApprovalStatusTag from '@/components/Common/ApprovalStatusTag.vue'
 import ApprovalLogModal from '@/components/Common/ApprovalLogModal.vue'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
+import PrintModal from '@/views/master-data/LabelPrint/PrintModal.vue'
 import { useColumnPreference } from '@/composables/useColumnPreference'
 import { submitForApproval, approveRecord, reverseApproval, withdrawApproval, batchSubmitForApproval, batchApproveRecords, batchWithdrawApproval, batchReverseApproval } from '@/api/system/approval'
 import dayjs from 'dayjs'
@@ -53,6 +54,7 @@ interface Product {
 const authStore = useAuthStore()
 const approvalFilter = ref('')
 const mrpStatusFilter = ref('')
+const productionStatusFilter = ref('')
 const factoryFilter = ref<number | undefined>(undefined)
 const approvalLogVisible = ref(false)
 const approvalLogRecordId = ref('')
@@ -66,6 +68,7 @@ const doSearch = () => {
   fetchData({
     approval_status: approvalFilter.value || undefined,
     mrp_status: mrpStatusFilter.value || undefined,
+    production_status: productionStatusFilter.value || undefined,
     factory_id: factoryFilter.value || undefined
   })
 }
@@ -74,6 +77,7 @@ const doReset = () => {
   searchText.value = ''
   approvalFilter.value = ''
   mrpStatusFilter.value = ''
+  productionStatusFilter.value = ''
   factoryFilter.value = undefined
   pagination.current = 1
   fetchData()
@@ -150,7 +154,9 @@ const defaultDataColumns: any[] = [
   { title: '计划数量', dataIndex: 'planned_quantity', key: 'planned_quantity', sorter: (a: any, b: any) => (a.planned_quantity || 0) - (b.planned_quantity || 0), resizable: true },
   { title: '台班数', dataIndex: 'shifts_number', key: 'shifts_number', width: 80, sorter: (a: any, b: any) => (a.shifts_number || 0) - (b.shifts_number || 0), resizable: true },
   { title: '计划完成时间', dataIndex: 'planned_completion_time', key: 'planned_completion_time', sorter: (a: any, b: any) => (a.planned_completion_time || '').localeCompare(b.planned_completion_time || ''), resizable: true },
-  { title: '状态', dataIndex: 'plan_status', key: 'plan_status', sorter: (a: any, b: any) => (a.plan_status || '').localeCompare(b.plan_status || ''), resizable: true },
+  { title: '计划状态', dataIndex: 'plan_status', key: 'plan_status', sorter: (a: any, b: any) => (a.plan_status || '').localeCompare(b.plan_status || ''), resizable: true },
+  { title: '生产状态', dataIndex: 'production_status', key: 'production_status', width: 100, sorter: (a: any, b: any) => (a.production_status || '').localeCompare(b.production_status || ''), resizable: true },
+  { title: '批次号', dataIndex: 'batch_number', key: 'batch_number', width: 160, sorter: (a: any, b: any) => (a.batch_number || '').localeCompare(b.batch_number || ''), resizable: true },
   { title: '审批状态', dataIndex: 'approval_status', key: 'approval_status', width: 100, sorter: (a: any, b: any) => (a.approval_status || '').localeCompare(b.approval_status || ''), resizable: true },
   { title: 'MRP状态', dataIndex: 'mrp_status', key: 'mrp_status', width: 100, sorter: (a: any, b: any) => (a.mrp_status || '').localeCompare(b.mrp_status || ''), resizable: true },
   { title: '源单号', dataIndex: 'source_order_number', key: 'source_order_number', width: 160, sorter: (a: any, b: any) => (a.source_order_number || '').localeCompare(b.source_order_number || ''), resizable: true },
@@ -166,7 +172,7 @@ const {
   loadColumnPreference, handleResizeColumn
 } = useColumnPreference('plan_list', defaultDataColumns, {
   fixedLeft: [{ title: '行号', key: 'rowIndex', width: 60, fixed: 'left' as const }],
-  fixedRight: [{ title: '操作', key: 'action', width: 80, fixed: 'right' as const }]
+  fixedRight: [{ title: '操作', key: 'action', width: 120, fixed: 'right' as const }]
 })
 
 // 新建
@@ -477,6 +483,26 @@ const handleSoImportSubmit = async () => {
 
 
 
+// ==================== 生产状态颜色 ====================
+const prodStatusColor = (status: string) => {
+  const map: Record<string, string> = {
+    '未排产': 'default',
+    '已排产': 'blue',
+    '已备料': 'cyan',
+    '生产中': 'orange',
+    '生产完成': 'green',
+  }
+  return map[status] || 'default'
+}
+
+// ==================== 标签打印 ====================
+const printLabelVisible = ref(false)
+const printLabelRecord = ref<any>(null)
+const handlePrintLabel = (record: any) => {
+  printLabelRecord.value = record
+  printLabelVisible.value = true
+}
+
 // ==================== 批量审批操作 ====================
 const batchLoading = ref(false)
 const handleBatchAction = (action: string) => {
@@ -539,6 +565,14 @@ onMounted(async () => {
           <a-select-option value="">全部</a-select-option>
           <a-select-option value="已分解">已分解</a-select-option>
           <a-select-option value="未分解">未分解</a-select-option>
+        </a-select>
+        <a-select v-model:value="productionStatusFilter" placeholder="生产状态" allow-clear style="width: 120px" @change="doSearch">
+          <a-select-option value="">全部</a-select-option>
+          <a-select-option value="未排产">未排产</a-select-option>
+          <a-select-option value="已排产">已排产</a-select-option>
+          <a-select-option value="已备料">已备料</a-select-option>
+          <a-select-option value="生产中">生产中</a-select-option>
+          <a-select-option value="生产完成">生产完成</a-select-option>
         </a-select>
         <a-select v-model:value="factoryFilter" placeholder="工厂" allow-clear style="width: 120px" @change="doSearch">
           <a-select-option v-for="f in factoryList" :key="f.id" :value="f.id">{{ f.factory_short || f.factory_name }}</a-select-option>
@@ -605,22 +639,29 @@ onMounted(async () => {
             <a-tag v-else-if="record.mrp_status" color="default">{{ record.mrp_status }}</a-tag>
             <a-tag v-else color="default" style="color: #999;">未分解</a-tag>
           </template>
+          <template v-else-if="column.key === 'production_status'">
+            <a-tag v-if="record.production_status" :color="prodStatusColor(record.production_status)">{{ record.production_status }}</a-tag>
+            <span v-else style="color: #999;">-</span>
+          </template>
           <template v-else-if="column.key === 'action'">
-            <a-dropdown :trigger="['click']">
-              <a-button type="link" size="small" @click.stop>更多<DownOutlined style="font-size: 10px; margin-left: 2px;" /></a-button>
-              <template #overlay>
-                <a-menu @click="({ key: k }: any) => handleMoreAction(k, record)">
-                  <a-menu-item key="edit" :disabled="record.approval_status !== '草稿'"><EditOutlined /> 编辑</a-menu-item>
-                  <a-menu-item key="submit" v-if="record.approval_status === '草稿'">提交审核</a-menu-item>
-                  <a-menu-item key="approve" v-if="record.approval_status === '待审批'"><span style="color: #52c41a">审核通过</span></a-menu-item>
-                  <a-menu-item key="withdraw" v-if="record.approval_status === '待审批'">撤回提交</a-menu-item>
-                  <a-menu-item key="reverse" v-if="record.approval_status === '已审批'"><span style="color: #ff4d4f">反审退回</span></a-menu-item>
-                  <a-menu-divider />
-                  <a-menu-item key="history"><HistoryOutlined /> 审批历史</a-menu-item>
-                  <a-menu-item key="delete" :disabled="record.approval_status !== '草稿'"><span style="color: #ff4d4f"><DeleteOutlined /> 删除</span></a-menu-item>
-                </a-menu>
-              </template>
-            </a-dropdown>
+            <a-space :size="4">
+              <a-button type="link" size="small" @click="handlePrintLabel(record)"><PrinterOutlined /> 标签</a-button>
+              <a-dropdown :trigger="['click']">
+                <a-button type="link" size="small" @click.stop>更多<DownOutlined style="font-size: 10px; margin-left: 2px;" /></a-button>
+                <template #overlay>
+                  <a-menu @click="({ key: k }: any) => handleMoreAction(k, record)">
+                    <a-menu-item key="edit" :disabled="record.approval_status !== '草稿'"><EditOutlined /> 编辑</a-menu-item>
+                    <a-menu-item key="submit" v-if="record.approval_status === '草稿'">提交审核</a-menu-item>
+                    <a-menu-item key="approve" v-if="record.approval_status === '待审批'"><span style="color: #52c41a">审核通过</span></a-menu-item>
+                    <a-menu-item key="withdraw" v-if="record.approval_status === '待审批'">撤回提交</a-menu-item>
+                    <a-menu-item key="reverse" v-if="record.approval_status === '已审批'"><span style="color: #ff4d4f">反审退回</span></a-menu-item>
+                    <a-menu-divider />
+                    <a-menu-item key="history"><HistoryOutlined /> 审批历史</a-menu-item>
+                    <a-menu-item key="delete" :disabled="record.approval_status !== '草稿'"><span style="color: #ff4d4f"><DeleteOutlined /> 删除</span></a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
+            </a-space>
           </template>
         </template>
       </a-table>
@@ -690,7 +731,7 @@ onMounted(async () => {
         <a-form-item label="计划完成时间">
           <a-date-picker v-model:value="editDate" style="width: 100%" />
         </a-form-item>
-        <a-form-item label="状态">
+        <a-form-item label="计划状态">
           <a-select v-model:value="editForm.plan_status">
             <a-select-option value="待加入任务">待加入任务</a-select-option>
             <a-select-option value="已加入任务">已加入任务</a-select-option>
@@ -760,7 +801,7 @@ onMounted(async () => {
         <a-form-item label="计划完成时间">
           <a-date-picker v-model:value="createDate" style="width: 100%" placeholder="请选择计划完成时间" />
         </a-form-item>
-        <a-form-item label="状态">
+        <a-form-item label="计划状态">
           <a-select v-model:value="createForm.plan_status" placeholder="请选择状态">
             <a-select-option value="待加入任务">待加入任务</a-select-option>
             <a-select-option value="已加入任务">已加入任务</a-select-option>
@@ -786,6 +827,9 @@ onMounted(async () => {
 
     <!-- 审批日志弹窗 -->
     <ApprovalLogModal v-model:open="approvalLogVisible" module="Production_plan" :record-id="approvalLogRecordId" />
+
+    <!-- 标签打印弹窗 -->
+    <PrintModal v-model:visible="printLabelVisible" :record="printLabelRecord" />
 
     <!-- 从销售订单导入弹窗 -->
     <a-modal

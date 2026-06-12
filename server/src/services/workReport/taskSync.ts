@@ -3,7 +3,7 @@
  * 从 workReport.service.ts 拆分
  */
 import sequelize from '@/config/database';
-import { syncProductionStatus } from '@/services/salesOrderSync.service';
+import { syncProductionStatus, syncPlanStatus } from '@/services/salesOrderSync.service';
 import { checkAndAutoComplete } from '@/services/documentAutoComplete.service';
 import { autoProductionInbound } from '@/services/workReport/autoInbound';
 import { createLogger } from '@/config/logger';
@@ -64,6 +64,8 @@ export const syncTaskCompletion = async (taskNo: string, qtyDelta: number, trans
         );
         // 回写销售订单明细 production_status
         await syncProductionStatus(orderNo, '生产中', txOpt.transaction);
+        // 同步生产计划状态
+        await syncPlanStatus(orderNo, 'order', txOpt.transaction);
       }
       // 所有工序都已完成且检验状态合格 -> 生产单标记已完成
       const [pendingTasks]: any = await sequelize.query(
@@ -81,6 +83,8 @@ export const syncTaskCompletion = async (taskNo: string, qtyDelta: number, trans
         );
         // 回写销售订单明细 production_status
         await syncProductionStatus(orderNo, '生产完成', txOpt.transaction);
+        // 同步生产计划状态
+        await syncPlanStatus(orderNo, 'order', txOpt.transaction);
         // 尝试自动完成（需同时满足生产完成+入库完成）
         await checkAndAutoComplete('production_order', orderNo, txOpt.transaction);
         // 自动生成生产入库单（成品→成品仓，半成品→原料仓）

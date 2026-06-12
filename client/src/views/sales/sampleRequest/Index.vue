@@ -68,6 +68,8 @@
                     <template v-else-if="(record.status || '').trim() === '已完成'">
                       <a-menu-item @click="handleEdit(record)">修改</a-menu-item>
                       <a-menu-item @click="handleView(record)">查看详情</a-menu-item>
+                      <a-menu-divider />
+                      <a-menu-item @click="handleConvertOrder(record)">转化订单</a-menu-item>
                     </template>
                   </a-menu>
                 </template>
@@ -113,6 +115,21 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- 转化订单弹窗 -->
+    <a-modal v-model:visible="convertVisible" title="转化订单" @ok="handleConvertConfirm" :confirm-loading="convertLoading" width="400px">
+      <a-form :model="convertForm" layout="vertical">
+        <a-form-item label="申请编号">
+          <span style="font-weight:600">{{ convertRecord?.request_number }}</span>
+        </a-form-item>
+        <a-form-item label="是否已有订单" required>
+          <a-select v-model:value="convertForm.has_order" placeholder="请选择">
+            <a-select-option value="是">是 — 已有订单</a-select-option>
+            <a-select-option value="否">否 — 暂无订单</a-select-option>
+          </a-select>
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -135,6 +152,7 @@ const columns = [
   { title: '申请编号', dataIndex: 'request_number', width: 180 },
   { title: '申请日期', dataIndex: 'request_date', width: 110 },
   { title: '客户名称', dataIndex: 'customer_name', width: 180, ellipsis: true },
+  { title: '是否已有订单', dataIndex: 'has_order', width: 120 },
   { title: '申请人', dataIndex: 'applicant', width: 100 },
   { title: '紧急程度', dataIndex: 'urgency', width: 90 },
   { title: '流程状态', dataIndex: 'status', width: 90 },
@@ -264,6 +282,29 @@ async function handleCompleteConfirm() {
   } finally {
     completeLoading.value = false;
   }
+}
+
+// 转化订单弹窗
+const convertVisible = ref(false);
+const convertLoading = ref(false);
+const convertRecord = ref<any>(null);
+const convertForm = reactive({ has_order: '' });
+
+function handleConvertOrder(record: any) {
+  convertRecord.value = record;
+  convertForm.has_order = record.has_order || '';
+  convertVisible.value = true;
+}
+
+async function handleConvertConfirm() {
+  if (!convertRecord.value) return;
+  convertLoading.value = true;
+  try {
+    const res: any = await api.convertToOrder(convertRecord.value.request_number, { has_order: convertForm.has_order });
+    if (res.success) { message.success(res.message || '转化订单成功'); convertVisible.value = false; fetchData(); }
+    else { message.error(res.message || '转化订单失败'); }
+  } catch { message.error('转化订单失败'); }
+  finally { convertLoading.value = false; }
 }
 
 onMounted(fetchData);

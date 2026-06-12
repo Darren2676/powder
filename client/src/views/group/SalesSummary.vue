@@ -57,16 +57,16 @@ const factoryBarOption = computed(() => ({
 // 月度趋势折线图
 const trendOption = computed(() => {
   const allMonths = new Set<string>()
-  factories.value.forEach(f => f.monthly_trend.forEach(t => allMonths.add(t.month)))
+  factories.value.forEach(f => f.monthly_trend.forEach(t => { if (t.month) allMonths.add(t.month) }))
   const months = [...allMonths].sort()
   return {
     tooltip: { trigger: 'axis' },
-    legend: { data: factories.value.map(f => f.factory.factory_name), top: 0 },
+    legend: { data: factories.value.map(f => f.factory?.factory_name || ''), top: 0 },
     grid: { left: 80, right: 30, bottom: 30, top: 40 },
-    xAxis: { type: 'category', data: months.map(m => m.substring(5)) },
+    xAxis: { type: 'category', data: months.map(m => m ? m.substring(5) : '') },
     yAxis: { type: 'value', axisLabel: { formatter: (v: number) => v >= 10000 ? (v / 10000).toFixed(0) + '万' : String(v) } },
     series: factories.value.map((f, i) => ({
-      name: f.factory.factory_name, type: 'line', smooth: true,
+      name: f.factory?.factory_name || '', type: 'line', smooth: true,
       data: months.map(m => f.monthly_trend.find(t => t.month === m)?.total_amount || 0),
       itemStyle: { color: ['#1890ff', '#fa8c16', '#52c41a', '#722ed1'][i % 4] }
     }))

@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, createVNode } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, PlusOutlined, DownloadOutlined, UploadOutlined, ImportOutlined, HistoryOutlined, DownOutlined, SplitCellsOutlined, SendOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons-vue'
-import { getOrders, createOrder, updateOrder, deleteOrder, exportOrders, importOrders, importOrderFromPlan, splitOrders, dispatchOrders, dispatchAndGenerate, dispatchPrecheck } from '@/api/production/order'
+import { ReloadOutlined, EditOutlined, DeleteOutlined, ExclamationCircleOutlined, PlusOutlined, DownloadOutlined, UploadOutlined, HistoryOutlined, DownOutlined, SplitCellsOutlined, SendOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { getOrders, createOrder, updateOrder, deleteOrder, exportOrders, importOrders, splitOrders, dispatchOrders, dispatchAndGenerate, dispatchPrecheck } from '@/api/production/order'
 import { getItems } from '@/api/master-data/itemMaster'
 import { getEquipments } from '@/api/equipment/equipment'
 import { getMoulds } from '@/api/equipment/mould'
 import { getMouldBomByItemAndMould } from '@/api/master-data/mfgBom'
-import { getPlans } from '@/api/planning/plan'
 import { getSchedules } from '@/api/master-data/schedule'
 import { getFactories } from '@/api/system/factory'
 import { useAuthStore } from '@/store/auth'
@@ -509,91 +508,7 @@ const handleFileChange = async (event: Event) => {
   finally { target.value = '' }
 }
 
-// 从计划导入
-const planModalVisible = ref(false)
-const planLoading = ref(false)
-const planDataSource = ref<any[]>([])
-const planSearchText = ref('')
-const planSelectedRowKeys = ref<string[]>([])
-const planImportLoading = ref(false)
 
-const planRowSelection = {
-  selectedRowKeys: planSelectedRowKeys,
-  onChange: (keys: string[]) => { planSelectedRowKeys.value = keys }
-}
-
-const planPagination = reactive({
-  current: 1,
-  pageSize: 10,
-  total: 0,
-  showSizeChanger: true,
-  showTotal: (total: number) => `共 ${total} 条记录`
-})
-
-const planColumns = [
-  { title: '行号', key: 'planRowIndex', width: 60 },
-  { title: '生产计划编号', dataIndex: 'production_number', key: 'production_number' },
-  { title: '产品编号', dataIndex: 'item_number', key: 'item_number' },
-  { title: '产品名称', dataIndex: 'item_name', key: 'item_name' },
-  { title: '规格', dataIndex: 'specifications', key: 'specifications' },
-  { title: '计划数量', dataIndex: 'planned_quantity', key: 'planned_quantity' },
-  { title: '计划完成时间', dataIndex: 'planned_completion_time', key: 'planned_completion_time' },
-  { title: '状态', dataIndex: 'plan_status', key: 'plan_status' },
-  { title: 'MRP状态', dataIndex: 'mrp_status', key: 'mrp_status', width: 100 }
-]
-
-const fetchPlanData = async () => {
-  planLoading.value = true
-  try {
-    const res = await getPlans({
-      page: planPagination.current,
-      limit: planPagination.pageSize,
-      search: planSearchText.value || undefined,
-      plan_status: '待加入任务',
-      approval_status: '已审批'
-    })
-    if (res.success) {
-      planDataSource.value = res.data.items
-      planPagination.total = res.data.pagination.total
-    }
-  } catch { message.error('获取计划列表失败') }
-  finally { planLoading.value = false }
-}
-
-const handlePlanTableChange = (pag: any) => {
-  planPagination.current = pag.current
-  planPagination.pageSize = pag.pageSize
-  fetchPlanData()
-}
-
-const handlePlanSearch = () => { planPagination.current = 1; fetchPlanData() }
-
-const handleOpenPlanModal = () => {
-  planSelectedRowKeys.value = []
-  planSearchText.value = ''
-  planPagination.current = 1
-  planModalVisible.value = true
-  fetchPlanData()
-}
-
-const handleImportFromPlan = async () => {
-  if (planSelectedRowKeys.value.length === 0) {
-    message.warning('请先勾选要导入的计划')
-    return
-  }
-  planImportLoading.value = true
-  try {
-    const res = await importOrderFromPlan(planSelectedRowKeys.value)
-    if (res.success) {
-      message.success(res.message || '导入成功')
-      planModalVisible.value = false
-      fetchData()
-    } else {
-      message.error(res.message || '导入失败')
-    }
-  } catch { message.error('从计划导入失败') }
-  finally { planImportLoading.value = false }
-}
 
 onMounted(async () => {
   await loadColumnPreference()
@@ -1433,10 +1348,7 @@ const handleDispatchSubmit = () => {
             导入
           </a-button>
           <input ref="fileInputRef" type="file" accept=".xlsx,.xls" style="display: none" @change="handleFileChange" />
-          <a-button @click="handleOpenPlanModal">
-            <template #icon><ImportOutlined /></template>
-            从计划导入
-          </a-button>
+
           <a-button type="primary" @click="handleCreate">
             <template #icon><PlusOutlined /></template>
             新建
@@ -1778,52 +1690,7 @@ const handleDispatchSubmit = () => {
       </a-form>
     </a-modal>
 
-    <!-- 从计划导入弹窗 -->
-    <a-modal
-      v-model:open="planModalVisible"
-      title="从计划导入"
-      width="1100px"
-      :footer="null"
-    >
-      <div style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
-        <a-input-search
-          v-model:value="planSearchText"
-          placeholder="搜索计划编号/产品编号/名称"
-          style="width: 300px"
-          allow-clear
-          @search="handlePlanSearch"
-          @pressEnter="handlePlanSearch"
-        />
-        <a-button type="primary" :loading="planImportLoading" @click="handleImportFromPlan">
-          <template #icon><ImportOutlined /></template>
-          导入选中 ({{ planSelectedRowKeys.length }})
-        </a-button>
-      </div>
-      <a-table
-        :columns="planColumns"
-        :data-source="planDataSource"
-        :loading="planLoading"
-        :pagination="planPagination"
-        :row-selection="planRowSelection"
-        row-key="production_number"
-        size="small"
-        bordered
-        @change="handlePlanTableChange"
-      >
-        <template #bodyCell="{ column, record, index }">
-          <template v-if="column.key === 'planRowIndex'">
-            {{ (planPagination.current - 1) * planPagination.pageSize + index + 1 }}
-          </template>
-          <template v-else-if="column.key === 'planned_completion_time'">
-            {{ formatDate(record.planned_completion_time) }}
-          </template>
-          <template v-else-if="column.key === 'mrp_status'">
-            <a-tag v-if="record.mrp_status === '已分解'" color="blue">已分解</a-tag>
-            <a-tag v-else color="default" style="color: #999;">未分解</a-tag>
-          </template>
-        </template>
-      </a-table>
-    </a-modal>
+
 
     <!-- 审批日志弹窗 -->
     <ApprovalLogModal v-model:open="approvalLogVisible" module="production_order" :record-id="approvalLogRecordId" />

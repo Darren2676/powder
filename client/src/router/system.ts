@@ -13,6 +13,7 @@ const ManualClosePending = () => import('@/views/system/ManualClose/Pending.vue'
 const ApiKeyList = () => import('@/views/system/ApiKey/List.vue');
 const AutoStockCount = () => import('@/views/system/AutoStockCount/Index.vue');
 const FactoryList = () => import('@/views/system/Factory/List.vue');
+const BatchNumberRuleList = () => import('@/views/system/BatchNumberRule/List.vue');
 
 export const systemRoutes: RouteRecordRaw[] = [
   { path: 'users', name: 'UserManagement', component: UserManagement, meta: {"title":"用户管理","permissionCode":"users"} },
@@ -20,6 +21,7 @@ export const systemRoutes: RouteRecordRaw[] = [
   { path: 'permissions', name: 'PermissionList', component: PermissionList, meta: {"title":"权限菜单管理","permissionCode":"system"} },
   { path: 'departments', name: 'DepartmentList', component: DepartmentList, meta: {"title":"部门管理","permissionCode":"departments"} },
   { path: 'factories', name: 'FactoryList', component: FactoryList, meta: {"title":"工厂管理","permissionCode":"system"} },
+  { path: 'batch-number-rules', name: 'BatchNumberRuleList', component: BatchNumberRuleList, meta: {"title":"产品批次号产生规则","permissionCode":"batch_number_rule"} },
   { path: 'workflow', name: 'WorkflowList', component: WorkflowList, meta: {"title":"流程定义管理","permissionCode":"workflow"} },
   { path: 'workflow/designer/:id', name: 'WorkflowDesigner', component: WorkflowDesigner, meta: {"title":"流程设计器","permissionCode":"workflow"} },
   { path: 'my-tasks', name: 'MyTasks', component: MyTasks, meta: {"title":"我的待办"} },

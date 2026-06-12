@@ -9,7 +9,7 @@ import { generateWRNumber } from '@/services/documentNumber.service';
 import { logWorkReportLinesideMovement, logWorkReportReverseLinesideMovement } from '@/services/linesideMovement.service';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { withTransaction } from '@/shared/db/withTransaction';
-import { syncProductionStatus } from '@/services/salesOrderSync.service';
+import { syncProductionStatus, syncPlanStatus } from '@/services/salesOrderSync.service';
 import { emitAsync } from '@/shared/eventBus';
 import { EVENT_NAMES } from '@/shared/events';
 import { syncTaskCompletion } from './taskSync';
@@ -899,6 +899,8 @@ export const completeOrderReport = async (params: {
     );
     // 回写销售订单明细 production_status
     await syncProductionStatus(orderNo, '生产完成', transaction);
+    // 同步生产计划状态
+    await syncPlanStatus(orderNo, 'order', transaction);
 
     // 重算生产单综合合格率
     await recalcYieldRate(orderNo, transaction);

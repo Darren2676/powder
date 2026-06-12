@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>产品标签打印操作手册</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:"Microsoft YaHei","SimHei",sans-serif; background:#f5f6fa; color:#333; line-height:1.8; padding:20px; }
+.container { max-width:1100px; margin:0 auto; background:#fff; border-radius:8px; box-shadow:0 2px 12px rgba(0,0,0,0.08); overflow:hidden; }
+.header { background:linear-gradient(135deg,#1a73e8,#0d47a1); color:#fff; padding:40px 50px; }
+.header h1 { font-size:28px; margin-bottom:8px; }
+.header p { font-size:14px; opacity:0.85; }
+.nav-bar { display:flex; background:#f8f9fc; border-bottom:1px solid #e8eaed; padding:0 30px; flex-wrap:wrap; gap:4px; }
+.nav-bar a { display:inline-block; padding:10px 16px; font-size:13px; color:#555; text-decoration:none; border-bottom:3px solid transparent; transition:all 0.2s; }
+.nav-bar a:hover { color:#1a73e8; border-bottom-color:#1a73e8; }
+.content { padding:30px 50px 50px; }
+.section { margin-bottom:40px; }
+.section h2 { font-size:20px; color:#1a73e8; border-left:4px solid #1a73e8; padding-left:12px; margin-bottom:16px; }
+.section h3 { font-size:16px; color:#333; margin:20px 0 10px; }
+.section p, .section li { font-size:14px; line-height:2; }
+.section ul, .section ol { padding-left:24px; margin-bottom:12px; }
+.section li { margin-bottom:4px; }
+
+/* 表格 */
+table { width:100%; border-collapse:collapse; margin:12px 0 20px; font-size:13px; }
+th,td { border:1px solid #e0e0e0; padding:8px 12px; text-align:left; }
+th { background:#f0f4ff; font-weight:600; color:#333; }
+tr:nth-child(even) td { background:#fafbff; }
+
+/* 流程图 */
+.flow-diagram { background:#fafbff; border:1px solid #e0e4ef; border-radius:6px; padding:20px; margin:16px 0; overflow-x:auto; }
+.flow-diagram pre { font-family:"Microsoft YaHei",sans-serif; font-size:13px; line-height:1.6; white-space:pre; margin:0; }
+
+/* 提示框 */
+.tip { background:#e8f5e9; border-left:4px solid #43a047; padding:12px 16px; margin:12px 0; border-radius:0 6px 6px 0; font-size:13px; }
+.warn { background:#fff8e1; border-left:4px solid #f9a825; padding:12px 16px; margin:12px 0; border-radius:0 6px 6px 0; font-size:13px; }
+.info { background:#e3f2fd; border-left:4px solid #1a73e8; padding:12px 16px; margin:12px 0; border-radius:0 6px 6px 0; font-size:13px; }
+.danger { background:#fce4ec; border-left:4px solid #e53935; padding:12px 16px; margin:12px 0; border-radius:0 6px 6px 0; font-size:13px; }
+
+/* 步骤卡片 */
+.step-cards { display:flex; flex-direction:column; gap:12px; margin:16px 0; }
+.step-card { display:flex; align-items:flex-start; background:#f8f9fc; border-radius:6px; padding:14px 18px; border:1px solid #e8eaed; }
+.step-num { background:#1a73e8; color:#fff; font-size:14px; font-weight:700; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-right:14px; margin-top:2px; }
+.step-text { flex:1; }
+.step-text .step-title { font-weight:600; font-size:14px; margin-bottom:4px; }
+.step-text .step-desc { font-size:13px; color:#666; }
+
+/* ER图 */
+.er-box { display:inline-block; border:2px solid #1a73e8; border-radius:6px; padding:10px 16px; margin:6px; background:#f0f4ff; font-size:13px; vertical-align:top; min-width:200px; }
+.er-box .er-title { font-weight:700; color:#1a73e8; margin-bottom:6px; border-bottom:1px dashed #1a73e8; padding-bottom:4px; }
+.er-box .er-field { font-size:12px; color:#555; line-height:1.6; }
+.er-box .er-field b { color:#333; }
+.er-row { display:flex; flex-wrap:wrap; justify-content:center; gap:16px; margin:16px 0; }
+.er-arrow { display:flex; align-items:center; justify-content:center; font-size:20px; color:#999; padding:0 4px; }
+
+/* 匹配规则 */
+.match-rule { border:1px solid #e0e4ef; border-radius:6px; overflow:hidden; margin:16px 0; }
+.match-rule .match-header { background:#1a73e8; color:#fff; padding:8px 16px; font-weight:600; font-size:14px; }
+.match-rule .match-body { padding:12px 16px; font-size:13px; line-height:2; }
+.match-rule .match-priority { display:inline-block; background:#ff9800; color:#fff; font-size:11px; padding:1px 8px; border-radius:10px; margin-right:6px; }
+.match-rule .match-priority.p2 { background:#2196f3; }
+.match-rule .match-priority.p3 { background:#9e9e9e; }
+
+/* 页脚 */
+.footer { text-align:center; padding:20px; font-size:12px; color:#999; border-top:1px solid #eee; }
+
+@media print {
+  body { background:#fff; padding:0; }
+  .container { box-shadow:none; }
+  .nav-bar { display:none; }
+  .content { padding:20px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ==================== 标题 ==================== -->
+<div class="header">
+  <h1>产品标签打印操作手册</h1>
+  <p>Seals MES System · 产品标签方案管理 & 标签打印流程</p>
+</div>
+
+<!-- ==================== 导航栏 ==================== -->
+<div class="nav-bar">
+  <a href="#s1">1. 功能概述</a>
+  <a href="#s2">2. 数据模型</a>
+  <a href="#s3">3. 标签模板管理</a>
+  <a href="#s4">4. 产品标签方案</a>
+  <a href="#s5">5. 方案匹配规则</a>
+  <a href="#s6">6. 标签打印操作</a>
+  <a href="#s7">7. 打印日志</a>
+  <a href="#s8">8. 操作示例</a>
+  <a href="#s9">9. 常见问题</a>
+</div>
+
+<div class="content">
+
+<!-- ==================== 第1章 ==================== -->
+<div class="section" id="s1">
+<h2>1. 功能概述</h2>
+<p>产品标签打印功能实现了"标签模板 → 产品标签方案 → 标签打印"的三层管理架构，支持按产品+客户灵活配置不同的标签样式和内容，并自动匹配打印方案。</p>
+
+<h3>核心能力</h3>
+<table>
+<tr><th>能力</th><th>说明</th></tr>
+<tr><td>模板管理</td><td>定义标签的纸张尺寸、QR码格式、字段列表</td></tr>
+<tr><td>方案管理</td><td>将模板绑定到具体产品或产品+客户组合，附加自定义字段</td></tr>
+<tr><td>智能匹配</td><td>打印时自动按"精确匹配 → 默认匹配 → 全局默认"三级规则选择方案</td></tr>
+<tr><td>标签预览</td><td>打印前可预览标签渲染效果，确认无误再打印</td></tr>
+<tr><td>打印日志</td><td>每次打印自动记录操作人、时间、内容，便于追溯</td></tr>
+</table>
+
+<h3>菜单路径</h3>
+<p>主数据管理 → 包装管理 → 标签模板管理 / 产品标签方案</p>
+<p>打印入口：仓储管理 → 成品库存 → 操作列 → 打印标签</p>
+</div>
+
+<!-- ==================== 第2章 ==================== -->
+<div class="section" id="s2">
+<h2>2. 数据模型</h2>
+
+<div class="er-row">
+  <div class="er-box">
+    <div class="er-title">label_template 标签模板</div>
+    <div class="er-field">
+      <b>id</b> INT PK<br>
+      template_name 模板名称<br>
+      template_code 模板编码(UQ)<br>
+      paper_width 纸张宽(mm)<br>
+      paper_height 纸张高(mm)<br>
+      qr_format QR码格式<br>
+      qr_size QR码尺寸(mm)<br>
+      qr_position QR码位置<br>
+      is_active 启用状态
+    </div>
+  </div>
+  <div class="er-arrow">→ 1:N →</div>
+  <div class="er-box">
+    <div class="er-title">label_template_field 模板字段</div>
+    <div class="er-field">
+      <b>id</b> INT PK<br>
+      <b>template_id</b> FK → label_template<br>
+      field_key 字段键<br>
+      field_label 字段标签<br>
+      field_type 字段类型(system/custom)<br>
+      data_source 数据来源<br>
+      display_order 显示顺序<br>
+      visible 是否可见<br>
+      is_in_qr 是否编入QR<br>
+      font_size 字号<br>
+      col_span 列跨度
+    </div>
+  </div>
+</div>
+
+<div class="er-row">
+  <div class="er-box">
+    <div class="er-title">product_label_scheme 产品标签方案</div>
+    <div class="er-field">
+      <b>id</b> INT PK<br>
+      scheme_name 方案名称<br>
+      <b>item_number</b> 产品编号(必填)<br>
+      customer_number 客户编号(可选)<br>
+      customer_name 客户名称<br>
+      <b>template_id</b> FK → label_template<br>
+      is_default 是否默认方案<br>
+      is_active 启用状态<br>
+      factory_id 工厂ID
+    </div>
+  </div>
+  <div class="er-arrow">→ 1:N →</div>
+  <div class="er-box">
+    <div class="er-title">product_label_custom_field 方案自定义字段</div>
+    <div class="er-field">
+      <b>id</b> INT PK<br>
+      <b>scheme_id</b> FK → product_label_scheme<br>
+      field_key 字段键<br>
+      field_label 字段标签<br>
+      field_value 字段默认值<br>
+      display_order 显示顺序<br>
+      is_in_qr 是否编入QR码
+    </div>
+  </div>
+</div>
+
+<div class="er-row">
+  <div class="er-box">
+    <div class="er-title">label_print_log 打印日志</div>
+    <div class="er-field">
+      <b>id</b> INT PK<br>
+      scheme_id FK → product_label_scheme<br>
+      item_number 产品编号<br>
+      item_name 产品名称<br>
+      batch_number 批号<br>
+      production_date 生产日期<br>
+      box_number 箱号<br>
+      net_weight 净重<br>
+      remark 备注<br>
+      custom_fields_json 自定义字段JSON<br>
+      qr_content QR码内容<br>
+      print_time 打印时间<br>
+      operator 操作人<br>
+      factory_id 工厂ID
+    </div>
+  </div>
+</div>
+
+<h3>表关系说明</h3>
+<table>
+<tr><th>关系</th><th>说明</th></tr>
+<tr><td>label_template 1:N label_template_field</td><td>一个模板包含多个字段定义</td></tr>
+<tr><td>label_template 1:N product_label_scheme</td><td>一个模板可被多个方案引用</td></tr>
+<tr><td>product_label_scheme 1:N product_label_custom_field</td><td>一个方案可附加多个自定义字段</td></tr>
+<tr><td>product_label_scheme 1:N label_print_log</td><td>一个方案可产生多条打印日志</td></tr>
+</table>
+</div>
+
+<!-- ==================== 第3章 ==================== -->
+<div class="section" id="s3">
+<h2>3. 标签模板管理</h2>
+
+<h3>3.1 功能说明</h3>
+<p>标签模板定义了标签的物理规格和字段布局。系统预置了一个"标准成品标签"模板（编码 STANDARD_PRODUCT_LABEL），用户也可创建自定义模板。</p>
+
+<h3>3.2 操作步骤</h3>
+<div class="step-cards">
+  <div class="step-card">
+    <div class="step-num">1</div>
+    <div class="step-text">
+      <div class="step-title">进入标签模板管理页面</div>
+      <div class="step-desc">菜单路径：主数据管理 → 包装管理 → 标签模板管理</div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">2</div>
+    <div class="step-text">
+      <div class="step-title">点击"新增"按钮</div>
+      <div class="step-desc">在弹出的表单中填写模板信息</div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">3</div>
+    <div class="step-text">
+      <div class="step-title">填写模板基本信息</div>
+      <div class="step-desc">模板名称、模板编码、纸张宽度(mm)、纸张高度(mm)</div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">4</div>
+    <div class="step-text">
+      <div class="step-title">配置QR码</div>
+      <div class="step-desc">QR码格式（使用 {field_key} 占位符）、QR码尺寸(mm)、QR码位置（右上/右下/底部居中）</div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">5</div>
+    <div class="step-text">
+      <div class="step-title">配置模板字段</div>
+      <div class="step-desc">添加系统字段和自定义字段，设置显示顺序、可见性、是否编入QR码等属性</div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">6</div>
+    <div class="step-text">
+      <div class="step-title">保存模板</div>
+      <div class="step-desc">点击确定保存模板，模板状态默认为"启用"</div>
+    </div>
+  </div>
+</div>
+
+<h3>3.3 模板字段说明</h3>
+<table>
+<tr><th>字段键</th><th>标签</th><th>数据来源</th><th>默认编入QR</th></tr>
+<tr><td>item_number</td><td>产品编号</td><td>item_master.item_number</td><td>是</td></tr>
+<tr><td>item_name</td><td>产品描述</td><td>item_master.item_name</td><td>否</td></tr>
+<tr><td>batch_number</td><td>批号</td><td>运行时输入</td><td>是</td></tr>
+<tr><td>production_date</td><td>生产日期</td><td>运行时输入</td><td>是</td></tr>
+<tr><td>box_number</td><td>箱号</td><td>运行时输入</td><td>是</td></tr>
+<tr><td>net_weight</td><td>净重</td><td>运行时输入</td><td>是</td></tr>
+<tr><td>remark</td><td>备注</td><td>运行时输入</td><td>否</td></tr>
+<tr><td>specifications</td><td>规格</td><td>item_master.specifications</td><td>否</td></tr>
+<tr><td>shelf_life</td><td>保质期</td><td>计算自 item_master.shelf_life_days</td><td>否</td></tr>
+<tr><td>reference_standard</td><td>参考标准</td><td>运行时输入</td><td>否</td></tr>
+</table>
+
+<h3>3.4 QR码格式</h3>
+<p>QR码格式使用 <code>{field_key}</code> 占位符，打印时自动替换为实际字段值。</p>
+<div class="info">默认格式：{item_number}|{batch_number}|{production_date}|{box_number}|{net_weight}<br>示例结果：C100809|P20260601|2026/6/1|1|25KG</div>
+</div>
+
+<!-- ==================== 第4章 ==================== -->
+<div class="section" id="s4">
+<h2>4. 产品标签方案</h2>
+
+<h3>4.1 功能说明</h3>
+<p>产品标签方案将标签模板与具体产品（或产品+客户组合）绑定，可附加自定义字段。每个产品可以有多个方案，但同一产品+客户组合只能有一个方案。</p>
+
+<h3>4.2 方案类型</h3>
+<table>
+<tr><th>类型</th><th>客户编号</th><th>说明</th></tr>
+<tr><td>客户专属方案</td><td>填写客户编号</td><td>为特定客户的特定产品指定标签方案</td></tr>
+<tr><td>产品默认方案</td><td>留空</td><td>作为该产品的通用默认方案，适用于无专属方案的客户</td></tr>
+</table>
+
+<h3>4.3 新增方案操作</h3>
+<div class="step-cards">
+  <div class="step-card">
+    <div class="step-num">1</div>
+    <div class="step-text">
+      <div class="step-title">进入产品标签方案页面</div>
+      <div class="step-desc">菜单路径：主数据管理 → 包装管理 → 产品标签方案</div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">2</div>
+    <div class="step-text">
+      <div class="step-title">点击"新增"按钮</div>
+      <div class="step-desc">在弹出的表单中填写方案信息</div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">3</div>
+    <div class="step-text">
+      <div class="step-title">填写基本信息</div>
+      <div class="step-desc">
+        <b>方案名称</b>（必填）：如"110103-客户A标签方案"<br>
+        <b>产品编号</b>（必填）：从下拉列表选择<br>
+        <b>客户编号</b>（可选）：选择客户后自动带出客户名称；留空表示默认方案<br>
+        <b>标签模板</b>（必填）：从下拉列表选择已启用的模板<br>
+        <b>默认方案</b>：设为"是"则该方案为该产品的默认方案<br>
+        <b>状态</b>：启用/停用
+      </div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">4</div>
+    <div class="step-text">
+      <div class="step-title">添加自定义字段（可选）</div>
+      <div class="step-desc">点击"添加自定义字段"，填写字段名称、默认值、是否编入QR码</div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">5</div>
+    <div class="step-text">
+      <div class="step-title">保存方案</div>
+      <div class="step-desc">点击确定保存方案</div>
+    </div>
+  </div>
+</div>
+
+<h3>4.4 唯一性规则</h3>
+<div class="warn">
+  <b>业务约束：</b><br>
+  · 同一产品+客户组合只能创建一个方案<br>
+  · 同一产品无客户编号时只能创建一个方案<br>
+  · 同一产品只能有一个"默认方案"（is_default=是且无客户编号）<br>
+  · 创建时系统自动校验以上规则，违反时会提示错误
+</div>
+
+<h3>4.5 编辑与删除</h3>
+<p><b>编辑</b>：在列表操作列点击"编辑"按钮，可修改方案信息、自定义字段。<br>
+<b>删除</b>：在列表操作列点击"删除"按钮，确认后删除方案及其自定义字段。若已有打印日志引用，仅清理自定义字段，不阻止删除。</p>
+</div>
+
+<!-- ==================== 第5章 ==================== -->
+<div class="section" id="s5">
+<h2>5. 方案匹配规则</h2>
+<p>打印标签时，系统根据产品编号和客户编号自动匹配标签方案，匹配优先级如下：</p>
+
+<div class="match-rule">
+  <div class="match-header">优先级1：精确匹配</div>
+  <div class="match-body">
+    <span class="match-priority">P1</span>
+    条件：<b>item_number + customer_number</b> 完全匹配<br>
+    说明：当方案中指定了客户编号，且打印时提供了相同客户编号，则直接使用该方案。<br>
+    示例：产品 C100809 + 客户 AH001 → 匹配到 "C100809-AH001标签方案"
+  </div>
+</div>
+
+<div class="match-rule">
+  <div class="match-header">优先级2：默认匹配</div>
+  <div class="match-body">
+    <span class="match-priority p2">P2</span>
+    条件：<b>item_number</b> 匹配 + customer_number 为空 + is_default = 是<br>
+    说明：当没有精确匹配的方案时，使用该产品的默认方案（无客户编号、标记为默认）。<br>
+    示例：产品 110103（未指定客户）→ 匹配到 "110103-标签方案"（默认方案）
+  </div>
+</div>
+
+<div class="match-rule">
+  <div class="match-header">优先级3：全局默认</div>
+  <div class="match-body">
+    <span class="match-priority p3">P3</span>
+    条件：使用模板编码为 <b>STANDARD_PRODUCT_LABEL</b> 的系统预置模板<br>
+    说明：当该产品没有任何方案时，使用全局默认模板。<br>
+    示例：产品 999999（无任何方案）→ 使用"标准成品标签"模板
+  </div>
+</div>
+
+<h3>匹配流程图</h3>
+<div class="flow-diagram">
+<pre>
+  ┌─────────────────────────────────────┐
+  │       打印标签（传入产品+客户）       │
+  └────────────────┬────────────────────┘
+                   ▼
+  ┌─────────────────────────────────────┐
+  │  有客户编号？  ──否──▶ 跳过精确匹配  │
+  │     │是                             │
+  │     ▼                               │
+  │  精确匹配：产品+客户完全一致？       │
+  │     │是          │否                │
+  │     ▼            ▼                  │
+  │  返回精确匹配   继续下一步           │
+  └────────────────┬────────────────────┘
+                   ▼
+  ┌─────────────────────────────────────┐
+  │  默认匹配：产品一致 + 无客户 + 默认？│
+  │     │是          │否                │
+  │     ▼            ▼                  │
+  │  返回默认匹配   继续下一步           │
+  └────────────────┬────────────────────┘
+                   ▼
+  ┌─────────────────────────────────────┐
+  │  全局默认：STANDARD_PRODUCT_LABEL？  │
+  │     │是          │否                │
+  │     ▼            ▼                  │
+  │  返回全局默认   提示"未找到方案"     │
+  └─────────────────────────────────────┘
+</pre>
+</div>
+</div>
+
+<!-- ==================== 第6章 ==================== -->
+<div class="section" id="s6">
+<h2>6. 标签打印操作</h2>
+
+<h3>6.1 打印入口</h3>
+<p>标签打印功能位于"仓储管理 → 成品库存"页面，在库存记录的操作列中选择"打印标签"。</p>
+
+<h3>6.2 打印操作步骤</h3>
+<div class="step-cards">
+  <div class="step-card">
+    <div class="step-num">1</div>
+    <div class="step-text">
+      <div class="step-title">选择打印对象</div>
+      <div class="step-desc">在成品库存列表中，找到需要打印标签的库存记录，点击操作列的"打印标签"按钮</div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">2</div>
+    <div class="step-text">
+      <div class="step-title">查看自动匹配结果</div>
+      <div class="step-desc">系统自动根据产品编号匹配标签方案，弹窗顶部显示匹配方式（精确匹配/默认匹配/全局默认）和方案名称</div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">3</div>
+    <div class="step-text">
+      <div class="step-title">填写打印参数</div>
+      <div class="step-desc">
+        · <b>产品编号</b>（自动填充，不可修改）<br>
+        · <b>批号</b>（自动填充，不可修改）<br>
+        · <b>生产日期</b>（默认取库存更新日期，可修改）<br>
+        · <b>箱号</b>（默认为1，可修改）<br>
+        · <b>净重</b>（需手动输入，如"25KG"）<br>
+        · <b>备注</b>（可选，客户特定要求）<br>
+        · <b>客户编号</b>（可选，用于触发精确匹配）<br>
+        · <b>标签模板</b>（默认自动匹配，也可手动切换）
+      </div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">4</div>
+    <div class="step-text">
+      <div class="step-title">填写自定义字段（如有）</div>
+      <div class="step-desc">若匹配的方案包含自定义字段，表单底部会显示这些字段的输入框，可修改默认值</div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">5</div>
+    <div class="step-text">
+      <div class="step-title">预览标签</div>
+      <div class="step-desc">点击"预览"按钮，右侧区域显示标签渲染效果和QR码内容。可反复修改参数并预览</div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">6</div>
+    <div class="step-text">
+      <div class="step-title">确认打印</div>
+      <div class="step-desc">确认预览无误后，点击"打印"按钮。系统将：<br>
+        ① 记录打印日志到数据库<br>
+        ② 弹出浏览器打印窗口，选择打印机完成物理打印</div>
+    </div>
+  </div>
+</div>
+
+<h3>6.3 打印弹窗布局</h3>
+<table>
+<tr><th>区域</th><th>内容</th></tr>
+<tr><td>左侧</td><td>打印参数表单（产品编号、批号、日期、箱号、净重、备注、客户、模板、自定义字段）+ 预览/打印按钮</td></tr>
+<tr><td>右侧</td><td>匹配信息标签 + QR码内容 + 标签预览渲染区</td></tr>
+</table>
+
+<h3>6.4 手动切换模板</h3>
+<p>打印弹窗中的"标签模板"下拉框默认自动匹配方案对应的模板。如果需要临时使用其他模板打印，可手动从下拉框切换，切换后自动重新预览。</p>
+
+<div class="tip">切换模板仅影响本次打印，不会修改方案配置。</div>
+</div>
+
+<!-- ==================== 第7章 ==================== -->
+<div class="section" id="s7">
+<h2>7. 打印日志</h2>
+
+<h3>7.1 日志内容</h3>
+<p>每次打印操作都会自动记录日志，包含以下信息：</p>
+<table>
+<tr><th>字段</th><th>说明</th></tr>
+<tr><td>方案名称</td><td>关联的产品标签方案</td></tr>
+<tr><td>产品编号/名称</td><td>打印的产品信息</td></tr>
+<tr><td>批号</td><td>打印时的批次号</td></tr>
+<tr><td>生产日期</td><td>打印时填写的生产日期</td></tr>
+<tr><td>箱号</td><td>打印时填写的箱号</td></tr>
+<tr><td>净重</td><td>打印时填写的净重</td></tr>
+<tr><td>备注</td><td>打印时填写的备注</td></tr>
+<tr><td>自定义字段</td><td>JSON格式保存的自定义字段值</td></tr>
+<tr><td>QR码内容</td><td>生成的QR码原始文本</td></tr>
+<tr><td>打印时间</td><td>打印操作的时间戳</td></tr>
+<tr><td>操作人</td><td>执行打印的用户</td></tr>
+<tr><td>工厂</td><td>操作时的工厂上下文</td></tr>
+</table>
+
+<h3>7.2 日志查询</h3>
+<p>通过后端API可查询打印日志，支持按产品编号、时间范围、关键词搜索筛选。</p>
+</div>
+
+<!-- ==================== 第8章 ==================== -->
+<div class="section" id="s8">
+<h2>8. 操作示例</h2>
+
+<h3>示例1：为新产品创建默认标签方案</h3>
+<div class="step-cards">
+  <div class="step-card">
+    <div class="step-num">1</div>
+    <div class="step-text">
+      <div class="step-title">确认模板可用</div>
+      <div class="step-desc">进入标签模板管理，确认"标准成品标签"模板已启用（系统预置）</div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">2</div>
+    <div class="step-text">
+      <div class="step-title">新建方案</div>
+      <div class="step-desc">
+        进入产品标签方案 → 新增：<br>
+        · 方案名称：110103-标签方案<br>
+        · 产品编号：110103（油封）<br>
+        · 客户编号：留空（默认方案）<br>
+        · 标签模板：标准成品标签<br>
+        · 默认方案：是
+      </div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">3</div>
+    <div class="step-text">
+      <div class="step-title">打印测试</div>
+      <div class="step-desc">在成品库存中选择该产品的库存记录 → 打印标签 → 系统自动匹配"110103-标签方案" → 预览确认 → 打印</div>
+    </div>
+  </div>
+</div>
+
+<h3>示例2：为客户定制专属标签</h3>
+<div class="step-cards">
+  <div class="step-card">
+    <div class="step-num">1</div>
+    <div class="step-text">
+      <div class="step-title">创建客户专属模板</div>
+      <div class="step-desc">
+        标签模板管理 → 新增：<br>
+        · 模板名称：客户A定制标签<br>
+        · 纸张：100×60mm<br>
+        · QR格式：{item_number}|{batch_number}|{production_date}|{reference_standard}<br>
+        · 添加字段：参考标准（runtime）、认证编号（custom）等客户要求字段
+      </div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">2</div>
+    <div class="step-text">
+      <div class="step-title">创建客户专属方案</div>
+      <div class="step-desc">
+        产品标签方案 → 新增：<br>
+        · 方案名称：C100809-AH001标签方案<br>
+        · 产品编号：C100809<br>
+        · 客户编号：AH001（宁国睿信）<br>
+        · 标签模板：客户A定制标签<br>
+        · 自定义字段：认证编号 = ISO9001
+      </div>
+    </div>
+  </div>
+  <div class="step-card">
+    <div class="step-num">3</div>
+    <div class="step-text">
+      <div class="step-title">打印验证</div>
+      <div class="step-desc">
+        成品库存 → 选择C100809 → 打印标签 → 输入客户编号AH001 →<br>
+        系统精确匹配"C100809-AH001标签方案" → 预览显示客户定制模板内容 → 打印
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ==================== 第9章 ==================== -->
+<div class="section" id="s9">
+<h2>9. 常见问题</h2>
+
+<h3>Q1：打印时提示"未找到匹配的标签方案"？</h3>
+<p><b>原因</b>：该产品没有任何标签方案，且系统预置的"标准成品标签"模板被停用或删除。</p>
+<p><b>解决</b>：进入标签模板管理，确保至少有一个启用的模板；或为该产品创建标签方案。</p>
+
+<h3>Q2：打印标签时客户编号填错了，如何确保匹配正确方案？</h3>
+<p><b>说明</b>：打印弹窗中输入客户编号后，需点击"预览"按钮重新匹配。匹配结果会显示在预览区上方的标签中。</p>
+
+<h3>Q3：同一产品能否有多个客户专属方案？</h3>
+<p><b>可以</b>。同一产品可以为不同客户创建各自的专属方案（如C100809-AH001、C100809-BH002），打印时根据客户编号精确匹配。</p>
+
+<h3>Q4：如何修改产品的默认方案？</h3>
+<p><b>步骤</b>：先将原默认方案的"默认方案"改为"否"，再将新方案设为"是"。同一产品只能有一个无客户的默认方案。</p>
+
+<h3>Q5：标签预览空白或没有QR码？</h3>
+<p><b>可能原因</b>：模板字段全部设为不可见，或QR码格式中引用的字段键不存在。检查模板字段配置。</p>
+
+<h3>Q6：打印的标签内容与预览不一致？</h3>
+<p><b>可能原因</b>：浏览器打印缩放比例不是100%。在浏览器打印对话框中将缩放设为"实际大小"或100%。</p>
+
+<h3>Q7：如何查看历史打印记录？</h3>
+<p><b>说明</b>：通过后端API接口 <code>GET /api/v1/label-print/logs</code> 可查询打印日志，支持按产品编号、时间范围、关键词筛选。</p>
+
+<h3>Q8：删除方案后之前的打印日志会怎样？</h3>
+<p><b>说明</b>：删除方案时，方案的自定义字段会被清理，但打印日志保留不变，日志中的 scheme_id 会指向已删除的方案（关联查询时方案名称显示为空）。</p>
+</div>
+
+</div>
+
+<div class="footer">
+  Seals MES System · 产品标签打印操作手册 · 宁国市睿信信息技术有限责任公司
+</div>
+
+</div>
+</body>
+</html>

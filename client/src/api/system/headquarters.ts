@@ -227,3 +227,54 @@ export interface InventoryFlowData {
 export const getHQInventoryFlow = (params?: DateRangeParams) => {
   return request<ApiResponse<InventoryFlowData>>({ url: '/headquarters/inventory-flow', method: 'GET', params });
 };
+
+// ==================== 集团管理驾驶舱 API ====================
+
+export interface HQCockpitData {
+  kpi: {
+    sales_amount: number;
+    purchase_amount: number;
+    production_rate: number;
+    quality_rate: number;
+    inventory_value: number;
+    oee: number;
+    factory_breakdown: Array<{
+      factory_id: number;
+      factory_name: string;
+      factory_short?: string;
+      sales_amount: number;
+      purchase_amount: number;
+      production_rate: number;
+      quality_rate: number;
+      inventory_value: number;
+      oee: number;
+    }>;
+  };
+  monthly_trend: {
+    sales_vs_purchase: Array<{ month: string; sales_amount: number; purchase_amount: number }>;
+    production_output: Array<{ month: string; completed_count: number; inbound_qty: number }>;
+  };
+  distribution: {
+    sales_status: Record<string, number>;
+    production_funnel: Array<{ stage: string; count: number }>;
+    nc_handling: Record<string, number>;
+  };
+  ranking: {
+    customer_top10: Array<{ customer_name: string; total_amount: number }>;
+    supplier_top10: Array<{ supplier_name: string; total_amount: number }>;
+    factory_comparison: Array<{
+      factory_name: string;
+      factory_short?: string;
+      sales_amount: number;
+      purchase_amount: number;
+      production_rate: number;
+      quality_rate: number;
+      oee: number;
+    }>;
+  };
+  pending_summary: Array<{ domain: string; doc_type: string; pending_count: number }>;
+}
+
+export const getHQCockpitOverview = (params?: DateRangeParams) => {
+  return request<ApiResponse<HQCockpitData>>({ url: '/headquarters/cockpit/overview', method: 'GET', params });
+};

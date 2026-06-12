@@ -1,5 +1,6 @@
 import type { RouteRecordRaw } from 'vue-router';
 
+const HQCockpit = () => import('@/views/group/HQCockpit.vue');
 const SalesSummary = () => import('@/views/group/SalesSummary.vue');
 const ProductionSummary = () => import('@/views/group/ProductionSummary.vue');
 const PurchaseSummary = () => import('@/views/group/PurchaseSummary.vue');
@@ -9,6 +10,7 @@ const QualitySummary = () => import('@/views/group/QualitySummary.vue');
 const InventoryFlow = () => import('@/views/group/InventoryFlow.vue');
 
 export const groupRoutes: RouteRecordRaw[] = [
+  { path: 'hq-cockpit', name: 'HQCockpit', component: HQCockpit, meta: { title: '集团管理驾驶舱', permissionCode: 'hq-cockpit' } },
   { path: 'hq-sales-summary', name: 'HQSalesSummary', component: SalesSummary, meta: { title: '集团销售汇总表', permissionCode: 'hq-sales-summary' } },
   { path: 'hq-production-summary', name: 'HQProductionSummary', component: ProductionSummary, meta: { title: '集团生产汇总表', permissionCode: 'hq-production-summary' } },
   { path: 'hq-purchase-summary', name: 'HQPurchaseSummary', component: PurchaseSummary, meta: { title: '集团采购汇总表', permissionCode: 'hq-purchase-summary' } },

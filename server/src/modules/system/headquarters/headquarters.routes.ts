@@ -195,7 +195,7 @@ router.get('/sales-summary', hqScopeGuard('sales'), async (req: Request, res: Re
         COUNT(DISTINCT h.sales_order_number) as order_count, ISNULL(SUM(CAST(d.total_amount AS DECIMAL(18,2))), 0) as total_amount
        FROM sales_order h
        INNER JOIN sales_order_detail d ON h.sales_order_number = d.sales_order_number
-       WHERE 1=1${dateCond.replace(/order_date/g, 'h.order_date')}
+       WHERE h.order_date IS NOT NULL${dateCond.replace(/order_date/g, 'h.order_date')}
        GROUP BY h.factory_id, CONVERT(VARCHAR(7), h.order_date, 120)
        ORDER BY h.factory_id, month`,
       { type: 'SELECT' }
@@ -256,7 +256,7 @@ router.get('/production-summary', hqScopeGuard('production'), async (req: Reques
         ISNULL(SUM(CAST(planned_quantity AS DECIMAL(18,4))), 0) as planned_qty,
         ISNULL(SUM(CAST(inbound_quantity AS DECIMAL(18,4))), 0) as completed_qty
        FROM production_order
-       WHERE 1=1${dateCond}
+       WHERE production_date IS NOT NULL${dateCond}
        GROUP BY factory_id, CONVERT(VARCHAR(7), production_date, 120)
        ORDER BY factory_id, month`,
       { type: 'SELECT' }
@@ -316,7 +316,7 @@ router.get('/purchase-summary', hqScopeGuard('purchase'), async (req: Request, r
       `SELECT factory_id, CONVERT(VARCHAR(7), order_date, 120) as month,
         COUNT(*) as order_count, ISNULL(SUM(CAST(total_amount AS DECIMAL(18,2))), 0) as total_amount
        FROM purchase_order
-       WHERE 1=1${dateCond}
+       WHERE order_date IS NOT NULL${dateCond}
        GROUP BY factory_id, CONVERT(VARCHAR(7), order_date, 120)
        ORDER BY factory_id, month`,
       { type: 'SELECT' }
@@ -652,6 +652,188 @@ router.get('/inventory-flow', hqScopeGuard('inventory-flow'), async (req: Reques
         total_transactions: result.reduce((s: number, r: any) => s + r.flows.reduce((ss: number, f: any) => ss + f.transaction_count, 0), 0)
       }
     }, '集团出入库流水汇总获取成功'));
+  } catch (err) { next(err); }
+});
+
+// ==================== 集团管理驾驶舱 ====================
+router.get('/cockpit/overview', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const dateFrom = (req.query.dateFrom as string) || '';
+    const dateTo = (req.query.dateTo as string) || '';
+
+    const dateCondition = dateFrom && dateTo
+      ? `BETWEEN :dateFrom AND :dateTo`
+      : dateFrom
+        ? `>= :dateFrom`
+        : dateTo
+          ? `<= :dateTo`
+          : `>= DATEADD(MONTH, -12, GETDATE())`;
+
+    const replacements: any = {}; 
+    if (dateFrom) replacements.dateFrom = dateFrom;
+    if (dateTo) replacements.dateTo = dateTo;
+
+    // ========== 1. KPI (全集团汇总 + 各工厂对比) ==========
+
+    // 各工厂KPI对比
+    const [factoryKpi]: any = await sequelize.query(
+      `SELECT f.id as factory_id, f.factory_name, f.factory_short,
+              ISNULL(s.amount, 0) as sales_amount,
+              ISNULL(p.amount, 0) as purchase_amount,
+              ISNULL(pr.total, 0) as production_total,
+              ISNULL(pr.completed, 0) as production_completed,
+              CASE WHEN ISNULL(pr.total, 0) > 0 THEN CAST(ISNULL(pr.completed, 0) * 100.0 / ISNULL(pr.total, 0) AS decimal(5,2)) ELSE 0 END as production_rate,
+              ISNULL(inv.qty, 0) as inventory_qty
+       FROM factory f
+       LEFT JOIN (
+         SELECT h.factory_id, ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as amount
+         FROM sales_order_detail d INNER JOIN sales_order h ON h.sales_order_number = d.sales_order_number
+         WHERE h.approval_status = N'已审批' AND h.order_date ${dateCondition}
+         GROUP BY h.factory_id
+       ) s ON s.factory_id = f.id
+       LEFT JOIN (
+         SELECT h.factory_id, ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as amount
+         FROM purchase_order_detail d INNER JOIN purchase_order h ON h.purchase_order_number = d.purchase_order_number
+         WHERE h.approval_status = N'已审批' AND h.order_date ${dateCondition}
+         GROUP BY h.factory_id
+       ) p ON p.factory_id = f.id
+       LEFT JOIN (
+         SELECT factory_id, COUNT(*) as total, SUM(CASE WHEN plan_status = N'已完成' THEN 1 ELSE 0 END) as completed
+         FROM production_order WHERE approval_status = N'已审批' AND production_date ${dateCondition}
+         GROUP BY factory_id
+       ) pr ON pr.factory_id = f.id
+       LEFT JOIN (
+         SELECT factory_id, ISNULL(SUM(quantity), 0) as qty FROM finished_goods_inventory GROUP BY factory_id
+       ) inv ON inv.factory_id = f.id
+       WHERE f.status = N'启用'
+       ORDER BY f.id`, { replacements }
+    );
+
+    const totalSales = factoryKpi.reduce((s: number, r: any) => s + parseFloat(r.sales_amount), 0);
+    const totalPurchase = factoryKpi.reduce((s: number, r: any) => s + parseFloat(r.purchase_amount), 0);
+    const totalProdOrders = factoryKpi.reduce((s: number, r: any) => s + parseInt(r.production_total), 0);
+    const totalProdCompleted = factoryKpi.reduce((s: number, r: any) => s + parseInt(r.production_completed), 0);
+    const totalProductionRate = totalProdOrders > 0 ? Math.round(totalProdCompleted / totalProdOrders * 10000) / 100 : 0;
+    const totalInventory = factoryKpi.reduce((s: number, r: any) => s + parseFloat(r.inventory_qty), 0);
+
+    // 全集团合格率
+    const [qualityKpi]: any = await sequelize.query(
+      `SELECT ISNULL(SUM(po.inbound_quantity), 0) as total_inbound,
+              ISNULL(SUM(CASE WHEN wr.approval_status != N'草稿' THEN wr.unqualified_quantity ELSE 0 END), 0) as total_unqualified,
+              ISNULL(SUM(CASE WHEN np.handling_method = N'让步接收' THEN np.concession_quantity ELSE 0 END), 0) as total_concession
+       FROM production_order po
+       LEFT JOIN work_report wr ON wr.production_order_number = po.production_order_number
+       LEFT JOIN nonconforming_product np ON np.production_order_number = po.production_order_number
+       WHERE po.approval_status = N'已审批' AND po.production_date ${dateCondition}`, { replacements }
+    );
+    const qInbound = parseFloat(qualityKpi[0]?.total_inbound) || 0;
+    const qUnqualified = parseFloat(qualityKpi[0]?.total_unqualified) || 0;
+    const qConcession = parseFloat(qualityKpi[0]?.total_concession) || 0;
+    const netUnq = qUnqualified - qConcession;
+    const totalQualityRate = (qInbound + netUnq) > 0 ? Math.round(qInbound / (qInbound + netUnq) * 10000) / 100 : 0;
+
+    // 全集团OEE
+    const [oeeKpi]: any = await sequelize.query(
+      `SELECT ISNULL(AVG(CAST(oee_rate AS decimal(5,2))), 0) as avg_oee FROM equipment_oee WHERE record_date >= DATEADD(MONTH, -12, GETDATE())`, { replacements }
+    );
+    const totalOee = parseFloat(oeeKpi[0]?.avg_oee) || 0;
+
+    const kpi = {
+      sales_amount: totalSales, purchase_amount: totalPurchase,
+      production_rate: totalProductionRate, quality_rate: totalQualityRate,
+      inventory_value: totalInventory, oee: totalOee,
+      factory_breakdown: factoryKpi.map((r: any) => ({
+        factory_id: r.factory_id, factory_name: r.factory_name, factory_short: r.factory_short,
+        sales_amount: parseFloat(r.sales_amount) || 0, purchase_amount: parseFloat(r.purchase_amount) || 0,
+        production_rate: parseFloat(r.production_rate) || 0,
+        inventory_qty: parseFloat(r.inventory_qty) || 0
+      }))
+    };
+
+    // ========== 2. 月度趋势 (全集团) ==========
+    const [salesVsPurchase]: any = await sequelize.query(`
+      SELECT m.month, ISNULL(s.amount, 0) as sales_amount, ISNULL(p.amount, 0) as purchase_amount
+      FROM (SELECT CONVERT(varchar(7), DATEADD(MONTH, -n, GETDATE()), 120) as month
+            FROM (SELECT 0 as n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5
+                  UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9 UNION SELECT 10 UNION SELECT 11) nums) m
+      LEFT JOIN (SELECT CONVERT(varchar(7), CAST(order_date AS date), 120) as month, ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as amount
+                FROM sales_order so LEFT JOIN sales_order_detail d ON so.sales_order_number = d.sales_order_number
+                WHERE so.approval_status = N'已审批' AND CAST(order_date AS date) >= DATEADD(MONTH, -12, GETDATE())
+                GROUP BY CONVERT(varchar(7), CAST(order_date AS date), 120)) s ON m.month = s.month
+      LEFT JOIN (SELECT CONVERT(varchar(7), CAST(order_date AS date), 120) as month, ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as amount
+                FROM purchase_order po LEFT JOIN purchase_order_detail d ON po.purchase_order_number = d.purchase_order_number
+                WHERE po.approval_status = N'已审批' AND CAST(order_date AS date) >= DATEADD(MONTH, -12, GETDATE())
+                GROUP BY CONVERT(varchar(7), CAST(order_date AS date), 120)) p ON m.month = p.month
+      ORDER BY m.month`, { replacements }
+    );
+
+    const [productionOutput]: any = await sequelize.query(`
+      SELECT m.month, ISNULL(t.completed, 0) as completed_count, ISNULL(t.inbound_qty, 0) as inbound_qty
+      FROM (SELECT CONVERT(varchar(7), DATEADD(MONTH, -n, GETDATE()), 120) as month
+            FROM (SELECT 0 as n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5
+                  UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9 UNION SELECT 10 UNION SELECT 11) nums) m
+      LEFT JOIN (SELECT CONVERT(varchar(7), CAST(production_date AS date), 120) as month,
+                SUM(CASE WHEN plan_status = N'已完成' THEN 1 ELSE 0 END) as completed, ISNULL(SUM(inbound_quantity), 0) as inbound_qty
+                FROM production_order WHERE approval_status = N'已审批' AND CAST(production_date AS date) >= DATEADD(MONTH, -12, GETDATE())
+                GROUP BY CONVERT(varchar(7), CAST(production_date AS date), 120)) t ON m.month = t.month
+      ORDER BY m.month`, { replacements }
+    );
+
+    const monthlyTrend = {
+      sales_vs_purchase: salesVsPurchase.map((r: any) => ({ month: r.month, sales_amount: parseFloat(r.sales_amount) || 0, purchase_amount: parseFloat(r.purchase_amount) || 0 })),
+      production_output: productionOutput.map((r: any) => ({ month: r.month, completed_count: parseInt(r.completed_count) || 0, inbound_qty: parseFloat(r.inbound_qty) || 0 }))
+    };
+
+    // ========== 3. 业务分布 (全集团) ==========
+    const [salesStatus]: any = await sequelize.query(`SELECT approval_status, COUNT(*) as cnt FROM sales_order GROUP BY approval_status`, { replacements: {} });
+    const salesStatusDist: Record<string, number> = {};
+    salesStatus.forEach((r: any) => { salesStatusDist[r.approval_status || '未知'] = parseInt(r.cnt); });
+
+    const [prodFunnel]: any = await sequelize.query(`SELECT plan_status as stage, COUNT(*) as cnt FROM production_order WHERE approval_status = N'已审批' GROUP BY plan_status`, { replacements: {} });
+    const [ncHandling]: any = await sequelize.query(`SELECT ISNULL(handling_method, N'未处理') as method, COUNT(*) as cnt FROM nonconforming_product GROUP BY ISNULL(handling_method, N'未处理')`, { replacements: {} });
+    const ncHandlingDist: Record<string, number> = {};
+    ncHandling.forEach((r: any) => { ncHandlingDist[r.method] = parseInt(r.cnt); });
+
+    const distribution = {
+      sales_status: salesStatusDist,
+      production_funnel: prodFunnel.map((r: any) => ({ stage: r.stage, count: parseInt(r.cnt) })),
+      nc_handling: ncHandlingDist
+    };
+
+    // ========== 4. 排行 (全集团) ==========
+    const [customerTop10]: any = await sequelize.query(
+      `SELECT TOP 10 h.customer_name, ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as total_amount FROM sales_order h LEFT JOIN sales_order_detail d ON h.sales_order_number = d.sales_order_number WHERE h.customer_name IS NOT NULL AND h.customer_name <> '' GROUP BY h.customer_name ORDER BY total_amount DESC`, { replacements: {} });
+    const [supplierTop10]: any = await sequelize.query(
+      `SELECT TOP 10 h.supplier_name, ISNULL(SUM(CAST(d.total_amount AS decimal(18,2))), 0) as total_amount FROM purchase_order h LEFT JOIN purchase_order_detail d ON h.purchase_order_number = d.purchase_order_number WHERE h.supplier_name IS NOT NULL AND h.supplier_name <> '' GROUP BY h.supplier_name ORDER BY total_amount DESC`, { replacements: {} });
+
+    const ranking = {
+      customer_top10: customerTop10.map((r: any) => ({ customer_name: r.customer_name, total_amount: parseFloat(r.total_amount) || 0 })),
+      supplier_top10: supplierTop10.map((r: any) => ({ supplier_name: r.supplier_name, total_amount: parseFloat(r.total_amount) || 0 })),
+      factory_comparison: factoryKpi.map((r: any) => ({
+        factory_name: r.factory_name, factory_short: r.factory_short,
+        sales_amount: parseFloat(r.sales_amount) || 0,
+        purchase_amount: parseFloat(r.purchase_amount) || 0,
+        production_rate: parseFloat(r.production_rate) || 0,
+        inventory_qty: parseFloat(r.inventory_qty) || 0
+      }))
+    };
+
+    // ========== 5. 待审批汇总 (全集团) ==========
+    const [pendingSales]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM sales_order WHERE approval_status = N'待审批'`, { replacements: {} });
+    const [pendingPurchase]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM purchase_order WHERE approval_status = N'待审批'`, { replacements: {} });
+    const [pendingProduction]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM production_order WHERE approval_status = N'待审批'`, { replacements: {} });
+    const [pendingStockIn]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM stock_in WHERE approval_status = N'待审批'`, { replacements: {} });
+    const [pendingNc]: any = await sequelize.query(`SELECT COUNT(*) as cnt FROM nonconforming_product WHERE handling_status = N'待处理'`, { replacements: {} });
+
+    const pendingSummary = [
+      { domain: '销售管理', doc_type: '销售订单', pending_count: parseInt(pendingSales[0]?.cnt) || 0 },
+      { domain: '采购管理', doc_type: '采购订单', pending_count: parseInt(pendingPurchase[0]?.cnt) || 0 },
+      { domain: '生产管理', doc_type: '生产单', pending_count: parseInt(pendingProduction[0]?.cnt) || 0 },
+      { domain: '仓储管理', doc_type: '入库单', pending_count: parseInt(pendingStockIn[0]?.cnt) || 0 },
+      { domain: '质量管理', doc_type: '不合格品', pending_count: parseInt(pendingNc[0]?.cnt) || 0 }
+    ];
+
+    res.json(success({ kpi, monthly_trend: monthlyTrend, distribution, ranking, pending_summary: pendingSummary }));
   } catch (err) { next(err); }
 });
 

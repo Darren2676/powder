@@ -19,6 +19,7 @@ import autoStockCountRoutes from './autoStockCount/autoStockCount.routes';
 import cockpitRoutes from './cockpit/cockpit.routes';
 import factoryRoutes from './factory/factory.routes';
 import headquartersRoutes from './headquarters/headquarters.routes';
+import batchNumberRuleRoutes from './batchNumberRule/batchNumberRule.routes';
 
 const router = Router();
 
@@ -41,5 +42,6 @@ router.use('/auto-stock-count', autoStockCountRoutes);
 router.use('/cockpit', cockpitRoutes);
 router.use('/factories', factoryRoutes);
 router.use('/headquarters', headquartersRoutes);
+router.use('/batch-number-rules', batchNumberRuleRoutes);
 
 export default router;

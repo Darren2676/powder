@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>产品批次号产生规则 — 双模式方案</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Microsoft YaHei',sans-serif;background:#f0f2f5;color:#333;line-height:1.8}
+.container{max-width:1400px;margin:0 auto;padding:20px}
+h1{text-align:center;font-size:2em;color:#1a1a2e;padding:30px 0 10px;border-bottom:3px solid #4a90d9;margin-bottom:30px}
+h2{font-size:1.5em;color:#2c3e50;margin:40px 0 15px;padding:10px 20px;background:linear-gradient(90deg,#4a90d9,#67b8e3);color:#fff;border-radius:8px}
+h3{font-size:1.2em;color:#34495e;margin:25px 0 10px;padding-left:15px;border-left:4px solid #4a90d9}
+.section{background:#fff;border-radius:12px;padding:30px;margin-bottom:30px;box-shadow:0 2px 12px rgba(0,0,0,0.08)}
+.mermaid{display:flex;justify-content:center;margin:20px 0;padding:20px;background:#fafbfc;border-radius:8px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;margin:15px 0;font-size:0.92em}
+th{background:#4a90d9;color:#fff;padding:10px 14px;text-align:left;font-weight:600}
+td{padding:8px 14px;border-bottom:1px solid #e8ecf1}
+tr:hover td{background:#f5f8fc}
+code{background:#f4f4f5;padding:2px 6px;border-radius:3px;font-size:0.9em;color:#e74c3c}
+.api-table code{background:#e8f4fd;color:#2c3e50;font-size:0.85em}
+.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:0.8em;font-weight:600}
+.badge-green{background:#d4edda;color:#155724}
+.badge-blue{background:#d1ecf1;color:#0c5460}
+.badge-orange{background:#fff3cd;color:#856404}
+.badge-red{background:#f8d7da;color:#721c24}
+.badge-purple{background:#e2d9f3;color:#432874}
+.flow-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(600px,1fr));gap:20px;margin:15px 0}
+.file-ref{font-size:0.85em;color:#7f8c8d;margin-top:5px}
+.file-ref code{background:#fef9e7;color:#7d6608}
+.highlight-box{background:#e8f4fd;border:1px solid #b3d7ed;border-radius:8px;padding:15px 20px;margin:15px 0}
+.warning-box{background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:15px 20px;margin:15px 0}
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:15px 0}
+.compare-card{background:#fff;border-radius:12px;padding:25px;box-shadow:0 2px 8px rgba(0,0,0,0.06)}
+.compare-card h4{text-align:center;margin-bottom:15px;padding:8px;border-radius:6px}
+.card-a h4{background:#d1ecf1;color:#0c5460}
+.card-b h4{background:#d4edda;color:#155724}
+ul{padding-left:25px;margin:10px 0}
+li{margin:5px 0}
+.toc{background:#fff;border-radius:12px;padding:25px 30px;margin-bottom:30px;box-shadow:0 2px 12px rgba(0,0,0,0.08)}
+.toc ol{columns:2;column-gap:40px;padding-left:20px}
+.toc li{margin:4px 0;font-size:0.95em}
+.toc a{color:#4a90d9;text-decoration:none}
+.toc a:hover{text-decoration:underline}
+@media(max-width:768px){.flow-grid{grid-template-columns:1fr}.compare-grid{grid-template-columns:1fr}.toc ol{columns:1}}
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>🏭 产品批次号产生规则 — 双模式方案</h1>
+<p style="text-align:center;color:#6c757d;margin-bottom:30px">Seals MES System | 模式A：入库时自动生成 | 模式B：计划派发时预生成 | 系统管理可配置 | <span style="color:#27ae60;font-weight:600">✅ 已实施</span></p>
+
+<div class="toc">
+<h3 style="margin-top:0;border:none;padding-left:0">📑 目录</h3>
+<ol>
+<li><a href="#s1">现状分析</a></li>
+<li><a href="#s2">两种模式对比</a></li>
+<li><a href="#s3">模式A：入库时自动生成（现有）</a></li>
+<li><a href="#s4">模式B：计划派发时预生成（新增）</a></li>
+<li><a href="#s5">双模式协作流程</a></li>
+<li><a href="#s6">配置管理：产品批次号产生规则</a></li>
+<li><a href="#s7">数据库表设计</a></li>
+<li><a href="#s8">后端API设计</a></li>
+<li><a href="#s9">前端页面设计</a></li>
+<li><a href="#s10">核心代码改动点</a></li>
+<li><a href="#s11">批次号格式规范</a></li>
+<li><a href="#s12">边界场景与异常处理</a></li>
+<li><a href="#s14">实施状态</a></li>
+</ol>
+</div>
+
+<!-- ==================== 一、现状分析 ==================== -->
+<h2 id="s1">一、现状分析</h2>
+<div class="section">
+
+<h3>1.1 现有批次号生成机制</h3>
+<p>当前系统中，成品批次号（<code>FB</code>前缀）仅在<b>生产入库</b>环节由 <code>generateBatchNumber('FB', factoryCode, transaction)</code> 函数生成：</p>
+
+<div class="mermaid">
+flowchart LR
+    PO["生产单<br/>production_order"] --> |派发| DISPATCH["派发<br/>dispatchAndGenerate"]
+    DISPATCH --> TASK["工序任务<br/>process_task"]
+    DISPATCH --> PREP["备料单<br/>material_preparation"]
+    TASK --> REPORT["报工<br/>work_report"]
+    REPORT --> INSPECT["检验<br/>inspection"]
+    INSPECT --> |入库| INBOUND["生产入库<br/>productionInboundFinished"]
+    INBOUND --> |此时生成| FB["FB-N-20260609-001<br/>成品批次号"]
+    style FB fill:#ffcccc,stroke:#cc0000,stroke-width:2px
+</div>
+
+<div class="file-ref">核心代码：<code>server/src/services/inventory.service.ts:10-40</code> — <code>generateBatchNumber()</code></div>
+
+<h3>1.2 现有编号格式</h3>
+<table>
+<tr><th>批次类型</th><th>前缀</th><th>格式</th><th>示例</th></tr>
+<tr><td>成品批次</td><td><code>FB</code></td><td>FB-{工厂编码}-{YYYYMMDD}-{序号}</td><td>FB-N-20260609-001</td></tr>
+<tr><td>原料批次</td><td><code>MB</code></td><td>MB-{工厂编码}-{YYYYMMDD}-{序号}</td><td>MB-N-20260609-001</td></tr>
+<tr><td>半成品批次</td><td><code>HB</code></td><td>HB-{工厂编码}-{YYYYMMDD}-{序号}</td><td>HB-N-20260609-001</td></tr>
+</table>
+
+<h3>1.3 序号管理</h3>
+<p>使用 <code>batch_number_sequence</code> 表管理每日递增序号，按 <code>prefix</code> 键（如 <code>FB-N-20260609-</code>）查询当前序号并自增，保证同一天同类型同工厂不重复。</p>
+
+<h3>1.4 痛点</h3>
+<ul>
+<li><b>无法提前追溯</b>：批次号在入库时才产生，生产过程中无法用批次号关联计划→派发→报工→入库全链路</li>
+<li><b>批次号与计划编号脱节</b>：FB-N-20260609-001 与 M20260609001（生产计划编号）无逻辑关联</li>
+<li><b>部分客户需求</b>：某些客户/产品需要以计划编号为基准的批次号，便于从批次号直接反查生产计划</li>
+<li><b>拆分追溯需求</b>：生产单拆分后，需要区分不同子单的批次号（追加 -S01/-S02 序号），或保持统一批次号</li>
+</ul>
+</div>
+
+<!-- ==================== 二、两种模式对比 ==================== -->
+<h2 id="s2">二、两种模式对比</h2>
+<div class="section">
+
+<div class="compare-grid">
+<div class="compare-card card-a">
+<h4>🔵 模式A：入库时自动生成（现有）</h4>
+<ul>
+<li><b>触发时机</b>：生产入库确认时</li>
+<li><b>编号格式</b>：FB-{FC}-{日期}-{序号}</li>
+<li><b>优点</b>：简单、无需预分配、入库数量确定后编号</li>
+<li><b>缺点</b>：无法提前追溯，与计划编号无关联</li>
+<li><b>适用场景</b>：通用产品、无追溯要求的常规入库</li>
+</ul>
+</div>
+<div class="compare-card card-b">
+<h4>🟢 模式B：计划派发时预生成（新增）</h4>
+<ul>
+<li><b>触发时机</b>：生产计划拆分/派发时</li>
+<li><b>编号格式</b>：FB-{计划编号}[-S{nn}]</li>
+<li><b>优点</b>：可提前追溯，批次号与计划强关联</li>
+<li><b>缺点</b>：需预分配，入库数量可能变化</li>
+<li><b>拆分序号</b>：可配置是否追加 -S01/-S02 序号</li>
+<li><b>适用场景</b>：需追溯的定制产品、汽车件等</li>
+</ul>
+</div>
+</div>
+
+<div class="highlight-box">
+<b>💡 核心设计原则：</b>两种模式<b>并存</b>，由"产品批次号产生规则"配置决定每个产品使用哪种模式。未配置的产品默认使用模式A。模式B支持<b>拆分追加序号</b>开关：开启时拆分子单各自独立批次号（-S01/-S02），关闭时所有拆分子单共享同一批次号。
+</div>
+</div>
+
+<!-- ==================== 三、模式A：入库时自动生成 ==================== -->
+<h2 id="s3">三、模式A：入库时自动生成（现有）</h2>
+<div class="section">
+
+<p>模式A保持现有逻辑不变，<code>generateBatchNumber('FB', factoryCode, transaction)</code> 在 <code>productionInboundFinished</code> 被调用时生成批次号：</p>
+
+<div class="mermaid">
+flowchart TB
+    subgraph 入库流程
+        START["生产入库请求"] --> CHK["校验生产单状态"]
+        CHK --> GEN["generateBatchNumber('FB', factoryCode)"]
+        GEN --> FB_NO["生成: FB-N-20260609-001"]
+        FB_NO --> WRITE1["写入 finished_batch_inventory"]
+        WRITE1 --> WRITE2["写入 inventory_transaction"]
+    end
+</div>
+
+<p>此模式下，成品批次号格式为 <code>FB-{工厂编码}-{YYYYMMDD}-{序号}</code>，序号由 <code>batch_number_sequence</code> 表管理。入库时生成，无需改动。</p>
+</div>
+
+<!-- ==================== 四、模式B：计划派发时预生成 ==================== -->
+<h2 id="s4">四、模式B：计划派发时预生成（新增）</h2>
+<div class="section">
+
+<h3>4.1 触发时机</h3>
+<p>在生产计划被<b>拆分</b>或<b>派发</b>时，如果该产品配置了模式B，则预先生成成品批次号，并写入 <code>production_order</code> 的 <code>preassigned_batch_number</code> 字段。</p>
+
+<div class="mermaid">
+flowchart TB
+    subgraph 计划拆分/派发
+        PLAN["生产计划<br/>Production_plan"] --> SPLIT{"拆分/派发?"}
+        SPLIT --> |是| CHECK["检查产品批次号规则<br/>batch_number_rule_config"]
+        CHECK --> RULE{"规则=模式B?"}
+        RULE --> |是| PRE_GEN["预生成批次号<br/>FB-{计划编号后缀}"]
+        PRE_GEN --> WRITE_PO["写入 production_order<br/>preassigned_batch_number"]
+        RULE --> |否-模式A| SKIP["跳过<br/>入库时再生成"]
+        WRITE_PO --> DISPATCH["继续派发流程"]
+        SKIP --> DISPATCH
+        SPLIT --> |否| DISPATCH
+    end
+</div>
+
+<h3>4.2 批次号生成格式（模式B）</h3>
+<p>模式B的批次号以<b>生产计划编号</b>为基准，是否追加拆分序号由 <code>append_split_seq</code> 配置决定：</p>
+<table>
+<tr><th>元素</th><th>格式</th><th>示例</th><th>说明</th></tr>
+<tr><td>前缀</td><td>FB-</td><td>FB-</td><td>成品批次统一前缀</td></tr>
+<tr><td>计划编号</td><td>{production_number}</td><td>MN20260609001</td><td>生产计划编号</td></tr>
+<tr><td>拆分序号</td><td>-S{nn}</td><td>-S01, -S02</td><td>仅拆分且 <code>append_split_seq=1</code> 时追加</td></tr>
+<tr><td>完整示例</td><td colspan="3"><code>FB-MN20260609001</code> 或 <code>FB-MN20260609001-S01</code></td></tr>
+</table>
+
+<div class="mermaid">
+flowchart TB
+    SPLIT["拆分/派发时"] --> RULE["查询产品批次号规则"]
+    RULE --> MODE_B{"模式B?"}
+    MODE_B --> |否| SKIP["跳过，入库时生成"]
+    MODE_B --> |是| APPEND{"append_split_seq<br/>= 1?"}
+    APPEND --> |是+拆分| WITH_SEQ["FB-MN...-S01<br/>FB-MN...-S02"]
+    APPEND --> |是+不拆分| NO_SPLIT["FB-MN20260609001"]
+    APPEND --> |否| SHARED["FB-MN20260609001<br/>（拆分子单共享）"]
+    WITH_SEQ --> WRITE["写入 production_order<br/>preassigned_batch_number"]
+    NO_SPLIT --> WRITE
+    SHARED --> WRITE
+</div>
+
+<div class="highlight-box">
+<b>编号规则：</b><br/>
+- <code>append_split_seq=1</code>（默认）：未拆分→FB-{production_number}，拆分→FB-{production_number}-S01、-S02<br/>
+- <code>append_split_seq=0</code>：无论是否拆分，均→FB-{production_number}（所有拆分子单共享同一批次号）<br/>
+- 拆分序号仅在 <code>splitOrdersCore</code> 时分配
+</div>
+
+<h3>4.3 入库时使用预分配批次号</h3>
+<p>模式B下入库时，从 <code>production_order.preassigned_batch_number</code> 读取已分配的批次号，跳过自动生成：</p>
+
+<div class="mermaid">
+flowchart TB
+    subgraph 入库流程_模式B
+        INB["生产入库请求"] --> LOOKUP["查询 production_order<br/>.preassigned_batch_number"]
+        LOOKUP --> HAS{"有预分配<br/>批次号?"}
+        HAS --> |有-模式B| USE["使用预分配批次号<br/>FB-MN20260609001-S01"]
+        HAS --> |无-模式A| FALL["调用 generateBatchNumber<br/>FB-N-20260609-001"]
+        USE --> WRITE1["写入 finished_batch_inventory"]
+        FALL --> WRITE1
+    end
+</div>
+
+<h3>4.4 拆分场景的批次号分配</h3>
+<p>生产计划拆分时，原计划可能被拆成多个生产单，根据 <code>append_split_seq</code> 配置决定是否追加序号：</p>
+
+<div class="mermaid">
+flowchart LR
+    subgraph 追加序号_append_split_seq_1
+        PLAN1["MN20260609001<br/>计划数量=1000"] --> SPLIT1["拆分为2单"]
+        SPLIT1 --> PO1A["P20260609001<br/>preassigned=<b>FB-MN20260609001-S01</b>"]
+        SPLIT1 --> PO1B["P20260609002<br/>preassigned=<b>FB-MN20260609001-S02</b>"]
+    end
+    subgraph 不追加序号_append_split_seq_0
+        PLAN2["MN20260609002<br/>计划数量=1000"] --> SPLIT2["拆分为2单"]
+        SPLIT2 --> PO2A["P20260609003<br/>preassigned=<b>FB-MN20260609002</b>"]
+        SPLIT2 --> PO2B["P20260609004<br/>preassigned=<b>FB-MN20260609002</b>"]
+    end
+</div>
+</div>
+
+<!-- ==================== 五、双模式协作流程 ==================== -->
+<h2 id="s5">五、双模式协作流程</h2>
+<div class="section">
+
+<div class="mermaid">
+flowchart TB
+    START["产品入库"] --> CONFIG{"查询产品<br/>批次号规则配置"}
+    CONFIG --> |模式A<br/>或未配置| GEN_A["入库时自动生成<br/>generateBatchNumber('FB', fc)"]
+    CONFIG --> |模式B| GEN_B["读取预分配批次号<br/>production_order.preassigned_batch_number"]
+    GEN_A --> FORMAT_A["格式: FB-N-20260609-001"]
+    GEN_B --> FORMAT_B["格式: FB-MN20260609001"]
+    FORMAT_A --> WRITE["写入批次库存+流水"]
+    FORMAT_B --> WRITE
+</div>
+
+<div class="warning-box">
+<b>⚠️ 一致性保证：</b><br/>
+- 模式B的批次号在拆分/派发时已写入 <code>production_order</code>，入库时只读取，不会重新生成<br/>
+- 模式B下如果 <code>preassigned_batch_number</code> 为空（异常情况），降级为模式A自动生成<br/>
+- 撤回入库时，模式B的预分配批次号不清除（因为生产单仍存在），仅清除库存记录
+</div>
+</div>
+
+<!-- ==================== 六、配置管理 ==================== -->
+<h2 id="s6">六、配置管理：产品批次号产生规则</h2>
+<div class="section">
+
+<h3>6.1 功能定位</h3>
+<p>在<b>系统管理</b>域下新增"产品批次号产生规则"管理页面，允许用户按产品维度配置批次号产生规则。</p>
+
+<h3>6.2 配置维度</h3>
+<table>
+<tr><th>配置项</th><th>说明</th><th>可选值</th><th>默认值</th></tr>
+<tr><td><code>item_number</code></td><td>产品物料号</td><td>item_master 中任一成品</td><td>—</td></tr>
+<tr><td><code>batch_rule_mode</code></td><td>批次号产生模式</td><td><span class="badge badge-blue">A-入库时生成</span> <span class="badge badge-green">B-计划派发时生成</span></td><td>A</td></tr>
+<tr><td><code>batch_number_template</code></td><td>批次号模板（模式B）</td><td>FB-{plan_number}[-S{seq}]</td><td>FB-{plan_number}</td></tr>
+<tr><td><code>append_split_seq</code></td><td>拆分追加序号（模式B）</td><td><span class="badge badge-green">1-追加</span> <span class="badge badge-orange">0-不追加</span></td><td>1（追加）</td></tr>
+<tr><td><code>factory_id</code></td><td>所属工厂（可选，空=全部工厂）</td><td>14/15/null</td><td>null（全部工厂）</td></tr>
+<tr><td><code>is_active</code></td><td>是否启用</td><td>是/否</td><td>是</td></tr>
+</table>
+
+<h3>6.3 配置优先级</h3>
+<div class="mermaid">
+flowchart TD
+    LOOKUP["查询产品 WH-FAC-FULL-ITEM<br/>的批次号规则"] --> L1{"精确匹配<br/>item_number + factory_id?"}
+    L1 --> |找到| USE1["使用精确匹配规则"]
+    L1 --> |未找到| L2{"精确匹配<br/>item_number(全局)?"}
+    L2 --> |找到| USE2["使用全局产品规则"]
+    L2 --> |未找到| DEFAULT["使用默认规则<br/>模式A"]
+</div>
+
+<h3>6.4 管理页面原型</h3>
+<p>页面位于 <b>系统管理 → 产品批次号产生规则</b>，标准 CRUD 页面：</p>
+<table>
+<tr><th>列</th><th>类型</th><th>说明</th></tr>
+<tr><td>产品编号</td><td>模糊搜索+下拉选择</td><td>从 item_master 中搜索选择</td></tr>
+<tr><td>产品名称</td><td>只读</td><td>自动带出</td></tr>
+<tr><td>工厂</td><td>下拉（含"全部"选项）</td><td>空=全部工厂</td></tr>
+<tr><td>产生模式</td><td>单选</td><td>A-入库时生成 / B-计划派发时生成</td></tr>
+<tr><td>批次号模板</td><td>文本（仅模式B时编辑）</td><td>支持变量 {plan_number}，如 FB-{plan_number}</td></tr>
+<tr><td>拆分追加序号</td><td>开关（仅模式B时显示）</td><td>开启：拆分子单追加 -S01/-S02；关闭：共享同一批次号</td></tr>
+<tr><td>是否启用</td><td>开关</td><td>是/否</td></tr>
+<tr><td>操作</td><td>—</td><td>编辑 / 删除</td></tr>
+</table>
+</div>
+
+<!-- ==================== 七、数据库表设计 ==================== -->
+<h2 id="s7">七、数据库表设计</h2>
+<div class="section">
+
+<h3>7.1 新增表：batch_number_rule_config</h3>
+<table>
+<tr><th>列名</th><th>类型</th><th>约束</th><th>说明</th></tr>
+<tr><td>id</td><td>INT IDENTITY(1,1)</td><td>PRIMARY KEY</td><td>自增主键</td></tr>
+<tr><td>item_number</td><td>NVARCHAR(100)</td><td>NOT NULL</td><td>产品物料号</td></tr>
+<tr><td>item_name</td><td>NVARCHAR(200)</td><td>DEFAULT ''</td><td>产品名称（冗余）</td></tr>
+<tr><td>factory_id</td><td>INT</td><td>NULL</td><td>所属工厂，NULL=全部工厂</td></tr>
+<tr><td>batch_rule_mode</td><td>NVARCHAR(10)</td><td>NOT NULL DEFAULT 'A'</td><td>A=入库时生成, B=计划派发时生成</td></tr>
+<tr><td>batch_number_template</td><td>NVARCHAR(200)</td><td>DEFAULT 'FB-{plan_number}'</td><td>模式B的批次号模板</td></tr>
+<tr><td>append_split_seq</td><td>BIT</td><td>DEFAULT 1</td><td>模式B拆分时是否追加序号（1=追加-S01/S02, 0=不追加）</td></tr>
+<tr><td>is_active</td><td>NVARCHAR(10)</td><td>DEFAULT N'是'</td><td>是否启用</td></tr>
+<tr><td>creation_date</td><td>DATETIME</td><td>DEFAULT GETDATE()</td><td>创建时间</td></tr>
+<tr><td>creation_man</td><td>NVARCHAR(50)</td><td>DEFAULT ''</td><td>创建人</td></tr>
+<tr><td>last_updated_at</td><td>DATETIME</td><td>DEFAULT GETDATE()</td><td>最后更新时间</td></tr>
+<tr><td>last_updater</td><td>NVARCHAR(50)</td><td>DEFAULT ''</td><td>最后更新人</td></tr>
+</table>
+
+<div class="highlight-box">
+<b>唯一约束：</b><code>UNIQUE (item_number, factory_id)</code> — 同一产品同一工厂只能有一条规则。factory_id=NULL 表示全局规则。
+</div>
+
+<h3>7.2 修改表：production_order</h3>
+<table>
+<tr><th>新增列</th><th>类型</th><th>说明</th></tr>
+<tr><td><code>preassigned_batch_number</code></td><td>NVARCHAR(50) DEFAULT ''</td><td>模式B下预分配的批次号，模式A下为空</td></tr>
+</table>
+
+<h3>7.3 ER 图</h3>
+<div class="mermaid">
+erDiagram
+    BATCH_NUMBER_RULE_CONFIG {
+        INT id PK
+        NVARCHAR item_number
+        NVARCHAR item_name
+        INT factory_id
+        NVARCHAR batch_rule_mode
+        NVARCHAR batch_number_template
+        BIT append_split_seq
+        NVARCHAR is_active
+    }
+    PRODUCTION_ORDER {
+        NVARCHAR production_order_number PK
+        NVARCHAR production_number
+        NVARCHAR item_number
+        INT planned_quantity
+        NVARCHAR preassigned_batch_number
+        INT factory_id
+    }
+    PRODUCTION_PLAN {
+        NVARCHAR production_number PK
+        NVARCHAR item_number
+        INT planned_quantity
+        INT factory_id
+    }
+    FINISHED_BATCH_INVENTORY {
+        NVARCHAR batch_number PK
+        NVARCHAR item_number
+        NVARCHAR warehouse_number
+        DECIMAL quantity
+        INT factory_id
+    }
+    BATCH_NUMBER_RULE_CONFIG ||--o{ PRODUCTION_ORDER : "item_number 配置决定模式"
+    PRODUCTION_PLAN ||--o{ PRODUCTION_ORDER : "拆分/派发"
+    PRODUCTION_ORDER ||--o| FINISHED_BATCH_INVENTORY : "入库时写入批次号"
+</div>
+</div>
+
+<!-- ==================== 八、后端API设计 ==================== -->
+<h2 id="s8">八、后端API设计</h2>
+<div class="section">
+
+<h3>8.1 批次号规则配置 API</h3>
+<p>挂载在系统管理域：<code>/api/v1/batch-number-rules</code>（注意：system 域路由直接挂载，无 <code>/system</code> 前缀）</p>
+<table class="api-table">
+<tr><th>方法</th><th>路径</th><th>说明</th></tr>
+<tr><td>GET</td><td><code>/</code></td><td>列表查询（支持 item_number/工厂/模式筛选）</td></tr>
+<tr><td>GET</td><td><code>/:id</code></td><td>详情</td></tr>
+<tr><td>POST</td><td><code>/</code></td><td>创建规则</td></tr>
+<tr><td>PUT</td><td><code>/:id</code></td><td>更新规则</td></tr>
+<tr><td>DELETE</td><td><code>/:id</code></td><td>删除规则</td></tr>
+<tr><td>GET</td><td><code>/lookup?item_number=xxx&factory_id=14</code></td><td>查询指定产品的生效规则（含优先级解析，返回 mode/template/append_split_seq）</td></tr>
+</table>
+
+<h3>8.2 核心服务函数变更</h3>
+<table>
+<tr><th>文件</th><th>函数</th><th>变更说明</th></tr>
+<tr><td><code>inventory.service.ts</code></td><td><code>generateBatchNumber()</code></td><td>保持不变，模式A仍用此函数</td></tr>
+<tr><td><code>inventory.service.ts</code></td><td><code>lookupBatchRule()</code> <span class="badge badge-green">新增</span></td><td>查询产品规则（含优先级），返回 <code>{ mode, template, append_split_seq }</code></td></tr>
+<tr><td><code>inventory.service.ts</code></td><td><code>generatePreassignedBatchNumber()</code> <span class="badge badge-green">新增</span></td><td>生成模式B预分配批次号，支持 <code>splitIndex</code> 和 <code>appendSplitSeq</code> 参数</td></tr>
+<tr><td><code>inventory.service.ts</code></td><td><code>resolveBatchNumber()</code> <span class="badge badge-green">新增</span></td><td>统一入口：查规则→模式A自动生成/模式B读取预分配</td></tr>
+<tr><td><code>finishedGoods.ts</code></td><td><code>productionInboundFinished()</code></td><td>将 <code>generateBatchNumber('FB')</code> 替换为 <code>resolveBatchNumber()</code></td></tr>
+<tr><td><code>dispatch.ts</code></td><td><code>splitOrdersCore()</code></td><td>拆分时为模式B的产品预分配批次号，传入 <code>rule.append_split_seq</code></td></tr>
+<tr><td><code>dispatch.ts</code></td><td><code>dispatchAndGenerateCore()</code></td><td>派发时为模式B的产品预分配批次号，传入 <code>rule.append_split_seq</code></td></tr>
+</table>
+
+<h3>8.3 核心函数伪代码</h3>
+<div style="background:#1e1e1e;color:#d4d4d4;padding:20px;border-radius:8px;font-family:Consolas,monospace;font-size:0.85em;margin:15px 0;overflow-x:auto">
+<pre>
+// --- lookupBatchRule: 查询产品批次号规则 ---
+async lookupBatchRule(itemNumber, factoryId?, transaction?):
+  // 1. 精确匹配: item_number + factory_id
+  if (factoryId !== null):
+    row = SELECT TOP 1 batch_rule_mode, batch_number_template,
+                   ISNULL(append_split_seq, 1) AS append_split_seq
+            FROM batch_number_rule_config
+            WHERE item_number = :item_number
+              AND factory_id = :factory_id AND is_active = N'是'
+    if (row) return { mode: row.batch_rule_mode, template: row.batch_number_template,
+                      append_split_seq: !!row.append_split_seq }
+
+  // 2. 全局匹配: item_number + factory_id IS NULL
+  row = SELECT TOP 1 ... FROM batch_number_rule_config
+        WHERE item_number = :item_number AND factory_id IS NULL AND is_active = N'是'
+  if (row) return { mode, template, append_split_seq }
+
+  // 3. 无配置 → 默认模式A
+  return null
+
+// --- generatePreassignedBatchNumber: 模式B预分配批次号 ---
+generatePreassignedBatchNumber(productionNumber, splitIndex?, appendSplitSeq = true):
+  base = "FB-{productionNumber}"
+  if (appendSplitSeq && splitIndex > 0):
+    return "{base}-S{splitIndex:02d}"    // FB-MN20260609001-S01
+  return base                               // FB-MN20260609001
+
+// --- resolveBatchNumber: 入库时统一入口 ---
+async resolveBatchNumber(params: { itemNumber, factoryId, productionOrderNumber, factoryCode, transaction }):
+  rule = await lookupBatchRule(itemNumber, factoryId, transaction)
+  if (rule?.mode === 'B'):
+    po = SELECT preassigned_batch_number FROM production_order
+         WHERE production_order_number = :pon
+    if (po?.preassigned_batch_number):
+      return po.preassigned_batch_number    // 模式B
+    // 降级: 预分配为空
+    log.warn('模式B但预分配为空, 降级为模式A')
+  return generateBatchNumber('FB', factoryCode, transaction)  // 模式A
+</pre>
+</div>
+</div>
+
+<!-- ==================== 九、前端页面设计 ==================== -->
+<h2 id="s9">九、前端页面设计</h2>
+<div class="section">
+
+<h3>9.1 菜单位置</h3>
+<p>系统管理 → 产品批次号产生规则</p>
+
+<h3>9.2 列表页功能</h3>
+<ul>
+<li>搜索栏：产品编号/名称、工厂筛选、产生模式筛选</li>
+<li>操作栏：新增、导出</li>
+<li>数据表：产品编号、产品名称、工厂、产生模式（标签色区分）、批次号模板、启用状态、操作</li>
+<li>操作列：编辑、禁用/启用、删除</li>
+</ul>
+
+<h3>9.3 新增/编辑对话框</h3>
+<table>
+<tr><th>字段</th><th>控件</th><th>验证</th></tr>
+<tr><td>产品编号</td><td>a-select show-search 模糊搜索+下拉</td><td>必填，唯一（+工厂），300ms防抖调 item-masters API</td></tr>
+<tr><td>产品名称</td><td>只读文本</td><td>自动带出</td></tr>
+<tr><td>适用工厂</td><td>下拉（含"全部工厂"选项，value=0 → DB NULL）</td><td>选填</td></tr>
+<tr><td>产生模式</td><td>Radio：A-入库时生成 / B-计划派发时生成</td><td>必填</td></tr>
+<tr><td>批次号模板</td><td>文本（仅模式B时显示）</td><td>模式B必填，支持变量 {plan_number}</td></tr>
+<tr><td>拆分追加序号</td><td>Switch（仅模式B时显示）</td><td>默认开启，提示：开启追加-S01/S02，关闭共享</td></tr>
+<tr><td>是否启用</td><td>Switch</td><td>默认开启</td></tr>
+</table>
+
+<h3>9.4 前端路由</h3>
+<p><code>/system/batch-number-rules</code> — 按系统管理页面标准布局</p>
+</div>
+
+<!-- ==================== 十、核心代码改动点 ==================== -->
+<h2 id="s10">十、核心代码改动点</h2>
+<div class="section">
+
+<table>
+<tr><th>#</th><th>改动文件</th><th>改动内容</th><th>风险</th></tr>
+<tr><td>1</td><td><code>server/src/sql/migrations/111_batch_number_rule_config.ts</code></td><td>新增迁移：创建 batch_number_rule_config 表（含 append_split_seq 列）+ production_order 增加 preassigned_batch_number 列 + 权限插入</td><td><span class="badge badge-green">低</span></td></tr>
+<tr><td>2</td><td><code>server/src/services/inventory.service.ts</code></td><td>新增 <code>lookupBatchRule()</code>、<code>generatePreassignedBatchNumber()</code>、<code>resolveBatchNumber()</code></td><td><span class="badge badge-green">低</span></td></tr>
+<tr><td>3</td><td><code>server/src/services/warehouse/finishedGoods.ts</code></td><td>入库函数中 <code>generateBatchNumber('FB')</code> → <code>resolveBatchNumber()</code></td><td><span class="badge badge-orange">中</span></td></tr>
+<tr><td>4</td><td><code>server/src/services/orderDispatch/dispatch.ts</code></td><td>splitOrdersCore/dispatchAndGenerateCore 中增加模式B预分配逻辑，传入 <code>rule.append_split_seq</code></td><td><span class="badge badge-orange">中</span></td></tr>
+<tr><td>5</td><td><code>server/src/modules/system/batchNumberRule/</code></td><td>新增 controller + routes（CRUD + lookup，ROW_NUMBER 分页，factory_id 特殊处理）</td><td><span class="badge badge-green">低</span></td></tr>
+<tr><td>6</td><td><code>server/src/modules/system/index.ts</code></td><td>注册 batchNumberRuleRoutes 到 /batch-number-rules</td><td><span class="badge badge-green">低</span></td></tr>
+<tr><td>7</td><td><code>client/src/views/system/BatchNumberRule/List.vue</code></td><td>新增管理页面（a-select 模糊搜索、拆分追加序号开关、标签色区分模式）</td><td><span class="badge badge-green">低</span></td></tr>
+<tr><td>8</td><td><code>client/src/api/system/batchNumberRule.ts</code></td><td>新增 API 调用函数（含 append_split_seq 字段）</td><td><span class="badge badge-green">低</span></td></tr>
+<tr><td>9</td><td><code>client/src/router/</code></td><td>添加前端路由 <code>/system/batch-number-rules</code></td><td><span class="badge badge-green">低</span></td></tr>
+</table>
+
+<div class="warning-box">
+<b>⚠️ 兼容性保证：</b><br/>
+- <code>generateBatchNumber()</code> 函数<b>不删除</b>，仅新增 <code>resolveBatchNumber()</code> 作为统一入口<br/>
+- 所有现有调用点逐步迁移到 <code>resolveBatchNumber()</code>，未迁移前行为不变<br/>
+- <code>batch_number_rule_config</code> 表初始为空，所有产品默认模式A，与现有行为完全一致
+</div>
+</div>
+
+<!-- ==================== 十一、批次号格式规范 ==================== -->
+<h2 id="s11">十一、批次号格式规范</h2>
+<div class="section">
+
+<div class="mermaid">
+flowchart LR
+    subgraph 模式A_现有
+        A1["FB-{FC}-{YYYYMMDD}-{seq}"] --> A2["FB-N-20260609-001"]
+    end
+    subgraph 模式B_append_split_seq_1
+        B1["FB-{plan_number}"] --> B2["FB-MN20260609001"]
+        B3["FB-{plan_number}-S{nn}"] --> B4["FB-MN20260609001-S01"]
+    end
+    subgraph 模式B_append_split_seq_0
+        C1["FB-{plan_number}<br/>（拆分也共享）"] --> C2["FB-MN20260609001"]
+    end
+</div>
+
+<h3>模式B编号详解</h3>
+<table>
+<tr><th>场景</th><th>计划编号</th><th>生产单</th><th>append_split_seq</th><th>预分配批次号</th></tr>
+<tr><td>不拆分，直接派发</td><td>MN20260609001</td><td>P20260609001</td><td>—</td><td><code>FB-MN20260609001</code></td></tr>
+<tr><td>拆分为2单（追加序号）</td><td>MN20260609002</td><td>P20260609002</td><td>1</td><td><code>FB-MN20260609002-S01</code></td></tr>
+<tr><td></td><td></td><td>P20260609003</td><td>1</td><td><code>FB-MN20260609002-S02</code></td></tr>
+<tr><td>拆分为2单（不追加序号）</td><td>MN20260609003</td><td>P20260609004</td><td>0</td><td><code>FB-MN20260609003</code></td></tr>
+<tr><td></td><td></td><td>P20260609005</td><td>0</td><td><code>FB-MN20260609003</code></td></tr>
+<tr><td>拆分为3单（追加序号）</td><td>MN20260609004</td><td>P20260609006</td><td>1</td><td><code>FB-MN20260609004-S01</code></td></tr>
+<tr><td></td><td></td><td>P20260609007</td><td>1</td><td><code>FB-MN20260609004-S02</code></td></tr>
+<tr><td></td><td></td><td>P20260609008</td><td>1</td><td><code>FB-MN20260609004-S03</code></td></tr>
+</table>
+
+<div class="highlight-box">
+<b>长度约束：</b><code>finished_batch_inventory.batch_number</code> 为 NVARCHAR(50)。<br/>
+- 模式A：FB-N-20260609-001 ≈ 19字符 ✓<br/>
+- 模式B无拆分：FB-MN20260609001 ≈ 19字符 ✓<br/>
+- 模式B有拆分：FB-MN20260609001-S01 ≈ 23字符 ✓<br/>
+均在 50 字符限制内。
+</div>
+</div>
+
+<!-- ==================== 十二、边界场景与异常处理 ==================== -->
+<h2 id="s12">十二、边界场景与异常处理</h2>
+<div class="section">
+
+<table>
+<tr><th>场景</th><th>处理策略</th></tr>
+<tr><td>模式B但 <code>preassigned_batch_number</code> 为空</td><td>降级为模式A自动生成，并记录警告日志</td></tr>
+<tr><td>同一生产单多次入库（部分入库）</td><td>模式B：使用同一预分配批次号（与生产单 1:1）<br/>模式A：每次入库生成新批次号</td></tr>
+<tr><td>拆分后又撤回入库</td><td>预分配批次号不清除，仅回退库存记录</td></tr>
+<tr><td><code>append_split_seq=0</code> 且拆分多单</td><td>所有拆分子单共享同一批次号 <code>FB-{production_number}</code>，入库时均使用此批次号</td></tr>
+<tr><td><code>append_split_seq</code> 从1改为0（或反之）</td><td>仅影响后续新拆分/派发的生产单，已有生产单的 preassigned_batch_number 不变</td></tr>
+<tr><td>规则从模式B改为模式A</td><td>已预分配的批次号保留不影响，仅影响后续新单</td></tr>
+<tr><td>规则从模式A改为模式B</td><td>仅影响新的拆分/派发，已有生产单不会追溯生成</td></tr>
+<tr><td>删除规则</td><td>物理删除，不影响已使用批次号的数据</td></tr>
+<tr><td>退货入库</td><td>退货入库不生成新批次号，使用原出库批次号（两种模式均如此）</td></tr>
+<tr><td>异常出入库（盘盈入库）</td><td>不受规则影响，始终用 <code>generateBatchNumber('FB')</code> 自动生成</td></tr>
+<tr><td>factory_id 中间件自动注入</td><td>auth.middleware 在 POST/PUT 时自动注入 factory_id，控制器需识别 0/null/'' → DB NULL</td></tr>
+</table>
+</div>
+
+<!-- ==================== 十三、实施状态 ==================== -->
+<h2 id="s14">十三、实施状态</h2>
+<div class="section">
+
+<h3>13.1 实施进度</h3>
+<table>
+<tr><th>Phase</th><th>内容</th><th>状态</th></tr>
+<tr><td>Phase 1</td><td>创建 batch_number_rule_config 表 + production_order 增加 preassigned_batch_number 列 + 权限配置</td><td><span class="badge badge-green">已完成</span></td></tr>
+<tr><td>Phase 2</td><td>实现 lookupBatchRule() + generatePreassignedBatchNumber() + resolveBatchNumber()</td><td><span class="badge badge-green">已完成</span></td></tr>
+<tr><td>Phase 3</td><td>修改 dispatch.ts（拆分/派发时预分配批次号，含 append_split_seq）</td><td><span class="badge badge-green">已完成</span></td></tr>
+<tr><td>Phase 4</td><td>修改 finishedGoods.ts（入库时 resolveBatchNumber）</td><td><span class="badge badge-green">已完成</span></td></tr>
+<tr><td>Phase 5</td><td>新增 batchNumberRule controller + routes + API 验证</td><td><span class="badge badge-green">已完成</span></td></tr>
+<tr><td>Phase 6</td><td>前端管理页面（模糊搜索、拆分追加序号开关、表格渲染）</td><td><span class="badge badge-green">已完成</span></td></tr>
+</table>
+
+<h3>13.2 实施文件清单</h3>
+<table>
+<tr><th>文件</th><th>操作</th><th>说明</th></tr>
+<tr><td><code>server/src/sql/migrations/111_batch_number_rule_config.ts</code></td><td><span class="badge badge-green">新增</span></td><td>建表（含 append_split_seq）+ 列 + 权限 + 角色授权</td></tr>
+<tr><td><code>server/src/services/inventory.service.ts</code></td><td><span class="badge badge-blue">修改</span></td><td>新增 lookupBatchRule / generatePreassignedBatchNumber / resolveBatchNumber</td></tr>
+<tr><td><code>server/src/services/orderDispatch/dispatch.ts</code></td><td><span class="badge badge-blue">修改</span></td><td>拆分/派发时预分配批次号，传入 rule.append_split_seq</td></tr>
+<tr><td><code>server/src/services/warehouse/finishedGoods.ts</code></td><td><span class="badge badge-blue">修改</span></td><td>入库时调用 resolveBatchNumber()</td></tr>
+<tr><td><code>server/src/modules/system/batchNumberRule/batchNumberRule.controller.ts</code></td><td><span class="badge badge-green">新增</span></td><td>CRUD + lookup，ROW_NUMBER 分页，factory_id 特殊处理</td></tr>
+<tr><td><code>server/src/modules/system/batchNumberRule/batchNumberRule.routes.ts</code></td><td><span class="badge badge-green">新增</span></td><td>路由定义，authenticate + requireRole</td></tr>
+<tr><td><code>server/src/modules/system/index.ts</code></td><td><span class="badge badge-blue">修改</span></td><td>注册 /batch-number-rules 路由</td></tr>
+<tr><td><code>client/src/api/system/batchNumberRule.ts</code></td><td><span class="badge badge-green">新增</span></td><td>API 调用函数（含 append_split_seq 类型）</td></tr>
+<tr><td><code>client/src/views/system/BatchNumberRule/List.vue</code></td><td><span class="badge badge-green">新增</span></td><td>管理页面（模糊搜索+拆分追加序号+标签色区分）</td></tr>
+</table>
+
+<h3>13.3 技术要点</h3>
+<div class="highlight-box">
+<b>实施过程中的关键技术决策：</b><br/>
+- <b>SQL Server 兼容</b>：分页使用 ROW_NUMBER() OVER() 而非 OFFSET...FETCH（兼容2008+）<br/>
+- <b>API 前缀</b>：system 域路由直接挂载，路径为 <code>/api/v1/batch-number-rules</code>（无 /system 前缀）<br/>
+- <b>factory_id 处理</b>：中间件自动注入 factory_id，控制器识别 0/null/'' → DB NULL<br/>
+- <b>产品编号搜索</b>：使用 a-select show-search + 300ms防抖，调用 item-masters API<br/>
+- <b>唯一约束</b>：两个筛选索引（factory_id NOT NULL + factory_id IS NULL），确保同一产品同工厂仅一条规则
+</div>
+
+<h3>13.4 待验证</h3>
+<ul>
+<li>生产单实际拆分流程的预分配批次号验证</li>
+<li>模式B产品实际入库时 resolveBatchNumber 的端到端测试</li>
+<li>append_split_seq=0 时拆分子单共享批次号的库存管理场景</li>
+</ul>
+</div>
+
+<p style="text-align:center;color:#999;margin:40px 0;font-size:0.85em">Seals MES System — 产品批次号产生规则 双模式方案 | 2026-06 | <span style="color:#27ae60">✅ 已实施</span></p>
+
+</div>
+<script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose'});</script>
+</body>
+</html>

@@ -23,6 +23,8 @@ export const updateVersionDetail = (id: number, data: any) =>
   request.put(`/sample-boms/version-details/${id}`, data)
 export const deleteVersionDetail = (id: number) =>
   request.delete(`/sample-boms/version-details/${id}`)
+export const batchUpdateVersionDetails = (bomNumber: string, ver: number, data: { details: any[] }) =>
+  request.put(`/sample-boms/${encodeURIComponent(bomNumber)}/versions/${ver}/details/batch`, data)
 
 // ==================== 确定最终版本 & 导入 ====================
 export const determineFinalVersion = (bomNumber: string, data: { final_version: number }) =>

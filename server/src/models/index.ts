@@ -466,6 +466,7 @@ export const initDatabase = async () => {
         'production_inbound_order', 'production_inbound_order_detail',
         'semi_production_inbound_order', 'semi_production_inbound_order_detail',
         'process_task', 'work_report',
+        'material_preparation', 'material_preparation_detail',
         'backflush_task', 'backflush_deduction_log',
         'rework_order',
         'piece_rate_wage_header', 'piece_rate_wage_detail',
@@ -494,6 +495,7 @@ export const initDatabase = async () => {
         'incoming_inspect_plan', 'inspection_plan', 'inspection_spec',
         'nonconforming_product',
         'sample_request', 'sample_request_item', 'sample_request_lab',
+        'sample_bom_header', 'sample_bom_version', 'sample_bom_version_detail',
         'sample_inspection_report', 'sample_inspection_report_item',
         // ── 外包域 ──
         'outsourcing_order',
@@ -616,6 +618,58 @@ export const initDatabase = async () => {
       console.log('[多工厂迁移] NULL factory_id 回填完成');
     } catch (e) {
       console.warn('[多工厂迁移] NULL factory_id 回填跳过:', (e as any).message);
+    }
+
+    // 生产计划 production_status 字段迁移（100）
+    try {
+      const { up: prodStatusUp } = await import('../sql/migrations/100_add_production_status_to_plan');
+      await prodStatusUp();
+      console.log('[手动迁移] 100_add_production_status_to_plan 完成');
+    } catch (e: any) {
+      if (e.message?.includes('已存在') || e.message?.includes('already exists')) {
+        console.log('[手动迁移] 100_add_production_status_to_plan 已存在，跳过');
+      } else {
+        console.warn('[手动迁移] 100_add_production_status_to_plan 跳过:', e.message);
+      }
+    }
+
+    // 产品标签管理迁移（112）
+    try {
+      const { up: labelMigrationUp } = await import('../sql/migrations/112_product_label_management');
+      await labelMigrationUp();
+      console.log('[手动迁移] 112_product_label_management 完成');
+    } catch (e: any) {
+      if (e.message?.includes('已存在') || e.message?.includes('already exists')) {
+        console.log('[手动迁移] 112_product_label_management 已存在，跳过');
+      } else {
+        console.warn('[手动迁移] 112_product_label_management 跳过:', e.message);
+      }
+    }
+
+    // 计划批次号迁移（113）
+    try {
+      const { up: batchNumberPlanUp } = await import('../sql/migrations/113_add_batch_number_to_plan');
+      await batchNumberPlanUp();
+      console.log('[手动迁移] 113_add_batch_number_to_plan 完成');
+    } catch (e: any) {
+      if (e.message?.includes('已存在') || e.message?.includes('already exists')) {
+        console.log('[手动迁移] 113_add_batch_number_to_plan 已存在，跳过');
+      } else {
+        console.warn('[手动迁移] 113_add_batch_number_to_plan 跳过:', e.message);
+      }
+    }
+
+    // 产品批次号规则审核状态迁移（114）
+    try {
+      const { up: batchRuleApprovalUp } = await import('../sql/migrations/114_batch_number_rule_approval_status');
+      await batchRuleApprovalUp();
+      console.log('[手动迁移] 114_batch_number_rule_approval_status 完成');
+    } catch (e: any) {
+      if (e.message?.includes('已存在') || e.message?.includes('already exists')) {
+        console.log('[手动迁移] 114_batch_number_rule_approval_status 已存在，跳过');
+      } else {
+        console.warn('[手动迁移] 114_batch_number_rule_approval_status 跳过:', e.message);
+      }
     }
 
     // 暂时禁用 umzug 迁移（迁移脚本中有 process.exit() 会导致服务器退出）

@@ -16,6 +16,7 @@ import { createMaterialTransaction } from '@/services/warehouse/helpers';
 import { logLinesideMovement } from '@/services/linesideMovement.service';
 import { writeReturnSnapshot, deleteCostSnapshotBySource, ReturnSnapshotItem } from '@/services/materialCostSnapshot.service';
 import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
+import { syncPlanStatus } from '@/services/salesOrderSync.service';
 
 // ==================== 生成退料单编号 ====================
 const generateReturnNumber = async (factoryCode: string = '', tx: any): Promise<string> => {
@@ -351,6 +352,8 @@ export const createMaterialReturn = async (req: Request, res: Response, next: Ne
               `UPDATE production_order SET plan_status = N'已派发' WHERE production_order_number = :orderNo AND plan_status = N'已备料'`,
               { replacements: { orderNo: issue.production_order_number }, transaction }
             );
+            // 同步生产计划状态
+            await syncPlanStatus(issue.production_order_number, 'order', transaction);
           }
         }
       } catch (e) { console.log('[materialReturn] 生产单状态重算跳过:', e); }
@@ -576,6 +579,8 @@ export const deleteMaterialReturn = async (req: Request, res: Response, next: Ne
               `UPDATE production_order SET plan_status = N'已备料' WHERE production_order_number = :orderNo AND plan_status = N'已派发'`,
               { replacements: { orderNo: ret.production_order_number }, transaction }
             );
+            // 同步生产计划状态
+            await syncPlanStatus(ret.production_order_number, 'order', transaction);
           }
         }
       } catch (e) { console.log('[deleteMaterialReturn] 生产单状态重算跳过:', e); }

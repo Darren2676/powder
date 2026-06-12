@@ -19,7 +19,7 @@ export const moduleConfig: Record<string, { tableName: string; primaryKey: strin
   'bom_header': { tableName: 'bom_header', primaryKey: 'bom_number', displayName: 'BOM物料清单', hasFactoryId: false },
   'production_order': { tableName: 'production_order', primaryKey: 'production_order_number', displayName: '生产单', hasFactoryId: true },
   'process_task': { tableName: 'process_task', primaryKey: 'process_task_number', displayName: '工序任务单', hasFactoryId: true },
-  'material_preparation': { tableName: 'material_preparation', primaryKey: 'preparation_number', displayName: '备料单', hasFactoryId: false },
+  'material_preparation': { tableName: 'material_preparation', primaryKey: 'preparation_number', displayName: '备料单', hasFactoryId: true },
   'work_report': { tableName: 'work_report', primaryKey: 'work_report_number', displayName: '报工单', hasFactoryId: true },
   'sales_order': { tableName: 'sales_order', primaryKey: 'sales_order_number', displayName: '销售订单', hasFactoryId: true },
   'sales_forecast': { tableName: 'sales_forecast', primaryKey: 'forecast_number', displayName: '销售预测', hasFactoryId: true },

@@ -51,16 +51,16 @@ const factoryBarOption = computed(() => ({
 
 const trendOption = computed(() => {
   const allMonths = new Set<string>()
-  factories.value.forEach((f: any) => f.monthly_trend.forEach((t: any) => allMonths.add(t.month)))
+  factories.value.forEach((f: any) => f.monthly_trend.forEach((t: any) => { if (t.month) allMonths.add(t.month) }))
   const months = [...allMonths].sort()
   return {
     tooltip: { trigger: 'axis' },
-    legend: { data: factories.value.map((f: any) => f.factory.factory_name), top: 0 },
+    legend: { data: factories.value.map((f: any) => f.factory?.factory_name || ''), top: 0 },
     grid: { left: 80, right: 30, bottom: 30, top: 40 },
-    xAxis: { type: 'category', data: months.map((m: string) => m.substring(5)) },
+    xAxis: { type: 'category', data: months.map((m: string) => m ? m.substring(5) : '') },
     yAxis: { type: 'value', axisLabel: { formatter: (v: number) => v >= 10000 ? (v / 10000).toFixed(0) + '万' : String(v) } },
     series: factories.value.map((f: any, i: number) => ({
-      name: f.factory.factory_name, type: 'line', smooth: true,
+      name: f.factory?.factory_name || '', type: 'line', smooth: true,
       data: months.map((m: string) => f.monthly_trend.find((t: any) => t.month === m)?.total_amount || 0),
       itemStyle: { color: ['#1890ff', '#fa8c16', '#52c41a', '#722ed1'][i % 4] }
     }))

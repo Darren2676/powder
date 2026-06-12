@@ -8,10 +8,11 @@ import { BusinessError } from '@/shared/errors/BusinessError';
 import { generateOrderNumber, generateTaskNumber, generateOutsourcingReqNumber } from '@/services/documentNumber.service';
 import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { withTransaction } from '@/shared/db/withTransaction';
-import { syncProductionStatus } from '@/services/salesOrderSync.service';
+import { syncProductionStatus, syncPlanStatus } from '@/services/salesOrderSync.service';
 import { checkSchedulingConflicts } from './conflictCheck';
 import { generateProcessTasks, generateMaterialPreparation } from './taskAndMaterialGen';
 import { generateBackflushTasks } from '@/services/backflushTask.service';
+import { lookupBatchRule, generatePreassignedBatchNumber } from '@/services/inventory.service';
 
 // ==================== 生产单拆分 ====================
 export const splitOrdersCore = async (params: {
@@ -109,9 +110,20 @@ export const splitOrdersCore = async (params: {
 
         const newOrderNumber = preGeneratedNumbers[numIdx];
 
+        // 检查是否为模式B产品，预分配批次号
+        let preassignedBatchNumber = '';
+        try {
+          const rule = await lookupBatchRule(source.item_number, null, transaction);
+          if (rule?.mode === 'B' && source.production_number) {
+            // 拆分场景：计算同一源生产单被拆分的新行序号
+            const splitIdx = newItems.filter((ni, niIdx) => niIdx < numIdx && ni.sourceOrderNumber === item.sourceOrderNumber).length + 1;
+            preassignedBatchNumber = generatePreassignedBatchNumber(source.production_number, splitIdx, rule.append_split_seq);
+          }
+        } catch (ruleErr: any) { /* 规则查询失败不阻断拆分 */ }
+
         await sequelize.query(
-          `INSERT INTO production_order (production_order_number, production_number, item_number, item_name, basic_unit, specifications, product_drawing_number, rubber_compound_number, batch_production_quota, planned_quantity, equipment_number, equipment_name, mould_number, formed_part_specifications, formed_part_unit_consumption, actual_cavity_count, actual_hole_count, actual_daily_output, planned_completion_time, plan_status, remark, approval_status)
-           VALUES (:production_order_number, :production_number, :item_number, :item_name, :basic_unit, :specifications, :product_drawing_number, :rubber_compound_number, :batch_production_quota, :planned_quantity, :equipment_number, :equipment_name, :mould_number, :formed_part_specifications, :formed_part_unit_consumption, :actual_cavity_count, :actual_hole_count, :actual_daily_output, :planned_completion_time, :plan_status, :remark, :approval_status)`,
+          `INSERT INTO production_order (production_order_number, production_number, item_number, item_name, basic_unit, specifications, product_drawing_number, rubber_compound_number, batch_production_quota, planned_quantity, equipment_number, equipment_name, mould_number, formed_part_specifications, formed_part_unit_consumption, actual_cavity_count, actual_hole_count, actual_daily_output, planned_completion_time, plan_status, remark, approval_status, preassigned_batch_number)
+           VALUES (:production_order_number, :production_number, :item_number, :item_name, :basic_unit, :specifications, :product_drawing_number, :rubber_compound_number, :batch_production_quota, :planned_quantity, :equipment_number, :equipment_name, :mould_number, :formed_part_specifications, :formed_part_unit_consumption, :actual_cavity_count, :actual_hole_count, :actual_daily_output, :planned_completion_time, :plan_status, :remark, :approval_status, :preassigned_batch_number)`,
           {
             replacements: {
               production_order_number: newOrderNumber,
@@ -135,7 +147,8 @@ export const splitOrdersCore = async (params: {
               planned_completion_time: source.planned_completion_time || null,
               plan_status: '未开始',
               remark: source.remark || '',
-              approval_status: ORDER_STATUS.DRAFT
+              approval_status: ORDER_STATUS.DRAFT,
+              preassigned_batch_number: preassignedBatchNumber
             },
             transaction
           }
@@ -247,6 +260,8 @@ export const dispatchOrdersCore = async (params: {
 
         // 回写销售订单明细 production_status
         await syncProductionStatus(orderNum, '计划中', transaction);
+        // 同步生产计划状态
+        await syncPlanStatus(orderNum, 'order', transaction);
       } catch (e: any) {
         errors.push(`${item.productionOrderNumber}: ${e.message}`);
         failedCount++;
@@ -313,7 +328,8 @@ export const dispatchAndGenerateCore = async (params: {
       // ============ 第一步：验证并派发 ============
       const [orderRows]: any = await sequelize.query(
         `SELECT production_order_number, production_number, item_number, item_name,
-          specifications, basic_unit, planned_quantity, approval_status, plan_status
+          specifications, basic_unit, planned_quantity, approval_status, plan_status,
+          preassigned_batch_number
         FROM production_order WHERE production_order_number = :orderNo`,
         { replacements: { orderNo }, transaction }
       );
@@ -374,12 +390,27 @@ export const dispatchAndGenerateCore = async (params: {
         );
       }
 
+      // 模式B：派发时为未预分配批次号的生产单分配
+      if (!order.preassigned_batch_number && order.production_number) {
+        try {
+          const rule = await lookupBatchRule(order.item_number, null, transaction);
+          if (rule?.mode === 'B') {
+            // 派发场景：未拆分的生产单不需要追加序号
+            const batchNo = generatePreassignedBatchNumber(order.production_number, undefined, rule.append_split_seq);
+            await sequelize.query(
+              `UPDATE production_order SET preassigned_batch_number = :bn WHERE production_order_number = :pon`,
+              { replacements: { bn: batchNo, pon: orderNo }, transaction }
+            );
+          }
+        } catch (ruleErr: any) { /* 规则查询失败不阻断派发 */ }
+      }
+
       dispatchResults.push({ orderNo, status: 'dispatched' });
 
       // 回写销售订单明细 production_status
       await syncProductionStatus(orderNo, '计划中', transaction);
-
-      // ============ 第二步：自动生成工序任务 ============
+      // 同步生产计划状态
+      await syncPlanStatus(orderNo, 'order', transaction);
       const taskResult = await generateProcessTasks({
         orderNumber: orderNo,
         productionNumber: order.production_number,

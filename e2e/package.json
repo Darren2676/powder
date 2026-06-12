@@ -20,6 +20,7 @@
     "test:invoice": "playwright test tests/sales-invoice-full-flow.spec.ts --headed",
     "test:material-flow": "playwright test tests/material-issue-return-cost.spec.ts --headed",
     "test:warehouse-flow": "playwright test tests/material-warehouse-flow.spec.ts --headed",
+    "test:warehouse-fac-isolation": "playwright test tests/warehouse-full-process-factory-isolation.spec.ts --headed",
     "report": "playwright show-report"
   },
   "devDependencies": {

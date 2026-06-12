@@ -33,7 +33,9 @@ const EngineeringChangeDetail = () => import('@/views/master-data/EngineeringCha
 const ProcessParameterList = () => import('@/views/master-data/ProcessParameter/List.vue');
 const ProcessParameterDetail = () => import('@/views/master-data/ProcessParameter/Detail.vue');
 const PlasticPowderParameterList = () => import('@/views/master-data/PlasticPowderParameter/List.vue');
-const PlasticProcessCategoryList = () => import('@/views/master-data/PlasticProcessCategory/List.vue');
+const PlasticProcessCategoryList = () => import('@/views/master-data/PlasticProcessCategory/List.vue')
+const LabelTemplateList = () => import('@/views/master-data/LabelTemplate/List.vue')
+const ProductLabelSchemeList = () => import('@/views/master-data/ProductLabelScheme/List.vue');
 
 export const masterDataRoutes: RouteRecordRaw[] = [
   { path: 'customers', name: 'CustomerList', component: CustomerList, meta: {"title":"客户管理"} },
@@ -69,4 +71,6 @@ export const masterDataRoutes: RouteRecordRaw[] = [
   { path: 'process-parameters/:id', name: 'ProcessParameterDetail', component: ProcessParameterDetail, meta: {"title":"工艺参数详情"} },
   { path: 'plastic-powder-parameters', name: 'PlasticPowderParameterList', component: PlasticPowderParameterList, meta: {"title":"塑粉参数"} },
   { path: 'plastic-process-categories', name: 'PlasticProcessCategoryList', component: PlasticProcessCategoryList, meta: {"title":"工艺分类"} },
+  { path: 'label-templates', name: 'LabelTemplateList', component: LabelTemplateList, meta: {"title":"标签模板管理"} },
+  { path: 'product-label-schemes', name: 'ProductLabelSchemeList', component: ProductLabelSchemeList, meta: {"title":"产品标签方案"} },
 ];

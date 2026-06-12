@@ -2,9 +2,11 @@
  * 销售订单状态同步服务
  * 集中管理 sales_order_detail 的 return_status / production_status / status(行状态)
  * 以及 sales_order.order_status 的自动汇总
+ * 以及 Production_plan.plan_status 与 production_order.plan_status 的同步
  */
 import sequelize from '@/config/database';
 import { createLogger } from '@/config/logger';
+import { lookupBatchRule, generateBatchNumber } from '@/services/inventory.service';
 import { checkAndAutoComplete } from '@/services/documentAutoComplete.service';
 
 const log = createLogger('salesOrderSync');
@@ -91,6 +93,150 @@ export const syncProductionStatus = async (
     );
   } catch (e) {
     log.warn({ error: (e as Error).message }, 'syncProductionStatus跳过');
+  }
+};
+
+// ==================== 2.5 生产计划状态同步 ====================
+// 当生产单状态变更时，同步更新 Production_plan 的 plan_status 和 production_status
+// plan_status: 计划自身业务状态（待加入任务/已加入任务/已完成）
+// production_status: 关联生产单的进度汇总（未排产/已排产/已备料/生产中/生产完成/NULL）
+
+// 生产单 plan_status → 计划 production_status 映射
+const ORDER_TO_PLAN_PRODUCTION_STATUS: Record<string, string> = {
+  '未开始': '未排产',
+  '已派发': '已排产',
+  '已备料': '已备料',
+  '生产中': '生产中',
+  '已完成': '生产完成',
+};
+
+// production_status 优先级排序
+const PRODUCTION_STATUS_RANK: Record<string, number> = {
+  '未排产': 0, '已排产': 1, '已备料': 2, '生产中': 3, '生产完成': 4,
+};
+
+/**
+ * 根据生产计划编号，重新计算并同步 plan_status 和 production_status
+ * @param productionNumber 生产计划编号（可直接传）
+ * @param transaction 可选事务
+ */
+const recalcAndSyncPlanStatus = async (productionNumber: string, transaction?: any): Promise<void> => {
+  const txOpt = transaction ? { transaction } : {};
+
+  // 1. 查询该计划下所有已审批且未取消的生产单
+  const [orders]: any = await sequelize.query(
+    `SELECT plan_status FROM production_order
+     WHERE production_number = :pn AND approval_status = N'已审批' AND plan_status != N'已取消'`,
+    { replacements: { pn: productionNumber }, ...txOpt }
+  );
+
+  if (orders.length === 0) {
+    // 无已审批生产单：plan_status 保持不变（由创建/删除逻辑管理），production_status 置 NULL
+    await sequelize.query(
+      `UPDATE Production_plan SET production_status = NULL WHERE production_number = :pn`,
+      { replacements: { pn: productionNumber }, ...txOpt }
+    );
+    return;
+  }
+
+  // 2. 计算 production_status：取最靠后的状态
+  let maxRank = -1;
+  let maxStatus: string | null = null;
+  for (const o of orders) {
+    const mapped = ORDER_TO_PLAN_PRODUCTION_STATUS[o.plan_status];
+    if (mapped && (PRODUCTION_STATUS_RANK[mapped] ?? -1) > maxRank) {
+      maxRank = PRODUCTION_STATUS_RANK[mapped];
+      maxStatus = mapped;
+    }
+  }
+
+  // 3. 计算 plan_status
+  const allCompleted = orders.every((o: any) => o.plan_status === '已完成');
+  const newPlanStatus = allCompleted ? '已完成' : '已加入任务';
+
+  // 4. 检测首次进入"已排产"状态，自动生成批次号
+  const [prevPlan]: any = await sequelize.query(
+    `SELECT production_status, batch_number FROM Production_plan WHERE production_number = :pn`,
+    { replacements: { pn: productionNumber }, ...txOpt }
+  );
+  const prevStatus = prevPlan[0]?.production_status;
+  const prevBatchNumber = prevPlan[0]?.batch_number;
+
+  // 当 production_status 首次从 NULL/未排产 变为 已排产或更高，且 batch_number 为空时，生成批次号
+  let newBatchNumber = prevBatchNumber || null;
+  if (maxStatus && (!prevStatus || prevStatus === '未排产')
+      && PRODUCTION_STATUS_RANK[maxStatus] >= PRODUCTION_STATUS_RANK['已排产']
+      && !prevBatchNumber) {
+    try {
+      // 查询计划的 item_number 和 factory_id
+      const [planInfo]: any = await sequelize.query(
+        `SELECT item_number, factory_id FROM Production_plan WHERE production_number = :pn`,
+        { replacements: { pn: productionNumber }, ...txOpt }
+      );
+      const itemNumber = planInfo[0]?.item_number;
+      const factoryId = planInfo[0]?.factory_id;
+
+      // 查询工厂编码
+      let factoryCode = '';
+      if (factoryId) {
+        const [fRows]: any = await sequelize.query(
+          `SELECT factory_short FROM factory WHERE id = :fid`,
+          { replacements: { fid: factoryId }, ...txOpt }
+        );
+        factoryCode = fRows[0]?.factory_short || '';
+      }
+
+      // 由"产品批次号产生规则"决定生成方式
+      const rule = await lookupBatchRule(itemNumber, factoryId, transaction);
+      if (rule?.mode === 'B') {
+        // 模式B：FB-{production_number}
+        newBatchNumber = `FB-${productionNumber}`;
+      } else {
+        // 模式A（默认）：FB-{日期}-{序号}
+        newBatchNumber = await generateBatchNumber('FB', factoryCode, transaction);
+      }
+      log.info({ productionNumber, batchNumber: newBatchNumber, mode: rule?.mode || 'A' }, '计划派发时自动生成批次号');
+    } catch (e) {
+      log.warn({ error: (e as Error).message, productionNumber }, '批次号生成跳过');
+    }
+  }
+
+  // 5. 一次性更新
+  await sequelize.query(
+    `UPDATE Production_plan SET plan_status = :planStatus, production_status = :prodStatus, batch_number = :bn
+     WHERE production_number = :pn AND (plan_status != :planStatus OR production_status != :prodStatus OR production_status IS NULL OR (batch_number IS NULL AND :bn IS NOT NULL))`,
+    { replacements: { pn: productionNumber, planStatus: newPlanStatus, prodStatus: maxStatus, bn: newBatchNumber }, ...txOpt }
+  );
+};
+
+/**
+ * 同步生产计划状态（入口函数）
+ * @param identifier 生产单编号(production_order_number) 或 生产计划编号(production_number)
+ * @param mode 'order'=按生产单编号反查计划 | 'plan'=直接按计划编号
+ * @param transaction 可选事务
+ */
+export const syncPlanStatus = async (
+  identifier: string,
+  mode: 'order' | 'plan' = 'order',
+  transaction?: any
+): Promise<void> => {
+  try {
+    const txOpt = transaction ? { transaction } : {};
+
+    let productionNumber = identifier;
+    if (mode === 'order') {
+      // 通过生产单编号反查计划编号
+      const [planRows]: any = await sequelize.query(
+        `SELECT po.production_number FROM production_order po WHERE po.production_order_number = :orderNo`,
+        { replacements: { orderNo: identifier }, ...txOpt }
+      );
+      productionNumber = planRows[0]?.production_number;
+      if (!productionNumber) return;
+    }
+
+    await recalcAndSyncPlanStatus(productionNumber, transaction);
+  } catch (e) {
+    log.warn({ error: (e as Error).message, identifier, mode }, 'syncPlanStatus跳过');
   }
 };
 

@@ -27,6 +27,9 @@ import engineeringChangeRoutes from './engineeringChange/engineeringChange.route
 import processParameterRoutes from './processParameter/processParameter.routes';
 import plasticPowderParameterRoutes from './plasticPowderParameter/plasticPowderParameter.routes';
 import plasticProcessCategoryRoutes from './plasticProcessCategory/plasticProcessCategory.routes';
+import labelTemplateRoutes from './labelTemplate/labelTemplate.routes';
+import productLabelSchemeRoutes from './productLabelScheme/productLabelScheme.routes';
+import labelPrintRoutes from './labelPrint/labelPrint.routes';
 
 const router = Router();
 
@@ -57,5 +60,8 @@ router.use('/engineering-change-lifecycles', engineeringChangeRoutes);
 router.use('/process-parameters', processParameterRoutes);
 router.use('/plastic-powder-parameters', plasticPowderParameterRoutes);
 router.use('/plastic-process-categories', plasticProcessCategoryRoutes);
+router.use('/label-templates', labelTemplateRoutes);
+router.use('/product-label-schemes', productLabelSchemeRoutes);
+router.use('/label-print', labelPrintRoutes);
 
 export default router;

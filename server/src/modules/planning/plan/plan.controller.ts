@@ -28,6 +28,7 @@ export const getPlans = async (req: Request, res: Response, next: NextFunction) 
     const approval_status = (req.query.approval_status as string) || '';
     const mrp_status = (req.query.mrp_status as string) || '';
     const plan_status = (req.query.plan_status as string) || '';
+    const production_status = (req.query.production_status as string) || '';
 
     let whereClause = '';
     const conditions: string[] = [];
@@ -50,6 +51,10 @@ export const getPlans = async (req: Request, res: Response, next: NextFunction) 
     } else if (mrp_status === '未分解') {
       conditions.push(`(mrp_status IS NULL OR mrp_status = '')`);
     }
+    if (production_status) {
+      conditions.push(`production_status = :production_status`);
+      replacements.production_status = production_status;
+    }
 
     const _factoryId = getFactoryId(req);
     // 前端传 factory_id（HQ全量模式优先使用查询参数）
@@ -68,7 +73,7 @@ export const getPlans = async (req: Request, res: Response, next: NextFunction) 
 
     const dataSql = `
       SELECT * FROM (
-        SELECT pp.production_number, pp.item_number, pp.item_name, pp.basic_unit, pp.specifications, pp.product_drawing_number, pp.rubber_compound_number, pp.batch_production_quota, pp.planned_quantity, pp.shifts_number, pp.planned_completion_time, pp.plan_status, pp.remark, pp.approval_status, pp.source_order_number, pp.source_line_number, pp.customer_item_number, pp.customer_item_description, pp.mrp_status, ISNULL(f.factory_short, f.factory_name) as factory_short, pp.factory_id, ROW_NUMBER() OVER (ORDER BY pp.production_number DESC) AS _row_num
+        SELECT pp.production_number, pp.item_number, pp.item_name, pp.basic_unit, pp.specifications, pp.product_drawing_number, pp.rubber_compound_number, pp.batch_production_quota, pp.planned_quantity, pp.shifts_number, pp.planned_completion_time, pp.plan_status, pp.production_status, pp.batch_number, pp.remark, pp.approval_status, pp.source_order_number, pp.source_line_number, pp.customer_item_number, pp.customer_item_description, pp.mrp_status, ISNULL(f.factory_short, f.factory_name) as factory_short, pp.factory_id, ROW_NUMBER() OVER (ORDER BY pp.production_number DESC) AS _row_num
         FROM Production_plan pp
         LEFT JOIN factory f ON pp.factory_id = f.id
         ${whereClause}

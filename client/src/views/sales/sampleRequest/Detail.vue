@@ -11,6 +11,9 @@
           <template v-if="header?.status === '草稿'">
             <a-button type="primary" @click="handleEdit">编辑</a-button>
           </template>
+          <template v-if="header?.status === '已完成'">
+            <a-button type="primary" @click="handleConvertOrder">转化订单</a-button>
+          </template>
         </a-space>
       </template>
 
@@ -165,6 +168,21 @@
         </template>
       </a-card>
     </a-card>
+
+    <!-- 转化订单弹窗 -->
+    <a-modal v-model:visible="convertVisible" title="转化订单" @ok="handleConvertConfirm" :confirm-loading="convertLoading" width="400px">
+      <a-form :model="convertForm" layout="vertical">
+        <a-form-item label="申请编号">
+          <span style="font-weight:600">{{ header?.request_number }}</span>
+        </a-form-item>
+        <a-form-item label="是否已有订单" required>
+          <a-select v-model:value="convertForm.has_order" placeholder="请选择">
+            <a-select-option value="是">是 — 已有订单</a-select-option>
+            <a-select-option value="否">否 — 暂无订单</a-select-option>
+          </a-select>
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -283,6 +301,27 @@ function handleComplete() {
       finally { labSaving.value = false; }
     }
   });
+}
+
+// 转化订单
+const convertVisible = ref(false);
+const convertLoading = ref(false);
+const convertForm = reactive({ has_order: '' });
+
+function handleConvertOrder() {
+  convertForm.has_order = header.value?.has_order || '';
+  convertVisible.value = true;
+}
+
+async function handleConvertConfirm() {
+  const id = route.params.id as string;
+  convertLoading.value = true;
+  try {
+    const res: any = await api.convertToOrder(id, { has_order: convertForm.has_order });
+    if (res.success) { message.success(res.message || '转化订单成功'); convertVisible.value = false; fetchDetail(); }
+    else { message.error(res.message || '转化订单失败'); }
+  } catch { message.error('转化订单失败'); }
+  finally { convertLoading.value = false; }
 }
 
 onMounted(fetchDetail);

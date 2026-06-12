@@ -11,6 +11,7 @@ vi.mock('@/config/database', () => ({
 
 vi.mock('@/services/salesOrderSync.service', () => ({
   syncProductionStatus: vi.fn().mockResolvedValue(undefined),
+  syncPlanStatus: vi.fn().mockResolvedValue(undefined),
 }));
 
 import sequelize from '@/config/database';

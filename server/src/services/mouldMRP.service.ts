@@ -6,6 +6,7 @@
 import sequelize from '@/config/database';
 import { generateOrderNumber } from '@/services/documentNumber.service';
 import { createLogger } from '@/config/logger';
+import { syncPlanStatus } from '@/services/salesOrderSync.service';
 
 const log = createLogger('mouldMRP');
 
@@ -310,6 +311,8 @@ export const applyMouldMRPComparison = async (params: {
             `UPDATE production_order SET plan_status = N'已取消', remark = CONCAT(ISNULL(remark, ''), ' [模具MRP重算取消]') WHERE production_order_number = :orderNo`,
             { replacements: { orderNo: item.old_order_number }, transaction }
           );
+          // 同步生产计划状态
+          await syncPlanStatus(item.old_order_number, 'order', transaction);
           removed++;
           details.push({ material_number: item.material_number, diff_type: 'removed', action: '取消', order_number: item.old_order_number });
         }

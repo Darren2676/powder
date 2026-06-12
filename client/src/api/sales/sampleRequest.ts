@@ -29,3 +29,9 @@ export const completeSampleRequest = (id: string, data: any) => request.post(`/s
 
 // 保存实验室数据（中途保存）
 export const updateLabData = (id: string, data: any) => request.put(`/sample-requests/${encodeURIComponent(id)}/lab`, data);
+
+// 转化订单
+export const convertToOrder = (id: string, data: { has_order: string }) => request.post(`/sample-requests/${encodeURIComponent(id)}/convert-to-order`, data);
+
+// 转化率统计
+export const getConversionRate = (params: any) => request.get('/sample-requests/conversion-rate', { params });

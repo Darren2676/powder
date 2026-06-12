@@ -4,7 +4,7 @@ import { success } from '../../../utils/response.util';
 import dayjs from 'dayjs';
 import { generateMaterialTxnNumber, syncMaterialInventorySummary } from '@/services/inventory.service';
 import { logLinesideMovement } from '@/services/linesideMovement.service';
-import { syncProductionStatus } from '@/services/salesOrderSync.service';
+import { syncProductionStatus, syncPlanStatus } from '@/services/salesOrderSync.service';
 import { createMaterialTransaction } from '@/services/warehouse/helpers';
 import { writeCostSnapshot, deleteCostSnapshot, CostSnapshotItem } from '@/services/materialCostSnapshot.service';
 import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
@@ -256,7 +256,7 @@ export const createMaterialIssue = async (req: Request, res: Response, next: Nex
             `UPDATE material_inventory SET quantity = :afterQty, last_updated = GETDATE() WHERE id = :id`,
             { replacements: { afterQty, id: invRows[0].id }, transaction: tx }
           );
-          const mtNum = await generateMaterialTxnNumber(tx);
+          const mtNum = await generateMaterialTxnNumber(factoryCode, tx);
           await createMaterialTransaction({
             transaction_number: mtNum,
             transaction_type: '出库',
@@ -472,6 +472,8 @@ export const createMaterialIssue = async (req: Request, res: Response, next: Nex
             );
             // 回写销售订单明细 production_status
             await syncProductionStatus(orderNoForStatus, '待生产', transaction);
+            // 同步生产计划状态
+            await syncPlanStatus(orderNoForStatus, 'order', transaction);
           }
         }
       }
@@ -867,6 +869,8 @@ export const deleteMaterialIssue = async (req: Request, res: Response, next: Nex
               { replacements: { orderNo: issue.production_order_number }, transaction }
             );
             await syncProductionStatus(issue.production_order_number, '待排产', transaction);
+            // 同步生产计划状态
+            await syncPlanStatus(issue.production_order_number, 'order', transaction);
             console.log(`[deleteMaterialIssue] 生产单 ${issue.production_order_number} 状态回退: 已备料→已派发`);
           }
         }

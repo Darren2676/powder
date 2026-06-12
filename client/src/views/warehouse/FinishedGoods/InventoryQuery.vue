@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { SearchOutlined, ReloadOutlined, DownloadOutlined, EyeOutlined, ProfileOutlined, DownOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { SearchOutlined, ReloadOutlined, DownloadOutlined, EyeOutlined, ProfileOutlined, DownOutlined, SettingOutlined, PrinterOutlined } from '@ant-design/icons-vue'
 import { getInventoryList, getInventoryDetail, getFinishedBatchOptions, getWarehouseOptions } from '@/api/warehouse/finishedGoods'
 import { getBoxInventory, shippingBoxOutbound } from '@/api/warehouse/packingOrder'
 import { generateExportFilename } from '@/utils/exportFilename'
@@ -9,6 +9,7 @@ import { useColumnPreference } from '@/composables/useColumnPreference'
 import { useModalDrag } from '@/composables/useModalDrag'
 import ColumnSettingDrawer from '@/components/Common/ColumnSettingDrawer.vue'
 import * as XLSX from 'xlsx'
+import PrintModal from '@/views/master-data/LabelPrint/PrintModal.vue'
 import dayjs from 'dayjs'
 
 const { modalStyle: detailStyle, onDragStart: onDetailDragStart, resetDrag: resetDetailDrag } = useModalDrag()
@@ -403,6 +404,15 @@ const handleTabChange = (key: string) => {
   }
 }
 
+// ==================== 标签打印 ====================
+const printLabelVisible = ref(false)
+const printLabelRecord = ref<any>(null)
+
+const handlePrintLabel = (record: any) => {
+  printLabelRecord.value = record
+  printLabelVisible.value = true
+}
+
 onMounted(() => {
   loadColumnPreference()
   fetchWarehouseOptions()
@@ -525,6 +535,7 @@ onMounted(() => {
           <a-space :size="4">
             <a-button type="link" size="small" @click="handleViewDetail(record)"><EyeOutlined /> 详情</a-button>
             <a-button type="link" size="small" @click="handleViewBatch(record)"><ProfileOutlined /> 批次</a-button>
+            <a-button type="link" size="small" @click="handlePrintLabel(record)"><PrinterOutlined /> 标签</a-button>
           </a-space>
         </template>
       </template>
@@ -709,6 +720,9 @@ onMounted(() => {
         </a-table>
       </a-spin>
     </a-modal>
+
+    <!-- 标签打印弹窗 -->
+    <PrintModal v-model:visible="printLabelVisible" :record="printLabelRecord" />
 
     <ColumnSettingDrawer
       :open="columnSettingVisible"

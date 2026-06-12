@@ -7,6 +7,7 @@ import { ORDER_STATUS } from '@/shared/constants/statuses';
 import { BusinessError } from '@/shared/errors/BusinessError';
 import { splitOrdersCore, dispatchOrdersCore, dispatchAndGenerateCore } from '@/services/orderDispatch.service';
 import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
+import { syncPlanStatus } from '@/services/salesOrderSync.service';
 
 const fields = ['production_order_number', 'production_number', 'item_number', 'item_name', 'basic_unit', 'specifications', 'product_drawing_number', 'rubber_compound_number', 'batch_production_quota', 'planned_quantity', 'equipment_number', 'equipment_name', 'mould_number', 'formed_part_specifications', 'formed_part_unit_consumption', 'actual_cavity_count', 'actual_hole_count', 'actual_daily_output', 'production_date', 'schedule_id', 'planned_completion_time', 'plan_status', 'completion_status', 'inbound_status', 'remark', 'factory_id'];
 const headers = ['生产单编号', '生产计划编号', '产品编号', '产品名称', '基本单位', '规格', '产品图号', '胶料编号', '班产定额', '计划数量', '设备编号', '设备名称', '模具编号', '成型件规格', '成型件单耗', '实际模腔数', '实际模穴数', '实际班产', '生产日期', '班次', '计划完成时间', '状态', '完成状态', '入库状态', '备注', '所属工厂'];
@@ -286,6 +287,9 @@ export const deleteOrder = async (req: Request, res: Response, next: NextFunctio
             { replacements: { pn: productionNumber, ...(_factoryId !== null ? { _factoryId2: _factoryId } : {}) }, transaction }
           );
         }
+
+        // 同步生产计划的生产状态（production_status）
+        await syncPlanStatus(productionNumber, 'plan', transaction);
       }
 
       await transaction.commit();

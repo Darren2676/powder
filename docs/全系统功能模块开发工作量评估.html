@@ -44,7 +44,7 @@
 
 <!-- ==================== 系统概述 ==================== -->
 <h2>一、系统概述</h2>
-<p>Seals MES System 是面向橡胶密封件制造行业的制造执行系统（MES），涵盖主数据管理、销售管理、采购管理、生产管理、仓储管理、质量管理、设备管理、财务管理、计划排程、委外管理、系统集成等核心业务领域。</p>
+<p>Seals MES System 是面向橡胶密封件制造行业的制造执行系统（MES），涵盖主数据管理、销售管理、采购管理、生产管理、仓储管理、质量管理、设备管理、财务管理、计划排程、系统集成等核心业务领域。</p>
 
 <h3>1.1 技术栈</h3>
 <table>
@@ -63,8 +63,8 @@
 <tr><td>后端 Route 模块</td><td><strong>133</strong> 个</td><td>+2</td></tr>
 <tr><td>后端 Service（模块内）</td><td><strong>4</strong> 个</td><td>—</td></tr>
 <tr><td>后端 Service（公共层）</td><td><strong>39</strong> 个</td><td>—</td></tr>
-<tr><td>功能模块大类</td><td><strong>14</strong> 个</td><td>+1</td></tr>
-<tr><td>子模块</td><td><strong>约 110+</strong> 个</td><td>+20</td></tr>
+<tr><td>功能模块大类</td><td><strong>13</strong> 个</td><td>−1</td></tr>
+<tr><td>子模块</td><td><strong>约 102+</strong> 个</td><td>−8</td></tr>
 </table>
 
 <hr>
@@ -324,23 +324,8 @@
 <tr style="background:#f0f5ff"><td colspan="5" style="text-align:right;font-weight:bold;">开放API小计</td><td style="font-weight:bold;">4.0</td><td style="font-weight:bold;">—</td><td style="font-weight:bold;">0.8</td></tr>
 </table>
 
-<!-- ===== 13. 委外管理 ===== -->
-<h3>3.13 委外管理（outsourcing）</h3>
-<table>
-<tr><th>子模块</th><th>前端页面</th><th>后端接口</th><th>审批</th><th>功能说明</th><th>后端估时</th><th>前端估时</th><th>联调</th></tr>
-<tr><td>委外申请</td><td>1</td><td>CRUD+转单+导出</td><td>✅</td><td>委外申请+审批+转单生成委外订单+导出，7个接口</td><td>2</td><td>1.5</td><td>0.5</td></tr>
-<tr><td>委外订单</td><td>1</td><td>CRUD+审批+转单</td><td>✅</td><td>委外订单+审批+发料/收回关联，9个接口</td><td>3</td><td>2</td><td>0.5</td></tr>
-<tr><td>委外发料</td><td>1</td><td>CRUD+移动端</td><td>—</td><td>委外发料+扫码+库存事务，8+4个接口</td><td>3</td><td>2</td><td>0.5</td></tr>
-<tr><td>委外收回</td><td>1</td><td>CRUD+移动端</td><td>—</td><td>委外收回+扫码+入库关联，5+4个接口</td><td>4</td><td>2</td><td>0.5</td></tr>
-<tr><td>委外质检</td><td>1</td><td>CRUD</td><td>—</td><td>委外质检+合格/不合格判定，5个接口</td><td>2</td><td>1.5</td><td>0.5</td></tr>
-<tr><td>退货入库</td><td>1</td><td>CRUD</td><td>—</td><td>委外退货入库+库存回写，4个接口</td><td>2</td><td>1.5</td><td>0.5</td></tr>
-<tr><td>委外结算</td><td>1</td><td>CRUD</td><td>✅</td><td>委外费用结算+审批，5个接口</td><td>2.5</td><td>2</td><td>0.5</td></tr>
-<tr><td>委外单价</td><td>1</td><td>CRUD+导入导出</td><td>—</td><td>委外价格管理+Excel导入导出，7个接口</td><td>2.5</td><td>2.5</td><td>0.5</td></tr>
-<tr style="background:#f0f5ff"><td colspan="5" style="text-align:right;font-weight:bold;">委外管理小计</td><td style="font-weight:bold;">21</td><td style="font-weight:bold;">15</td><td style="font-weight:bold;">4</td></tr>
-</table>
-
-<!-- ===== 14. 公共服务层 ===== -->
-<h3>3.14 公共服务层（services）</h3>
+<!-- ===== 13. 公共服务层 ===== -->
+<h3>3.13 公共服务层（services）</h3>
 <table>
 <tr><th>服务</th><th>功能说明</th><th>估时</th></tr>
 <tr><td>审批服务（approval.service）</td><td>统一审批引擎：提交/审批/撤回/驳回/反审</td><td>5</td></tr>
@@ -373,21 +358,20 @@
 
 <table class="summary-table">
 <tr><th>功能模块</th><th>后端(天)</th><th>前端(天)</th><th>联调(天)</th><th>合计(天)</th><th>占比</th></tr>
-<tr><td>基础数据</td><td>35.7</td><td>46.1</td><td>10.0</td><td>91.8</td><td>14.1%</td></tr>
-<tr><td>销售管理</td><td>31.8</td><td>35.5</td><td>8.4</td><td>75.7</td><td>11.6%</td></tr>
-<tr><td>采购管理</td><td>17.5</td><td>22.0</td><td>5.2</td><td>44.7</td><td>6.8%</td></tr>
-<tr><td>生产管理</td><td>23.0</td><td>28.0</td><td>6.3</td><td>57.3</td><td>8.8%</td></tr>
-<tr><td>仓储管理</td><td>26.1</td><td>38.0</td><td>8.4</td><td>72.5</td><td>11.1%</td></tr>
-<tr><td>质量管理</td><td>17.2</td><td>26.7</td><td>5.8</td><td>49.7</td><td>7.6%</td></tr>
-<tr><td>设备管理</td><td>13.5</td><td>15.5</td><td>5.0</td><td>34.0</td><td>5.2%</td></tr>
-<tr><td>计划排程</td><td>11.0</td><td>8.5</td><td>3.3</td><td>22.8</td><td>3.5%</td></tr>
-<tr><td>财务管理</td><td>6.1</td><td>8.5</td><td>1.7</td><td>16.3</td><td>2.5%</td></tr>
-<tr><td>系统管理</td><td>25.1</td><td>33.0</td><td>6.7</td><td>64.8</td><td>9.9%</td></tr>
-<tr><td>系统集成</td><td>7.0</td><td>8.0</td><td>2.5</td><td>17.5</td><td>2.7%</td></tr>
-<tr><td>开放API</td><td>4.0</td><td>—</td><td>0.8</td><td>4.8</td><td>0.7%</td></tr>
-<tr><td>委外管理</td><td>21.0</td><td>15.0</td><td>4.0</td><td>40.0</td><td>6.1%</td></tr>
-<tr><td>公共服务层</td><td>61.0</td><td>—</td><td>—</td><td>61.0</td><td>9.3%</td></tr>
-<tr class="highlight"><td><strong>总计</strong></td><td style="font-weight:bold;">300.0</td><td style="font-weight:bold;">284.8</td><td style="font-weight:bold;">68.1</td><td style="font-weight:bold;">652.9</td><td style="font-weight:bold;">100%</td></tr>
+<tr><td>基础数据</td><td>35.7</td><td>46.1</td><td>10.0</td><td>91.8</td><td>15.0%</td></tr>
+<tr><td>销售管理</td><td>31.8</td><td>35.5</td><td>8.4</td><td>75.7</td><td>12.3%</td></tr>
+<tr><td>采购管理</td><td>17.5</td><td>22.0</td><td>5.2</td><td>44.7</td><td>7.3%</td></tr>
+<tr><td>生产管理</td><td>23.0</td><td>28.0</td><td>6.3</td><td>57.3</td><td>9.4%</td></tr>
+<tr><td>仓储管理</td><td>26.1</td><td>38.0</td><td>8.4</td><td>72.5</td><td>11.8%</td></tr>
+<tr><td>质量管理</td><td>17.2</td><td>26.7</td><td>5.8</td><td>49.7</td><td>8.1%</td></tr>
+<tr><td>设备管理</td><td>13.5</td><td>15.5</td><td>5.0</td><td>34.0</td><td>5.5%</td></tr>
+<tr><td>计划排程</td><td>11.0</td><td>8.5</td><td>3.3</td><td>22.8</td><td>3.7%</td></tr>
+<tr><td>财务管理</td><td>6.1</td><td>8.5</td><td>1.7</td><td>16.3</td><td>2.7%</td></tr>
+<tr><td>系统管理</td><td>25.1</td><td>33.0</td><td>6.7</td><td>64.8</td><td>10.6%</td></tr>
+<tr><td>系统集成</td><td>7.0</td><td>8.0</td><td>2.5</td><td>17.5</td><td>2.9%</td></tr>
+<tr><td>开放API</td><td>4.0</td><td>—</td><td>0.8</td><td>4.8</td><td>0.8%</td></tr>
+<tr><td>公共服务层</td><td>61.0</td><td>—</td><td>—</td><td>61.0</td><td>9.9%</td></tr>
+<tr class="highlight"><td><strong>总计</strong></td><td style="font-weight:bold;">279.0</td><td style="font-weight:bold;">269.8</td><td style="font-weight:bold;">64.1</td><td style="font-weight:bold;">612.9</td><td style="font-weight:bold;">100%</td></tr>
 </table>
 
 <div class="note">
@@ -395,9 +379,8 @@
 <ul>
 <li>公共服务层估时仅计入后端开发，其服务被各业务模块前端通过 API 调用间接消耗</li>
 <li>各模块联调估时含模块内 CRUD 流程验证 + 边界场景 + 跨模块关联测试</li>
-<li>占比按含公共服务层总量计算（652.9天），不含公共服务层时各模块占比会等比放大</li>
-<li>本次更新新增开放API模块，委外管理编号调整为3.13，公共服务层调整为3.14</li>
-<li>委外管理从生产管理中拆分为独立模块，基于委外管理专项评估（42.5天）校准</li>
+<li>占比按含公共服务层总量计算（612.9天），不含公共服务层时各模块占比会等比放大</li>
+<li>本次更新移除委外管理模块（V3.0中40.0天），功能模块大类 14→13，公共服务层编号 3.14→3.13</li>
 <li>设备管理基于设备管理专项评估（34天）校准，新增设备生命周期、冲次寿命等功能</li>
 </ul>
 </div>
@@ -405,18 +388,18 @@
 <h3>4.1 按角色汇总</h3>
 <table class="summary-table">
 <tr><th>角色</th><th>估时</th><th>说明</th></tr>
-<tr><td>后端开发</td><td><strong>300.0 天</strong></td><td>含数据库、API、服务层、菜单权限</td></tr>
-<tr><td>前端开发</td><td><strong>284.8 天</strong></td><td>含页面、API 接口定义、路由、组件</td></tr>
-<tr><td>联调测试</td><td><strong>68.1 天</strong></td><td>含业务流程验证、边界测试、集成测试</td></tr>
-<tr class="highlight"><td><strong>总计</strong></td><td><strong>652.9 天</strong>（约 <strong>32.6 周 / 1人</strong>）</td><td></td></tr>
+<tr><td>后端开发</td><td><strong>279.0 天</strong></td><td>含数据库、API、服务层、菜单权限</td></tr>
+<tr><td>前端开发</td><td><strong>269.8 天</strong></td><td>含页面、API 接口定义、路由、组件</td></tr>
+<tr><td>联调测试</td><td><strong>64.1 天</strong></td><td>含业务流程验证、边界测试、集成测试</td></tr>
+<tr class="highlight"><td><strong>总计</strong></td><td><strong>612.9 天</strong>（约 <strong>30.6 周 / 1人</strong>）</td><td></td></tr>
 </table>
 
 <h3>4.2 并行开发建议</h3>
 <table class="summary-table">
 <tr><th>团队配置</th><th>预计工期</th><th>说明</th></tr>
-<tr><td>1后端 + 1前端</td><td>约 <strong>17 周</strong>（4个月）</td><td>后端先行，前端紧跟，联调并行</td></tr>
-<tr><td>2后端 + 2前端</td><td>约 <strong>10 周</strong>（2.5个月）</td><td>按模块分对并行：A组(基础数据+销售+采购)、B组(生产+仓储+质量+委外)</td></tr>
-<tr><td>3后端 + 3前端</td><td>约 <strong>7 周</strong>（1.8个月）</td><td>三组并行：基础+系统、业务(销售+采购+财务+委外)、生产(仓储+质量+设备+计划)</td></tr>
+<tr><td>1后端 + 1前端</td><td>约 <strong>16 周</strong>（3.8个月）</td><td>后端先行，前端紧跟，联调并行</td></tr>
+<tr><td>2后端 + 2前端</td><td>约 <strong>9 周</strong>（2.2个月）</td><td>按模块分对并行：A组(基础数据+销售+采购)、B组(生产+仓储+质量)</td></tr>
+<tr><td>3后端 + 3前端</td><td>约 <strong>7 周</strong>（1.6个月）</td><td>三组并行：基础+系统、业务(销售+采购+财务)、生产(仓储+质量+设备+计划)</td></tr>
 </table>
 
 <hr>
@@ -458,7 +441,6 @@
 <tr><td><span class="tag">P1 核心</span></td><td>生产管理（生产单+报工+备料）</td><td>MES 核心</td></tr>
 <tr><td><span class="tag">P1 核心</span></td><td>仓储管理（出入库+库存）</td><td>物料流转核心</td></tr>
 <tr><td><span class="tag">P2 重要</span></td><td>采购管理（申请+订单+收货）</td><td>供应链保障</td></tr>
-<tr><td><span class="tag">P2 重要</span></td><td>委外管理（申请+订单+发料+收回+结算）</td><td>外协业务全流程</td></tr>
 <tr><td><span class="tag">P2 重要</span></td><td>质量管理（检验+不合格品+报表）</td><td>质量管控</td></tr>
 <tr><td><span class="tag">P2 重要</span></td><td>计划排程（MPS+MRP）</td><td>智能排产</td></tr>
 <tr><td><span class="tag">P3 增强</span></td><td>设备管理（台账+OEE+维保）</td><td>设备管理</td></tr>
@@ -481,7 +463,6 @@
 <tr><td>样品申请管理</td><td>15天</td><td>15天</td><td>0%</td><td>—</td></tr>
 <tr><td>报销单管理</td><td>17.5天</td><td>17.5天</td><td>0%</td><td>—</td></tr>
 <tr><td>塑粉工艺参数管理</td><td>22.5天</td><td>22.5天</td><td>0%</td><td>偏差相互抵消</td></tr>
-<tr><td>委外管理</td><td>42.5天</td><td>—</td><td>—</td><td>开发中</td></tr>
 <tr><td>设备管理</td><td>34天</td><td>—</td><td>—</td><td>开发中</td></tr>
 <tr><td>有效期管理报告</td><td>4.5天</td><td>4.5天</td><td>0%</td><td>—</td></tr>
 <tr><td>生产日期字段增强</td><td>2.5天</td><td>2.5天</td><td>0%</td><td>采购入库+库存查询</td></tr>
@@ -494,6 +475,16 @@
 
 <table>
 <tr><th>日期</th><th>版本</th><th>更新内容</th></tr>
+<tr><td>2026-06-01</td><td>v4.0</td><td>
+<ul>
+<li>移除委外管理模块（V3.0中40.0天：后端21.0+前端15.0+联调4.0），当前版本不含委外相关功能</li>
+<li>功能模块大类 14→13，公共服务层编号 3.14→3.13</li>
+<li>全系统总估时更新：652.9天 → 612.9天（减少40.0天）</li>
+<li>后端估时 300.0→279.0，前端估时 284.8→269.8，联调估时 68.1→64.1</li>
+<li>所有模块占比基于新总量612.9天重新计算</li>
+<li>并行开发建议更新：移除委外分组，工期相应缩短</li>
+</ul>
+</td></tr>
 <tr><td>2026-06-01</td><td>v3.0</td><td>
 <ul>
 <li>生成正式PDF版本</li>

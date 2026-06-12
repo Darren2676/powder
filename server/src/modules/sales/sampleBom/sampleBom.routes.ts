@@ -4,7 +4,7 @@ import {
   getSampleBoms, getSampleBomDetail, createSampleBom, updateSampleBom, deleteSampleBom,
   getSampleBomsByRequest, importFromDesignBom, importDetailsFromDesignBom,
   getVersions, getVersionDetail, createVersion, copyVersion, submitVersion, deleteVersion,
-  addVersionDetail, updateVersionDetail, deleteVersionDetail,
+  addVersionDetail, updateVersionDetail, deleteVersionDetail, batchUpdateVersionDetails,
   determineFinalVersion, importToDesignBom,
 } from './sampleBom.controller';
 import {
@@ -53,6 +53,7 @@ router.delete('/:bomNumber/versions/:ver', authenticate, deleteVersion);
 
 // ==================== 样件BOM 版本明细 ====================
 router.post('/:bomNumber/versions/:ver/details', authenticate, addVersionDetail);
+router.put('/:bomNumber/versions/:ver/details/batch', authenticate, batchUpdateVersionDetails);
 router.post('/:bomNumber/versions/:ver/import-details-from-design-bom', authenticate, importDetailsFromDesignBom);
 
 // ==================== 确定最终版本 & 导入 ====================

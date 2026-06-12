@@ -6,6 +6,7 @@ import { createReworkOrder } from '../reworkOrder/reworkOrder.controller';
 import { generateReturnNumber } from '../../purchasing/purchaseReturn/purchaseReturn.controller';
 import dayjs from 'dayjs';
 import { getFactoryCode, getFactoryId } from '../../../utils/factoryWhere.util';
+import { syncPlanStatus } from '@/services/salesOrderSync.service';
 
 // ==================== 单号生成 ====================
 const generateNCNumber = async (factoryCode: string = '', transaction?: any): Promise<string> => {
@@ -482,6 +483,8 @@ export const handleNonconforming = async (req: Request, res: Response, next: Nex
           `UPDATE production_order SET plan_status = N'生产中' WHERE production_order_number = :orderNo AND plan_status = N'已完成'`,
           { replacements: { orderNo: record.production_order_number }, transaction }
         );
+        // 同步生产计划状态回退
+        await syncPlanStatus(record.production_order_number, 'order', transaction);
 
         // 4. 更新检验单
         await sequelize.query(`

@@ -396,6 +396,40 @@ export const deleteVersionDetail = async (req: Request, res: Response, next: Nex
   } catch (err) { next(err); }
 };
 
+// ==================== 批量更新版本明细数量 ====================
+
+export const batchUpdateVersionDetails = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { details } = req.body;
+    if (!details || !Array.isArray(details) || details.length === 0) {
+      res.status(400).json({ success: false, message: '明细列表不能为空' });
+      return;
+    }
+    const transaction = await sequelize.transaction();
+    try {
+      for (const d of details) {
+        await sequelize.query(
+          `UPDATE sample_bom_version_detail SET standard_quantity = :std_qty, wastage_rate = :wr, actual_quantity = :act_qty WHERE id = :id`,
+          {
+            replacements: {
+              id: d.id,
+              std_qty: d.standard_quantity ?? 0,
+              wr: d.wastage_rate ?? 0,
+              act_qty: d.actual_quantity ?? 0,
+            },
+            transaction,
+          }
+        );
+      }
+      await transaction.commit();
+      res.json(success({ count: details.length }, '批量更新成功'));
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
+  } catch (err) { next(err); }
+};
+
 // ==================== 从设计BOM导入创建样件BOM ====================
 
 export const importFromDesignBom = async (req: Request, res: Response, next: NextFunction) => {

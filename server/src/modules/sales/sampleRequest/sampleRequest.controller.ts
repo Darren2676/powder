@@ -494,3 +494,100 @@ export const completeSampleRequest = async (req: Request, res: Response, next: N
     }
   } catch (err) { next(err); }
 };
+
+// ==================== 转化订单（已完成→更新是否已有订单） ====================
+export const convertToOrder = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const b = req.body;
+    const _factoryId = getFactoryId(req);
+    const factoryCond = _factoryId !== null ? ' AND factory_id = :_factoryId' : '';
+    const factoryReps = _factoryId !== null ? { _factoryId } : {};
+
+    const [chk]: any = await sequelize.query(
+      'SELECT status, approval_status FROM sample_request WHERE request_number = :id' + factoryCond,
+      { replacements: { id, ...factoryReps } }
+    );
+    if (!chk.length) { res.status(404).json({ success: false, message: '样品申请不存在' }); return; }
+
+    const currentStatus = (chk[0].status || '').trim();
+    if (currentStatus !== REQUEST_STATUS.COMPLETED && currentStatus !== '已完成') {
+      res.status(403).json({ success: false, message: '仅已完成状态可转化订单' }); return;
+    }
+
+    await sequelize.query(`
+      UPDATE sample_request SET has_order = :has_order, updated_at = GETDATE()
+      WHERE request_number = :id${factoryCond}
+    `, { replacements: { id, ...factoryReps, has_order: b.has_order || '' } });
+
+    res.json(success(null, '转化订单成功'));
+  } catch (err) { next(err); }
+};
+
+// ==================== 转化率统计 ====================
+export const getConversionRate = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const applicant = (req.query.applicant as string) || '';
+    const startDate = (req.query.startDate as string) || '';
+    const endDate = (req.query.endDate as string) || '';
+    const onlyCompleted = req.query.onlyCompleted !== 'false';
+    const _factoryId = getFactoryId(req);
+
+    const conditions: string[] = [];
+    const replacements: any = {};
+
+    if (_factoryId !== null) {
+      conditions.push('factory_id = :_factoryId');
+      replacements._factoryId = _factoryId;
+    }
+    if (applicant) {
+      conditions.push('applicant LIKE :applicant');
+      replacements.applicant = `%${applicant}%`;
+    }
+    if (startDate) {
+      conditions.push('request_date >= :startDate');
+      replacements.startDate = startDate;
+    }
+    if (endDate) {
+      conditions.push('request_date <= :endDate');
+      replacements.endDate = endDate;
+    }
+    if (onlyCompleted) {
+      conditions.push("status = N'已完成'");
+    }
+
+    const whereClause = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    // 总数
+    const [totalRows]: any = await sequelize.query(
+      `SELECT COUNT(*) as total FROM sample_request ${whereClause}`,
+      { replacements }
+    );
+    const totalCount = totalRows[0]?.total || 0;
+
+    // 已有订单数
+    const orderedCond = [...conditions, "has_order = N'是'"].join(' AND ');
+    const orderedWhere = 'WHERE ' + orderedCond;
+    const [orderedRows]: any = await sequelize.query(
+      `SELECT COUNT(*) as total FROM sample_request ${orderedWhere}`,
+      { replacements }
+    );
+    const orderedCount = orderedRows[0]?.total || 0;
+
+    const conversionRate = totalCount > 0 ? Math.round((orderedCount / totalCount) * 10000) / 100 : 0;
+
+    // 明细列表（最多500条）
+    const [items]: any = await sequelize.query(`
+      SELECT TOP 500 request_number, request_date, customer_name, applicant, urgency, status, has_order, deadline_date
+      FROM sample_request ${whereClause}
+      ORDER BY request_date DESC
+    `, { replacements });
+
+    res.json(success({
+      total_count: totalCount,
+      ordered_count: orderedCount,
+      conversion_rate: conversionRate,
+      items,
+    }));
+  } catch (err) { next(err); }
+};

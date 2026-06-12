@@ -46,7 +46,7 @@ export const useMenuStore = defineStore('menu', () => {
 
   // Actions
 
-  const MENU_CACHE_VERSION = 'v20260606a'; // 菜单缓存版本号，菜单结构变更时更新
+  const MENU_CACHE_VERSION = 'v20260610'; // 菜单缓存版本号，菜单结构变更时更新
 
   /**
    * 从服务器获取菜单树

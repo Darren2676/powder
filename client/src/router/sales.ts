@@ -22,6 +22,7 @@ const SalesDashboard = () => import('@/views/Dashboard/Index.vue');
 const SampleRequestList = () => import('@/views/sales/sampleRequest/Index.vue');
 const SampleRequestCreate = () => import('@/views/sales/sampleRequest/Create.vue');
 const SampleRequestDetail = () => import('@/views/sales/sampleRequest/Detail.vue');
+const SampleConversionRate = () => import('@/views/sales/sampleRequest/ConversionRate.vue');
 const SalesPersonShippingReport = () => import('@/views/sales/SalesPersonShippingReport/Index.vue');
 const SalesReconciliation = () => import('@/views/sales/SalesReconciliation/Index.vue');
 const SampleBomList = () => import('@/views/sales/SampleBom/List.vue');
@@ -51,6 +52,7 @@ export const salesRoutes: RouteRecordRaw[] = [
   { path: 'sample-requests', name: 'SampleRequestList', component: SampleRequestList, meta: {"title":"样品申请"} },
   { path: 'sample-request-create', name: 'SampleRequestCreate', component: SampleRequestCreate, meta: {"title":"样品申请编辑"} },
   { path: 'sample-request/:id', name: 'SampleRequestDetail', component: SampleRequestDetail, meta: {"title":"样品申请详情"} },
+  { path: 'sample-conversion-rate', name: 'SampleConversionRate', component: SampleConversionRate, meta: {"title":"样品转化率"} },
   { path: 'sales-person-shipping-report', name: 'SalesPersonShippingReport', component: SalesPersonShippingReport, meta: {"title":"销售员订单发货报表"} },
   { path: 'sales-reconciliation', name: 'SalesReconciliation', component: SalesReconciliation, meta: {"title":"销售对账"} },
   { path: 'sample-boms', name: 'SampleBomList', component: SampleBomList, meta: {"title":"样件BOM"} },

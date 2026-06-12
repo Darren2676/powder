@@ -57,12 +57,28 @@
           <div style="margin-bottom:12px;display:flex;gap:8px">
             <span style="line-height:32px;font-weight:bold">V{{ selectedVersion }} 明细</span>
             <div style="flex:1" />
-            <a-button v-if="currentVersionStatus === '草稿'" type="primary" size="small" @click="openAddDetail">添加行</a-button>
-            <a-button v-if="currentVersionStatus === '草稿'" size="small" @click="designBomDetailModalVisible = true">从设计BOM导入明细</a-button>
+            <template v-if="editingQuantities">
+              <a-button type="primary" size="small" :loading="saveLoading" @click="handleSaveQuantities">保存</a-button>
+              <a-button size="small" @click="cancelEditingQuantities">取消</a-button>
+            </template>
+            <template v-else-if="currentVersionStatus === '草稿'">
+              <a-button size="small" @click="startEditingQuantities">调整数量</a-button>
+              <a-button type="primary" size="small" @click="openAddDetail">添加行</a-button>
+              <a-button size="small" @click="designBomDetailModalVisible = true">从设计BOM导入明细</a-button>
+            </template>
           </div>
-          <a-table :columns="detailColumns" :data-source="versionDetails" row-key="id" size="small" :pagination="false" :scroll="{ x: 1600 }">
+          <a-table :columns="detailColumns" :data-source="editingQuantities ? editingDetails : versionDetails" row-key="id" size="small" :pagination="false" :scroll="{ x: 1600 }">
             <template #bodyCell="{ column, record }">
-              <template v-if="column.dataIndex === 'is_key_material'">
+              <template v-if="editingQuantities && column.dataIndex === 'standard_quantity'">
+                <a-input-number v-model:value="record.standard_quantity" :min="0" :precision="4" size="small" style="width:80px" />
+              </template>
+              <template v-else-if="editingQuantities && column.dataIndex === 'wastage_rate'">
+                <a-input-number v-model:value="record.wastage_rate" :min="0" :precision="2" size="small" style="width:80px" />
+              </template>
+              <template v-else-if="editingQuantities && column.dataIndex === 'actual_quantity'">
+                <a-input-number v-model:value="record.actual_quantity" :min="0" :precision="4" size="small" style="width:80px" />
+              </template>
+              <template v-else-if="column.dataIndex === 'is_key_material'">
                 <a-tag :color="record.is_key_material === 1 ? 'red' : 'default'">{{ record.is_key_material === 1 ? '是' : '否' }}</a-tag>
               </template>
               <template v-if="column.dataIndex === 'action'">
@@ -158,7 +174,17 @@
   <!-- 添加检测项弹窗 -->
   <a-modal v-model:open="itemAddVisible" title="添加检测项" @ok="handleAddItem" width="520px">
     <a-form :label-col="{ span: 6 }" :wrapper-col="{ span: 16 }">
-      <a-form-item label="质量特性"><a-input v-model:value="itemForm.char_name" /></a-form-item>
+      <a-form-item label="质量特性">
+        <a-auto-complete
+          v-model:value="itemForm.char_name"
+          :options="charSearchResults"
+          @search="handleCharSearch"
+          @select="handleCharSelect"
+          placeholder="输入搜索质量特性或手动录入"
+          :filter-option="false"
+          allow-clear
+        />
+      </a-form-item>
       <a-form-item label="检验要求"><a-input v-model:value="itemForm.inspect_requirement" /></a-form-item>
       <a-form-item label="数据类型"><a-select v-model:value="itemForm.data_type"><a-select-option value="数值">数值</a-select-option><a-select-option value="单选">单选</a-select-option><a-select-option value="多选">多选</a-select-option><a-select-option value="文本">文本</a-select-option></a-select></a-form-item>
       <a-form-item label="上限"><a-input-number v-model:value="itemForm.upper_limit" style="width:100%" /></a-form-item>
@@ -200,11 +226,12 @@ import { message } from 'ant-design-vue'
 import {
   getSampleBomDetail, getVersions, getVersionDetail, createVersion, copyVersion,
   submitVersion, deleteVersion, addVersionDetail, updateVersionDetail, deleteVersionDetail,
-  determineFinalVersion, importToDesignBom,
+  batchUpdateVersionDetails, determineFinalVersion, importToDesignBom,
   getReportByBomVersion, createInspectionReport, submitInspectionReport,
   addReportItem, updateReportItem, deleteReportItem, batchImportReportItems,
   importDetailsFromDesignBom,
 } from '@/api/sales/sampleBom'
+import { getQualityCharacteristics } from '@/api/quality/qualityCharacteristic'
 import DesignBomSelectModal from './DesignBomSelectModal.vue'
 
 const router = useRouter()
@@ -217,6 +244,9 @@ const selectedVersion = ref<number>(0)
 
 // 版本明细
 const versionDetails = ref<any[]>([])
+const editingQuantities = ref(false)
+const editingDetails = ref<any[]>([])
+const saveLoading = ref(false)
 const currentVersionStatus = computed(() => {
   const v = versions.value.find((x: any) => x.version_number === selectedVersion.value)
   return v?.status || ''
@@ -285,6 +315,32 @@ const itemAddVisible = ref(false)
 const itemForm = reactive({ char_name: '', inspect_requirement: '', data_type: '数值', upper_limit: null as any, standard_value: '', lower_limit: null as any, measured_value: '', is_qualified: null as any })
 const itemEditVisible = ref(false)
 const itemEditForm = reactive({ id: 0, char_name: '', inspect_requirement: '', data_type: '数值', upper_limit: null as any, standard_value: '', lower_limit: null as any, measured_value: '', is_qualified: null as any })
+
+// 质量特性模糊搜索
+const charSearchResults = ref<any[]>([])
+const charSearchLoading = ref(false)
+const handleCharSearch = async (value: string) => {
+  if (!value || value.length < 1) { charSearchResults.value = []; return }
+  charSearchLoading.value = true
+  try {
+    const res: any = await getQualityCharacteristics({ search: value, limit: 20 })
+    charSearchResults.value = (res.data?.items || []).map((item: any) => ({
+      value: item.char_name,
+      label: item.char_name,
+      ...item,
+    }))
+  } catch { charSearchResults.value = [] }
+  finally { charSearchLoading.value = false }
+}
+const handleCharSelect = (value: string, option: any) => {
+  itemForm.char_name = option.char_name || value
+  const typeMap: Record<string, string> = { '文本型': '文本', '计量型': '数值' }
+  itemForm.data_type = typeMap[option.data_type as string] || option.data_type || '数值'
+  itemForm.inspect_requirement = option.inspect_requirement || ''
+  itemForm.upper_limit = option.upper_limit != null ? Number(option.upper_limit) : null
+  itemForm.standard_value = option.standard_value != null ? String(option.standard_value) : ''
+  itemForm.lower_limit = option.lower_limit != null ? Number(option.lower_limit) : null
+}
 
 const fetchData = async () => {
   loading.value = true
@@ -481,6 +537,48 @@ const handleImport = async () => {
     fetchData()
   } catch (e: any) { message.error(e?.response?.data?.message || '导入失败') }
   finally { importLoading.value = false }
+}
+
+// ==================== 调整数量 ====================
+
+const startEditingQuantities = () => {
+  editingDetails.value = JSON.parse(JSON.stringify(versionDetails.value))
+  editingQuantities.value = true
+}
+
+const handleSaveQuantities = async () => {
+  if (!header.value.sample_bom_number || !selectedVersion.value) return
+  const changed = editingDetails.value.filter((ed: any, idx: number) => {
+    const vd = versionDetails.value[idx]
+    if (!vd) return false
+    return ed.standard_quantity !== vd.standard_quantity
+      || ed.wastage_rate !== vd.wastage_rate
+      || ed.actual_quantity !== vd.actual_quantity
+  }).map((ed: any) => ({
+    id: ed.id,
+    standard_quantity: ed.standard_quantity,
+    wastage_rate: ed.wastage_rate,
+    actual_quantity: ed.actual_quantity,
+  }))
+  if (changed.length === 0) {
+    message.info('未检测到变更')
+    editingQuantities.value = false
+    return
+  }
+  saveLoading.value = true
+  try {
+    await batchUpdateVersionDetails(header.value.sample_bom_number, selectedVersion.value, { details: changed })
+    message.success(`已保存 ${changed.length} 行`)
+    editingQuantities.value = false
+    loadVersionData()
+  } catch (e: any) { message.error(e?.response?.data?.message || '保存失败') }
+  finally { saveLoading.value = false }
+}
+
+const cancelEditingQuantities = () => {
+  editingDetails.value = []
+  editingQuantities.value = false
+  loadVersionData()
 }
 
 onMounted(() => fetchData())
