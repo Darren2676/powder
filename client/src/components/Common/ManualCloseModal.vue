@@ -14,40 +14,55 @@
     </template>
     <!-- Step 1: 异常检测结果 -->
     <template v-if="step === 1">
-      <a-alert v-if="eligibleCount === 0" type="warning" message="无可关闭的单据" style="margin-bottom: 16px;" />
-      <a-table
-        :columns="detectColumns"
-        :data-source="detectResults"
-        :pagination="false"
-        row-key="recordId"
-        size="small"
-        :row-class-name="(record: any) => record.eligible ? '' : 'row-disabled'"
-        style="margin-bottom: 16px;"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'recordId'">
-            <span :style="{ color: record.eligible ? undefined : '#999' }">{{ record.recordId }}</span>
+      <a-tabs v-model:activeKey="activeTab" size="small" style="margin-bottom: 12px;">
+        <a-tab-pane v-for="tab in tabs" :key="tab.key">
+          <template #tab>
+            <span>{{ tab.label }} <a-badge :count="tab.data.length" :number-style="{ backgroundColor: tab.color }" /></span>
           </template>
-          <template v-if="column.key === 'eligible'">
-            <a-tag :color="record.eligible ? 'green' : 'red'">{{ record.eligible ? '可关闭' : '不可关闭' }}</a-tag>
-          </template>
-          <template v-if="column.key === 'exceptions'">
-            <a-tag v-for="ex in record.exceptions" :key="ex.code" color="orange" style="margin: 2px;">
-              {{ ex.label }}: {{ ex.description }}
-            </a-tag>
-            <span v-if="!record.eligible" style="color: #ff4d4f; font-size: 12px;">{{ record.ineligibleReason }}</span>
-          </template>
-          <template v-if="column.key === 'cascade'">
-            <span v-for="c in record.cascadePreview" :key="c.downstreamType" style="font-size: 12px;">
-              {{ c.downstreamType }}: {{ c.count }}条 &nbsp;
-            </span>
-            <span v-if="!record.cascadePreview?.length" style="color: #999;">无</span>
-          </template>
-        </template>
-      </a-table>
-      <div style="text-align: right;">
-        <a-button @click="handleClose">取消</a-button>
-        <a-button type="primary" danger :disabled="eligibleCount === 0" @click="step = 2" style="margin-left: 8px;">下一步</a-button>
+          <a-alert v-if="tab.data.length === 0" type="info" :message="'无' + tab.label + '记录'" style="margin-bottom: 12px;" />
+          <a-table
+            v-else
+            :columns="detectColumns"
+            :data-source="tab.data"
+            :pagination="false"
+            row-key="recordId"
+            size="small"
+            :row-class-name="(record: any) => record.eligible ? '' : 'row-disabled'"
+            :row-selection="rowSelection"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'recordId'">
+                <span :style="{ color: record.eligible ? undefined : '#999' }">{{ record.recordId }}</span>
+              </template>
+              <template v-if="column.key === 'eligible'">
+                <a-tag v-if="record.category === 'manual_close_ok'" color="green">可以手动批量关闭</a-tag>
+                <a-tag v-else-if="record.category === 'need_material_return'" color="orange">退料处理</a-tag>
+                <a-tag v-else-if="record.category === 'need_scrap'" color="orange">在制品报废处理</a-tag>
+                <a-tag v-else-if="record.eligible" color="green">可关闭</a-tag>
+                <a-tag v-else color="red">不可关闭</a-tag>
+              </template>
+              <template v-if="column.key === 'exceptions'">
+                <a-tag v-for="ex in record.exceptions" :key="ex.code" color="orange" style="margin: 2px;">
+                  {{ ex.label }}: {{ ex.description }}
+                </a-tag>
+                <span v-if="!record.eligible" style="color: #ff4d4f; font-size: 12px;">{{ record.ineligibleReason }}</span>
+              </template>
+              <template v-if="column.key === 'cascade'">
+                <span v-for="c in record.cascadePreview" :key="c.downstreamType" style="font-size: 12px;">
+                  {{ c.downstreamType }}: {{ c.count }}条 &nbsp;
+                </span>
+                <span v-if="!record.cascadePreview?.length" style="color: #999;">无</span>
+              </template>
+            </template>
+          </a-table>
+        </a-tab-pane>
+      </a-tabs>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <a-button @click="handleExport" :disabled="detectResults.length === 0">导出Excel</a-button>
+        <div>
+          <a-button @click="handleClose">取消</a-button>
+          <a-button type="primary" danger :disabled="eligibleCount === 0" @click="step = 2" style="margin-left: 8px;">下一步</a-button>
+        </div>
       </div>
     </template>
 
@@ -123,12 +138,34 @@ const submitResult = ref<any>(null);
 
 const detectColumns = [
   { title: '单据编号', key: 'recordId', width: 160 },
-  { title: '状态', key: 'eligible', width: 80 },
+  { title: '状态', key: 'eligible', width: 140 },
   { title: '异常分类', key: 'exceptions' },
   { title: '级联影响', key: 'cascade', width: 180 },
 ];
 
-const eligibleCount = computed(() => detectResults.value.filter(r => r.eligible).length);
+const eligibleCount = computed(() => selectedRowKeys.value.filter(key =>
+  detectResults.value.some(r => r.recordId === key && r.eligible)
+).length);
+
+const tabCloseable = computed(() => detectResults.value.filter(r => r.eligible));
+const tabMaterialReturn = computed(() => detectResults.value.filter(r => r.category === 'need_material_return'));
+const tabScrap = computed(() => detectResults.value.filter(r => r.category === 'need_scrap'));
+const tabIneligible = computed(() => detectResults.value.filter(r => !r.eligible && r.category !== 'need_material_return' && r.category !== 'need_scrap'));
+
+const selectedRowKeys = ref<string[]>([]);
+const activeTab = ref('closeable');
+
+const rowSelection = computed(() => ({
+  selectedRowKeys: selectedRowKeys.value,
+  onChange: (keys: string[]) => { selectedRowKeys.value = keys; },
+  getCheckboxProps: (record: any) => ({ disabled: !record.eligible }),
+}));
+const tabs = computed(() => [
+  { key: 'closeable', label: '可以手动批量关闭', data: tabCloseable.value, color: '#52c41a' },
+  { key: 'material_return', label: '退料处理', data: tabMaterialReturn.value, color: '#faad14' },
+  { key: 'scrap', label: '在制品报废处理', data: tabScrap.value, color: '#faad14' },
+  { key: 'ineligible', label: '不可关闭', data: tabIneligible.value, color: '#ff4d4f' },
+]);
 
 async function open() {
   visible.value = true;
@@ -136,6 +173,8 @@ async function open() {
   closeReason.value = '';
   closeRemark.value = '';
   submitResult.value = null;
+  selectedRowKeys.value = [];
+  activeTab.value = 'closeable';
   resetDrag();
 
   // 检测异常
@@ -161,7 +200,9 @@ async function handleSubmit() {
     message.warning('请选择关闭原因');
     return;
   }
-  const eligibleIds = detectResults.value.filter(r => r.eligible).map(r => r.recordId);
+  const eligibleIds = selectedRowKeys.value.filter(key =>
+      detectResults.value.some(r => r.recordId === key && r.eligible)
+    );
   submitting.value = true;
   try {
     const res = await submitManualClose(props.module, eligibleIds, closeReason.value, closeRemark.value);
@@ -177,6 +218,52 @@ async function handleSubmit() {
 
 function handleClose() {
   visible.value = false;
+}
+
+function getCategoryLabel(record: any): string {
+  if (record.category === 'manual_close_ok' || record.eligible) return '可以手动批量关闭';
+  if (record.category === 'need_material_return') return '退料处理';
+  if (record.category === 'need_scrap') return '在制品报废处理';
+  return '不可关闭';
+}
+
+function getExceptionText(record: any): string {
+  const parts = (record.exceptions || []).map((ex: any) => `${ex.label}:${ex.description}`);
+  if (!record.eligible) parts.push(record.ineligibleReason || '');
+  return parts.join('; ');
+}
+
+function getCascadeText(record: any): string {
+  if (!record.cascadePreview?.length) return '无';
+  return record.cascadePreview.map((c: any) => `${c.downstreamType}:${c.count}条`).join('; ');
+}
+
+function handleExport() {
+  const rows = detectResults.value;
+  if (rows.length === 0) { message.warning('无数据可导出'); return; }
+
+  const headers = ['分类', '单据编号', '状态', '异常分类', '级联影响'];
+  const csvRows = [headers.join(',')];
+
+  for (const r of rows) {
+    const row = [
+      getCategoryLabel(r),
+      r.recordId || '',
+      getExceptionText(r),
+      getCascadeText(r),
+    ];
+    csvRows.push(row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','));
+  }
+
+  const bom = '\uFEFF';
+  const blob = new Blob([bom + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `批量关闭检测报告_${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  window.URL.revokeObjectURL(url);
+  message.success('导出成功');
 }
 
 defineExpose({ open });

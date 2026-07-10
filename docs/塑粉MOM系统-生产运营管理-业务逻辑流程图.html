@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>睿信塑粉MOM系统 — 生产运营管理业务逻辑流程图</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --primary: #1890ff;
+    --success: #52c41a;
+    --warning: #fa8c16;
+    --danger: #f5222d;
+    --bg: #f5f7fa;
+    --card: #ffffff;
+    --text: #2c3e50;
+    --text2: #666;
+    --border: #e8e8e8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.8;
+    padding: 24px;
+  }
+  .container { max-width: 1200px; margin: 0 auto; }
+  h1 {
+    text-align: center; font-size: 26px; color: var(--primary);
+    border-bottom: 3px solid var(--primary); padding-bottom: 16px; margin-bottom: 8px;
+  }
+  .subtitle { text-align: center; color: var(--text2); font-size: 14px; margin-bottom: 32px; }
+  .section {
+    background: var(--card); border-radius: 10px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06); padding: 28px 32px; margin-bottom: 24px;
+    page-break-inside: avoid;
+  }
+  .section h2 {
+    font-size: 20px; color: var(--primary); border-left: 4px solid var(--primary);
+    padding-left: 12px; margin-bottom: 18px;
+  }
+  .section h3 { font-size: 16px; color: #555; margin: 16px 0 10px; }
+  .mermaid { text-align: center; margin: 16px 0; }
+  .note {
+    background: #fffbe6; border: 1px solid #ffe58f; border-radius: 6px;
+    padding: 14px 20px; margin: 16px 0; font-size: 14px; color: #8c6d00;
+  }
+  .note strong { color: #d48806; }
+  table {
+    width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px;
+  }
+  th { background: #f0f5ff; color: var(--primary); font-weight: 600; }
+  th, td { border: 1px solid var(--border); padding: 10px 14px; text-align: left; }
+  tr:nth-child(even) { background: #fafafa; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+  .tag-blue { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
+  .tag-green { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+  .tag-orange { background: #fff7e6; color: #fa8c16; border: 1px solid #ffd591; }
+  .tag-purple { background: #f9f0ff; color: #722ed1; border: 1px solid #d3adf7; }
+  .flow-desc { font-size: 13px; color: var(--text2); margin: 8px 0 4px; }
+  .pdf-btn {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--primary); color: #fff; border: none;
+    padding: 12px 24px; border-radius: 8px; font-size: 15px; cursor: pointer;
+    box-shadow: 0 4px 12px rgba(24,144,255,0.4); z-index: 999;
+  }
+  .pdf-btn:hover { background: #096dd9; }
+  .gantt-container { overflow-x: auto; }
+  @media print {
+    body { padding: 0; background: #fff; }
+    .section { box-shadow: none; border: 1px solid #e8e8e8; margin-bottom: 16px; }
+    .no-print { display: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<button class="pdf-btn no-print" onclick="window.print()">导出 PDF</button>
+
+<div class="container">
+
+<h1>睿信塑粉MOM系统 — 生产运营管理业务逻辑流程图</h1>
+<p class="subtitle">基于系统代码分析生成 · 覆盖销售→计划→生产→采购→库存→质量全链路</p>
+
+<!-- ========== 一、总体业务全景 ========== -->
+<div class="section">
+  <h2>一、总体业务全景：从销售订单到交付的全链路</h2>
+  <div class="mermaid">
+flowchart TB
+    subgraph SALES["📦 销售管理"]
+        SO["销售订单 / 预测<br/>sales_order / sales_forecast"]
+        SHIP["发货管理"]
+    end
+
+    subgraph PLAN["📊 计划管理"]
+        MPS["MPS 主生产计划<br/>需求合并 → 净需求计算"]
+        PP["生产计划<br/>Production_plan<br/>approval_status=已审批"]
+        MRP["MRP 物料需求计划<br/>BFS广度优先BOM分解"]
+    end
+
+    subgraph DECISION["⚙️ MRP 行动决策"]
+        ACT_PROD["action_type=生产<br/>生成生产工单"]
+        ACT_PUR["action_type=采购<br/>生成采购申请"]
+        ACT_DUAL["双源待决策<br/>计划员分配比例"]
+    end
+
+    subgraph PROD["🏭 生产执行"]
+        SPLIT["生产单拆分(每缸)"]
+        DISPATCH["派发：工序任务+备料单"]
+        WEIGH{"称量决策"}
+        AUTO_W["自动称量<br/>→ 小药称量系统"]
+        MANUAL_W["手工称量"]
+        PRODUCE["生产执行"]
+        REPORT["工序报工"]
+        INSPECT["生产检验"]
+    end
+
+    subgraph PROC["🛒 采购管理"]
+        PR["采购申请"]
+        PO["采购订单"]
+        RECEIVE["收货入库"]
+        IQC["来料检验"]
+    end
+
+    subgraph INV["🏗️ 库存管理"]
+        FG_INV["成品库存"]
+        MAT_INV["原料库存"]
+        LINESIDE["线边仓流转"]
+        BATCH["批次管理"]
+    end
+
+    SO --> MPS
+    MPS -->|净需求>0| PP
+    PP -->|已审批| MRP
+    MRP --> ACT_PROD
+    MRP --> ACT_PUR
+    MRP --> ACT_DUAL
+
+    ACT_PROD --> SPLIT
+    ACT_DUAL -->|生产部分| SPLIT
+    ACT_DUAL -->|采购部分| PR
+
+    SPLIT --> DISPATCH
+    DISPATCH --> WEIGH
+    WEIGH -->|auto_weigh=Y| AUTO_W
+    WEIGH -->|auto_weigh=N| MANUAL_W
+    AUTO_W --> PRODUCE
+    MANUAL_W --> PRODUCE
+    PRODUCE --> REPORT
+    REPORT --> INSPECT
+    INSPECT --> FG_INV
+
+    ACT_PUR --> PR
+    PR --> PO
+    PO --> RECEIVE
+    RECEIVE --> IQC
+    IQC --> MAT_INV
+
+    FG_INV --> SHIP
+    MAT_INV --> LINESIDE
+    LINESIDE --> PRODUCE
+
+    style SALES fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style PLAN fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style PROD fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style PROC fill:#f9f0ff,stroke:#722ed1,stroke-width:2px
+    style INV fill:#fff2f0,stroke:#f5222d,stroke-width:2px
+  </div>
+  <div class="note">
+    <strong>核心流程：</strong>销售订单/预测驱动 MPS 主计划 → 审批后 MRP 运算 → 区分生产/采购/双源 → 
+    生产端拆分为每缸、派发备料、称量决策、执行报工 → 采购端收货检验 → 库存闭环。
+  </div>
+</div>
+
+<!-- ========== 二、MPS → MRP 运算流程 ========== -->
+<div class="section">
+  <h2>二、MPS 主生产计划与 MRP 运算核心流程</h2>
+  
+  <h3>2.1 MPS 净需求计算</h3>
+  <div class="mermaid">
+flowchart LR
+    A["销售订单<br/>sales_order<br/>已审批"] --> C["需求合并"]
+    B["销售预测<br/>sales_forecast<br/>已审批"] --> C
+    D["成品安全库存<br/>finished_goods_inventory<br/>safety_stock_quantity"] --> E
+
+    C --> E["净需求计算<br/>net = MAX(0, gross<br/>  − on_hand − in_transit<br/>  − prod_in_transit<br/>  + safety_stock)"]
+    
+    E -->|"net > 0"| F["生成生产计划<br/>Production_plan<br/>approval_status=草稿"]
+    F --> G["提交审批<br/>草稿 → 已审批"]
+    G --> H["plan_status=待加入任务<br/>mrp_status=NULL"]
+    
+    E -->|"net ≤ 0"| Z["不生成计划<br/>库存充足"]
+
+    style E fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style H fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+  </div>
+
+  <h3>2.2 MRP 广度优先 BOM 分解</h3>
+  <div class="mermaid">
+flowchart TB
+    START(["用户选择已审批<br/>生产计划"]) --> INIT["1️⃣ 创建 MRP 运行记录<br/>MRP-YYYYMMDD-NNN"]
+
+    INIT --> L0["2️⃣ Level 0: 成品层<br/>· 查制造BOM (mfg_bom_header)<br/>· 查物料提前期<br/>· net = planned_quantity<br/>· 写入 mrp_run_detail"]
+
+    L0 --> QUEUE["3️⃣ 子件入队 (BFS)<br/>按BOM展开Level 1+物料"]
+
+    QUEUE --> L1["4️⃣ Level 1+: 子件层<br/>· 需求归集(多父项累加)<br/>· 查 material_inventory 库存<br/>· 查在途 + WIP"]
+
+    L1 --> CALC["5️⃣ 净需求计算<br/>net = MAX(0, gross<br/>  − (on_hand + wip<br/>    + in_transit_po<br/>    + pending_pr)<br/>  + safety_stock)"]
+
+    CALC -->|"net > 0"| DECIDE{"business_scope?"}
+    CALC -->|"net ≤ 0"| SKIP["跳过:<br/>不写入detail行"]
+
+    DECIDE -->|"生产"| PROD_ACT["action_type=生产<br/>继续展开子件BOM"]
+    DECIDE -->|"采购"| PUR_ACT["action_type=采购<br/>生成采购申请行"]
+    DECIDE -->|"生产+采购"| DUAL_ACT["双源待决策<br/>等待计划员分配"]
+    DECIDE -->|"NULL"| FALLBACK{"有BOM?"}
+    FALLBACK -->|是| PROD_ACT
+    FALLBACK -->|否| PUR_ACT
+
+    PROD_ACT -->|"还有子件?"| QUEUE
+    PUR_ACT --> DONE
+    DUAL_ACT --> DONE
+    SKIP --> DONE
+
+    DONE(["6️⃣ 写入结果<br/>mrp_run_detail"]) --> EXEC["7️⃣ 用户审查确认<br/>→ 执行MRP"]
+    EXEC --> FINAL["✅ 生成生产单<br/>+ 采购申请"]
+
+    style L0 fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style L1 fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style CALC fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style FINAL fill:#f9f0ff,stroke:#722ed1,stroke-width:2px
+  </div>
+
+  <h3>2.3 MRP 行动类型决策表</h3>
+  <table>
+    <tr><th>条件</th><th>action_type</th><th>结果</th></tr>
+    <tr><td><code>business_scope = '生产'</code></td><td><span class="tag tag-green">生产</span></td><td>生成生产工单，继续展开子件BOM</td></tr>
+    <tr><td><code>business_scope = '采购'</code></td><td><span class="tag tag-blue">采购</span></td><td>生成采购申请行</td></tr>
+    <tr><td><code>business_scope = '生产+采购'</code></td><td><span class="tag tag-orange">生产+采购</span></td><td>双源待决策，计划员手动分配数量比例</td></tr>
+    <tr><td><code>business_scope IS NULL</code> + 有BOM</td><td><span class="tag tag-green">生产</span></td><td>按自制件处理</td></tr>
+    <tr><td><code>business_scope IS NULL</code> + 无BOM</td><td><span class="tag tag-blue">采购</span></td><td>按外购件处理</td></tr>
+  </table>
+</div>
+
+<!-- ========== 三、生产单拆分与派发 ========== -->
+<div class="section">
+  <h2>三、生产单拆分（每缸）与派发流程</h2>
+
+  <h3>3.1 生产单"每缸"拆分</h3>
+  <div class="mermaid">
+flowchart TB
+    A["MRP 生成生产工单<br/>C100809-TJ × 10,000 kg<br/>plan_status=未开始"] --> B{"计划员判断<br/>每缸最大产量"}
+
+    B --> C["设备/模具能力<br/>每缸最大 = 1,200 kg"]
+
+    C --> D["计算缸数<br/>10,000 ÷ 1,200<br/>= 8.33 → 9缸"]
+
+    D --> E["系统拆分操作<br/>productionOrderSplit"]
+
+    E --> F1["子单#1: 1,200kg"]
+    E --> F2["子单#2: 1,200kg"]
+    E --> F3["子单#3: 1,200kg"]
+    E --> FDOTS["... 子单#4~#8: 各1,200kg"]
+    E --> F9["子单#9: 400kg (尾缸)"]
+
+    F1 --> G["原单数量扣减<br/>10,000 − 9,600 = 400"]
+    F9 --> G
+
+    G --> H["各子单 提交审批<br/>approval_status: 草稿→已审批"]
+
+    style C fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style H fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+  </div>
+
+  <h3>3.2 生产派发 → 工序任务 + 备料单</h3>
+  <div class="mermaid">
+flowchart TB
+    A["已审批生产单<br/>approval_status=已审批"] --> B["计划员派发<br/>dispatchProductionOrder"]
+
+    B --> C["查询制造BOM<br/>mfg_bom_header<br/>mfg_bom_detail"]
+    B --> D["查询工艺路线<br/>routing_header<br/>routing_detail"]
+
+    C --> E["计算倍率<br/>multiplier = planned_qty<br/>/ bom_base_qty"]
+
+    D --> F["生成工序任务<br/>process_task<br/>按工序顺序拆分"]
+
+    E --> G["生成备料单<br/>material_preparation<br/>MP-YYYYMMDD-NNN"]
+
+    G --> H["备料明细<br/>需求量 = 倍率 × BOM用量<br/>按工序关联物料"]
+
+    F --> I["生成倒冲任务<br/>backflush_task<br/>auto_weigh 默认取自BOM"]
+
+    I --> J["待称量决策<br/>见第四章"]
+
+    style G fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style I fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style J fill:#f9f0ff,stroke:#722ed1,stroke-width:2px
+  </div>
+</div>
+
+<!-- ========== 四、自动称量 vs 手工称量决策 ========== -->
+<div class="section">
+  <h2>四、自动称量 vs 手工称量 — 二级决策流程</h2>
+  
+  <h3>4.1 称量决策总流程</h3>
+  <p class="flow-desc">核心逻辑：BOM 预设默认标记 → 计划员根据小药精度二次判定 → 最终确定自动/手工称量</p>
+  <div class="mermaid">
+flowchart TB
+    START["备料清单物料<br/>backflush_task"] --> Q1{"BOM中设定<br/>auto_weigh=?"}
+
+    Q1 -->|"= 'Y' (可自动称量)"| P1["🟡 一级判定: BOM默认自动"]
+    Q1 -->|"= 'N' (不可自动称量)"| MANUAL["🔴 手工称量<br/>(人工操作)"]
+
+    P1 --> P2["🧑 计划员二级判定<br/>(考虑小药称量精度)"]
+
+    P2 --> Q2{"小药单次称量克数<br/>是否在设备精度范围内?"}
+
+    Q2 -->|"✅ 满足精度<br/>(克数较大,精度可接受)"| AUTO["🟢 自动称量<br/>auto_weigh='Y'<br/>→ 传递给小药称量系统"]
+    
+    Q2 -->|"❌ 不满足精度<br/>(克数极小,需更高精度)"| MANUAL2["🔴 改为手工称量<br/>auto_weigh='N'<br/>计划员批量切换标记"]
+
+    AUTO --> IFACE["📡 接口传递<br/>→ 小药自动称量系统"]
+    MANUAL --> TASK["📋 手工称量任务<br/>分配给称量岗位"]
+    MANUAL2 --> TASK
+
+    IFACE --> FEEDBACK["接收反馈<br/>称量结果 + 实际重量"]
+
+    style AUTO fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style MANUAL fill:#fff2f0,stroke:#f5222d,stroke-width:2px
+    style P2 fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+  </div>
+
+  <h3>4.2 决策关键因子</h3>
+  <table>
+    <tr><th>决策层级</th><th>责任角色</th><th>判断依据</th><th>可修改性</th></tr>
+    <tr>
+      <td><strong>一级判定</strong><br/>(BOM预设)</td>
+      <td>BOM 维护人员</td>
+      <td>材料属性：是否适合自动称量<br/>（物料类型、流动性、吸湿性等）</td>
+      <td>BOM修改需审批</td>
+    </tr>
+    <tr>
+      <td><strong>二级判定</strong><br/>(计划员调整)</td>
+      <td>生产计划员</td>
+      <td>小药单次称量克数 vs 设备精度<br/>· 克数在精度范围内 → 保持自动<br/>· 克数低于精度下限 → 改为手工</td>
+      <td>备料清单页面<br/>批量切换 auto_weigh</td>
+    </tr>
+  </table>
+
+  <div class="note">
+    <strong>关键设计：</strong>BOM 层面设定的是"材料是否<em>适合</em>自动称量"，这是一个静态属性；
+    计划员层面判断的是"本次生产的<em>单次称量克数</em>是否在设备精度范围内"，这是一个动态判断。
+    两者叠加形成最终的称量方式决策。
+  </div>
+
+  <h3>4.3 自动称量系统接口数据流</h3>
+  <div class="mermaid">
+sequenceDiagram
+    participant MOM as MOM系统<br/>(backflush_task)
+    participant API as 称量接口
+    participant WEIGH as 小药自动称量系统
+    participant INV as 库存系统
+
+    MOM->>MOM: 计划员将 auto_weigh 设为 'Y'
+    MOM->>API: POST /api/weigh/tasks<br/>物料编号、称量重量<br/>生产单号、工序信息<br/>仓库信息
+    API->>WEIGH: 下发称量指令
+    WEIGH->>WEIGH: 自动称量执行
+    WEIGH->>API: 称量结果反馈<br/>实际重量、偏差值
+    API->>MOM: 更新 backflush_task<br/>deduction_status
+    MOM->>INV: 倒冲出库<br/>扣减线边仓库存
+  </div>
+
+  <table>
+    <tr><th>传递字段</th><th>来源</th><th>说明</th></tr>
+    <tr><td>material_number</td><td>backflush_task</td><td>物料编号</td></tr>
+    <tr><td>material_name</td><td>backflush_task + BOM</td><td>物料名称</td></tr>
+    <tr><td>required_quantity</td><td>backflush_task<br/>倍率 × BOM用量</td><td>需求称量重量 (kg)</td></tr>
+    <tr><td>production_order_number</td><td>backflush_task</td><td>关联生产单号</td></tr>
+    <tr><td>step_number</td><td>BOM/工艺路线</td><td>对应工序号</td></tr>
+    <tr><td>work_center_number</td><td>process_task</td><td>工位编号</td></tr>
+    <tr><td>warehouse_number</td><td>BOM/工艺默认仓库</td><td>线边仓仓库编号</td></tr>
+    <tr><td>batch_number</td><td>生产单关联</td><td>批次号</td></tr>
+  </table>
+</div>
+
+<!-- ========== 五、生产执行与报工 ========== -->
+<div class="section">
+  <h2>五、生产执行 → 报工 → 检验 → 入库流程</h2>
+  <div class="mermaid">
+flowchart TB
+    A["备料完成<br/>称量就绪"] --> B["生产执行<br/>按工序进行"]
+
+    B --> C["工序报工<br/>work_report<br/>填报产量/工时/不良"]
+
+    C --> D{"触发生产检验?<br/>item_master<br/>production_inspection"}
+    
+    D -->|"= 'Y'"| E["创建生产检验单<br/>production_inspection"]
+    D -->|"= 'N'"| F["跳过检验<br/>直接入库判断"]
+
+    E --> G{"检验结果?"}
+    G -->|"合格"| F
+    G -->|"不合格"| H["创建不合格品单<br/>nonconforming_product"]
+
+    H --> H1["返修 → rework_order"]
+    H --> H2["报废 → 报废入库"]
+    H --> H3["让步接收"]
+
+    F --> I["成品入库<br/>finished_goods_inventory<br/>生成批次号"]
+
+    I --> J["倒冲出库<br/>executeBackflushDeduction<br/>扣减线边仓库存"]
+
+    J --> K["库存流水记录<br/>material_inventory_transaction"]
+
+    style C fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style I fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style J fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+  </div>
+</div>
+
+<!-- ========== 六、关键依赖关系链 ========== -->
+<div class="section">
+  <h2>六、系统实施关键依赖关系链</h2>
+  <div class="mermaid">
+flowchart LR
+    A["📋 物料主数据<br/>item_master<br/>business_scope"] --> B["🏗️ BOM<br/>mfg_bom_header<br/>mfg_bom_detail<br/>auto_weigh 预设"]
+    
+    B --> C["🔧 MRP运算<br/>BFS 广度优先<br/>分解BOM"]
+    
+    C --> D["📝 生产单<br/>production_order<br/>每缸拆分"]
+    
+    D --> E["📦 备料清单<br/>material_preparation<br/>backflush_task"]
+    
+    E --> F["⚖️ 称量决策<br/>一级:BOM预设<br/>二级:计划员判定"]
+    
+    F --> G1["🤖 自动称量<br/>接口→小药系统"]
+    F --> G2["✋ 手工称量<br/>人工称量任务"]
+
+    style A fill:#f9f0ff,stroke:#722ed1,stroke-width:2px
+    style B fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style C fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style F fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+  </div>
+  
+  <div class="note">
+    <strong>依赖说明：</strong>箭头方向即为项目实施顺序。数据地基（物料/BOM）→ 计划主链（MPS/MRP）→ 生产执行（拆分/派发/备料）→ 称量决策（一级+二级判定）→ 称量执行（自动接口/手工任务）。
+    BOM 中设定的 "可自动称量" 标记是整个称量决策链路的起点，计划员的二次判定是关键的质量把关节点。
+  </div>
+</div>
+
+<!-- ========== 七、实施阶段甘特图 ========== -->
+<div class="section">
+  <h2>七、项目实施阶段甘特图</h2>
+  <div class="gantt-container">
+    <div class="mermaid">
+gantt
+    title 睿信塑粉MOM系统 — 项目实施阶段计划
+    dateFormat  YYYY-MM
+    axisFormat  %Y年%m月
+    
+    section 1️⃣ 基础数据建设
+    物料主数据维护        :a11, 2026-07, 1M
+    BOM搭建              :a12, 2026-07, 1M
+    组织/设备/工艺路线    :a13, 2026-07, 1M
+    供应商/客户档案       :a14, 2026-07, 1M
+
+    section 2️⃣ 销售与计划主链路
+    销售订单管理          :a21, after a11, 1M
+    MPS主生产计划         :a22, after a21, 1M
+    MRP物料需求运算       :a23, after a22, 1M
+    双源物料决策          :a24, after a23, 15d
+    生产计划审批流程      :a25, after a21, 1M
+
+    section 3️⃣ 生产执行与称量
+    生产单拆分(每缸)      :a31, after a23, 1M
+    审批与派发            :a32, after a31, 20d
+    备料清单管理          :a33, after a32, 20d
+    ⭐ 自动称量标记管理   :crit, a34, after a33, 20d
+    ⭐ 小药称量系统接口   :crit, a35, after a34, 1M
+    手工称量任务管理      :a36, after a33, 20d
+
+    section 4️⃣ 采购与库存管理
+    采购申请→采购订单     :a41, after a23, 1M
+    收货入库              :a42, after a41, 1M
+    批次库存管理          :a43, after a42, 20d
+    线边仓管理            :a44, after a43, 20d
+
+    section 5️⃣ 质量与数据报告
+    来料检验              :a51, after a42, 1M
+    生产检验              :a52, after a51, 1M
+    不合格品处理          :a53, after a52, 20d
+    驾驶舱&数据报告       :a54, after a53, 1M
+
+    section 6️⃣ 研发样件管理
+    配方BOM管理           :a61, after a54, 1M
+    样品试制工单          :a62, after a61, 1M
+    小批验证              :a63, after a62, 1M
+    量产转化              :a64, after a63, 1M
+    </div>
+  </div>
+</div>
+
+<!-- ========== 八、数据实体关系 ========== -->
+<div class="section">
+  <h2>八、核心数据实体关系图</h2>
+  <div class="mermaid">
+erDiagram
+    PRODUCTION_PLAN ||--o{ MRP_RUN : "MRP运算"
+    MRP_RUN ||--o{ MRP_RUN_DETAIL : "运算明细"
+    MRP_RUN_DETAIL ||--o{ PRODUCTION_ORDER : "action_type=生产"
+    MRP_RUN_DETAIL ||--o{ PURCHASE_REQ : "action_type=采购"
+
+    PRODUCTION_ORDER ||--o{ PROCESS_TASK : "派发生成"
+    PRODUCTION_ORDER ||--o{ MATERIAL_PREPARATION : "派发生成备料单"
+    
+    MATERIAL_PREPARATION ||--o{ BACKFLUSH_TASK : "备料倒冲任务"
+    BACKFLUSH_TASK ||--o| WEIGH_SYSTEM : "auto_weigh=Y 接口传递"
+
+    PROCESS_TASK ||--o{ WORK_REPORT : "报工"
+    WORK_REPORT ||--o| PRODUCTION_INSPECTION : "条件触发检验"
+    PRODUCTION_INSPECTION ||--o| NONCONFORMING_PRODUCT : "不合格创建NC"
+
+    PURCHASE_REQ ||--o{ PURCHASE_ORDER : "转采购订单"
+    PURCHASE_ORDER ||--o{ STOCK_IN : "收货入库"
+    STOCK_IN ||--o| PURCHASE_QUALITY_INSPECTION : "条件触发来料检验"
+    PURCHASE_QUALITY_INSPECTION ||--o| NONCONFORMING_PRODUCT : "不合格创建NC"
+
+    NONCONFORMING_PRODUCT ||--o{ REWORK_ORDER : "返修处理"
+    NONCONFORMING_PRODUCT ||--o{ STOCK_IN : "报废入库"
+  </div>
+</div>
+
+</div><!-- .container -->
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    securityLevel: 'loose',
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+    sequence: { useMaxWidth: true },
+    gantt: { useMaxWidth: true, barHeight: 22, fontSize: 12 }
+  });
+</script>
+
+</body>
+</html>

@@ -28,6 +28,7 @@ interface DetectResult {
   recordId: string;
   eligible: boolean;
   ineligibleReason?: string;
+  category?: 'manual_close_ok' | 'need_material_return' | 'need_scrap' | 'ineligible';
   currentStatus: Record<string, any>;
   exceptions: ExceptionItem[];
   cascadePreview: CascadePreview[];
@@ -75,19 +76,19 @@ async function detectSalesOrderExceptions(salesOrderNumber: string): Promise<Det
     { replacements: { num: salesOrderNumber } }
   );
   if (!headers.length) {
-    return { recordId: salesOrderNumber, eligible: false, ineligibleReason: '订单不存在', currentStatus: {}, exceptions: [], cascadePreview: [] };
+    return { recordId: salesOrderNumber, eligible: false, category: 'ineligible', ineligibleReason: '订单不存在', currentStatus: {}, exceptions: [], cascadePreview: [] };
   }
   const header = headers[0];
 
   // 不可关闭检查
   if (header.order_status === '已取消') {
-    return { recordId: salesOrderNumber, eligible: false, ineligibleReason: '订单已取消', currentStatus: header, exceptions: [], cascadePreview: [] };
+    return { recordId: salesOrderNumber, eligible: false, category: 'ineligible', ineligibleReason: '订单已取消', currentStatus: header, exceptions: [], cascadePreview: [] };
   }
   if (header.order_status === '已完成') {
-    return { recordId: salesOrderNumber, eligible: false, ineligibleReason: '订单已完成', currentStatus: header, exceptions: [], cascadePreview: [] };
+    return { recordId: salesOrderNumber, eligible: false, category: 'ineligible', ineligibleReason: '订单已完成', currentStatus: header, exceptions: [], cascadePreview: [] };
   }
   if (header.approval_status !== '已审批') {
-    return { recordId: salesOrderNumber, eligible: false, ineligibleReason: '订单未审批，不可关闭', currentStatus: header, exceptions: [], cascadePreview: [] };
+    return { recordId: salesOrderNumber, eligible: false, category: 'ineligible', ineligibleReason: '订单未审批，不可关闭', currentStatus: header, exceptions: [], cascadePreview: [] };
   }
 
   const [details]: any = await sequelize.query(
@@ -135,7 +136,7 @@ async function detectSalesOrderExceptions(salesOrderNumber: string): Promise<Det
     cascadePreview.push({ downstreamType: 'shipping_request', count: shipReqs.length, items: shipReqs.map((r: any) => r.request_number) });
   }
 
-  return { recordId: salesOrderNumber, eligible: true, currentStatus: header, exceptions, cascadePreview };
+  return { recordId: salesOrderNumber, eligible: true, category: 'manual_close_ok', currentStatus: header, exceptions, cascadePreview };
 }
 
 // ---------- 生产订单异常检测 ----------
@@ -146,33 +147,115 @@ async function detectProductionOrderExceptions(productionOrderNumber: string): P
     { replacements: { num: productionOrderNumber } }
   );
   if (!headers.length) {
-    return { recordId: productionOrderNumber, eligible: false, ineligibleReason: '订单不存在', currentStatus: {}, exceptions: [], cascadePreview: [] };
+    return { recordId: productionOrderNumber, eligible: false, category: 'ineligible', ineligibleReason: '订单不存在', currentStatus: {}, exceptions: [], cascadePreview: [] };
   }
   const header = headers[0];
 
   if (header.completion_status === '已完成') {
-    return { recordId: productionOrderNumber, eligible: false, ineligibleReason: '订单已完成', currentStatus: header, exceptions: [], cascadePreview: [] };
+    return { recordId: productionOrderNumber, eligible: false, category: 'ineligible', ineligibleReason: '订单已完成', currentStatus: header, exceptions: [], cascadePreview: [] };
   }
   if (header.completion_status === '已关闭') {
-    return { recordId: productionOrderNumber, eligible: false, ineligibleReason: '订单已关闭', currentStatus: header, exceptions: [], cascadePreview: [] };
+    return { recordId: productionOrderNumber, eligible: false, category: 'ineligible', ineligibleReason: '订单已关闭', currentStatus: header, exceptions: [], cascadePreview: [] };
   }
   if (header.approval_status !== '已审批') {
-    return { recordId: productionOrderNumber, eligible: false, ineligibleReason: '订单未审批，不可关闭', currentStatus: header, exceptions: [], cascadePreview: [] };
+    return { recordId: productionOrderNumber, eligible: false, category: 'ineligible', ineligibleReason: '订单未审批，不可关闭', currentStatus: header, exceptions: [], cascadePreview: [] };
   }
 
   const exceptions: ExceptionItem[] = [];
+  const cascadePreview: CascadePreview[] = [];
 
-  // PO_EXEC: 执行异常
+  // 查询所有工序任务，按步骤号排序
+  const [tasks]: any = await sequelize.query(
+    `SELECT process_task_number, step_number, task_status, standard_process_name
+     FROM process_task WHERE production_order_number = :num ORDER BY step_number`,
+    { replacements: { num: productionOrderNumber } }
+  );
+
+  // 无工序任务：订单尚未派发或任务未生成，直接按原有异常检测处理
+  if (tasks.length === 0) {
+    if (header.plan_status !== '已完成') {
+      exceptions.push({ code: 'PO_EXEC', label: '执行异常', description: `当前状态: ${header.plan_status}`, details: [{ plan_status: header.plan_status }] });
+    }
+    if (header.inbound_status && header.inbound_status.trim() && header.inbound_status !== '全部入库') {
+      exceptions.push({ code: 'PO_INBOUND', label: '入库异常', description: `当前状态: ${header.inbound_status}`, details: [{ inbound_status: header.inbound_status }] });
+    }
+    return { recordId: productionOrderNumber, eligible: true, category: 'manual_close_ok', currentStatus: header, exceptions, cascadePreview };
+  }
+
+  const firstTask = tasks[0];
+  const lastTask = tasks[tasks.length - 1];
+
+  // 检查首道工序是否有备料明细（material_preparation_detail）
+  const [firstStepMats]: any = await sequelize.query(
+    `SELECT COUNT(*) as cnt FROM material_preparation_detail mpd
+     INNER JOIN material_preparation mp ON mpd.preparation_number = mp.preparation_number
+     WHERE mp.production_order_number = :num AND mpd.step_number = :step`,
+    { replacements: { num: productionOrderNumber, step: firstTask.step_number } }
+  );
+  const firstStepHasMats = firstStepMats[0]?.cnt > 0;
+
+  // ==================== 三级分类检测 ====================
+
+  // Case 1: 最后一道工序已经报工 → 可以手动批量关闭
+  if (lastTask.task_status === '已完成') {
+    if (header.inbound_status && header.inbound_status.trim() && header.inbound_status !== '全部入库') {
+      exceptions.push({ code: 'PO_INBOUND', label: '入库异常', description: `当前状态: ${header.inbound_status}`, details: [{ inbound_status: header.inbound_status }] });
+    }
+    // 质检异常检查
+    const [inspectIssues]: any = await sequelize.query(
+      `SELECT process_task_number, step_number, standard_process_name, inspect_status FROM process_task WHERE production_order_number = :num AND inspect_status NOT IN (N'检验合格', N'无需检', N'已处理') AND task_status IN (N'已完成', N'进行中')`,
+      { replacements: { num: productionOrderNumber } }
+    );
+    if (inspectIssues.length > 0) {
+      exceptions.push({
+        code: 'PO_QUALITY', label: '质量异常', description: `${inspectIssues.length}道工序检验未通过`,
+        details: inspectIssues.map((t: any) => ({ task: t.process_task_number, step: t.step_number, process: t.standard_process_name, inspect_status: t.inspect_status })),
+      });
+    }
+    // 级联预览：未完成的工序任务
+    const [pendingTasks]: any = await sequelize.query(
+      `SELECT process_task_number FROM process_task WHERE production_order_number = :num AND task_status NOT IN (N'已完成', N'已关闭')`,
+      { replacements: { num: productionOrderNumber } }
+    );
+    if (pendingTasks.length > 0) {
+      cascadePreview.push({ downstreamType: 'process_task', count: pendingTasks.length, items: pendingTasks.map((t: any) => t.process_task_number) });
+    }
+    return { recordId: productionOrderNumber, eligible: true, category: 'manual_close_ok', currentStatus: header, exceptions, cascadePreview };
+  }
+
+  // Case 2: 首道工序已经备料，但首道工序没有报工 → 退料处理
+  if (firstStepHasMats && !['已完成', '进行中'].includes(firstTask.task_status)) {
+    exceptions.push({
+      code: 'PO_MAT_RETURN', label: '退料处理',
+      description: `首道工序(${firstTask.standard_process_name || '工序' + firstTask.step_number})已备料但未报工，需先执行退料处理（取消备料单）`,
+      details: [{ step_number: firstTask.step_number, process_name: firstTask.standard_process_name, task_status: firstTask.task_status }],
+    });
+    return {
+      recordId: productionOrderNumber, eligible: false, category: 'need_material_return',
+      ineligibleReason: '退料处理', currentStatus: header, exceptions, cascadePreview: [],
+    };
+  }
+
+  // Case 3: 首道工序已经备料，首道工序已经报工（但未全部完成）→ 在制品报废处理
+  if (firstStepHasMats && ['已完成', '进行中'].includes(firstTask.task_status)) {
+    exceptions.push({
+      code: 'PO_SCRAP', label: '在制品报废处理',
+      description: `首道工序(${firstTask.standard_process_name || '工序' + firstTask.step_number})已报工，需先执行在制品报废处理`,
+      details: [{ step_number: firstTask.step_number, process_name: firstTask.standard_process_name, task_status: firstTask.task_status }],
+    });
+    return {
+      recordId: productionOrderNumber, eligible: false, category: 'need_scrap',
+      ineligibleReason: '在制品报废处理', currentStatus: header, exceptions, cascadePreview: [],
+    };
+  }
+
+  // 其他情况：按原有异常检测逻辑处理
   if (header.plan_status !== '已完成') {
     exceptions.push({ code: 'PO_EXEC', label: '执行异常', description: `当前状态: ${header.plan_status}`, details: [{ plan_status: header.plan_status }] });
   }
-
-  // PO_INBOUND: 入库异常
-  if (header.inbound_status !== '全部入库') {
+  if (header.inbound_status && header.inbound_status.trim() && header.inbound_status !== '全部入库') {
     exceptions.push({ code: 'PO_INBOUND', label: '入库异常', description: `当前状态: ${header.inbound_status}`, details: [{ inbound_status: header.inbound_status }] });
   }
-
-  // PO_QUALITY: 质量异常
   const [inspectIssues]: any = await sequelize.query(
     `SELECT process_task_number, step_number, standard_process_name, inspect_status FROM process_task WHERE production_order_number = :num AND inspect_status NOT IN (N'检验合格', N'无需检', N'已处理') AND task_status IN (N'已完成', N'进行中')`,
     { replacements: { num: productionOrderNumber } }
@@ -183,9 +266,6 @@ async function detectProductionOrderExceptions(productionOrderNumber: string): P
       details: inspectIssues.map((t: any) => ({ task: t.process_task_number, step: t.step_number, process: t.standard_process_name, inspect_status: t.inspect_status })),
     });
   }
-
-  // 级联预览
-  const cascadePreview: CascadePreview[] = [];
   const [pendingTasks]: any = await sequelize.query(
     `SELECT process_task_number FROM process_task WHERE production_order_number = :num AND task_status NOT IN (N'已完成', N'已关闭')`,
     { replacements: { num: productionOrderNumber } }
@@ -194,7 +274,7 @@ async function detectProductionOrderExceptions(productionOrderNumber: string): P
     cascadePreview.push({ downstreamType: 'process_task', count: pendingTasks.length, items: pendingTasks.map((t: any) => t.process_task_number) });
   }
 
-  return { recordId: productionOrderNumber, eligible: true, currentStatus: header, exceptions, cascadePreview };
+  return { recordId: productionOrderNumber, eligible: true, category: 'manual_close_ok', currentStatus: header, exceptions, cascadePreview };
 }
 
 // ---------- 采购订单异常检测 ----------
@@ -205,18 +285,18 @@ async function detectPurchaseOrderExceptions(purchaseOrderNumber: string): Promi
     { replacements: { num: purchaseOrderNumber } }
   );
   if (!headers.length) {
-    return { recordId: purchaseOrderNumber, eligible: false, ineligibleReason: '订单不存在', currentStatus: {}, exceptions: [], cascadePreview: [] };
+    return { recordId: purchaseOrderNumber, eligible: false, category: 'ineligible', ineligibleReason: '订单不存在', currentStatus: {}, exceptions: [], cascadePreview: [] };
   }
   const header = headers[0];
 
   if (header.order_status === '已关闭') {
-    return { recordId: purchaseOrderNumber, eligible: false, ineligibleReason: '订单已关闭', currentStatus: header, exceptions: [], cascadePreview: [] };
+    return { recordId: purchaseOrderNumber, eligible: false, category: 'ineligible', ineligibleReason: '订单已关闭', currentStatus: header, exceptions: [], cascadePreview: [] };
   }
   if (header.order_status === '已完成') {
-    return { recordId: purchaseOrderNumber, eligible: false, ineligibleReason: '订单已完成', currentStatus: header, exceptions: [], cascadePreview: [] };
+    return { recordId: purchaseOrderNumber, eligible: false, category: 'ineligible', ineligibleReason: '订单已完成', currentStatus: header, exceptions: [], cascadePreview: [] };
   }
   if (header.approval_status !== '已审批') {
-    return { recordId: purchaseOrderNumber, eligible: false, ineligibleReason: '订单未审批，不可关闭', currentStatus: header, exceptions: [], cascadePreview: [] };
+    return { recordId: purchaseOrderNumber, eligible: false, category: 'ineligible', ineligibleReason: '订单未审批，不可关闭', currentStatus: header, exceptions: [], cascadePreview: [] };
   }
 
   const [details]: any = await sequelize.query(
@@ -257,7 +337,7 @@ async function detectPurchaseOrderExceptions(purchaseOrderNumber: string): Promi
     cascadePreview.push({ downstreamType: 'purchase_receiving_notice', count: recvNotices.length, items: recvNotices.map((r: any) => r.receiving_number) });
   }
 
-  return { recordId: purchaseOrderNumber, eligible: true, currentStatus: header, exceptions, cascadePreview };
+  return { recordId: purchaseOrderNumber, eligible: true, category: 'manual_close_ok', currentStatus: header, exceptions, cascadePreview };
 }
 
 // ==================== 提交关闭申请 ====================

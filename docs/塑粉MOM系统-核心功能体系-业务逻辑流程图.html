@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>睿信塑粉MOM系统 — 核心功能体系流程图</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<style>
+  :root { --primary: #1890ff; --success: #52c41a; --warning: #fa8c16; --danger: #f5222d; --bg: #f5f7fa; --card: #ffffff; --text: #2c3e50; --text2: #666; --border: #e8e8e8; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); line-height: 1.8; padding: 24px; }
+  .container { max-width: 1200px; margin: 0 auto; }
+  h1 { text-align: center; font-size: 26px; color: var(--primary); border-bottom: 3px solid var(--primary); padding-bottom: 16px; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: var(--text2); font-size: 14px; margin-bottom: 32px; }
+  .section { background: var(--card); border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); padding: 28px 32px; margin-bottom: 24px; page-break-inside: avoid; }
+  .section h2 { font-size: 19px; color: var(--primary); border-left: 4px solid var(--primary); padding-left: 12px; margin-bottom: 14px; }
+  .section h3 { font-size: 15px; color: #555; margin: 14px 0 8px; }
+  .mermaid { text-align: center; margin: 12px 0; }
+  .note { background: #fffbe6; border: 1px solid #ffe58f; border-radius: 6px; padding: 12px 18px; margin: 12px 0; font-size: 13px; color: #8c6d00; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th { background: #f0f5ff; color: var(--primary); font-weight: 600; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+  tr:nth-child(even) { background: #fafafa; }
+  .pdf-btn { position: fixed; bottom: 24px; right: 24px; background: var(--primary); color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-size: 15px; cursor: pointer; box-shadow: 0 4px 12px rgba(24,144,255,0.4); z-index: 999; }
+  .pdf-btn:hover { background: #096dd9; }
+  @media print { body { padding: 0; background: #fff; } .section { box-shadow: none; border: 1px solid #e8e8e8; margin-bottom: 14px; } .no-print { display: none !important; } }
+</style>
+</head>
+<body>
+
+<button class="pdf-btn no-print" onclick="window.print()">导出 PDF</button>
+
+<div class="container">
+
+<h1>睿信塑粉MOM系统 — 核心功能体系流程图</h1>
+<p class="subtitle">七大模块 · 销售→采购→仓库→产品生命周期→生产计划→质量→集团管理</p>
+
+<!-- ========== 一、总体架构 ========== -->
+<div class="section">
+  <h2>一、系统总体架构与模块关系</h2>
+  <div class="mermaid">
+flowchart TB
+    subgraph L1["基础层 (ERP迁移)"]
+        SALES["📦 销售管理<br/>订单·发货·退货<br/>对账·发票·勾稽"]
+        PROC["🛒 采购管理<br/>订单·收货·退货<br/>对账·发票·勾稽"]
+        WARE["🏗️ 仓库管理<br/>原料仓·成品仓<br/>线边仓·批次·有效期"]
+    end
+
+    subgraph L2["核心层 (生产计划)"]
+        PLAN["📊 生产计划管理<br/>MPS · MRP<br/>备料·称量决策"]
+        BOM["🏭 BOM / 工艺路线<br/>生产BOM<br/>工序关联"]
+    end
+
+    subgraph L3["扩展层 (体系建设)"]
+        PLM["🔬 产品生命周期<br/>样品申请·配方BOM<br/>版本管理·BOM转化<br/>材料成本计算"]
+        QC["✅ 质量管理<br/>来料检验·生产检验<br/>SPC·追溯·有效期"]
+    end
+
+    subgraph L4["管控层 (集团)"]
+        GROUP["🏢 集团管理<br/>多工厂隔离<br/>用户权限·集团报表"]
+    end
+
+    SALES --> PLAN
+    PROC --> WARE
+    WARE --> PLAN
+    SALES --> QC
+    PROC --> QC
+    PLAN --> BOM
+    BOM --> PLM
+    PLM --> QC
+    PLAN --> GROUP
+    QC --> GROUP
+
+    style L1 fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style L2 fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style L3 fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style L4 fill:#f9f0ff,stroke:#722ed1,stroke-width:2px
+  </div>
+</div>
+
+<!-- ========== 二、销售→对账→发票勾稽 ========== -->
+<div class="section">
+  <h2>二、销售管理：订单→发货→对账→发票勾稽</h2>
+  <div class="mermaid">
+flowchart TB
+    SO["销售订单<br/>sales_order<br/>approval_status=已审批"] --> SHIP["创建发货单<br/>shipping_order<br/>shipping_order_detail"]
+    
+    SO --> RETURN["销售退货<br/>sales_return"]
+    
+    SHIP --> SIGN["客户签收确认"]
+    SIGN --> RECON["销售对账<br/>reconciliation_status<br/>= 已对账"]
+
+    RECON --> INVOICE["创建销售发票<br/>sales_invoice<br/>sales_invoice_line"]
+    
+    INVOICE --> MATCH["发票勾稽关联<br/>├─ shipping_order_number<br/>├─ shipping_detail_id<br/>└─ sales_detail_id"]
+
+    MATCH --> SYNC["状态同步<br/>invoice_status<br/>未开票 → 已开票"]
+
+    style RECON fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style MATCH fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+  </div>
+
+  <h3>三单勾稽关系</h3>
+  <div class="mermaid">
+erDiagram
+    SALES_ORDER ||--o{ SHIPPING_ORDER : "1:N 发货"
+    SALES_ORDER ||--o{ SALES_INVOICE : "1:N 开票"
+    SHIPPING_ORDER ||--o{ SALES_INVOICE_LINE : "1:N 发票行"
+    SALES_INVOICE_LINE }o--|| SALES_INVOICE : "N:1"
+    SALES_INVOICE_LINE {
+        string shipping_order_number
+        int shipping_detail_id "勾稽-发货明细"
+        int sales_detail_id "勾稽-订单明细"
+    }
+  </div>
+</div>
+
+<!-- ========== 三、采购→对账→发票勾稽 ========== -->
+<div class="section">
+  <h2>三、采购管理：订单→收货→对账→发票勾稽</h2>
+  <div class="mermaid">
+flowchart TB
+    MRP["MRP运算"] --> PR["采购申请<br/>purchase_req"]
+    PR --> PO["采购订单<br/>purchase_order<br/>purchase_order_detail"]
+
+    PO --> RECEIVE["采购收货<br/>stock_in<br/>stock_in_detail"]
+
+    RECEIVE --> IQC{"来料检验?<br/>incoming_inspection"}
+    IQC -->|"Y"| INSP["创建检验单<br/>合格/不合格"]
+    IQC -->|"N"| CONFIRM["直接确认入库"]
+
+    INSP -->|合格| CONFIRM
+    INSP -->|不合格| NC["不合格品处理"]
+
+    CONFIRM --> RECON2["供应商对账<br/>reconciliation_status<br/>= 已对账"]
+
+    RECON2 --> INV2["采购发票<br/>purchase_invoice"]
+    INV2 --> MATCH2["发票勾稽关联<br/>发票 ↔ 收货单 ↔ 采购订单"]
+
+    style RECON2 fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style MATCH2 fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+  </div>
+</div>
+
+<!-- ========== 四、产品生命周期 ========== -->
+<div class="section">
+  <h2>四、产品生命周期管理（PLM）</h2>
+  <div class="mermaid">
+flowchart TB
+    REQ["样品申请<br/>sample_request<br/>urgency: 正常/紧急/特急"] --> REVIEW["技术部评审"]
+
+    REVIEW --> BOM1["建立配方BOM<br/>sample_bom_header<br/>sample_bom_version V1"]
+
+    BOM1 --> TRIAL["样品试制<br/>试制工单"]
+    TRIAL --> TEST["性能测试<br/>客户确认"]
+
+    TEST -->|不通过| BOM2["调整配方<br/>sample_bom_version V2"]
+    BOM2 --> TRIAL
+
+    TEST -->|通过| PILOT["小批验证<br/>中试"]
+    PILOT --> CONV["BOM转化<br/>样件BOM → 生产BOM"]
+    
+    CONV --> MFG_BOM["生产BOM<br/>mfg_bom_header<br/>设定 auto_weigh<br/>关联工艺路线"]
+
+    CONV --> COST["材料成本计算<br/>BOM × 标准单价<br/>= BOM材料成本"]
+
+    MFG_BOM --> PROD["量产投产"]
+
+    COST --> SNAP["成本快照<br/>production_material<br/>_cost_snapshot"]
+    SNAP --> USE["用于:<br/>· 生产计划成本<br/>· 销售订单成本<br/>· 成本差异分析"]
+
+    TEST -->|KPI| RATE["转化率KPI<br/>转化数/总申请数"]
+
+    style CONV fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style COST fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+  </div>
+
+  <h3>BOM 成本计算数据流</h3>
+  <div class="mermaid">
+flowchart LR
+    A["standard_cost_detail<br/>物料标准单价"] --> C["BOM材料成本<br/>= SUM(单价 × 用量)"]
+    B["mfg_bom_detail<br/>BOM单位用量"] --> C
+
+    C --> D["生产单材料成本<br/>(计划数量 × BOM成本)"]
+    C --> E["生产计划材料成本<br/>(汇总关联生产单)"]
+    C --> F["销售订单材料成本<br/>(按订单比例分摊)"]
+
+    style C fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+  </div>
+</div>
+
+<!-- ========== 五、生产计划称量决策 ========== -->
+<div class="section">
+  <h2>五、生产计划：MPS→MRP→备料→称量决策</h2>
+  <h3>5.1 MPS→MRP 运算流程</h3>
+  <div class="mermaid">
+flowchart TB
+    SO2["销售订单<br/>已审批"] --> MPS["MPS 净需求计算<br/>net = MAX(0, gross<br/>− on_hand − in_transit<br/>− prod_in_transit<br/>+ safety_stock)"]
+    
+    MPS -->|"net > 0"| PP2["生产计划<br/>Production_plan<br/>审批 → 已审批"]
+    PP2 --> SPLIT["计划员拆分（每缸）<br/>按设备最大产量拆子单"]
+    SPLIT --> PO2["生产单<br/>production_order"]
+
+    PO2 --> MRP2["MRP 物料需求运算<br/>BFS BOM分解<br/>action_type 决策"]
+
+    MRP2 -->|生产| PREP["备料清单<br/>material_preparation<br/>backflush_task"]
+    MRP2 -->|采购| PR2["采购申请<br/>purchase_req"]
+
+    PREP --> WEIGH["称量决策"]
+    
+    style PREP fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style WEIGH fill:#f9f0ff,stroke:#722ed1,stroke-width:2px
+  </div>
+
+  <h3>5.2 称量二级决策流程</h3>
+  <div class="mermaid">
+flowchart TB
+    TASK["备料物料<br/>backflush_task"] --> Q1{"BOM预设<br/>auto_weigh=?"}
+
+    Q1 -->|"= Y"| LV1["一级判定: 可自动称量"]
+    Q1 -->|"= N"| MAN["手工称量"]
+
+    LV1 --> LV2["🧑 计划员二级判定<br/>小药称量精度复核"]
+
+    LV2 --> Q2{"称量克数在<br/>设备精度范围?"}
+    Q2 -->|"✅ 是"| AUTO["🟢 自动称量<br/>→ 小药称量系统接口"]
+    Q2 -->|"❌ 否"| MAN2["🔴 改为手工称量<br/>批量切换 auto_weigh"]
+
+    AUTO --> IF2["接口传递:<br/>物料编号·重量<br/>生产单号·工序·仓库"]
+    MAN --> TASK2["人工称量岗位"]
+    MAN2 --> TASK2
+
+    style LV2 fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+    style AUTO fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+  </div>
+</div>
+
+<!-- ========== 六、质量管理 ========== -->
+<div class="section">
+  <h2>六、质量管理：检验→SPC→追溯→有效期</h2>
+  <h3>6.1 来料检验 + 生产检验</h3>
+  <div class="mermaid">
+flowchart TB
+    subgraph IQC2["来料检验"]
+        A1["采购收货"] --> A2{"incoming_inspection?"}
+        A2 -->|"Y"| A3["创建来料检验单<br/>录入质量特性值"]
+        A2 -->|"N"| A4["免检入库"]
+        A3 --> A5{"判定"}
+        A5 -->|合格| A4
+        A5 -->|不合格| A6["不合格品处理<br/>退货/让步/挑选"]
+    end
+
+    subgraph PQC["生产检验"]
+        B1["工序报工"] --> B2{"production_inspection?"}
+        B2 -->|"Y"| B3["创建生产检验单<br/>录入质量特性值"]
+        B2 -->|"N"| B4["免检入库"]
+        B3 --> B5{"判定"}
+        B5 -->|合格| B4
+        B5 -->|不合格| B6["不合格品处理<br/>返修/报废/让步"]
+    end
+
+    style IQC2 fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style PQC fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+  </div>
+
+  <h3>6.2 质量追溯体系</h3>
+  <div class="mermaid">
+flowchart LR
+    subgraph FW["正向追溯"]
+        F1["原材料批次"] --> F2["生产单"] --> F3["成品批次"] --> F4["客户"]
+    end
+
+    subgraph BW["反向追溯"]
+        B1["成品批次/客户投诉"] --> B2["生产单"] --> B3["原材料批次"] --> B4["供应商"]
+    end
+
+    style FW fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style BW fill:#fff2f0,stroke:#f5222d,stroke-width:2px
+  </div>
+
+  <h3>6.3 SPC 与有效期管理</h3>
+  <table>
+    <tr><th>功能</th><th>数据来源</th><th>输出</th></tr>
+    <tr><td><strong>SPC 控制图</strong></td><td>来料检验 + 生产检验 质量特性值</td><td>X̄-R图、I-MR图、P图、Cp/Cpk</td></tr>
+    <tr><td><strong>有效期预警</strong></td><td>批次生产日期 + shelf_life_days</td><td>已到期🟡 / 即将到期🔴 / 正常🟢</td></tr>
+  </table>
+</div>
+
+<!-- ========== 七、集团管理 ========== -->
+<div class="section">
+  <h2>七、集团管理：多工厂隔离与报表</h2>
+  <div class="mermaid">
+flowchart TB
+    HQ["集团总部<br/>汇总视图<br/>跨工厂对比分析"]
+
+    HQ --> F1["宁国工厂<br/>factory_id = 1<br/>独立数据库<br/>独立用户<br/>独立业务数据"]
+    HQ --> F2["广州工厂<br/>factory_id = 2<br/>独立数据库<br/>独立用户<br/>独立业务数据"]
+
+    F1 --> R1["工厂级报表<br/>销售·采购·生产<br/>库存·质量·驾驶舱"]
+    F2 --> R2["工厂级报表<br/>销售·采购·生产<br/>库存·质量·驾驶舱"]
+
+    R1 --> HQ
+    R2 --> HQ
+
+    U["用户权限控制<br/>user_factory_access<br/>default_factory_id"] --> F1
+    U --> F2
+
+    style HQ fill:#f9f0ff,stroke:#722ed1,stroke-width:2px
+    style U fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+  </div>
+
+  <h3>多工厂数据隔离机制</h3>
+  <table>
+    <tr><th>隔离层面</th><th>实现方式</th><th>覆盖范围</th></tr>
+    <tr><td>数据库级</td><td>每工厂独立数据库实例</td><td>物理隔离</td></tr>
+    <tr><td>表字段级</td><td>110张业务表含 factory_id 列</td><td>所有业务数据</td></tr>
+    <tr><td>查询级</td><td>后端自动附加 factory_id 条件</td><td>所有 CRUD 操作</td></tr>
+    <tr><td>权限级</td><td>user_factory_access 控制可访问工厂</td><td>用户界面</td></tr>
+  </table>
+</div>
+
+<!-- ========== 八、实施阶段甘特图 ========== -->
+<div class="section">
+  <h2>八、项目实施阶段甘特图</h2>
+  <div class="mermaid">
+gantt
+    title 睿信塑粉MOM系统 — 四阶段实施计划
+    dateFormat  YYYY-MM
+    axisFormat  %Y年%m月
+    
+    section 1️⃣ ERP功能迁移
+    销售管理(订单/发货/退货)      :a11, 2026-08, 30d
+    销售对账+发票勾稽            :a12, after a11, 15d
+    采购管理(订单/收货/退货)      :a13, 2026-08, 30d
+    采购对账+发票勾稽            :a14, after a13, 15d
+    仓库管理(原料/成品/批次)      :a15, 2026-08, 45d
+    基础数据迁移                 :a16, 2026-08, 30d
+
+    section 2️⃣ 生产计划核心升级
+    MPS主生产计划                :a21, after a15, 30d
+    生产单拆分(每缸)             :a22, after a21, 20d
+    MRP物料需求运算              :a23, after a21, 30d
+    备料清单+称量决策            :a24, after a23, 25d
+    小药称量系统接口             :a25, after a24, 30d
+
+    section 3️⃣ 生命周期+质量体系
+    样品申请+配方BOM             :a31, after a23, 40d
+    BOM版本管理+转化             :a32, after a31, 30d
+    BOM材料成本计算              :a33, after a23, 30d
+    来料检验+生产检验            :a34, after a25, 30d
+    ⭐ SPC统计过程控制           :crit, a35, after a34, 45d
+    质量追溯+有效期管理           :a36, after a34, 30d
+
+    section 4️⃣ 集团管控
+    多工厂数据隔离               :a41, after a33, 30d
+    用户工厂权限管理             :a42, after a41, 20d
+    集团汇总报表                 :a43, after a42, 40d
+  </div>
+</div>
+
+<!-- ========== 九、关键依赖关系 ========== -->
+<div class="section">
+  <h2>九、系统实施关键依赖关系链</h2>
+  <div class="mermaid">
+flowchart LR
+    A["基础数据<br/>客户·供应商<br/>物料·BOM<br/>工艺路线·仓库"] --> B["销售管理<br/>采购管理<br/>仓库管理"]
+
+    B --> C["MPS主计划<br/>生产单拆分"]
+
+    C --> D["MRP运算<br/>备料清单<br/>称量决策"]
+
+    D --> E["产品生命周期<br/>样品管理<br/>BOM成本"]
+
+    D --> F["质量管理<br/>来料·生产检验<br/>SPC·追溯"]
+
+    E --> G["集团管控<br/>多工厂隔离<br/>集团报表"]
+    F --> G
+
+    style A fill:#f9f0ff,stroke:#722ed1,stroke-width:2px
+    style C fill:#e6f7ff,stroke:#1890ff,stroke-width:2px
+    style D fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style G fill:#fff7e6,stroke:#fa8c16,stroke-width:2px
+  </div>
+  <div class="note">
+    <strong>实施顺序：</strong>先完成 ERP 迁移（销售/采购/仓库）确保业务不中断 → 再建设生产计划核心链路（MPS/MRP/称量）→ 然后扩展产品生命周期和质量体系 → 最后实现集团管控。
+  </div>
+</div>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    securityLevel: 'loose',
+    flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+    sequence: { useMaxWidth: true },
+    gantt: { useMaxWidth: true, barHeight: 18, fontSize: 11 }
+  });
+</script>
+
+</body>
+</html>

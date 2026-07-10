@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>系统名称变更记录</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    color: #333; line-height: 1.8; padding: 40px 50px; background: #fff;
+  }
+  h1 { font-size: 26px; text-align: center; color: #1a1a1a; margin-bottom: 8px; }
+  .subtitle { text-align: center; color: #888; font-size: 14px; margin-bottom: 30px; }
+  h2 { font-size: 18px; color: #1a73e8; margin: 24px 0 12px; border-left: 4px solid #1a73e8; padding-left: 10px; }
+  h3 { font-size: 15px; color: #333; margin: 16px 0 8px; }
+  p { margin-bottom: 8px; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th { background: #1a73e8; color: #fff; padding: 8px 10px; text-align: left; font-weight: 500; }
+  td { border: 1px solid #e0e0e0; padding: 7px 10px; }
+  tr:nth-child(even) td { background: #f8f9fa; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 12px; font-weight: 500; }
+  .badge-success { background: #e6f4ea; color: #137333; }
+  .badge-old { background: #fce8e6; color: #c5221f; text-decoration: line-through; }
+  .badge-new { background: #e6f4ea; color: #137333; }
+  .info-box { background: #e8f0fe; border-radius: 8px; padding: 16px 20px; margin: 12px 0; }
+  .info-box p { margin-bottom: 4px; }
+  .summary-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px 20px; margin: 16px 0; }
+  .summary-box h3 { color: #137333; margin-top: 0; }
+  .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e0e0e0; text-align: center; color: #aaa; font-size: 12px; }
+  code { background: #f1f3f4; padding: 2px 6px; border-radius: 3px; font-size: 13px; color: #c5221f; }
+  ul { margin: 8px 0 8px 20px; }
+  li { margin-bottom: 4px; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h1>系统名称变更记录</h1>
+<p class="subtitle">睿信塑粉MOM系统 &nbsp;|&nbsp; 变更日期：2026年6月1日</p>
+
+<h2>一、变更概述</h2>
+<div class="info-box">
+  <p><strong>变更类型：</strong>系统品牌名称变更</p>
+  <p><strong>原名称：</strong><span class="badge badge-old">睿信橡胶密封件MES系统</span></p>
+  <p><strong>新名称：</strong><span class="badge badge-new">睿信塑粉MOM系统</span></p>
+  <p><strong>变更原因：</strong>业务转型，从橡胶密封件制造转向塑粉生产管理，系统定位从 MES（制造执行系统）升级为 MOM（制造运营管理）</p>
+  <p><strong>影响范围：</strong>主客户端（client）、移动端（client-mobile）、销售端（client-sales）</p>
+</div>
+
+<h2>二、修改文件清单</h2>
+
+<h3>2.1 主客户端（client）</h3>
+<table>
+  <thead>
+    <tr>
+      <th style="width:5%">序号</th>
+      <th style="width:35%">文件路径</th>
+      <th style="width:25%">修改位置</th>
+      <th style="width:35%">修改内容</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td><code>client/index.html</code></td>
+      <td>&lt;title&gt; 标签</td>
+      <td>浏览器标签页标题</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td><code>client/src/components/Layout/AppLayout.vue</code></td>
+      <td>侧边栏 Logo 文字</td>
+      <td>折叠/展开时显示的系统名称</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td><code>client/src/components/Layout/AppLayout.vue</code></td>
+      <td>页脚版权信息</td>
+      <td>底部版权声明文字</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td><code>client/src/views/system/Auth/Login.vue</code></td>
+      <td>登录页大标题</td>
+      <td>登录页面 &lt;h1&gt; 标题</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td><code>client/src/views/system/Auth/Register.vue</code></td>
+      <td>注册页标题</td>
+      <td>注册页面 &lt;h1&gt; 标题</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td><code>client/src/views/production/DispatchPrint/Index.vue</code></td>
+      <td>打印页副标题（3处）</td>
+      <td>生产调度单打印页面副标题</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>2.2 移动端（client-mobile）</h3>
+<table>
+  <thead>
+    <tr>
+      <th style="width:5%">序号</th>
+      <th style="width:35%">文件路径</th>
+      <th style="width:25%">修改位置</th>
+      <th style="width:35%">修改内容</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>7</td>
+      <td><code>client-mobile/index.html</code></td>
+      <td>&lt;title&gt; 标签</td>
+      <td>睿信MES - 移动端 → 睿信塑粉MOM - 移动端</td>
+    </tr>
+    <tr>
+      <td>8</td>
+      <td><code>client-mobile/src/views/Login.vue</code></td>
+      <td>登录页标题</td>
+      <td>睿信MES → 睿信塑粉MOM</td>
+    </tr>
+    <tr>
+      <td>9</td>
+      <td><code>client-mobile/src/views/Login.vue</code></td>
+      <td>登录页底部描述</td>
+      <td>橡胶密封件生产管理系统 → 塑粉生产管理系统</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>2.3 销售端（client-sales）</h3>
+<table>
+  <thead>
+    <tr>
+      <th style="width:5%">序号</th>
+      <th style="width:35%">文件路径</th>
+      <th style="width:25%">修改位置</th>
+      <th style="width:35%">修改内容</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>10</td>
+      <td><code>client-sales/index.html</code></td>
+      <td>&lt;title&gt; 标签</td>
+      <td>睿信MES - 销售订单 → 睿信塑粉MOM - 销售订单</td>
+    </tr>
+    <tr>
+      <td>11</td>
+      <td><code>client-sales/src/views/Login.vue</code></td>
+      <td>登录页标题</td>
+      <td>睿信MES → 睿信塑粉MOM</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>三、验证结果</h2>
+
+<h3>3.1 主客户端验证</h3>
+<table>
+  <thead>
+    <tr>
+      <th style="width:30%">检查位置</th>
+      <th style="width:40%">实际显示</th>
+      <th style="width:15%">状态</th>
+      <th style="width:15%">备注</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>浏览器标签页标题</td><td>睿信塑粉MOM系统</td><td><span class="badge badge-success">已生效</span></td><td>-</td></tr>
+    <tr><td>登录页大标题</td><td>睿信塑粉MOM系统</td><td><span class="badge badge-success">已生效</span></td><td>-</td></tr>
+    <tr><td>注册页标题</td><td>睿信塑粉MOM系统</td><td><span class="badge badge-success">已生效</span></td><td>-</td></tr>
+    <tr><td>侧边栏Logo文字</td><td>睿信塑粉MOM系统</td><td><span class="badge badge-success">已生效</span></td><td>-</td></tr>
+    <tr><td>页脚版权信息</td><td>睿信塑粉MOM系统 ©2026</td><td><span class="badge badge-success">已生效</span></td><td>-</td></tr>
+    <tr><td>打印页副标题（3处）</td><td>睿信塑粉MOM系统</td><td><span class="badge badge-success">已生效</span></td><td>调度单打印预览</td></tr>
+  </tbody>
+</table>
+
+<h3>3.2 移动端验证</h3>
+<table>
+  <thead>
+    <tr>
+      <th style="width:30%">检查位置</th>
+      <th style="width:40%">实际显示</th>
+      <th style="width:15%">状态</th>
+      <th style="width:15%">备注</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>浏览器标签页标题</td><td>睿信塑粉MOM - 移动端</td><td><span class="badge badge-success">已生效</span></td><td>-</td></tr>
+    <tr><td>登录页标题</td><td>睿信塑粉MOM</td><td><span class="badge badge-success">已生效</span></td><td>-</td></tr>
+    <tr><td>登录页底部描述</td><td>塑粉生产管理系统</td><td><span class="badge badge-success">已生效</span></td><td>-</td></tr>
+  </tbody>
+</table>
+
+<h3>3.3 销售端验证</h3>
+<table>
+  <thead>
+    <tr>
+      <th style="width:30%">检查位置</th>
+      <th style="width:40%">实际显示</th>
+      <th style="width:15%">状态</th>
+      <th style="width:15%">备注</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>浏览器标签页标题</td><td>睿信塑粉MOM - 销售订单</td><td><span class="badge badge-success">已生效</span></td><td>-</td></tr>
+    <tr><td>登录页标题</td><td>睿信塑粉MOM</td><td><span class="badge badge-success">已生效</span></td><td>-</td></tr>
+  </tbody>
+</table>
+
+<h2>四、残留检查</h2>
+<p>修改完成后，对全项目进行了关键词搜索验证：</p>
+<table>
+  <thead>
+    <tr>
+      <th>搜索关键词</th>
+      <th>搜索范围</th>
+      <th>匹配结果</th>
+      <th>状态</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>橡胶密封件</td><td>全项目</td><td>0 条</td><td><span class="badge badge-success">已清除</span></td></tr>
+    <tr><td>睿信MES</td><td>全项目</td><td>0 条</td><td><span class="badge badge-success">已清除</span></td></tr>
+    <tr><td>睿信塑粉MOM</td><td>全项目</td><td>11 条</td><td><span class="badge badge-success">符合预期</span></td></tr>
+  </tbody>
+</table>
+
+<h2>五、数据库环境</h2>
+<div class="info-box">
+  <p><strong>数据库类型：</strong>SQL Server (MSSQL)</p>
+  <p><strong>主机：</strong>127.0.0.1</p>
+  <p><strong>端口：</strong>1433</p>
+  <p><strong>数据库名：</strong>PowderMom</p>
+  <p><strong>用户名：</strong>sa</p>
+  <p><strong>TDS版本：</strong>7.2（兼容 SQL Server 2008+）</p>
+</div>
+
+<h2>六、功能验证汇总</h2>
+<p>系统名称变更后，对核心业务页面进行了功能验证，确认变更未影响系统正常运行：</p>
+<table>
+  <thead>
+    <tr>
+      <th style="width:15%">业务域</th>
+      <th style="width:20%">页面</th>
+      <th style="width:15%">数据加载</th>
+      <th style="width:15%">表格渲染</th>
+      <th style="width:15%">交互功能</th>
+      <th style="width:20%">数据量</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>基础数据</td><td>客户管理</td><td>正常</td><td>正常</td><td>正常</td><td>6条</td></tr>
+    <tr><td>基础数据</td><td>供应商管理</td><td>正常</td><td>正常</td><td>正常</td><td>1条</td></tr>
+    <tr><td>基础数据</td><td>物料主数据</td><td>正常</td><td>正常</td><td>正常</td><td>30条</td></tr>
+    <tr><td>基础数据</td><td>车间管理</td><td>正常</td><td>正常</td><td>正常</td><td>7条</td></tr>
+    <tr><td>基础数据</td><td>仓库管理</td><td>正常</td><td>正常</td><td>正常</td><td>11条</td></tr>
+    <tr><td>销售管理</td><td>销售订单</td><td>正常</td><td>正常</td><td>正常</td><td>5条</td></tr>
+    <tr><td>生产管理</td><td>生产单管理</td><td>正常</td><td>正常</td><td>正常</td><td>7条</td></tr>
+    <tr><td>仓储管理</td><td>原料仓库存</td><td>正常</td><td>正常</td><td>正常</td><td>4条</td></tr>
+    <tr><td>仓储管理</td><td>成品仓库存查询</td><td>正常</td><td>正常</td><td>正常</td><td>8条</td></tr>
+    <tr><td>采购管理</td><td>采购申请</td><td>正常</td><td>正常</td><td>正常</td><td>2条</td></tr>
+    <tr><td>采购管理</td><td>采购订单</td><td>正常</td><td>正常</td><td>正常</td><td>4条</td></tr>
+  </tbody>
+</table>
+
+<div class="summary-box">
+  <h3>变更总结</h3>
+  <ul>
+    <li>共修改 <strong>3 个客户端</strong>（主客户端、移动端、销售端）</li>
+    <li>涉及 <strong>8 个文件</strong>，共 <strong>11 处</strong>修改</li>
+    <li>所有修改均已验证生效，无残留旧名称</li>
+    <li>系统核心功能验证通过，变更未影响业务正常运行</li>
+  </ul>
+</div>
+
+<div class="footer">
+  <p>宁国市睿信信息技术有限责任公司 &nbsp;|&nbsp; 睿信塑粉MOM系统 &nbsp;|&nbsp; 2026年6月</p>
+</div>
+
+</body>
+</html>
